@@ -175,6 +175,8 @@ td input[type=number], td input[type=text], td input[type=date], td select{
   width:100%;min-width:70px;border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 7px;color:var(--texto);
 }
 td select.in-bipagem{min-width:138px;}
+td select.edit-talhao-variedade{min-width:130px;}
+td input.edit-talhao-codigo{min-width:60px;}
 td input[type=number]:hover, td input[type=text]:hover, td input[type=date]:hover, td select:hover{border-color:var(--linha);background:#fff;}
 td input:focus, td select:focus{border-color:var(--dourado);background:#fff;}
 
@@ -226,7 +228,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .edit-nome-input{flex:1;margin-right:12px;padding:6px 10px;border:1px solid var(--linha);border-radius:6px;font-size:13.5px;color:var(--texto);}
 .remover{border:none;background:none;color:var(--vermelho-abaixo);cursor:pointer;font-size:12px;}
 .editar{border:none;background:none;color:var(--azul-acima);cursor:pointer;font-size:12px;}
-.acoes-usuario{display:flex;gap:12px;}
+.acoes-usuario{display:flex;gap:12px;flex-wrap:wrap;row-gap:6px;}
 
 .import-box{padding:18px 16px;display:flex;flex-direction:column;gap:14px;}
 .import-linha{display:flex;gap:12px;align-items:center;flex-wrap:wrap;}
@@ -275,7 +277,13 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     position:relative;top:auto;left:auto;width:auto;height:auto;overflow-y:visible;
     flex-direction:row;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:10px 12px;
   }
-  .brand{display:none;}
+  .brand{
+    flex-direction:row;align-items:center;gap:0;padding:0;margin-bottom:0;
+    border-bottom:none;border-right:1px solid rgba(255,255,255,.15);
+    padding-right:10px;margin-right:4px;flex:none;
+  }
+  .brand-logo{display:none;}
+  .sb-fazenda-select{max-width:128px;font-size:11px;padding:5px 18px 5px 9px;}
   nav{flex-direction:row;flex:none;}
   .nav-eyebrow{display:none;}
   .nav-btn{white-space:nowrap;padding:9px 12px;}
@@ -312,7 +320,9 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   .form-grid{grid-template-columns:1fr;padding:14px;}
   .filtros .filtro-grupo{min-width:0;}
   .lista-simples .item{flex-wrap:wrap;gap:4px;}
+  .lista-simples .item .edit-nome-input{width:100%;margin-right:0;}
   .metrica .valor{font-size:19px;}
+  .checks-fazendas label{padding:5px 10px;font-size:12px;}
 }
 </style>
 </head>
