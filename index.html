@@ -223,6 +223,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .lista-simples .item:last-child{border-bottom:none;}
 .lista-simples .item b{font-weight:600;}
 .lista-simples .item span{color:var(--texto-suave);font-size:12px;}
+.edit-nome-input{flex:1;margin-right:12px;padding:6px 10px;border:1px solid var(--linha);border-radius:6px;font-size:13.5px;color:var(--texto);}
 .remover{border:none;background:none;color:var(--vermelho-abaixo);cursor:pointer;font-size:12px;}
 .editar{border:none;background:none;color:var(--azul-acima);cursor:pointer;font-size:12px;}
 .acoes-usuario{display:flex;gap:12px;}
@@ -1168,7 +1169,7 @@ document.getElementById('btn-add-talhao').addEventListener('click', async ()=>{
   await recarregarTudoDoSupabase();
 });
 
-function renderListaSimples(containerId, itens, onRemover){
+function renderListaSimples(containerId, itens, onRemover, onEditar){
   const el = document.getElementById(containerId);
   el.innerHTML='';
   if(!itens.length){ el.innerHTML = '<div class="empty">Nenhum registro cadastrado.</div>'; return; }
@@ -1176,20 +1177,58 @@ function renderListaSimples(containerId, itens, onRemover){
     const div = document.createElement('div');
     div.className='item';
     div.innerHTML = `<b>${item.nome}</b><span></span>`;
-    const btn = document.createElement('button');
-    btn.className='remover'; btn.textContent='remover';
-    btn.addEventListener('click', ()=>onRemover(item, btn));
-    div.appendChild(btn);
+    const acoes = document.createElement('div');
+    acoes.className = 'acoes-usuario';
+    if(onEditar){
+      const btnEditar = document.createElement('button');
+      btnEditar.className='editar'; btnEditar.textContent='editar';
+      btnEditar.addEventListener('click', ()=>onEditar(item, div));
+      acoes.appendChild(btnEditar);
+    }
+    const btnRemover = document.createElement('button');
+    btnRemover.className='remover'; btnRemover.textContent='remover';
+    btnRemover.addEventListener('click', ()=>onRemover(item, btnRemover));
+    acoes.appendChild(btnRemover);
+    div.appendChild(acoes);
     el.appendChild(div);
   });
 }
 function renderVariedades(){
-  renderListaSimples('lista-variedades', state.variedades, async (item, btn)=>{
-    btn.disabled = true;
-    const { error } = await sb.from('variedades').delete().eq('id', item.id);
-    if(error){ alert('Erro ao remover: '+error.message); btn.disabled = false; return; }
-    await recarregarTudoDoSupabase();
-  });
+  renderListaSimples('lista-variedades', state.variedades,
+    async (item, btn)=>{
+      btn.disabled = true;
+      const { error } = await sb.from('variedades').delete().eq('id', item.id);
+      if(error){ alert('Erro ao remover: '+error.message); btn.disabled = false; return; }
+      await recarregarTudoDoSupabase();
+    },
+    (item, div)=>{
+      div.innerHTML = `
+        <input type="text" class="edit-nome-input" value="${item.nome}">
+        <div class="acoes-usuario">
+          <button class="editar btn-salvar-nome">salvar</button>
+          <button class="remover btn-cancelar-nome">cancelar</button>
+        </div>
+      `;
+      div.querySelector('.btn-cancelar-nome').addEventListener('click', renderVariedades);
+      div.querySelector('.btn-salvar-nome').addEventListener('click', async ()=>{
+        const input = div.querySelector('.edit-nome-input');
+        const novoNome = input.value.trim();
+        const nomeAntigo = item.nome;
+        if(!novoNome){ alert('Informe um nome.'); return; }
+        if(novoNome === nomeAntigo){ renderVariedades(); return; }
+        const btnSalvar = div.querySelector('.btn-salvar-nome');
+        btnSalvar.disabled = true;
+        const { error: erroCatalogo } = await sb.from('variedades').update({nome: novoNome}).eq('id', item.id);
+        if(erroCatalogo){ alert('Erro ao salvar: '+erroCatalogo.message); btnSalvar.disabled = false; return; }
+        // reflete o novo nome em todos os talhões que já usavam essa variedade
+        const { error: erroTalhoes } = await sb.from('talhoes').update({variedade: novoNome}).eq('variedade', nomeAntigo);
+        if(erroTalhoes){ alert('Nome salvo no catálogo, mas houve erro ao atualizar talhões já vinculados: '+erroTalhoes.message); }
+        await recarregarTudoDoSupabase();
+      });
+      const campoInput = div.querySelector('.edit-nome-input');
+      campoInput.focus(); campoInput.select();
+    }
+  );
 }
 function renderSafras(){
   renderListaSimples('lista-safras', state.safras, async (item, btn)=>{
