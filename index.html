@@ -171,11 +171,11 @@ thead th{
 tbody td{padding:9px 12px;border-bottom:1px solid var(--linha);white-space:nowrap;}
 tbody tr:hover{background:#F8FAF8;}
 tbody tr:last-child td{border-bottom:none;}
-td input[type=number], td input[type=text], td select{
+td input[type=number], td input[type=text], td input[type=date], td select{
   width:100%;min-width:70px;border:1px solid transparent;background:transparent;border-radius:6px;padding:5px 7px;color:var(--texto);
 }
 td select.in-bipagem{min-width:138px;}
-td input[type=number]:hover, td input[type=text]:hover, td select:hover{border-color:var(--linha);background:#fff;}
+td input[type=number]:hover, td input[type=text]:hover, td input[type=date]:hover, td select:hover{border-color:var(--linha);background:#fff;}
 td input:focus, td select:focus{border-color:var(--dourado);background:#fff;}
 
 /* colunas editáveis (página Atualizar Colheita) */
@@ -1127,24 +1127,66 @@ function renderTalhoes(){
   lista.slice().sort((a,b)=> a.talhao.localeCompare(b.talhao)).forEach(t=>{
     const fazenda = state.fazendas.find(f=>f.id===t.fazendaId);
     const tr = document.createElement('tr');
+    tr.dataset.id = t.id;
     tr.innerHTML = `
-      <td><b>${t.talhao}</b></td>
+      <td class="cel-talhao"><b>${t.talhao}</b></td>
       <td>${fazenda? fazenda.nome : '–'}</td>
-      <td>${t.variedade}</td>
+      <td class="cel-variedade">${t.variedade}</td>
       <td>${t.safra}</td>
-      <td class="num">${fmt(t.areaTotal,0)}</td>
-      <td>${fmtData(t.dataSemeadura)}</td>
-      <td><button class="remover" data-id="${t.id}">remover</button></td>
+      <td class="num cel-area">${fmt(t.areaTotal,0)}</td>
+      <td class="cel-semeadura">${fmtData(t.dataSemeadura)}</td>
+      <td class="acoes-usuario cel-acoes">
+        <button class="editar btn-editar-talhao">editar</button>
+        <button class="remover btn-remover-talhao">remover</button>
+      </td>
     `;
     tbody.appendChild(tr);
   });
-  tbody.querySelectorAll('.remover').forEach(b=>b.addEventListener('click', async e=>{
-    const id = e.target.dataset.id;
-    e.target.disabled = true;
-    const { error } = await sb.from('talhoes').delete().eq('id', id);
-    if(error){ alert('Erro ao remover: '+error.message); e.target.disabled = false; return; }
-    await recarregarTudoDoSupabase();
-  }));
+
+  tbody.querySelectorAll('tr').forEach(tr=>{
+    const t = state.talhoes.find(x=>x.id==tr.dataset.id);
+
+    tr.querySelector('.btn-remover-talhao').addEventListener('click', async e=>{
+      const btn = e.target;
+      btn.disabled = true;
+      const { error } = await sb.from('talhoes').delete().eq('id', t.id);
+      if(error){ alert('Erro ao remover: '+error.message); btn.disabled = false; return; }
+      await recarregarTudoDoSupabase();
+    });
+
+    tr.querySelector('.btn-editar-talhao').addEventListener('click', ()=>{
+      const celTalhao = tr.querySelector('.cel-talhao');
+      const celVariedade = tr.querySelector('.cel-variedade');
+      const celArea = tr.querySelector('.cel-area');
+      const celSemeadura = tr.querySelector('.cel-semeadura');
+      const celAcoes = tr.querySelector('.cel-acoes');
+
+      celTalhao.innerHTML = `<input type="text" class="edit-talhao-codigo" value="${t.talhao}">`;
+      celVariedade.innerHTML = `<select class="edit-talhao-variedade">${state.variedades.map(v=>`<option ${v.nome===t.variedade?'selected':''}>${v.nome}</option>`).join('')}</select>`;
+      celArea.innerHTML = `<input type="number" class="edit-talhao-area" value="${t.areaTotal}">`;
+      celSemeadura.innerHTML = `<input type="date" class="edit-talhao-semeadura" value="${t.dataSemeadura||''}">`;
+      celAcoes.innerHTML = `
+        <button class="editar btn-salvar-talhao">salvar</button>
+        <button class="remover btn-cancelar-talhao">cancelar</button>
+      `;
+      celAcoes.querySelector('.btn-cancelar-talhao').addEventListener('click', renderTalhoes);
+      celAcoes.querySelector('.btn-salvar-talhao').addEventListener('click', async ()=>{
+        const novoTalhao = tr.querySelector('.edit-talhao-codigo').value.trim();
+        const novaVariedade = tr.querySelector('.edit-talhao-variedade').value;
+        const novaArea = parseFloat(tr.querySelector('.edit-talhao-area').value);
+        const novaSemeadura = tr.querySelector('.edit-talhao-semeadura').value || null;
+        if(!novoTalhao){ alert('Informe o código do talhão.'); return; }
+        if(!novaArea || novaArea<=0){ alert('Informe uma área total válida.'); return; }
+        const btnSalvar = celAcoes.querySelector('.btn-salvar-talhao');
+        btnSalvar.disabled = true;
+        const { error } = await sb.from('talhoes').update({
+          talhao: novoTalhao, variedade: novaVariedade, area_total: novaArea, data_semeadura: novaSemeadura
+        }).eq('id', t.id);
+        if(error){ alert('Erro ao salvar: '+error.message); btnSalvar.disabled = false; return; }
+        await recarregarTudoDoSupabase();
+      });
+    });
+  });
 }
 
 document.getElementById('btn-add-talhao').addEventListener('click', async ()=>{
@@ -1169,7 +1211,43 @@ document.getElementById('btn-add-talhao').addEventListener('click', async ()=>{
   await recarregarTudoDoSupabase();
 });
 
-function renderListaSimples(containerId, itens, onRemover, onEditar){
+function criarEditorDeNome(tabela, colunaCascataTalhoes, aoCancelar){
+  return (item, div)=>{
+    div.innerHTML = `
+      <input type="text" class="edit-nome-input" value="${item.nome}">
+      <div class="acoes-usuario">
+        <button class="editar btn-salvar-nome">salvar</button>
+        <button class="remover btn-cancelar-nome">cancelar</button>
+      </div>
+    `;
+    div.querySelector('.btn-cancelar-nome').addEventListener('click', aoCancelar);
+    div.querySelector('.btn-salvar-nome').addEventListener('click', async ()=>{
+      const input = div.querySelector('.edit-nome-input');
+      const novoNome = input.value.trim();
+      const nomeAntigo = item.nome;
+      if(!novoNome){ alert('Informe um nome.'); return; }
+      if(novoNome === nomeAntigo){ aoCancelar(); return; }
+      const btnSalvar = div.querySelector('.btn-salvar-nome');
+      btnSalvar.disabled = true;
+      const { error: erroCatalogo } = await sb.from(tabela).update({nome: novoNome}).eq('id', item.id);
+      if(erroCatalogo){ alert('Erro ao salvar: '+erroCatalogo.message); btnSalvar.disabled = false; return; }
+      if(colunaCascataTalhoes){
+        // reflete o novo nome em todos os talhões que já usavam o registro antigo
+        const { error: erroTalhoes } = await sb.from('talhoes').update({[colunaCascataTalhoes]: novoNome}).eq(colunaCascataTalhoes, nomeAntigo);
+        if(erroTalhoes){ alert('Nome salvo no catálogo, mas houve erro ao atualizar talhões já vinculados: '+erroTalhoes.message); }
+      }
+      await recarregarTudoDoSupabase();
+    });
+    const campoInput = div.querySelector('.edit-nome-input');
+    campoInput.focus(); campoInput.select();
+  };
+}
+function mensagemErroExclusao(error, nome){
+  if(error && error.code === '23503') return `Não é possível excluir "${nome}" — já existem talhões vinculados a esse registro.`;
+  return 'Erro ao remover: '+(error ? error.message : '');
+}
+
+function renderListaSimples(containerId, itens, onRemover, onEditar, temVinculo){
   const el = document.getElementById(containerId);
   el.innerHTML='';
   if(!itens.length){ el.innerHTML = '<div class="empty">Nenhum registro cadastrado.</div>'; return; }
@@ -1187,7 +1265,13 @@ function renderListaSimples(containerId, itens, onRemover, onEditar){
     }
     const btnRemover = document.createElement('button');
     btnRemover.className='remover'; btnRemover.textContent='remover';
-    btnRemover.addEventListener('click', ()=>onRemover(item, btnRemover));
+    btnRemover.addEventListener('click', ()=>{
+      if(temVinculo && temVinculo(item)){
+        alert(`Não é possível excluir "${item.nome}" — já existe(m) talhão(ões) cadastrado(s) usando esse registro. Edite ou remova esses talhões primeiro.`);
+        return;
+      }
+      onRemover(item, btnRemover);
+    });
     acoes.appendChild(btnRemover);
     div.appendChild(acoes);
     el.appendChild(div);
@@ -1198,53 +1282,36 @@ function renderVariedades(){
     async (item, btn)=>{
       btn.disabled = true;
       const { error } = await sb.from('variedades').delete().eq('id', item.id);
-      if(error){ alert('Erro ao remover: '+error.message); btn.disabled = false; return; }
+      if(error){ alert(mensagemErroExclusao(error, item.nome)); btn.disabled = false; return; }
       await recarregarTudoDoSupabase();
     },
-    (item, div)=>{
-      div.innerHTML = `
-        <input type="text" class="edit-nome-input" value="${item.nome}">
-        <div class="acoes-usuario">
-          <button class="editar btn-salvar-nome">salvar</button>
-          <button class="remover btn-cancelar-nome">cancelar</button>
-        </div>
-      `;
-      div.querySelector('.btn-cancelar-nome').addEventListener('click', renderVariedades);
-      div.querySelector('.btn-salvar-nome').addEventListener('click', async ()=>{
-        const input = div.querySelector('.edit-nome-input');
-        const novoNome = input.value.trim();
-        const nomeAntigo = item.nome;
-        if(!novoNome){ alert('Informe um nome.'); return; }
-        if(novoNome === nomeAntigo){ renderVariedades(); return; }
-        const btnSalvar = div.querySelector('.btn-salvar-nome');
-        btnSalvar.disabled = true;
-        const { error: erroCatalogo } = await sb.from('variedades').update({nome: novoNome}).eq('id', item.id);
-        if(erroCatalogo){ alert('Erro ao salvar: '+erroCatalogo.message); btnSalvar.disabled = false; return; }
-        // reflete o novo nome em todos os talhões que já usavam essa variedade
-        const { error: erroTalhoes } = await sb.from('talhoes').update({variedade: novoNome}).eq('variedade', nomeAntigo);
-        if(erroTalhoes){ alert('Nome salvo no catálogo, mas houve erro ao atualizar talhões já vinculados: '+erroTalhoes.message); }
-        await recarregarTudoDoSupabase();
-      });
-      const campoInput = div.querySelector('.edit-nome-input');
-      campoInput.focus(); campoInput.select();
-    }
+    criarEditorDeNome('variedades', 'variedade', renderVariedades),
+    (item)=> state.talhoes.some(t=>t.variedade===item.nome)
   );
 }
 function renderSafras(){
-  renderListaSimples('lista-safras', state.safras, async (item, btn)=>{
-    btn.disabled = true;
-    const { error } = await sb.from('safras').delete().eq('id', item.id);
-    if(error){ alert('Erro ao remover: '+error.message); btn.disabled = false; return; }
-    await recarregarTudoDoSupabase();
-  });
+  renderListaSimples('lista-safras', state.safras,
+    async (item, btn)=>{
+      btn.disabled = true;
+      const { error } = await sb.from('safras').delete().eq('id', item.id);
+      if(error){ alert(mensagemErroExclusao(error, item.nome)); btn.disabled = false; return; }
+      await recarregarTudoDoSupabase();
+    },
+    criarEditorDeNome('safras', 'safra', renderSafras),
+    (item)=> state.talhoes.some(t=>t.safra===item.nome)
+  );
 }
 function renderFazendas(){
-  renderListaSimples('lista-fazendas', state.fazendas, async (item, btn)=>{
-    btn.disabled = true;
-    const { error } = await sb.from('fazendas').delete().eq('id', item.id);
-    if(error){ alert('Erro ao remover: '+error.message); btn.disabled = false; return; }
-    await recarregarTudoDoSupabase();
-  });
+  renderListaSimples('lista-fazendas', state.fazendas,
+    async (item, btn)=>{
+      btn.disabled = true;
+      const { error } = await sb.from('fazendas').delete().eq('id', item.id);
+      if(error){ alert(mensagemErroExclusao(error, item.nome)); btn.disabled = false; return; }
+      await recarregarTudoDoSupabase();
+    },
+    criarEditorDeNome('fazendas', null, renderFazendas),
+    (item)=> state.talhoes.some(t=>t.fazendaId===item.id)
+  );
 }
 document.getElementById('btn-add-variedade').addEventListener('click', async ()=>{
   const nome = document.getElementById('nv-nome').value.trim();
