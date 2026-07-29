@@ -719,6 +719,9 @@ const state = {
 let sessao = null;
 
 /* ---- conversão entre o formato do banco (snake_case) e o do app (camelCase) ---- */
+function compararTalhao(a, b){
+  return a.talhao.localeCompare(b.talhao, undefined, {numeric:true, sensitivity:'base'});
+}
 function talhaoDoBanco(r){
   return {
     id: r.id, talhao: r.talhao, fazendaId: r.fazenda_id, variedade: r.variedade, safra: r.safra,
@@ -849,7 +852,7 @@ function talhoesFiltrados(){
     if(pctMin>0 && percentColhido(t) < (pctMin>=100 ? 99.999 : pctMin)) return false;
     if(situ!=='todas' && situacao(t)!==situ) return false;
     return true;
-  });
+  }).sort(compararTalhao);
 }
 
 function renderRelatorio(){
@@ -1034,7 +1037,7 @@ function renderColheita(){
   if(!document.getElementById('c-safra').value) document.getElementById('c-safra').value='2ª Safra';
   const safraSel = document.getElementById('c-safra').value;
   const fazendaId = fazendaSelecionadaId();
-  const lista = state.talhoes.filter(t=> t.fazendaId===fazendaId && (safraSel==='todas' || t.safra===safraSel));
+  const lista = state.talhoes.filter(t=> t.fazendaId===fazendaId && (safraSel==='todas' || t.safra===safraSel)).sort(compararTalhao);
   const tbody = document.getElementById('tbl-colheita');
   tbody.innerHTML='';
 
@@ -1072,7 +1075,7 @@ function renderAtualizarColheita(){
   if(!document.getElementById('ac-safra').value) document.getElementById('ac-safra').value='2ª Safra';
   const safraSel = document.getElementById('ac-safra').value;
   const fazendaId = fazendaSelecionadaId();
-  const lista = state.talhoes.filter(t=> t.fazendaId===fazendaId && (safraSel==='todas' || t.safra===safraSel));
+  const lista = state.talhoes.filter(t=> t.fazendaId===fazendaId && (safraSel==='todas' || t.safra===safraSel)).sort(compararTalhao);
   const tbody = document.getElementById('tbl-atualizar-colheita');
   tbody.innerHTML='';
 
@@ -1168,7 +1171,7 @@ function renderTalhoes(){
   const lista = state.talhoes.filter(t=>t.safra===safraAtiva && t.fazendaId===fazendaId);
   const nomeFazenda = (state.fazendas.find(f=>f.id===fazendaId)||{}).nome || '';
   document.getElementById('talhoes-total').textContent = lista.length + ' talhões cadastrados na ' + safraAtiva + ' — ' + nomeFazenda;
-  lista.slice().sort((a,b)=> a.talhao.localeCompare(b.talhao)).forEach(t=>{
+  lista.slice().sort(compararTalhao).forEach(t=>{
     const fazenda = state.fazendas.find(f=>f.id===t.fazendaId);
     const tr = document.createElement('tr');
     tr.dataset.id = t.id;
@@ -1674,7 +1677,7 @@ async function recarregarTudoDoSupabase(){
     sb.from('fazendas').select('*').order('nome'),
     sb.from('variedades').select('*').order('nome'),
     sb.from('safras').select('*').order('id'),
-    sb.from('talhoes').select('*')
+    sb.from('talhoes').select('*').order('talhao')
   ]);
   state.fazendas = fz.data || [];
   state.variedades = vr.data || [];
