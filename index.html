@@ -188,6 +188,7 @@ td.td-edit input[type=number], td.td-edit select{
   border-color:#BFDFF0;background:#fff;
 }
 td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--azul-acima);}
+.dica-peso{font-size:10.5px;color:var(--azul-acima);font-weight:600;margin-top:3px;padding:0 7px;}
 .legenda-editavel{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--texto-suave);margin-bottom:10px;}
 .amostra-editavel{width:14px;height:14px;border-radius:4px;background:#F6FBFE;border:1px solid #BFDFF0;display:inline-block;flex:none;}
 
@@ -494,14 +495,15 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 
       <div class="section">
         <div class="section-head">
-          <div><h2>Lançamento diário</h2><div class="desc">Área colhida, módulos, bipagem e peso/módulo — atualize a qualquer momento</div></div>
+          <div><h2>Lançamento diário</h2><div class="desc">Área colhida, módulos, bipagem, % pesado e peso/módulo — atualize a qualquer momento</div></div>
         </div>
         <div class="legenda-editavel"><span class="amostra-editavel"></span> Coluna editável — altere e clique em Salvar para refletir no restante do sistema</div>
         <div class="card tabela-wrap">
           <table class="tabela-colheita">
             <thead><tr>
               <th>Talhão</th><th>Cultivar</th><th>Área total</th>
-              <th class="th-edit">Área colhida</th><th class="th-edit">Qtd. módulos</th><th class="th-edit">Bipagem</th><th class="th-edit">Peso/módulo</th>
+              <th class="th-edit">Área colhida</th><th class="th-edit">Qtd. módulos</th><th class="th-edit">Bipagem</th>
+              <th class="th-edit">% Pesado</th><th class="th-edit">Peso/módulo</th>
             </tr></thead>
             <tbody id="tbl-atualizar-colheita"></tbody>
           </table>
@@ -724,6 +726,7 @@ function talhaoDoBanco(r){
     areaColhida: Number(r.area_colhida||0), qtdModulos: Number(r.qtd_modulos||0),
     statusBipagem: r.status_bipagem || 'NÃO INICIADO',
     pesoModulo: r.peso_modulo!=null ? Number(r.peso_modulo) : null,
+    percentPesado: r.percent_pesado!=null ? Number(r.percent_pesado) : null,
     origemPeso: r.origem_peso || null
   };
 }
@@ -732,7 +735,7 @@ function talhaoParaBanco(t){
     talhao: t.talhao, fazenda_id: t.fazendaId, variedade: t.variedade, safra: t.safra,
     area_total: t.areaTotal, data_semeadura: t.dataSemeadura || null,
     area_colhida: t.areaColhida, qtd_modulos: t.qtdModulos,
-    status_bipagem: t.statusBipagem, peso_modulo: t.pesoModulo, origem_peso: t.origemPeso
+    status_bipagem: t.statusBipagem, peso_modulo: t.pesoModulo, percent_pesado: t.percentPesado, origem_peso: t.origemPeso
   };
 }
 
@@ -748,21 +751,26 @@ function produtividade(t){
 function situacao(t){ return (t.percentPesado>=100) ? 'Média final' : 'Estimativa'; }
 
 // sugestão automática de peso/módulo — hierarquia: próprio talhão (se >=20% pesado) > variedade > período
-function sugerirPeso(t){
-  if(t.percentPesado>=20 && t.pesoModulo!=null){
-    return {valor:t.pesoModulo, origem:'Peso médio do talhão'};
-  }
-  const mesmaVariedade = state.talhoes.filter(x=>x.id!==t.id && x.safra===t.safra && x.variedade===t.variedade && x.pesoModulo!=null);
-  if(mesmaVariedade.length){
-    const m = mesmaVariedade.reduce((s,x)=>s+x.pesoModulo,0)/mesmaVariedade.length;
-    return {valor:m, origem:'Média peso variedade'};
-  }
-  const mesmoPeriodo = state.talhoes.filter(x=>x.id!==t.id && x.safra===t.safra && x.pesoModulo!=null);
-  if(mesmoPeriodo.length){
-    const m = mesmoPeriodo.reduce((s,x)=>s+x.pesoModulo,0)/mesmoPeriodo.length;
-    return {valor:m, origem:'Média peso período'};
-  }
-  return {valor:null, origem:null};
+function categoriaPeso(percentPesado){
+  if(percentPesado==null || percentPesado==='' || isNaN(percentPesado)) return null;
+  const p = parseFloat(percentPesado);
+  if(p>=20) return 'talhao';
+  if(p>0) return 'variedade';
+  return 'periodo';
+}
+function fraseCategoriaPeso(percentPesado){
+  const cat = categoriaPeso(percentPesado);
+  if(cat==='talhao') return 'Use o peso médio do TALHÃO';
+  if(cat==='variedade') return 'Use o peso médio da VARIEDADE';
+  if(cat==='periodo') return 'Use o peso médio do PERÍODO';
+  return 'Informe o % de módulos pesados';
+}
+function origemPesoPorCategoria(percentPesado){
+  const cat = categoriaPeso(percentPesado);
+  if(cat==='talhao') return 'Peso médio do talhão';
+  if(cat==='variedade') return 'Peso médio da variedade';
+  if(cat==='periodo') return 'Peso médio do período';
+  return null;
 }
 
 function fmt(n, casas){
@@ -1084,7 +1092,11 @@ function renderAtualizarColheita(){
           <option ${t.statusBipagem==='FINALIZADO'?'selected':''}>FINALIZADO</option>
         </select>
       </td>
-      <td class="td-edit"><input type="number" class="in-peso" value="${t.pesoModulo??''}" step="0.1" placeholder="kg"></td>
+      <td class="td-edit"><input type="number" class="in-percentPesado" value="${t.percentPesado??''}" min="0" max="100" step="1" placeholder="%"></td>
+      <td class="td-edit">
+        <input type="number" class="in-peso" value="${t.pesoModulo??''}" step="0.1" placeholder="kg">
+        <div class="dica-peso">${fraseCategoriaPeso(t.percentPesado)}</div>
+      </td>
     `;
     tbody.appendChild(tr);
   });
@@ -1107,6 +1119,19 @@ function renderAtualizarColheita(){
     tr.querySelector('.in-bipagem').addEventListener('change', e=>{
       t.statusBipagem = e.target.value;
       salvarCampo(t.id, 'status_bipagem', t.statusBipagem);
+    });
+    const campoPercent = tr.querySelector('.in-percentPesado');
+    const dicaEl = tr.querySelector('.dica-peso');
+    campoPercent.addEventListener('input', e=>{
+      dicaEl.textContent = fraseCategoriaPeso(e.target.value);
+    });
+    campoPercent.addEventListener('change', async e=>{
+      t.percentPesado = e.target.value===''? null : parseFloat(e.target.value);
+      t.origemPeso = origemPesoPorCategoria(t.percentPesado);
+      const { error } = await sb.from('talhoes').update({
+        percent_pesado: t.percentPesado, origem_peso: t.origemPeso
+      }).eq('id', t.id);
+      if(error) alert('Erro ao salvar: '+error.message);
     });
     tr.querySelector('.in-peso').addEventListener('change', e=>{
       t.pesoModulo = e.target.value===''? null : parseFloat(e.target.value);
