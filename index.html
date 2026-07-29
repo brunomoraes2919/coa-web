@@ -632,19 +632,15 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 
     <!-- ===================== USUÁRIOS (admin) ===================== -->
     <section class="page" data-page="usuarios">
-      <div class="section">
-        <div class="card" style="padding:14px 18px;background:#EAF3F8;border-color:#BFDFF0;">
-          <b style="color:#1F5C82">Para adicionar uma nova pessoa:</b>
-          <span style="color:var(--texto-suave)"> crie o login dela no painel do Supabase (Authentication → Users → Add user). Ela aparece automaticamente na lista abaixo para você definir o perfil e as fazendas.</span>
-        </div>
-      </div>
-      <div class="section" id="nu-form-wrap" style="display:none">
+      <div class="section" id="nu-form-wrap">
         <div class="section-head">
-          <div><h2 id="nu-titulo">Editar usuário</h2><div class="desc" id="nu-desc">Colaboradores só enxergam e editam as fazendas marcadas abaixo</div></div>
+          <div><h2 id="nu-titulo">Novo usuário</h2><div class="desc" id="nu-desc">Cria o login e já define o perfil e as fazendas permitidas</div></div>
         </div>
         <div class="card">
           <div class="form-grid">
             <div class="campo"><label>Nome</label><input type="text" id="nu-nome" placeholder="Ex: João Silva"></div>
+            <div class="campo" id="nu-email-wrap"><label>E-mail</label><input type="email" id="nu-email" placeholder="ex: joao.silva@grupolocks.com.br"></div>
+            <div class="campo" id="nu-senha-wrap"><label>Senha</label><input type="text" id="nu-senha" placeholder="Defina uma senha (mín. 6 caracteres)"></div>
             <div class="campo">
               <label>Perfil</label>
               <select id="nu-perfil">
@@ -658,7 +654,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
             <div class="checks-fazendas" id="nu-fazendas-checks"></div>
           </div>
           <div class="section-actions" style="margin-top:14px">
-            <button class="btn" id="btn-add-usuario">Salvar alterações</button>
+            <button class="btn" id="btn-add-usuario">Criar usuário</button>
             <button class="btn fantasma" id="btn-cancelar-edicao-usuario">Cancelar</button>
           </div>
         </div>
@@ -714,6 +710,11 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 const SUPABASE_URL = 'https://pkaxbitsqxjxjlwnhjhd.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrYXhiaXRzcXhqeGpsd25oamhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNTM2MzQsImV4cCI6MjEwMDgyOTYzNH0.XAxLopSqYef5vfW5sY6Pbv-EOoFdqwSeJpXwnqi9m8Q';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// cliente isolado (sessão própria, não compartilhada) — usado só para criar
+// o login de um novo usuário sem trocar a sessão do admin que está logado
+const sbCriarUsuario = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession:false, autoRefreshToken:false, storageKey:'sb-coa-web-criar-usuario' }
+});
 
 /* =====================================================================
    ESTADO — cache local, preenchido a partir do Supabase após o login.
@@ -1630,30 +1631,38 @@ function iniciarEdicaoUsuario(id){
   const u = state.usuarios.find(x=>x.id===id);
   if(!u) return;
   usuarioEditandoId = id;
-  document.getElementById('nu-form-wrap').style.display = '';
+  document.getElementById('nu-email-wrap').style.display = 'none';
+  document.getElementById('nu-senha-wrap').style.display = 'none';
   document.getElementById('nu-nome').value = u.nome;
   document.getElementById('nu-perfil').value = u.perfil;
   document.getElementById('nu-fazendas-wrap').style.display = u.perfil==='admin' ? 'none' : '';
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = u.fazendasPermitidas.includes(parseInt(c.value)); });
   document.getElementById('nu-titulo').textContent = 'Editar usuário';
-  document.getElementById('nu-desc').textContent = `Alterando o acesso de ${u.nome} (${u.email||'sem e-mail'})`;
+  document.getElementById('nu-desc').textContent = `Alterando o acesso de ${u.nome} (${u.email||'sem e-mail'}) — para trocar e-mail ou senha, use o painel do Supabase`;
+  document.getElementById('btn-add-usuario').textContent = 'Salvar alterações';
   const campoNome = document.getElementById('nu-nome');
   if(campoNome.scrollIntoView) campoNome.scrollIntoView({behavior:'smooth', block:'center'});
 }
 function cancelarEdicaoUsuario(){
   usuarioEditandoId = null;
-  document.getElementById('nu-form-wrap').style.display = 'none';
+  document.getElementById('nu-email-wrap').style.display = '';
+  document.getElementById('nu-senha-wrap').style.display = '';
   document.getElementById('nu-nome').value = '';
+  document.getElementById('nu-email').value = '';
+  document.getElementById('nu-senha').value = '';
   document.getElementById('nu-perfil').value = 'colaborador';
   document.getElementById('nu-fazendas-wrap').style.display = '';
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = false; });
+  document.getElementById('nu-titulo').textContent = 'Novo usuário';
+  document.getElementById('nu-desc').textContent = 'Cria o login e já define o perfil e as fazendas permitidas';
+  document.getElementById('btn-add-usuario').textContent = 'Criar usuário';
 }
 document.getElementById('btn-cancelar-edicao-usuario').addEventListener('click', cancelarEdicaoUsuario);
 document.getElementById('nu-perfil').addEventListener('change', e=>{
   document.getElementById('nu-fazendas-wrap').style.display = e.target.value==='admin' ? 'none' : '';
 });
-document.getElementById('btn-add-usuario').addEventListener('click', async ()=>{
-  if(!usuarioEditandoId) return;
+
+async function salvarEdicaoUsuario(){
   const nome = document.getElementById('nu-nome').value.trim();
   const perfil = document.getElementById('nu-perfil').value;
   if(!nome){ alert('Informe o nome.'); return; }
@@ -1676,6 +1685,54 @@ document.getElementById('btn-add-usuario').addEventListener('click', async ()=>{
   if(sessao && sessao.id===usuarioEditandoId) sessao = { ...sessao, nome, perfil };
   cancelarEdicaoUsuario();
   await recarregarTudoDoSupabase();
+}
+
+async function criarNovoUsuario(){
+  const nome = document.getElementById('nu-nome').value.trim();
+  const email = document.getElementById('nu-email').value.trim();
+  const senha = document.getElementById('nu-senha').value;
+  const perfil = document.getElementById('nu-perfil').value;
+  if(!nome || !email || !senha){ alert('Preencha nome, e-mail e senha.'); return; }
+  if(senha.length < 6){ alert('A senha precisa ter pelo menos 6 caracteres.'); return; }
+  const fazendasPermitidas = perfil==='admin' ? [] :
+    [...document.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>parseInt(c.value));
+
+  const btn = document.getElementById('btn-add-usuario');
+  btn.disabled = true;
+  btn.textContent = 'Criando…';
+
+  const { data, error } = await sbCriarUsuario.auth.signUp({ email, password: senha });
+  if(error){
+    alert('Não foi possível criar o login: '+error.message);
+    btn.disabled = false; btn.textContent = 'Criar usuário';
+    return;
+  }
+  const novoId = data && data.user && data.user.id;
+  if(!novoId){
+    alert('O login pode já existir, ou a confirmação de e-mail ainda está ativada no Supabase (Authentication → Providers → Email → desative "Confirm email").');
+    btn.disabled = false; btn.textContent = 'Criar usuário';
+    return;
+  }
+
+  // o gatilho do banco já criou um perfil básico ao criar o login;
+  // aqui só ajustamos para o nome/perfil escolhidos
+  const { error: erroPerfil } = await sb.from('perfis').update({ nome, perfil }).eq('id', novoId);
+  if(erroPerfil){ alert('Login criado, mas houve erro ao salvar o perfil: '+erroPerfil.message); btn.disabled=false; btn.textContent='Criar usuário'; return; }
+
+  if(fazendasPermitidas.length){
+    const linhas = fazendasPermitidas.map(fid=>({ usuario_id: novoId, fazenda_id: fid }));
+    const { error: erroPerm } = await sb.from('usuario_fazendas').insert(linhas);
+    if(erroPerm){ alert('Usuário criado, mas houve erro nas permissões de fazenda: '+erroPerm.message); }
+  }
+
+  btn.disabled = false; btn.textContent = 'Criar usuário';
+  cancelarEdicaoUsuario();
+  await recarregarTudoDoSupabase();
+}
+
+document.getElementById('btn-add-usuario').addEventListener('click', ()=>{
+  if(usuarioEditandoId) salvarEdicaoUsuario();
+  else criarNovoUsuario();
 });
 
 /* =====================================================================
