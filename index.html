@@ -380,7 +380,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <div class="topbar">
       <div>
         <h1 id="titulo-pagina">Controle de Colheita e Produtividade Algodão</h1>
-        <p id="subtitulo-pagina">Fazenda Dourado — visão consolidada por talhão</p>
+        <p id="subtitulo-pagina">visão consolidada por talhão</p>
       </div>
       <div class="hoje" id="hoje"></div>
     </div>
@@ -779,7 +779,7 @@ function fmtData(iso){
    NAVEGAÇÃO
 ===================================================================== */
 const titulos = {
-  relatorio:['Controle de Colheita e Produtividade Algodão','Fazenda Dourado — visão consolidada por talhão'],
+  relatorio:['Controle de Colheita e Produtividade Algodão','visão consolidada por talhão'],
   colheita:['View Colheita','Visão geral — área colhida, módulos, bipagem e peso/módulo por talhão'],
   'atualizar-colheita':['Atualizar Colheita','Lançamento diário — área colhida, módulos, bipagem e peso/módulo'],
   talhoes:['Talhões','Cadastro de talhões, área e variedade plantada'],
@@ -796,9 +796,18 @@ function irPara(pagina){
   if(PAGINAS_ADMIN.includes(pagina) && (!sessao || sessao.perfil!=='admin')) pagina = 'relatorio';
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.page===pagina));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.dataset.page===pagina));
-  document.getElementById('titulo-pagina').textContent = titulos[pagina][0];
-  document.getElementById('subtitulo-pagina').textContent = titulos[pagina][1];
   renderTudo();
+}
+function atualizarCabecalhoPagina(){
+  const paginaAtiva = document.querySelector('.page.active')?.dataset.page;
+  if(!paginaAtiva || !titulos[paginaAtiva]) return;
+  document.getElementById('titulo-pagina').textContent = titulos[paginaAtiva][0];
+  let subtitulo = titulos[paginaAtiva][1];
+  if(paginaAtiva === 'relatorio'){
+    const fazendaAtual = state.fazendas.find(f=>f.id===fazendaSelecionadaId());
+    if(fazendaAtual) subtitulo = fazendaAtual.nome + ' — ' + subtitulo;
+  }
+  document.getElementById('subtitulo-pagina').textContent = subtitulo;
 }
 irPara('relatorio');
 
@@ -1742,6 +1751,7 @@ function renderTudo(){
   renderSafras();
   renderFazendas();
   renderUsuarios();
+  atualizarCabecalhoPagina();
 }
 
 /* ---- inicialização: se já existir uma sessão válida (login anterior),
