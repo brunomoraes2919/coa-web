@@ -184,6 +184,10 @@ td input:focus, td select:focus{border-color:var(--dourado);background:#fff;}
 thead th.th-edit{background:#EAF3F8;color:#1F5C82;}
 tbody td.td-edit{background:#F6FBFE;}
 tbody tr:hover td.td-edit{background:#EBF5FB;}
+tr.linha-preenchida td{background:#D3EAF7;}
+tr.linha-preenchida td.td-edit{background:#B8DDF2;}
+tr.linha-preenchida:hover td{background:#C3E1F5;}
+tr.linha-preenchida:hover td.td-edit{background:#A6D2EC;}
 td.td-edit input[type=number], td.td-edit select{
   border-color:#BFDFF0;background:#fff;
 }
@@ -191,6 +195,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .dica-peso{font-size:10.5px;color:var(--azul-acima);font-weight:600;margin-top:3px;padding:0 7px;}
 .legenda-editavel{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--texto-suave);margin-bottom:10px;}
 .amostra-editavel{width:14px;height:14px;border-radius:4px;background:#F6FBFE;border:1px solid #BFDFF0;display:inline-block;flex:none;}
+.amostra-preenchida{width:14px;height:14px;border-radius:4px;background:#B8DDF2;border:1px solid #8FC3E3;display:inline-block;flex:none;}
 
 .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap;}
 .pill-fin{background:#DDEFE9;color:var(--verde-teal);}
@@ -498,6 +503,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
           <div><h2>Lançamento diário</h2><div class="desc">Área colhida, módulos, bipagem, % pesado e peso/módulo — atualize a qualquer momento</div></div>
         </div>
         <div class="legenda-editavel"><span class="amostra-editavel"></span> Coluna editável — altere e clique em Salvar para refletir no restante do sistema</div>
+        <div class="legenda-editavel"><span class="amostra-preenchida"></span> Linha em azul mais escuro — já tem algum dado lançado</div>
         <div class="card tabela-wrap">
           <table class="tabela-colheita">
             <thead><tr>
@@ -754,6 +760,9 @@ function produtividade(t){
 function situacao(t){ return (t.percentPesado>=100) ? 'Média final' : 'Estimativa'; }
 
 // sugestão automática de peso/módulo — hierarquia: próprio talhão (se >=20% pesado) > variedade > período
+function talhaoTemDadoPreenchido(t){
+  return (t.areaColhida>0) || (t.qtdModulos>0) || (t.statusBipagem!=='NÃO INICIADO') || (t.percentPesado!=null) || (t.pesoModulo!=null);
+}
 function categoriaPeso(percentPesado){
   if(percentPesado==null || percentPesado==='' || isNaN(percentPesado)) return null;
   const p = parseFloat(percentPesado);
@@ -1082,6 +1091,7 @@ function renderAtualizarColheita(){
   lista.forEach(t=>{
     const tr = document.createElement('tr');
     tr.dataset.id = t.id;
+    if(talhaoTemDadoPreenchido(t)) tr.classList.add('linha-preenchida');
     tr.innerHTML = `
       <td><b>${t.talhao}</b></td>
       <td>${t.variedade}</td>
@@ -1111,16 +1121,22 @@ function renderAtualizarColheita(){
 
   tbody.querySelectorAll('tr').forEach(tr=>{
     const t = state.talhoes.find(x=>x.id==tr.dataset.id);
+    function atualizarDestaqueLinha(){
+      tr.classList.toggle('linha-preenchida', talhaoTemDadoPreenchido(t));
+    }
     tr.querySelector('.in-areaColhida').addEventListener('change', e=>{
       t.areaColhida = parseFloat(e.target.value)||0;
+      atualizarDestaqueLinha();
       salvarCampo(t.id, 'area_colhida', t.areaColhida);
     });
     tr.querySelector('.in-qtdModulos').addEventListener('change', e=>{
       t.qtdModulos = parseFloat(e.target.value)||0;
+      atualizarDestaqueLinha();
       salvarCampo(t.id, 'qtd_modulos', t.qtdModulos);
     });
     tr.querySelector('.in-bipagem').addEventListener('change', e=>{
       t.statusBipagem = e.target.value;
+      atualizarDestaqueLinha();
       salvarCampo(t.id, 'status_bipagem', t.statusBipagem);
     });
     const campoPercent = tr.querySelector('.in-percentPesado');
@@ -1131,6 +1147,7 @@ function renderAtualizarColheita(){
     campoPercent.addEventListener('change', async e=>{
       t.percentPesado = e.target.value===''? null : parseFloat(e.target.value);
       t.origemPeso = origemPesoPorCategoria(t.percentPesado);
+      atualizarDestaqueLinha();
       const { error } = await sb.from('talhoes').update({
         percent_pesado: t.percentPesado, origem_peso: t.origemPeso
       }).eq('id', t.id);
@@ -1138,6 +1155,7 @@ function renderAtualizarColheita(){
     });
     tr.querySelector('.in-peso').addEventListener('change', e=>{
       t.pesoModulo = e.target.value===''? null : parseFloat(e.target.value);
+      atualizarDestaqueLinha();
       salvarCampo(t.id, 'peso_modulo', t.pesoModulo);
     });
   });
