@@ -274,9 +274,13 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .doc-table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px;}
 .doc-table th{background:var(--verde-teal);color:#fff;text-align:left;padding:8px 10px;
   font-size:10px;text-transform:uppercase;letter-spacing:.03em;font-weight:600;}
+.doc-table th.num{text-align:center;}
 .doc-table td{padding:7px 10px;border-bottom:1px solid var(--linha);}
 .doc-table tr:nth-child(even) td{background:#F6FAF7;}
-.doc-table td.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+.doc-table td.num{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:center;}
+.doc-table th.doc-col-highlight{background:var(--verde-escuro);color:#fff;}
+.doc-table td.doc-col-highlight{background:#DCEEE3;color:var(--verde-escuro);font-weight:700;}
+.doc-table tr:nth-child(even) td.doc-col-highlight{background:#CFE7D8;}
 
 @media (max-width:900px){
   .sidebar{
@@ -696,7 +700,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <table class="doc-table">
       <thead><tr>
         <th>Talhão</th><th>Cultivar</th><th>Safra</th><th>Situação</th>
-        <th>Peso/módulo</th><th>Módulos/ha</th><th>Área colhida (ha)</th><th>Produtividade (@/ha)</th><th>Qnt. módulos</th>
+        <th class="num">Peso/módulo</th><th class="num">Módulos/ha</th><th class="num">Área colhida (ha)</th><th class="num doc-col-highlight">Produtividade (@/ha)</th><th class="num">Qnt. módulos</th>
       </tr></thead>
       <tbody id="doc-tbody"></tbody>
     </table>
@@ -970,7 +974,7 @@ function montarDocumentoExport(){
       <td class="num">${fmt(p,1)}</td>
       <td class="num">${fmt(mh,2)}</td>
       <td class="num">${fmt(t.areaColhida,0)}</td>
-      <td class="num">${fmt(prod,2)}</td>
+      <td class="num doc-col-highlight">${fmt(prod,2)}</td>
       <td class="num">${fmt(t.qtdModulos,0)}</td>
     </tr>`;
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--texto-suave);padding:20px">Nenhum talhão atende aos filtros selecionados.</td></tr>';
