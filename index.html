@@ -210,6 +210,9 @@ thead th.th-edit{background:#EAF3F8;color:#1F5C82;}
 tbody td.td-edit{background:#F6FBFE;}
 tbody tr:hover td.td-edit{background:#EBF5FB;}
 tr.linha-preenchida td{background:#D3EAF7;}
+tr.linha-erro-mec td{background:#FBE1DE;}
+tr.linha-erro-mec:hover td{background:#F7CFC9;}
+tr.linha-erro-mec td.td-edit{background:#F9D3CE;color:#8A2E1F;font-weight:600;}
 tr.linha-preenchida td.td-edit{background:#B8DDF2;}
 tr.linha-preenchida:hover td{background:#C3E1F5;}
 tr.linha-preenchida:hover td.td-edit{background:#A6D2EC;}
@@ -1630,6 +1633,101 @@ async function confirmarImportacao(){
 ===================================================================== */
 let mecanizadasPorFazenda = {}; // { [fazendaId]: {headers, dados, nomeArquivo} }
 
+function normalizarTextoMec(s){
+  return String(s==null?'':s)
+    .toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[°ºª]/g, 'O')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function removerAnoDoPeriodo(periodoNorm){
+  return periodoNorm.replace(/\s+\d{2}\/\d{2}$/, '').replace(/\s+\d{4}$/, '').trim();
+}
+function ehPeriodoAdm(periodoNorm){
+  return /^ADM(\s|$)/.test(periodoNorm);
+}
+function ehPeriodoPreparoOuCobertura(periodoNorm){
+  return /COBERTURA|PREPARO|PREP\.|CORRECAO/.test(periodoNorm);
+}
+function ehCentroPecuaria(ccNorm){
+  return /PECUARIA/.test(ccNorm);
+}
+// períodos que ainda não têm regra definida (o usuário pediu pra não
+// arriscar suposição aqui) — a exclusão de ADM continua valendo pra eles,
+// só não geramos expectativa de "centro de custo esperado"
+const PERIODOS_SEM_REGRA_AINDA = ['COMPLEXO', 'BENEFICIAMENTO', 'PECUARIA'];
+
+// Regra 1: em período de cultura (inclui preparo de solo/cobertura), o centro
+// de custo tem que ser o respectivo àquele período; em período ADM, jamais
+// pode ter centro de custo de cultura, preparo de solo, cobertura ou pecuária.
+// O "esperado" de cada período de cultura é aprendido a partir do próprio
+// arquivo (o centro de custo mais usado para aquele período) — assim não é
+// preciso fixar nomes de cultura no código.
+function validarPeriodoCentroCusto(headers, dados){
+  const idxPeriodo = headers.findIndex(h => normalizarTextoMec(h) === 'PERIODO DE PRODUCAO');
+  const idxCC = headers.findIndex(h => normalizarTextoMec(h) === 'CENTRO DE CUSTO');
+  if(idxPeriodo === -1 || idxCC === -1){
+    return { aplicavel:false, erros: dados.map(()=>null) };
+  }
+  const idxPeriodoDesc = idxPeriodo + 1;
+  const idxCCDesc = idxCC + 1;
+
+  const linhasInfo = dados.map(row=>{
+    const periodoDesc = normalizarTextoMec(row[idxPeriodoDesc]);
+    const ccDesc = normalizarTextoMec(row[idxCCDesc]);
+    const ehAdm = ehPeriodoAdm(periodoDesc);
+    const periodoBase = ehAdm ? null : removerAnoDoPeriodo(periodoDesc);
+    const semRegraAinda = !ehAdm && PERIODOS_SEM_REGRA_AINDA.includes(periodoBase);
+    return { periodoDesc, ccDesc, ehAdm, periodoBase, semRegraAinda };
+  });
+
+  // centros de custo considerados "de cultura" (proibidos em ADM):
+  // 1) o centro bate exatamente com o período (sem o ano) de alguma linha não-ADM
+  // 2) o centro está associado a um período de preparo de solo/cobertura
+  // 3) o nome do centro contém "PECUARIA" (pega também "COLIGADA PECUARIA")
+  const centrosCulturais = new Set();
+  const contagemPorPeriodoBase = {};
+  linhasInfo.forEach(info=>{
+    if(info.ehAdm || !info.ccDesc || info.semRegraAinda) return;
+    if(info.ccDesc === info.periodoBase) centrosCulturais.add(info.ccDesc);
+    if(ehPeriodoPreparoOuCobertura(info.periodoDesc)) centrosCulturais.add(info.ccDesc);
+    contagemPorPeriodoBase[info.periodoBase] = contagemPorPeriodoBase[info.periodoBase] || {};
+    contagemPorPeriodoBase[info.periodoBase][info.ccDesc] = (contagemPorPeriodoBase[info.periodoBase][info.ccDesc]||0) + 1;
+  });
+  linhasInfo.forEach(info=>{
+    if(!info.ehAdm && info.ccDesc && ehCentroPecuaria(info.ccDesc)) centrosCulturais.add(info.ccDesc);
+  });
+
+  const esperadoPorPeriodoBase = {};
+  Object.keys(contagemPorPeriodoBase).forEach(base=>{
+    const contagens = contagemPorPeriodoBase[base];
+    let melhor = null, melhorQtd = -1;
+    Object.keys(contagens).forEach(cc=>{
+      if(contagens[cc] > melhorQtd){ melhor = cc; melhorQtd = contagens[cc]; }
+    });
+    esperadoPorPeriodoBase[base] = melhor;
+  });
+
+  const erros = linhasInfo.map(info=>{
+    if(!info.periodoDesc) return null;
+    if(info.ehAdm){
+      if(info.ccDesc && centrosCulturais.has(info.ccDesc)){
+        return `Período ADM não pode usar centro de custo de cultura/cobertura/pecuária ("${info.ccDesc}")`;
+      }
+      return null;
+    }
+    if(info.semRegraAinda) return null;
+    const esperado = esperadoPorPeriodoBase[info.periodoBase];
+    if(esperado && info.ccDesc && info.ccDesc !== esperado){
+      return `Centro de custo esperado para "${info.periodoBase}" era "${esperado}", veio "${info.ccDesc}"`;
+    }
+    return null;
+  });
+  return { aplicavel:true, erros };
+}
+
+
 function processarArquivoMecanizadas(file){
   const fazendaId = fazendaSelecionadaId();
   const leitor = new FileReader();
@@ -1645,11 +1743,16 @@ function processarArquivoMecanizadas(file){
       alert('Não foi possível ler o arquivo. Confira se é um .xlsx, .xls ou .csv válido.');
       return;
     }
-    mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name };
+    const validacao = validarPeriodoCentroCusto(headers, dados);
+    mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao };
     renderTabelaMecanizadas();
   };
   leitor.readAsArrayBuffer(file);
 }
+
+const MEC_LINHAS_POR_PAGINA = 200;
+let mecFiltroSoErros = true;
+let mecPaginaAtual = 1;
 
 function renderTabelaMecanizadas(){
   const resEl = document.getElementById('mec-resultado');
@@ -1663,14 +1766,38 @@ function renderTabelaMecanizadas(){
     tabelaEl.innerHTML = '';
     return;
   }
-  const { headers, dados, nomeArquivo } = atual;
+  const { headers, dados, nomeArquivo, validacao } = atual;
+  const mostrarColunaErro = !!(validacao && validacao.aplicavel);
+  const qtdErros = mostrarColunaErro ? validacao.erros.filter(e=>e).length : 0;
+
+  let resumoValidacao = '';
+  if(mostrarColunaErro){
+    resumoValidacao = qtdErros
+      ? `<div class="aviso">${qtdErros} linha(s) com possível erro de período x centro de custo.</div>`
+      : `<div class="aviso-ok">Nenhum erro de período x centro de custo encontrado.</div>`;
+  } else {
+    resumoValidacao = `<div class="aviso">Não encontrei as colunas "Período de Produção" e/ou "Centro de Custo" nesse arquivo — validação não aplicada.</div>`;
+  }
+  const filtroHtml = (mostrarColunaErro && qtdErros>0) ? `
+    <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--texto-suave);margin-top:8px;cursor:pointer">
+      <input type="checkbox" id="chk-mec-so-erros" ${mecFiltroSoErros?'checked':''}> Mostrar só as linhas com possível erro
+    </label>` : '';
   resEl.innerHTML = `
     <div class="aviso-ok">${dados.length} linha(s) carregadas de "${nomeArquivo}".</div>
+    ${resumoValidacao}
+    ${filtroHtml}
     <div class="section-actions" style="margin-top:8px"><button class="btn fantasma" id="btn-trocar-arquivo-mec">Trocar arquivo</button></div>
   `;
   document.getElementById('btn-trocar-arquivo-mec').addEventListener('click', ()=>{
     delete mecanizadasPorFazenda[fazendaId];
     document.getElementById('input-arquivo-mec').value = '';
+    mecFiltroSoErros = true; mecPaginaAtual = 1;
+    renderTabelaMecanizadas();
+  });
+  const chkSoErros = document.getElementById('chk-mec-so-erros');
+  if(chkSoErros) chkSoErros.addEventListener('change', e=>{
+    mecFiltroSoErros = e.target.checked;
+    mecPaginaAtual = 1;
     renderTabelaMecanizadas();
   });
 
@@ -1678,14 +1805,45 @@ function renderTabelaMecanizadas(){
     tabelaEl.innerHTML = '<div class="aviso">Nenhuma linha de dados encontrada nesse arquivo.</div>';
     return;
   }
-  const theadHtml = '<tr>' + headers.map(h=>`<th>${h || '–'}</th>`).join('') + '</tr>';
-  const tbodyHtml = dados.map(row=>{
-    return '<tr>' + headers.map((h,i)=>{
-      const v = row[i];
+
+  // aplica o filtro (só erros) antes de paginar, pra nao ter que desenhar
+  // milhares de linhas de uma vez e travar o navegador
+  const indicesVisiveis = [];
+  for(let i=0;i<dados.length;i++){
+    if(mostrarColunaErro && qtdErros>0 && mecFiltroSoErros){
+      if(validacao.erros[i]) indicesVisiveis.push(i);
+    } else {
+      indicesVisiveis.push(i);
+    }
+  }
+  const totalPaginas = Math.max(1, Math.ceil(indicesVisiveis.length / MEC_LINHAS_POR_PAGINA));
+  if(mecPaginaAtual > totalPaginas) mecPaginaAtual = totalPaginas;
+  if(mecPaginaAtual < 1) mecPaginaAtual = 1;
+  const inicio = (mecPaginaAtual-1) * MEC_LINHAS_POR_PAGINA;
+  const indicesPagina = indicesVisiveis.slice(inicio, inicio + MEC_LINHAS_POR_PAGINA);
+
+  const theadHtml = '<tr>' + headers.map(h=>`<th>${h || '–'}</th>`).join('') + (mostrarColunaErro ? '<th class="th-edit">Verificação</th>' : '') + '</tr>';
+  const tbodyHtml = indicesPagina.map(i=>{
+    const row = dados[i];
+    const erro = mostrarColunaErro ? validacao.erros[i] : null;
+    const celulas = headers.map((h,j)=>{
+      const v = row[j];
       return `<td>${(v!=null && String(v).trim()!=='') ? v : '–'}</td>`;
-    }).join('') + '</tr>';
+    }).join('');
+    const celulaErro = mostrarColunaErro ? `<td class="td-edit">${erro ? erro : '–'}</td>` : '';
+    return `<tr class="${erro ? 'linha-erro-mec' : ''}">${celulas}${celulaErro}</tr>`;
   }).join('');
-  tabelaEl.innerHTML = `<div class="card tabela-wrap"><table><thead>${theadHtml}</thead><tbody>${tbodyHtml}</tbody></table></div>`;
+  const paginacaoHtml = totalPaginas > 1 ? `
+    <div class="section-actions" style="margin-top:10px;align-items:center">
+      <button class="btn fantasma" id="btn-mec-pag-anterior" ${mecPaginaAtual<=1?'disabled':''}>← Anterior</button>
+      <span style="font-size:12.5px;color:var(--texto-suave)">Página ${mecPaginaAtual} de ${totalPaginas} — mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${mecFiltroSoErros && qtdErros>0 ? ' com erro' : ''}</span>
+      <button class="btn fantasma" id="btn-mec-pag-proxima" ${mecPaginaAtual>=totalPaginas?'disabled':''}>Próxima →</button>
+    </div>` : `<div class="section-actions" style="margin-top:10px"><span style="font-size:12.5px;color:var(--texto-suave)">Mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${mecFiltroSoErros && qtdErros>0 ? ' com erro' : ''}</span></div>`;
+  tabelaEl.innerHTML = `<div class="card tabela-wrap"><table>${theadHtml ? `<thead>${theadHtml}</thead>` : ''}<tbody>${tbodyHtml}</tbody></table></div>${paginacaoHtml}`;
+  const btnAnterior = document.getElementById('btn-mec-pag-anterior');
+  const btnProxima = document.getElementById('btn-mec-pag-proxima');
+  if(btnAnterior) btnAnterior.addEventListener('click', ()=>{ mecPaginaAtual--; renderTabelaMecanizadas(); });
+  if(btnProxima) btnProxima.addEventListener('click', ()=>{ mecPaginaAtual++; renderTabelaMecanizadas(); });
 }
 
 function renderImportarMecanizadas(){
