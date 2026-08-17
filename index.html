@@ -872,6 +872,11 @@ function fmt(n, casas){
   if(n===null || n===undefined || isNaN(n)) return '–';
   return Number(n).toLocaleString('pt-BR',{minimumFractionDigits:casas??1, maximumFractionDigits:casas??1});
 }
+function fmtArea(n){
+  // área (ha) preserva as casas decimais reais cadastradas — nunca arredonda
+  if(n===null || n===undefined || isNaN(n)) return '–';
+  return Number(n).toLocaleString('pt-BR',{minimumFractionDigits:0, maximumFractionDigits:2});
+}
 function fmtData(iso){
   if(!iso) return '–';
   const [a,m,d] = iso.split('-');
@@ -976,7 +981,7 @@ function renderRelatorio(){
       <td><span class="pill ${situacao(t)==='Média final'?'pill-final':'pill-estim'}">${situacao(t)}</span></td>
       <td class="num">${fmt(p,1)}</td>
       <td class="num">${fmt(mh,2)}</td>
-      <td class="num">${fmt(t.areaColhida,0)}</td>
+      <td class="num">${fmtArea(t.areaColhida)}</td>
       <td class="num indic ${indic}">${fmt(prod,2)}</td>
       <td class="num">${fmt(t.qtdModulos,0)}</td>
     `;
@@ -985,7 +990,7 @@ function renderRelatorio(){
 
   document.getElementById('m-peso').textContent = somaMod? fmt(somaModPeso/somaMod,1) : '–';
   document.getElementById('m-modha').textContent = somaArea? fmt(somaAreaModHa/somaArea,2) : '–';
-  document.getElementById('m-area').innerHTML = (somaArea? fmt(somaArea,0) : '–') + ' <span class="unidade">ha</span>';
+  document.getElementById('m-area').innerHTML = (somaArea? fmtArea(somaArea) : '–') + ' <span class="unidade">ha</span>';
   document.getElementById('m-prod').innerHTML = (somaArea? fmt(somaAreaProd/somaArea,2) : '–') + ' <span class="unidade">@/ha</span>';
   document.getElementById('m-mod').textContent = somaMod? fmt(somaMod,0) : '–';
 }
@@ -1032,7 +1037,7 @@ function montarDocumentoExport(){
   const metricas = [
     {rotulo:'Peso/módulo médio', valor: somaMod? fmt(somaModPeso/somaMod,1) : '–', unidade:''},
     {rotulo:'Módulos/ha médio', valor: somaArea? fmt(somaAreaModHa/somaArea,2) : '–', unidade:''},
-    {rotulo:'Área colhida', valor: somaArea? fmt(somaArea,0) : '–', unidade:'ha'},
+    {rotulo:'Área colhida', valor: somaArea? fmtArea(somaArea) : '–', unidade:'ha'},
     {rotulo:'Produtividade média', valor: somaArea? fmt(somaAreaProd/somaArea,2) : '–', unidade:'@/ha'},
     {rotulo:'Total de módulos', valor: somaMod? fmt(somaMod,0) : '–', unidade:''},
   ];
@@ -1053,7 +1058,7 @@ function montarDocumentoExport(){
       <td>${situacao(t)}</td>
       <td class="num">${fmt(p,1)}</td>
       <td class="num">${fmt(mh,2)}</td>
-      <td class="num">${fmt(t.areaColhida,0)}</td>
+      <td class="num">${fmtArea(t.areaColhida)}</td>
       <td class="num doc-col-highlight">${fmt(prod,2)}</td>
       <td class="num">${fmt(t.qtdModulos,0)}</td>
     </tr>`;
@@ -1144,8 +1149,8 @@ function renderColheita(){
     tr.innerHTML = `
       <td><b>${t.talhao}</b></td>
       <td>${t.variedade}</td>
-      <td class="num">${fmt(t.areaTotal,0)}</td>
-      <td class="num">${fmt(t.areaColhida,0)}</td>
+      <td class="num">${fmtArea(t.areaTotal)}</td>
+      <td class="num">${fmtArea(t.areaColhida)}</td>
       <td class="num">${fmt(percentColhido(t),1)}%</td>
       <td class="num">${fmt(t.qtdModulos,0)}</td>
       <td class="num">${fmt(modulosHa(t),2)}</td>
@@ -1179,7 +1184,7 @@ function renderAtualizarColheita(){
     tr.innerHTML = `
       <td><b>${t.talhao}</b></td>
       <td>${t.variedade}</td>
-      <td class="num">${fmt(t.areaTotal,0)}</td>
+      <td class="num">${fmtArea(t.areaTotal)}</td>
       <td class="td-edit"><input type="number" class="in-areaColhida" value="${t.areaColhida}" min="0"></td>
       <td class="td-edit"><input type="number" class="in-qtdModulos" value="${t.qtdModulos}" min="0"></td>
       <td class="td-edit">
@@ -1282,7 +1287,7 @@ function renderTalhoes(){
       <td>${fazenda? fazenda.nome : '–'}</td>
       <td class="cel-variedade">${t.variedade}</td>
       <td>${t.safra}</td>
-      <td class="num cel-area">${fmt(t.areaTotal,0)}</td>
+      <td class="num cel-area">${fmtArea(t.areaTotal)}</td>
       <td class="cel-semeadura">${fmtData(t.dataSemeadura)}</td>
       <td class="acoes-usuario cel-acoes">
         <button class="editar btn-editar-talhao">editar</button>
@@ -1564,7 +1569,7 @@ function processarArquivo(file){
 function mostrarPreviewImportacao(){
   const el = document.getElementById('import-preview');
   if(!pendentes.length){ el.innerHTML = '<div class="aviso">Nenhuma linha válida encontrada no arquivo.</div>'; return; }
-  let linhas = pendentes.map(l=>`<tr><td>${l.talhao}</td><td>${l.fazenda}</td><td>${l.variedade}</td><td>${l.safra}</td><td class="num">${fmt(l.areaTotal,0)}</td><td>${l.dataSemeadura||'–'}</td></tr>`).join('');
+  let linhas = pendentes.map(l=>`<tr><td>${l.talhao}</td><td>${l.fazenda}</td><td>${l.variedade}</td><td>${l.safra}</td><td class="num">${fmtArea(l.areaTotal)}</td><td>${l.dataSemeadura||'–'}</td></tr>`).join('');
   el.innerHTML = `
     <div class="aviso">${pendentes.length} talhão(ões) prontos para importar. Confira antes de confirmar.</div>
     <div class="tabela-wrap card" style="margin-top:10px">
