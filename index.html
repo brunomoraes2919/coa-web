@@ -163,12 +163,25 @@ main{padding:26px 34px 60px;min-width:0;margin-left:236px;box-sizing:border-box;
 .section-actions .btn{white-space:nowrap;}
 
 /* metric cards */
-.metricas{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:22px;}
+.metricas{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:22px;}
 @media (max-width:1050px){.metricas{grid-template-columns:repeat(3,1fr);}}
 @media (max-width:640px){.metricas{grid-template-columns:repeat(2,1fr);}}
 @media (max-width:420px){.metricas{grid-template-columns:1fr;}}
 .metrica{padding:16px 16px 14px;min-width:0;}
 .metrica .rotulo{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--texto-suave);margin-bottom:6px;overflow-wrap:break-word;}
+.info-tooltip{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:14px;height:14px;border-radius:50%;background:var(--verde-teal);color:#fff;
+  font-size:9.5px;font-weight:700;cursor:help;position:relative;margin-left:5px;vertical-align:middle;
+  text-transform:none;letter-spacing:normal;
+}
+.info-tooltip-texto{
+  display:none;position:absolute;bottom:22px;left:50%;transform:translateX(-50%);
+  width:230px;background:var(--verde-escuro);color:#fff;font-size:11px;font-weight:400;
+  padding:10px 12px;border-radius:8px;line-height:1.45;text-align:left;z-index:20;
+  box-shadow:0 6px 18px rgba(0,0,0,.2);
+}
+.info-tooltip:hover .info-tooltip-texto, .info-tooltip:focus .info-tooltip-texto{display:block;}
 .metrica .valor{font-size:22px;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:break-word;}
 .metrica .unidade{font-size:12px;color:var(--texto-suave);margin-left:4px;font-weight:400;}
 
@@ -294,7 +307,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .doc-meta{display:flex;gap:26px;flex-wrap:wrap;font-size:12px;color:var(--texto-suave);
   margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--linha);}
 .doc-meta b{color:var(--texto);font-weight:600;}
-.doc-metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:24px;}
+.doc-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:24px;}
 .doc-metric{border:1px solid var(--linha);border-radius:8px;padding:12px 13px;background:#FAFCFA;}
 .doc-metric .rotulo{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-suave);margin-bottom:5px;}
 .doc-metric .valor{font-size:17px;font-weight:700;color:var(--verde-escuro);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
@@ -472,7 +485,8 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <div class="card metrica"><div class="rotulo">Peso/módulo médio</div><div class="valor num" id="m-peso">–</div></div>
         <div class="card metrica"><div class="rotulo">Módulos/ha médio</div><div class="valor num" id="m-modha">–</div></div>
         <div class="card metrica"><div class="rotulo">Área colhida</div><div class="valor num" id="m-area">– <span class="unidade">ha</span></div></div>
-        <div class="card metrica"><div class="rotulo">Produtividade média</div><div class="valor num" id="m-prod">– <span class="unidade">@/ha</span></div></div>
+        <div class="card metrica"><div class="rotulo">Média ponderada<span class="info-tooltip">!<span class="info-tooltip-texto">Soma de (módulos × peso/módulo ÷ 15) de cada talhão, dividida pela área colhida total. Dá mais peso aos talhões maiores — é a forma padrão de calcular a produtividade da fazenda.</span></span></div><div class="valor num" id="m-prod">– <span class="unidade">@/ha</span></div></div>
+        <div class="card metrica"><div class="rotulo">Média simples</div><div class="valor num" id="m-prod-simples">– <span class="unidade">@/ha</span></div></div>
         <div class="card metrica"><div class="rotulo">Total de módulos</div><div class="valor num" id="m-mod">–</div></div>
       </div>
 
@@ -840,6 +854,18 @@ function produtividade(t){
   if(!t.areaColhida || !t.pesoModulo || !t.qtdModulos) return null;
   return ((t.qtdModulos * t.pesoModulo)/15)/t.areaColhida;
 }
+// Média simples: usa o peso médio simples (não ponderado) de todos os
+// talhões, aplicado à quantidade total de módulos, em vez do peso
+// individual de cada talhão — pra comparar com a média ponderada.
+function calcularMediaSimples(lista){
+  const comPeso = lista.filter(t=>t.pesoModulo!=null);
+  if(!comPeso.length) return null;
+  const pesoMedio = comPeso.reduce((s,t)=>s+t.pesoModulo,0)/comPeso.length;
+  const totalModulos = comPeso.reduce((s,t)=>s+(t.qtdModulos||0),0);
+  const totalArea = comPeso.reduce((s,t)=>s+(t.areaColhida||0),0);
+  if(!totalArea) return null;
+  return (pesoMedio * totalModulos / 15) / totalArea;
+}
 function situacao(t){ return (t.percentPesado>=100) ? 'Média final' : 'Estimativa'; }
 
 // sugestão automática de peso/módulo — hierarquia: próprio talhão (se >=20% pesado) > variedade > período
@@ -992,6 +1018,7 @@ function renderRelatorio(){
   document.getElementById('m-modha').textContent = somaArea? fmt(somaAreaModHa/somaArea,2) : '–';
   document.getElementById('m-area').innerHTML = (somaArea? fmtArea(somaArea) : '–') + ' <span class="unidade">ha</span>';
   document.getElementById('m-prod').innerHTML = (somaArea? fmt(somaAreaProd/somaArea,2) : '–') + ' <span class="unidade">@/ha</span>';
+  document.getElementById('m-prod-simples').innerHTML = (()=>{ const ms = calcularMediaSimples(lista); return (ms!=null? fmt(ms,2) : '–'); })() + ' <span class="unidade">@/ha</span>';
   document.getElementById('m-mod').textContent = somaMod? fmt(somaMod,0) : '–';
 }
 ['f-safra','f-situacao','f-pct'].forEach(id=>{
@@ -1038,7 +1065,8 @@ function montarDocumentoExport(){
     {rotulo:'Peso/módulo médio', valor: somaMod? fmt(somaModPeso/somaMod,1) : '–', unidade:''},
     {rotulo:'Módulos/ha médio', valor: somaArea? fmt(somaAreaModHa/somaArea,2) : '–', unidade:''},
     {rotulo:'Área colhida', valor: somaArea? fmtArea(somaArea) : '–', unidade:'ha'},
-    {rotulo:'Produtividade média', valor: somaArea? fmt(somaAreaProd/somaArea,2) : '–', unidade:'@/ha'},
+    {rotulo:'Média ponderada', valor: somaArea? fmt(somaAreaProd/somaArea,2) : '–', unidade:'@/ha'},
+    {rotulo:'Média simples', valor: (()=>{ const ms=calcularMediaSimples(lista); return ms!=null?fmt(ms,2):'–'; })(), unidade:'@/ha'},
     {rotulo:'Total de módulos', valor: somaMod? fmt(somaMod,0) : '–', unidade:''},
   ];
   document.getElementById('doc-metrics').innerHTML = metricas.map(m=>
