@@ -868,26 +868,31 @@ function calcularMediaSimples(lista){
 }
 function situacao(t){ return (t.percentPesado>=100) ? 'Média final' : 'Estimativa'; }
 
-// sugestão automática de peso/módulo — hierarquia: próprio talhão (se >=20% pesado) > variedade > período
+// sugestão automática de peso/módulo — hierarquia: próprio talhão (se >=20%
+// pesado) > variedade (se ALGUM talhão da mesma variedade/safra já tiver
+// parte pesada) > período (só se NENHUM talhão da safra tiver sido pesado)
 function talhaoTemDadoPreenchido(t){
   return (t.areaColhida>0) || (t.qtdModulos>0) || (t.statusBipagem!=='NÃO INICIADO') || (t.percentPesado!=null) || (t.pesoModulo!=null);
 }
-function categoriaPeso(percentPesado){
+function existeDadoPesadoNaVariedade(variedade, safra, listaTalhoes){
+  return listaTalhoes.some(x => x.variedade===variedade && x.safra===safra && x.percentPesado>0);
+}
+function categoriaPeso(percentPesado, variedade, safra, listaTalhoes){
   if(percentPesado==null || percentPesado==='' || isNaN(percentPesado)) return null;
   const p = parseFloat(percentPesado);
   if(p>=20) return 'talhao';
-  if(p>0) return 'variedade';
+  if(existeDadoPesadoNaVariedade(variedade, safra, listaTalhoes||[])) return 'variedade';
   return 'periodo';
 }
-function fraseCategoriaPeso(percentPesado){
-  const cat = categoriaPeso(percentPesado);
+function fraseCategoriaPeso(percentPesado, variedade, safra, listaTalhoes){
+  const cat = categoriaPeso(percentPesado, variedade, safra, listaTalhoes);
   if(cat==='talhao') return 'Use o peso médio do TALHÃO';
   if(cat==='variedade') return 'Use o peso médio da VARIEDADE';
   if(cat==='periodo') return 'Use o peso médio do PERÍODO';
   return 'Informe o % de módulos pesados';
 }
-function origemPesoPorCategoria(percentPesado){
-  const cat = categoriaPeso(percentPesado);
+function origemPesoPorCategoria(percentPesado, variedade, safra, listaTalhoes){
+  const cat = categoriaPeso(percentPesado, variedade, safra, listaTalhoes);
   if(cat==='talhao') return 'Peso médio do talhão';
   if(cat==='variedade') return 'Peso médio da variedade';
   if(cat==='periodo') return 'Peso médio do período';
@@ -1202,6 +1207,9 @@ function renderAtualizarColheita(){
   const safraSel = document.getElementById('ac-safra').value;
   const fazendaId = fazendaSelecionadaId();
   const lista = state.talhoes.filter(t=> t.fazendaId===fazendaId && (safraSel==='todas' || t.safra===safraSel)).sort(compararTalhao);
+  // referência para a hierarquia de peso: todos os talhões da fazenda (todas
+  // as safras), pra checar se a variedade/período já tem algum dado pesado
+  const referenciaPeso = state.talhoes.filter(t=>t.fazendaId===fazendaId);
   const tbody = document.getElementById('tbl-atualizar-colheita');
   tbody.innerHTML='';
 
@@ -1225,7 +1233,7 @@ function renderAtualizarColheita(){
       <td class="td-edit"><input type="number" class="in-percentPesado" value="${t.percentPesado??''}" min="0" max="100" step="1" placeholder="%"></td>
       <td class="td-edit">
         <input type="number" class="in-peso" value="${t.pesoModulo??''}" step="0.1" placeholder="kg">
-        <div class="dica-peso">${fraseCategoriaPeso(t.percentPesado)}</div>
+        <div class="dica-peso">${fraseCategoriaPeso(t.percentPesado, t.variedade, t.safra, referenciaPeso)}</div>
       </td>
     `;
     tbody.appendChild(tr);
@@ -1259,11 +1267,11 @@ function renderAtualizarColheita(){
     const campoPercent = tr.querySelector('.in-percentPesado');
     const dicaEl = tr.querySelector('.dica-peso');
     campoPercent.addEventListener('input', e=>{
-      dicaEl.textContent = fraseCategoriaPeso(e.target.value);
+      dicaEl.textContent = fraseCategoriaPeso(e.target.value, t.variedade, t.safra, referenciaPeso);
     });
     campoPercent.addEventListener('change', async e=>{
       t.percentPesado = e.target.value===''? null : parseFloat(e.target.value);
-      t.origemPeso = origemPesoPorCategoria(t.percentPesado);
+      t.origemPeso = origemPesoPorCategoria(t.percentPesado, t.variedade, t.safra, referenciaPeso);
       atualizarDestaqueLinha();
       const { error } = await sb.from('talhoes').update({
         percent_pesado: t.percentPesado, origem_peso: t.origemPeso
