@@ -226,6 +226,11 @@ tr.linha-preenchida td{background:#D3EAF7;}
 tr.linha-erro-mec td{background:#FBE1DE;}
 tr.linha-erro-mec:hover td{background:#F7CFC9;}
 tr.linha-erro-mec td.td-edit{background:#F9D3CE;color:#8A2E1F;font-weight:600;}
+tr.linha-atencao-mec td{background:#FCF3D2;}
+tr.linha-atencao-mec:hover td{background:#F9EAB3;}
+tr.linha-atencao-mec td.td-atencao{background:#F8E7A6;color:#7A5A00;font-weight:600;}
+thead th.th-atencao{background:#FBF0C7;color:#7A5A00;}
+.aviso-atencao{background:#FCF3D2;border:1px solid #E9CE7A;color:#7A5A00;padding:10px 14px;border-radius:8px;font-size:12.5px;margin-top:6px;}
 tr.linha-preenchida td.td-edit{background:#B8DDF2;}
 tr.linha-preenchida:hover td{background:#C3E1F5;}
 tr.linha-preenchida:hover td.td-edit{background:#A6D2EC;}
@@ -1768,6 +1773,56 @@ function validarPeriodoCentroCusto(headers, dados){
   return { aplicavel:true, erros };
 }
 
+// Regra 2 (atenção, não erro): a data do lançamento tem que cair dentro da
+// janela do período informado. Se o período é uma safra "XX/YY", a janela
+// vai de 01/09/20XX a 31/08/20YY. Se o período é um ano civil "YYYY", a
+// janela é o próprio ano civil (01/01 a 31/12). Fora disso, marca como
+// atenção — existem exceções legítimas difíceis de mensurar automaticamente,
+// por isso não trava como erro, só sinaliza pra alguém olhar.
+function extrairJanelaDoPeriodo(periodoNorm){
+  let m = periodoNorm.match(/(\d{2})\/(\d{2})$/);
+  if(m){
+    const ano1 = 2000 + parseInt(m[1],10);
+    const ano2 = 2000 + parseInt(m[2],10);
+    return { inicio: new Date(ano1, 8, 1), fim: new Date(ano2, 7, 31, 23, 59, 59) };
+  }
+  m = periodoNorm.match(/(\d{4})$/);
+  if(m){
+    const ano = parseInt(m[1],10);
+    return { inicio: new Date(ano, 0, 1), fim: new Date(ano, 11, 31, 23, 59, 59) };
+  }
+  return null;
+}
+function parseDataBR(str){
+  const m = String(str==null?'':str).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(!m) return null;
+  const d = new Date(parseInt(m[3],10), parseInt(m[2],10)-1, parseInt(m[1],10));
+  return isNaN(d.getTime()) ? null : d;
+}
+function fmtDataBR(d){
+  return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear();
+}
+function validarAnoAgricolaData(headers, dados){
+  const idxPeriodo = headers.findIndex(h => normalizarTextoMec(h) === 'PERIODO DE PRODUCAO');
+  const idxData = headers.findIndex(h => normalizarTextoMec(h) === 'DATA');
+  if(idxPeriodo === -1 || idxData === -1){
+    return { aplicavel:false, atencoes: dados.map(()=>null) };
+  }
+  const idxPeriodoDesc = idxPeriodo + 1;
+  const atencoes = dados.map(row=>{
+    const periodoDesc = normalizarTextoMec(row[idxPeriodoDesc]);
+    if(!periodoDesc) return null;
+    const janela = extrairJanelaDoPeriodo(periodoDesc);
+    if(!janela) return null;
+    const data = parseDataBR(row[idxData]);
+    if(!data) return null;
+    if(data < janela.inicio || data > janela.fim){
+      return `Data (${fmtDataBR(data)}) fora da janela esperada para o período "${row[idxPeriodoDesc]}" (${fmtDataBR(janela.inicio)} a ${fmtDataBR(janela.fim)})`;
+    }
+    return null;
+  });
+  return { aplicavel:true, atencoes };
+}
 
 function processarArquivoMecanizadas(file){
   const fazendaId = fazendaSelecionadaId();
@@ -1785,7 +1840,8 @@ function processarArquivoMecanizadas(file){
       return;
     }
     const validacao = validarPeriodoCentroCusto(headers, dados);
-    mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao };
+    const validacaoAtencao = validarAnoAgricolaData(headers, dados);
+    mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao, validacaoAtencao };
     renderTabelaMecanizadas();
   };
   leitor.readAsArrayBuffer(file);
@@ -1807,21 +1863,31 @@ function renderTabelaMecanizadas(){
     tabelaEl.innerHTML = '';
     return;
   }
-  const { headers, dados, nomeArquivo, validacao } = atual;
+  const { headers, dados, nomeArquivo, validacao, validacaoAtencao } = atual;
   const mostrarColunaErro = !!(validacao && validacao.aplicavel);
   const qtdErros = mostrarColunaErro ? validacao.erros.filter(e=>e).length : 0;
+  const mostrarColunaAtencao = !!(validacaoAtencao && validacaoAtencao.aplicavel);
+  const qtdAtencoes = mostrarColunaAtencao ? validacaoAtencao.atencoes.filter(a=>a).length : 0;
 
   let resumoValidacao = '';
   if(mostrarColunaErro){
-    resumoValidacao = qtdErros
+    resumoValidacao += qtdErros
       ? `<div class="aviso">${qtdErros} linha(s) com possível erro de período x centro de custo.</div>`
       : `<div class="aviso-ok">Nenhum erro de período x centro de custo encontrado.</div>`;
   } else {
-    resumoValidacao = `<div class="aviso">Não encontrei as colunas "Período de Produção" e/ou "Centro de Custo" nesse arquivo — validação não aplicada.</div>`;
+    resumoValidacao += `<div class="aviso">Não encontrei as colunas "Período de Produção" e/ou "Centro de Custo" nesse arquivo — validação de erro não aplicada.</div>`;
   }
-  const filtroHtml = (mostrarColunaErro && qtdErros>0) ? `
+  if(mostrarColunaAtencao){
+    resumoValidacao += qtdAtencoes
+      ? `<div class="aviso-atencao">${qtdAtencoes} linha(s) para atenção — data fora da janela esperada do período.</div>`
+      : `<div class="aviso-ok">Nenhuma linha com data fora da janela do período.</div>`;
+  } else {
+    resumoValidacao += `<div class="aviso">Não encontrei as colunas "Período de Produção" e/ou "Data" nesse arquivo — validação de atenção não aplicada.</div>`;
+  }
+  const temFiltravel = (mostrarColunaErro && qtdErros>0) || (mostrarColunaAtencao && qtdAtencoes>0);
+  const filtroHtml = temFiltravel ? `
     <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--texto-suave);margin-top:8px;cursor:pointer">
-      <input type="checkbox" id="chk-mec-so-erros" ${mecFiltroSoErros?'checked':''}> Mostrar só as linhas com possível erro
+      <input type="checkbox" id="chk-mec-so-erros" ${mecFiltroSoErros?'checked':''}> Mostrar só as linhas com possível erro ou atenção
     </label>` : '';
   resEl.innerHTML = `
     <div class="aviso-ok">${dados.length} linha(s) carregadas de "${nomeArquivo}".</div>
@@ -1847,12 +1913,14 @@ function renderTabelaMecanizadas(){
     return;
   }
 
-  // aplica o filtro (só erros) antes de paginar, pra nao ter que desenhar
-  // milhares de linhas de uma vez e travar o navegador
+  // aplica o filtro (só erros/atenção) antes de paginar, pra nao ter que
+  // desenhar milhares de linhas de uma vez e travar o navegador
   const indicesVisiveis = [];
   for(let i=0;i<dados.length;i++){
-    if(mostrarColunaErro && qtdErros>0 && mecFiltroSoErros){
-      if(validacao.erros[i]) indicesVisiveis.push(i);
+    if(temFiltravel && mecFiltroSoErros){
+      const temErro = mostrarColunaErro && validacao.erros[i];
+      const temAtencao = mostrarColunaAtencao && validacaoAtencao.atencoes[i];
+      if(temErro || temAtencao) indicesVisiveis.push(i);
     } else {
       indicesVisiveis.push(i);
     }
@@ -1863,23 +1931,29 @@ function renderTabelaMecanizadas(){
   const inicio = (mecPaginaAtual-1) * MEC_LINHAS_POR_PAGINA;
   const indicesPagina = indicesVisiveis.slice(inicio, inicio + MEC_LINHAS_POR_PAGINA);
 
-  const theadHtml = '<tr>' + headers.map(h=>`<th>${h || '–'}</th>`).join('') + (mostrarColunaErro ? '<th class="th-edit">Verificação</th>' : '') + '</tr>';
+  const theadHtml = '<tr>' + headers.map(h=>`<th>${h || '–'}</th>`).join('')
+    + (mostrarColunaErro ? '<th class="th-edit">Verificação</th>' : '')
+    + (mostrarColunaAtencao ? '<th class="th-atencao">Atenção</th>' : '')
+    + '</tr>';
   const tbodyHtml = indicesPagina.map(i=>{
     const row = dados[i];
     const erro = mostrarColunaErro ? validacao.erros[i] : null;
+    const atencao = mostrarColunaAtencao ? validacaoAtencao.atencoes[i] : null;
     const celulas = headers.map((h,j)=>{
       const v = row[j];
       return `<td>${(v!=null && String(v).trim()!=='') ? v : '–'}</td>`;
     }).join('');
     const celulaErro = mostrarColunaErro ? `<td class="td-edit">${erro ? erro : '–'}</td>` : '';
-    return `<tr class="${erro ? 'linha-erro-mec' : ''}">${celulas}${celulaErro}</tr>`;
+    const celulaAtencao = mostrarColunaAtencao ? `<td class="td-atencao">${atencao ? atencao : '–'}</td>` : '';
+    const classeLinha = erro ? 'linha-erro-mec' : (atencao ? 'linha-atencao-mec' : '');
+    return `<tr class="${classeLinha}">${celulas}${celulaErro}${celulaAtencao}</tr>`;
   }).join('');
   const paginacaoHtml = totalPaginas > 1 ? `
     <div class="section-actions" style="margin-top:10px;align-items:center">
       <button class="btn fantasma" id="btn-mec-pag-anterior" ${mecPaginaAtual<=1?'disabled':''}>← Anterior</button>
-      <span style="font-size:12.5px;color:var(--texto-suave)">Página ${mecPaginaAtual} de ${totalPaginas} — mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${mecFiltroSoErros && qtdErros>0 ? ' com erro' : ''}</span>
+      <span style="font-size:12.5px;color:var(--texto-suave)">Página ${mecPaginaAtual} de ${totalPaginas} — mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${temFiltravel && mecFiltroSoErros ? ' com erro/atenção' : ''}</span>
       <button class="btn fantasma" id="btn-mec-pag-proxima" ${mecPaginaAtual>=totalPaginas?'disabled':''}>Próxima →</button>
-    </div>` : `<div class="section-actions" style="margin-top:10px"><span style="font-size:12.5px;color:var(--texto-suave)">Mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${mecFiltroSoErros && qtdErros>0 ? ' com erro' : ''}</span></div>`;
+    </div>` : `<div class="section-actions" style="margin-top:10px"><span style="font-size:12.5px;color:var(--texto-suave)">Mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${temFiltravel && mecFiltroSoErros ? ' com erro/atenção' : ''}</span></div>`;
   tabelaEl.innerHTML = `<div class="card tabela-wrap"><table>${theadHtml ? `<thead>${theadHtml}</thead>` : ''}<tbody>${tbodyHtml}</tbody></table></div>${paginacaoHtml}`;
   const btnAnterior = document.getElementById('btn-mec-pag-anterior');
   const btnProxima = document.getElementById('btn-mec-pag-proxima');
