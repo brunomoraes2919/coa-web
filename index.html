@@ -1848,7 +1848,8 @@ function processarArquivoMecanizadas(file){
 }
 
 const MEC_LINHAS_POR_PAGINA = 200;
-let mecFiltroSoErros = true;
+let mecFiltroErros = true;
+let mecFiltroAtencao = true;
 let mecPaginaAtual = 1;
 
 function renderTabelaMecanizadas(){
@@ -1884,11 +1885,22 @@ function renderTabelaMecanizadas(){
   } else {
     resumoValidacao += `<div class="aviso">Não encontrei as colunas "Período de Produção" e/ou "Data" nesse arquivo — validação de atenção não aplicada.</div>`;
   }
-  const temFiltravel = (mostrarColunaErro && qtdErros>0) || (mostrarColunaAtencao && qtdAtencoes>0);
-  const filtroHtml = temFiltravel ? `
-    <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--texto-suave);margin-top:8px;cursor:pointer">
-      <input type="checkbox" id="chk-mec-so-erros" ${mecFiltroSoErros?'checked':''}> Mostrar só as linhas com possível erro ou atenção
-    </label>` : '';
+  const temErrosParaFiltrar = mostrarColunaErro && qtdErros>0;
+  const temAtencaoParaFiltrar = mostrarColunaAtencao && qtdAtencoes>0;
+  const temFiltravel = temErrosParaFiltrar || temAtencaoParaFiltrar;
+  let filtroHtml = '';
+  if(temFiltravel){
+    filtroHtml += '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px">';
+    if(temErrosParaFiltrar){
+      filtroHtml += `<label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--texto-suave);cursor:pointer">
+        <input type="checkbox" id="chk-mec-filtro-erro" ${mecFiltroErros?'checked':''}> Mostrar linhas com erro</label>`;
+    }
+    if(temAtencaoParaFiltrar){
+      filtroHtml += `<label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--texto-suave);cursor:pointer">
+        <input type="checkbox" id="chk-mec-filtro-atencao" ${mecFiltroAtencao?'checked':''}> Mostrar linhas com atenção</label>`;
+    }
+    filtroHtml += '</div>';
+  }
   resEl.innerHTML = `
     <div class="aviso-ok">${dados.length} linha(s) carregadas de "${nomeArquivo}".</div>
     ${resumoValidacao}
@@ -1898,12 +1910,18 @@ function renderTabelaMecanizadas(){
   document.getElementById('btn-trocar-arquivo-mec').addEventListener('click', ()=>{
     delete mecanizadasPorFazenda[fazendaId];
     document.getElementById('input-arquivo-mec').value = '';
-    mecFiltroSoErros = true; mecPaginaAtual = 1;
+    mecFiltroErros = true; mecFiltroAtencao = true; mecPaginaAtual = 1;
     renderTabelaMecanizadas();
   });
-  const chkSoErros = document.getElementById('chk-mec-so-erros');
-  if(chkSoErros) chkSoErros.addEventListener('change', e=>{
-    mecFiltroSoErros = e.target.checked;
+  const chkFiltroErro = document.getElementById('chk-mec-filtro-erro');
+  if(chkFiltroErro) chkFiltroErro.addEventListener('change', e=>{
+    mecFiltroErros = e.target.checked;
+    mecPaginaAtual = 1;
+    renderTabelaMecanizadas();
+  });
+  const chkFiltroAtencao = document.getElementById('chk-mec-filtro-atencao');
+  if(chkFiltroAtencao) chkFiltroAtencao.addEventListener('change', e=>{
+    mecFiltroAtencao = e.target.checked;
     mecPaginaAtual = 1;
     renderTabelaMecanizadas();
   });
@@ -1913,15 +1931,20 @@ function renderTabelaMecanizadas(){
     return;
   }
 
-  // aplica o filtro (só erros/atenção) antes de paginar, pra nao ter que
-  // desenhar milhares de linhas de uma vez e travar o navegador
+  // aplica os filtros (erro / atenção, cada um independente) antes de
+  // paginar, pra nao ter que desenhar milhares de linhas de uma vez
   const indicesVisiveis = [];
   for(let i=0;i<dados.length;i++){
-    if(temFiltravel && mecFiltroSoErros){
+    if(temFiltravel && mecFiltroErros && !mecFiltroAtencao){
+      if(mostrarColunaErro && validacao.erros[i]) indicesVisiveis.push(i);
+    } else if(temFiltravel && mecFiltroAtencao && !mecFiltroErros){
+      if(mostrarColunaAtencao && validacaoAtencao.atencoes[i]) indicesVisiveis.push(i);
+    } else if(temFiltravel && mecFiltroErros && mecFiltroAtencao){
       const temErro = mostrarColunaErro && validacao.erros[i];
       const temAtencao = mostrarColunaAtencao && validacaoAtencao.atencoes[i];
       if(temErro || temAtencao) indicesVisiveis.push(i);
     } else {
+      // nenhum filtro marcado — mostra tudo, sem restrição
       indicesVisiveis.push(i);
     }
   }
@@ -1930,6 +1953,7 @@ function renderTabelaMecanizadas(){
   if(mecPaginaAtual < 1) mecPaginaAtual = 1;
   const inicio = (mecPaginaAtual-1) * MEC_LINHAS_POR_PAGINA;
   const indicesPagina = indicesVisiveis.slice(inicio, inicio + MEC_LINHAS_POR_PAGINA);
+  const sufixoFiltro = (temFiltravel && (mecFiltroErros || mecFiltroAtencao)) ? (mecFiltroErros && mecFiltroAtencao ? ' com erro/atenção' : (mecFiltroErros ? ' com erro' : ' com atenção')) : '';
 
   const theadHtml = '<tr>' + headers.map(h=>`<th>${h || '–'}</th>`).join('')
     + (mostrarColunaErro ? '<th class="th-edit">Verificação</th>' : '')
@@ -1951,9 +1975,9 @@ function renderTabelaMecanizadas(){
   const paginacaoHtml = totalPaginas > 1 ? `
     <div class="section-actions" style="margin-top:10px;align-items:center">
       <button class="btn fantasma" id="btn-mec-pag-anterior" ${mecPaginaAtual<=1?'disabled':''}>← Anterior</button>
-      <span style="font-size:12.5px;color:var(--texto-suave)">Página ${mecPaginaAtual} de ${totalPaginas} — mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${temFiltravel && mecFiltroSoErros ? ' com erro/atenção' : ''}</span>
+      <span style="font-size:12.5px;color:var(--texto-suave)">Página ${mecPaginaAtual} de ${totalPaginas} — mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${sufixoFiltro}</span>
       <button class="btn fantasma" id="btn-mec-pag-proxima" ${mecPaginaAtual>=totalPaginas?'disabled':''}>Próxima →</button>
-    </div>` : `<div class="section-actions" style="margin-top:10px"><span style="font-size:12.5px;color:var(--texto-suave)">Mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${temFiltravel && mecFiltroSoErros ? ' com erro/atenção' : ''}</span></div>`;
+    </div>` : `<div class="section-actions" style="margin-top:10px"><span style="font-size:12.5px;color:var(--texto-suave)">Mostrando ${indicesPagina.length} de ${indicesVisiveis.length} linha(s)${sufixoFiltro}</span></div>`;
   tabelaEl.innerHTML = `<div class="card tabela-wrap"><table>${theadHtml ? `<thead>${theadHtml}</thead>` : ''}<tbody>${tbodyHtml}</tbody></table></div>${paginacaoHtml}`;
   const btnAnterior = document.getElementById('btn-mec-pag-anterior');
   const btnProxima = document.getElementById('btn-mec-pag-proxima');
