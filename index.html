@@ -1824,6 +1824,130 @@ function validarAnoAgricolaData(headers, dados){
   return { aplicavel:true, atencoes };
 }
 
+function encontrarIndiceColuna(headers, nomeNormalizado){
+  return headers.findIndex(h => normalizarTextoMec(h) === nomeNormalizado);
+}
+function mesclarMensagens(...arrays){
+  const n = arrays[0].length;
+  const resultado = [];
+  for(let i=0;i<n;i++){
+    const msgs = arrays.map(arr=>arr[i]).filter(Boolean);
+    resultado.push(msgs.length ? msgs.join(' | ') : null);
+  }
+  return resultado;
+}
+
+// ---- classificação de operações (por código, cruzado com a lista de
+// operações do TOTVS PIMS) ----
+const OPS_COLHEITA_PLANTIO = new Set([16,114,133,17,89,214,91,159,148,18,183]);
+const OPS_NAO_USAR = new Set([83,62,58,154,107,111,59,158,108,101,146,99,57,145,163,31,10,102,8,164,170,34,20,73,144,24,112,87,82,96]);
+const OPS_ALGODAO = new Set([117,86,119,124,121]);
+const OPS_PECUARIA = new Set([998,136,120,152,80,68,95]);
+const OPS_ESTRADA = new Set([65,79,64]);
+
+function periodoTemCultura(periodoNorm){
+  return /ALGODAO|SOJA|MILHO|SORGO|MILHETO/.test(periodoNorm);
+}
+function periodoEhPecuaria(periodoNorm){
+  return periodoNorm.startsWith('PECUARIA');
+}
+
+function verificarRegra3(ctx){
+  if(ctx.operacaoCod==null || !OPS_COLHEITA_PLANTIO.has(ctx.operacaoCod)) return null;
+  if(!ctx.periodoDesc) return null;
+  if(!periodoTemCultura(ctx.periodoDesc)){
+    return `Colheita/plantio só pode ser lançada em período de cultura (algodão, soja, milho, sorgo, milheto) — veio em "${ctx.periodoDescOriginal}"`;
+  }
+  return null;
+}
+function verificarRegra4(ctx){
+  if(ctx.operacaoCod==null || !ctx.periodoDesc) return null;
+  if(OPS_ALGODAO.has(ctx.operacaoCod) && periodoEhPecuaria(ctx.periodoDesc)){
+    return `Operação de algodão não pode ser lançada em período de pecuária`;
+  }
+  if(OPS_PECUARIA.has(ctx.operacaoCod) && !periodoEhPecuaria(ctx.periodoDesc)){
+    return `Operação de pecuária só pode ser lançada em período de pecuária — veio em "${ctx.periodoDescOriginal}"`;
+  }
+  return null;
+}
+function verificarRegra5(ctx){
+  if(ctx.operacaoCod==null) return null;
+  if(OPS_NAO_USAR.has(ctx.operacaoCod)){
+    return `Operação "${ctx.operacaoDescOriginal}" está marcada como #NÃO USAR`;
+  }
+  return null;
+}
+function verificarRegra6(ctx){
+  if(!ctx.equipModelo.startsWith('TRATOR')) return null;
+  if(!ctx.implementoDesc){
+    return `Trator "${ctx.equipModeloOriginal}" apontado sem implemento — verificar se está correto`;
+  }
+  return null;
+}
+function verificarRegra7(ctx){
+  const ehOperacaoEstrada = ctx.operacaoCod!=null && OPS_ESTRADA.has(ctx.operacaoCod);
+  const ccEhEstradas = ctx.ccDesc === 'ESTRADAS';
+  const periodoEhAdmLinha = ehPeriodoAdm(ctx.periodoDesc);
+  if(ehOperacaoEstrada){
+    if(!ccEhEstradas || !periodoEhAdmLinha){
+      return { tipo:'erro', msg:`Operação de estrada só pode ser lançada no centro de custo ESTRADAS dentro do período ADM` };
+    }
+    return null;
+  }
+  if(ccEhEstradas){
+    return { tipo:'atencao', msg:`Centro de custo ESTRADAS usado com uma operação diferente das 3 esperadas — verificar se realmente aconteceu` };
+  }
+  return null;
+}
+
+// Regras 3 a 7: operação x período/centro de custo/equipamento
+function validarRegrasOperacionais(headers, dados){
+  const idxPeriodo = encontrarIndiceColuna(headers, 'PERIODO DE PRODUCAO');
+  const idxCC = encontrarIndiceColuna(headers, 'CENTRO DE CUSTO');
+  const idxOperacao = encontrarIndiceColuna(headers, 'OPERACAO');
+  const idxModelo = encontrarIndiceColuna(headers, 'MODELO');
+  const idxImplemento = encontrarIndiceColuna(headers, 'IMPLEMENTO');
+
+  if(idxOperacao === -1){
+    return { aplicavel:false, erros: dados.map(()=>null), atencoes: dados.map(()=>null) };
+  }
+  const idxPeriodoDesc = idxPeriodo>=0 ? idxPeriodo+1 : -1;
+  const idxCCDesc = idxCC>=0 ? idxCC+1 : -1;
+  const idxOperacaoDesc = idxOperacao+1;
+  const idxImplementoDesc = idxImplemento>=0 ? idxImplemento+1 : -1;
+
+  const erros = [], atencoes = [];
+  dados.forEach(row=>{
+    const periodoDescOriginal = idxPeriodoDesc>=0 ? String(row[idxPeriodoDesc]||'') : '';
+    const ccDescOriginal = idxCCDesc>=0 ? String(row[idxCCDesc]||'') : '';
+    const operacaoCodRaw = row[idxOperacao];
+    const operacaoCod = (operacaoCodRaw!=null && operacaoCodRaw!=='') ? parseInt(operacaoCodRaw,10) : null;
+    const operacaoDescOriginal = String(row[idxOperacaoDesc]||'');
+    const equipModeloOriginal = idxModelo>=0 ? String(row[idxModelo]||'') : '';
+    const implementoDesc = idxImplementoDesc>=0 ? String(row[idxImplementoDesc]||'').trim() : '';
+
+    const ctx = {
+      periodoDesc: normalizarTextoMec(periodoDescOriginal), periodoDescOriginal,
+      ccDesc: normalizarTextoMec(ccDescOriginal),
+      operacaoCod, operacaoDescOriginal,
+      equipModelo: normalizarTextoMec(equipModeloOriginal), equipModeloOriginal,
+      implementoDesc
+    };
+
+    const msgsErro = [], msgsAtencao = [];
+    const r3 = verificarRegra3(ctx); if(r3) msgsErro.push(r3);
+    const r4 = verificarRegra4(ctx); if(r4) msgsErro.push(r4);
+    const r5 = verificarRegra5(ctx); if(r5) msgsErro.push(r5);
+    const r6 = verificarRegra6(ctx); if(r6) msgsAtencao.push(r6);
+    const r7 = verificarRegra7(ctx);
+    if(r7){ if(r7.tipo==='erro') msgsErro.push(r7.msg); else msgsAtencao.push(r7.msg); }
+
+    erros.push(msgsErro.length ? msgsErro.join(' | ') : null);
+    atencoes.push(msgsAtencao.length ? msgsAtencao.join(' | ') : null);
+  });
+  return { aplicavel:true, erros, atencoes };
+}
+
 function processarArquivoMecanizadas(file){
   const fazendaId = fazendaSelecionadaId();
   const leitor = new FileReader();
@@ -1839,8 +1963,13 @@ function processarArquivoMecanizadas(file){
       alert('Não foi possível ler o arquivo. Confira se é um .xlsx, .xls ou .csv válido.');
       return;
     }
-    const validacao = validarPeriodoCentroCusto(headers, dados);
-    const validacaoAtencao = validarAnoAgricolaData(headers, dados);
+    const v1 = validarPeriodoCentroCusto(headers, dados);
+    const v2 = validarAnoAgricolaData(headers, dados);
+    const v3 = validarRegrasOperacionais(headers, dados);
+    const erros = mesclarMensagens(v1.erros, v3.erros);
+    const atencoes = mesclarMensagens(v2.atencoes, v3.atencoes);
+    const validacao = { aplicavel: v1.aplicavel || v3.aplicavel, erros };
+    const validacaoAtencao = { aplicavel: v2.aplicavel || v3.aplicavel, atencoes };
     mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao, validacaoAtencao };
     renderTabelaMecanizadas();
   };
