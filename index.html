@@ -2286,21 +2286,21 @@ async function criarNovoUsuario(){
 
   const { data, error } = await sbCriarUsuario.auth.signUp({ email, password: senha });
   if(error){
-    alert('Não foi possível criar o login: '+error.message);
     btn.disabled = false; btn.textContent = 'Criar usuário';
+    alert('Não foi possível criar o login: '+error.message);
     return;
   }
   const novoId = data && data.user && data.user.id;
   if(!novoId){
-    alert('O login pode já existir, ou a confirmação de e-mail ainda está ativada no Supabase (Authentication → Providers → Email → desative "Confirm email").');
     btn.disabled = false; btn.textContent = 'Criar usuário';
+    alert('O login pode já existir, ou a confirmação de e-mail ainda está ativada no Supabase (Authentication → Providers → Email → desative "Confirm email").');
     return;
   }
 
   // o gatilho do banco já criou um perfil básico ao criar o login;
   // aqui só ajustamos para o nome/perfil escolhidos
   const { error: erroPerfil } = await sb.from('perfis').update({ nome, perfil }).eq('id', novoId);
-  if(erroPerfil){ alert('Login criado, mas houve erro ao salvar o perfil: '+erroPerfil.message); btn.disabled=false; btn.textContent='Criar usuário'; return; }
+  if(erroPerfil){ btn.disabled=false; btn.textContent='Criar usuário'; alert('Login criado, mas houve erro ao salvar o perfil: '+erroPerfil.message); return; }
 
   if(fazendasPermitidas.length){
     const linhas = fazendasPermitidas.map(fid=>({ usuario_id: novoId, fazenda_id: fid }));
