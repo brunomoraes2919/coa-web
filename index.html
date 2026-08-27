@@ -83,6 +83,7 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .usuario-logado .perfil-badge{display:inline-block;margin-top:3px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;
   padding:2px 7px;border-radius:20px;background:rgba(219,138,8,.18);color:var(--dourado);}
 .usuario-logado .perfil-badge.colab{background:rgba(42,111,151,.22);color:#7FC1E8;}
+.sidebar-acoes{display:flex;flex-direction:column;gap:8px;width:100%;}
 .btn-sair{background:none;border:1px solid rgba(255,255,255,.25);color:#EAF2EF;font-size:11.5px;
   padding:5px 10px;border-radius:6px;cursor:pointer;width:100%;}
 .btn-sair:hover{background:rgba(255,255,255,.08);}
@@ -385,6 +386,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   .usuario-logado{margin-bottom:0;}
   .usuario-logado b{font-size:12px;}
   .usuario-logado .perfil-badge{display:none;}
+  .sidebar-acoes{flex-direction:row;gap:8px;width:auto;}
   .btn-sair{width:auto;padding:6px 10px;}
   .protipo-nota{display:none;}
   main{padding:18px;margin-left:0;}
@@ -492,9 +494,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     </div>
     <div class="sidebar-foot">
       <div class="usuario-logado" id="usuario-logado"></div>
-      <button class="btn-sair" id="btn-trocar-categoria">← Trocar categoria</button>
-      <button class="btn-sair" id="btn-sair">Sair</button>
-      <div class="protipo-nota" style="margin-top:10px">COA Web · Grupo Locks<br>dados em tempo real via Supabase</div>
+      <div class="sidebar-acoes">
+        <button class="btn-sair" id="btn-trocar-categoria">← Trocar categoria</button>
+        <button class="btn-sair" id="btn-sair">Sair</button>
+      </div>
     </div>
   </aside>
 
