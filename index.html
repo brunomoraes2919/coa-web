@@ -293,6 +293,42 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .aviso-ok{background:#E7F4EF;border:1px solid #BEE0D2;color:#0F4B39;padding:10px 14px;border-radius:8px;font-size:12.5px;}
 .empty{padding:40px 20px;text-align:center;color:var(--texto-suave);}
 
+/* painel de resultado e filtros — boletins mecanizados */
+.mec-painel-resultado{margin-top:2px;display:flex;flex-direction:column;gap:14px;}
+.mec-arquivo-info{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid #BEE0D2;border-radius:10px;background:#F1F9F6;}
+.mec-arquivo-info-main{display:flex;align-items:center;gap:11px;min-width:0;}
+.mec-arquivo-icone{width:36px;height:36px;border-radius:9px;background:#D9EEE6;color:var(--verde-teal);display:grid;place-items:center;flex:none;}
+.mec-arquivo-icone svg{width:19px;height:19px;}
+.mec-arquivo-info b{display:block;color:var(--verde-escuro);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.mec-arquivo-info span{display:block;color:var(--texto-suave);font-size:11.5px;margin-top:2px;}
+.mec-resumo-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+.mec-resumo-card{padding:13px 14px;border-radius:10px;border:1px solid var(--linha);background:#fff;display:flex;align-items:center;gap:11px;}
+.mec-resumo-card .mec-resumo-num{font-size:21px;font-weight:750;line-height:1;font-variant-numeric:tabular-nums;}
+.mec-resumo-card .mec-resumo-label{font-size:11.5px;color:var(--texto-suave);margin-top:4px;line-height:1.25;}
+.mec-resumo-card.erro{border-color:#F0C2BC;background:#FFF7F6;color:#9A3025;}
+.mec-resumo-card.atencao{border-color:#E9CE7A;background:#FFFBEF;color:#7A5A00;}
+.mec-resumo-card.ok{border-color:#BEE0D2;background:#F5FBF8;color:#0F6249;}
+.mec-filtros-box{border:1px solid var(--linha);border-radius:10px;background:#FAFCFA;padding:13px 14px;}
+.mec-filtros-topo{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
+.mec-filtros-titulo{font-size:12px;font-weight:700;color:var(--verde-escuro);text-transform:uppercase;letter-spacing:.045em;}
+.mec-filtros-ajuda{font-size:11.5px;color:var(--texto-suave);}
+.mec-filtros-opcoes{display:flex;gap:8px;flex-wrap:wrap;}
+.mec-filtro-opcao{position:relative;cursor:pointer;}
+.mec-filtro-opcao input{position:absolute;opacity:0;pointer-events:none;}
+.mec-filtro-opcao span{display:inline-flex;align-items:center;gap:7px;padding:8px 12px;border:1px solid var(--linha);border-radius:8px;background:#fff;color:var(--texto-suave);font-size:12.5px;font-weight:600;transition:.15s ease;}
+.mec-filtro-opcao span::before{content:'';width:8px;height:8px;border-radius:50%;background:#C5CEC8;}
+.mec-filtro-opcao:hover span{border-color:#9DB4A8;color:var(--verde-escuro);}
+.mec-filtro-opcao input:focus-visible + span{outline:2px solid var(--dourado);outline-offset:2px;}
+.mec-filtro-opcao input:checked + span{background:var(--verde-escuro);border-color:var(--verde-escuro);color:#fff;box-shadow:0 2px 7px rgba(16,54,50,.16);}
+.mec-filtro-opcao input:checked + span::before{background:var(--dourado);box-shadow:0 0 0 3px rgba(219,138,8,.2);}
+.mec-resultado-acoes{display:flex;justify-content:flex-end;}
+@media (max-width:640px){
+  .mec-resumo-grid{grid-template-columns:1fr;}
+  .mec-arquivo-info,.mec-filtros-topo{align-items:flex-start;flex-direction:column;}
+  .mec-filtros-opcoes{display:grid;grid-template-columns:1fr 1fr;width:100%;}
+  .mec-filtro-opcao span{width:100%;justify-content:flex-start;}
+}
+
 .page{display:none;}
 .page.active{display:block;}
 
@@ -1839,7 +1875,8 @@ function mesclarMensagens(...arrays){
 
 // ---- classificação de operações (por código, cruzado com a lista de
 // operações do TOTVS PIMS) ----
-const OPS_COLHEITA_PLANTIO = new Set([16,114,133,17,89,214,91,159,148,18,183]);
+const OPS_COLHEITA = new Set([16,114,133]);
+const OPS_PLANTIO = new Set([17,89,214,91,159,148,18,183]);
 const OPS_NAO_USAR = new Set([83,62,58,154,107,111,59,158,108,101,146,99,57,145,163,31,10,102,8,164,170,34,20,73,144,24,112,87,82,96]);
 const OPS_ALGODAO = new Set([117,86,119,124,121]);
 const OPS_PECUARIA = new Set([998,136,120,152,80,68,95]);
@@ -1848,15 +1885,27 @@ const OPS_ESTRADA = new Set([65,79,64]);
 function periodoTemCultura(periodoNorm){
   return /ALGODAO|SOJA|MILHO|SORGO|MILHETO/.test(periodoNorm);
 }
+function periodoEhCoberturaSolo(periodoNorm){
+  return /COBERTURA DE SOLO/.test(periodoNorm);
+}
 function periodoEhPecuaria(periodoNorm){
   return periodoNorm.startsWith('PECUARIA');
 }
 
 function verificarRegra3(ctx){
-  if(ctx.operacaoCod==null || !OPS_COLHEITA_PLANTIO.has(ctx.operacaoCod)) return null;
+  if(ctx.operacaoCod==null) return null;
+  const ehColheita = OPS_COLHEITA.has(ctx.operacaoCod);
+  const ehPlantio = OPS_PLANTIO.has(ctx.operacaoCod);
+  if(!ehColheita && !ehPlantio) return null;
   if(!ctx.periodoDesc) return null;
+  // Exceção operacional: plantio também é válido em COBERTURA DE SOLO.
+  // Colheita continua restrita exclusivamente aos períodos de cultura.
+  if(ehPlantio && periodoEhCoberturaSolo(ctx.periodoDesc)) return null;
   if(!periodoTemCultura(ctx.periodoDesc)){
-    return `Colheita/plantio só pode ser lançada em período de cultura (algodão, soja, milho, sorgo, milheto) — veio em "${ctx.periodoDescOriginal}"`;
+    if(ehColheita){
+      return `Colheita só pode ser lançada em período de cultura (algodão, soja, milho, sorgo, milheto) — veio em "${ctx.periodoDescOriginal}"`;
+    }
+    return `Plantio só pode ser lançado em período de cultura ou de cobertura do solo — veio em "${ctx.periodoDescOriginal}"`;
   }
   return null;
 }
@@ -1977,8 +2026,7 @@ function processarArquivoMecanizadas(file){
 }
 
 const MEC_LINHAS_POR_PAGINA = 200;
-let mecFiltroErros = true;
-let mecFiltroAtencao = true;
+let mecFiltroTipo = 'todos'; // todos | erro | atencao | sem-erro
 let mecPaginaAtual = 1;
 
 function renderTabelaMecanizadas(){
@@ -2014,75 +2062,78 @@ function renderTabelaMecanizadas(){
   } else {
     resumoValidacao += `<div class="aviso">Não encontrei as colunas "Período de Produção" e/ou "Data" nesse arquivo — validação de atenção não aplicada.</div>`;
   }
-  const temErrosParaFiltrar = mostrarColunaErro && qtdErros>0;
-  const temAtencaoParaFiltrar = mostrarColunaAtencao && qtdAtencoes>0;
-  const temFiltravel = temErrosParaFiltrar || temAtencaoParaFiltrar;
-  let filtroHtml = '';
-  if(temFiltravel){
-    filtroHtml += '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px">';
-    if(temErrosParaFiltrar){
-      filtroHtml += `<label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--texto-suave);cursor:pointer">
-        <input type="checkbox" id="chk-mec-filtro-erro" ${mecFiltroErros?'checked':''}> Mostrar linhas com erro</label>`;
-    }
-    if(temAtencaoParaFiltrar){
-      filtroHtml += `<label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--texto-suave);cursor:pointer">
-        <input type="checkbox" id="chk-mec-filtro-atencao" ${mecFiltroAtencao?'checked':''}> Mostrar linhas com atenção</label>`;
-    }
-    filtroHtml += '</div>';
-  }
+  const qtdSemErro = dados.filter((_,i)=>!validacao.erros[i] && !validacaoAtencao.atencoes[i]).length;
+  const opcoesFiltro = [
+    ['todos','Todos',dados.length],
+    ['erro','Com erro',qtdErros],
+    ['atencao','Com atenção',qtdAtencoes],
+    ['sem-erro','Sem erro',qtdSemErro]
+  ];
+  const filtroHtml = `<div class="mec-filtros-box">
+    <div class="mec-filtros-topo">
+      <div class="mec-filtros-titulo">Filtrar boletins</div>
+      <div class="mec-filtros-ajuda">Selecione uma opção para visualizar</div>
+    </div>
+    <div class="mec-filtros-opcoes">
+      ${opcoesFiltro.map(([valor,rotulo,qtd])=>`<label class="mec-filtro-opcao">
+        <input type="radio" name="mec-filtro" value="${valor}" ${mecFiltroTipo===valor?'checked':''}>
+        <span>${rotulo} · ${qtd}</span>
+      </label>`).join('')}
+    </div>
+  </div>`;
   resEl.innerHTML = `
-    <div class="aviso-ok">${dados.length} linha(s) carregadas de "${nomeArquivo}".</div>
-    ${resumoValidacao}
-    ${filtroHtml}
-    <div class="section-actions" style="margin-top:8px"><button class="btn fantasma" id="btn-trocar-arquivo-mec">Trocar arquivo</button></div>
+    <div class="mec-painel-resultado">
+      <div class="mec-arquivo-info">
+        <div class="mec-arquivo-info-main">
+          <div class="mec-arquivo-icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></div>
+          <div><b>${nomeArquivo}</b><span>${dados.length} boletins processados com sucesso</span></div>
+        </div>
+        <button class="btn fantasma" id="btn-trocar-arquivo-mec">Trocar arquivo</button>
+      </div>
+      <div class="mec-resumo-grid">
+        <div class="mec-resumo-card erro"><div><div class="mec-resumo-num">${qtdErros}</div><div class="mec-resumo-label">Boletins com erro</div></div></div>
+        <div class="mec-resumo-card atencao"><div><div class="mec-resumo-num">${qtdAtencoes}</div><div class="mec-resumo-label">Boletins que exigem atenção</div></div></div>
+        <div class="mec-resumo-card ok"><div><div class="mec-resumo-num">${qtdSemErro}</div><div class="mec-resumo-label">Boletins sem erro ou atenção</div></div></div>
+      </div>
+      ${filtroHtml}
+      ${(!mostrarColunaErro || !mostrarColunaAtencao) ? `<div>${resumoValidacao}</div>` : ''}
+    </div>
   `;
   document.getElementById('btn-trocar-arquivo-mec').addEventListener('click', ()=>{
     delete mecanizadasPorFazenda[fazendaId];
     document.getElementById('input-arquivo-mec').value = '';
-    mecFiltroErros = true; mecFiltroAtencao = true; mecPaginaAtual = 1;
+    mecFiltroTipo = 'todos'; mecPaginaAtual = 1;
     renderTabelaMecanizadas();
   });
-  const chkFiltroErro = document.getElementById('chk-mec-filtro-erro');
-  if(chkFiltroErro) chkFiltroErro.addEventListener('change', e=>{
-    mecFiltroErros = e.target.checked;
+  document.querySelectorAll('input[name="mec-filtro"]').forEach(radio=>radio.addEventListener('change', e=>{
+    mecFiltroTipo = e.target.value;
     mecPaginaAtual = 1;
     renderTabelaMecanizadas();
-  });
-  const chkFiltroAtencao = document.getElementById('chk-mec-filtro-atencao');
-  if(chkFiltroAtencao) chkFiltroAtencao.addEventListener('change', e=>{
-    mecFiltroAtencao = e.target.checked;
-    mecPaginaAtual = 1;
-    renderTabelaMecanizadas();
-  });
+  }));
 
   if(!dados.length){
     tabelaEl.innerHTML = '<div class="aviso">Nenhuma linha de dados encontrada nesse arquivo.</div>';
     return;
   }
 
-  // aplica os filtros (erro / atenção, cada um independente) antes de
-  // paginar, pra nao ter que desenhar milhares de linhas de uma vez
+  // Os radios tornam os filtros mutuamente exclusivos: marcar um desmarca
+  // automaticamente os demais. O filtro é aplicado antes da paginação.
   const indicesVisiveis = [];
   for(let i=0;i<dados.length;i++){
-    if(temFiltravel && mecFiltroErros && !mecFiltroAtencao){
-      if(mostrarColunaErro && validacao.erros[i]) indicesVisiveis.push(i);
-    } else if(temFiltravel && mecFiltroAtencao && !mecFiltroErros){
-      if(mostrarColunaAtencao && validacaoAtencao.atencoes[i]) indicesVisiveis.push(i);
-    } else if(temFiltravel && mecFiltroErros && mecFiltroAtencao){
-      const temErro = mostrarColunaErro && validacao.erros[i];
-      const temAtencao = mostrarColunaAtencao && validacaoAtencao.atencoes[i];
-      if(temErro || temAtencao) indicesVisiveis.push(i);
-    } else {
-      // nenhum filtro marcado — mostra tudo, sem restrição
-      indicesVisiveis.push(i);
-    }
+    const temErro = !!(mostrarColunaErro && validacao.erros[i]);
+    const temAtencao = !!(mostrarColunaAtencao && validacaoAtencao.atencoes[i]);
+    if(mecFiltroTipo==='todos') indicesVisiveis.push(i);
+    else if(mecFiltroTipo==='erro' && temErro) indicesVisiveis.push(i);
+    else if(mecFiltroTipo==='atencao' && temAtencao) indicesVisiveis.push(i);
+    else if(mecFiltroTipo==='sem-erro' && !temErro && !temAtencao) indicesVisiveis.push(i);
   }
   const totalPaginas = Math.max(1, Math.ceil(indicesVisiveis.length / MEC_LINHAS_POR_PAGINA));
   if(mecPaginaAtual > totalPaginas) mecPaginaAtual = totalPaginas;
   if(mecPaginaAtual < 1) mecPaginaAtual = 1;
   const inicio = (mecPaginaAtual-1) * MEC_LINHAS_POR_PAGINA;
   const indicesPagina = indicesVisiveis.slice(inicio, inicio + MEC_LINHAS_POR_PAGINA);
-  const sufixoFiltro = (temFiltravel && (mecFiltroErros || mecFiltroAtencao)) ? (mecFiltroErros && mecFiltroAtencao ? ' com erro/atenção' : (mecFiltroErros ? ' com erro' : ' com atenção')) : '';
+  const rotulosFiltro = {'todos':'','erro':' com erro','atencao':' com atenção','sem-erro':' sem erro ou atenção'};
+  const sufixoFiltro = rotulosFiltro[mecFiltroTipo] || '';
 
   const theadHtml = '<tr>' + headers.map(h=>`<th>${h || '–'}</th>`).join('')
     + (mostrarColunaErro ? '<th class="th-edit">Verificação</th>' : '')
