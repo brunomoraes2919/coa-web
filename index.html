@@ -1997,6 +1997,51 @@ function validarRegrasOperacionais(headers, dados){
   return { aplicavel:true, erros, atencoes };
 }
 
+// Converte o nome cadastrado no COA Web para o padrão usado na coluna
+// "Unidade Administrativa" dos relatórios exportados pelo PIMS.
+function unidadePimsDaFazenda(nomeFazenda){
+  const nome = normalizarTextoMec(nomeFazenda);
+  if(nome.includes('NEBRASKA')) return 'NEBRASKA';
+  if(nome.includes('GLOBO')) return 'GLOBO';
+  if(nome.includes('GUAPIRAMA')) return 'GUAPIRAMA';
+  if(nome.includes('SIRIEMA')) return 'SIRIEMA';
+  if(nome.includes('DOURADO')) return 'DOURADO';
+  if(nome.includes('SM3')) return 'SM3';
+  if(nome.includes('TRES FLECHAS') || nome.includes('T. FLECHAS')) return 'T. FLECHAS';
+  return null;
+}
+
+function filtrarMecanizadasPorFazenda(headers, dados, fazendaId){
+  const idxUnidade = headers.findIndex(h=>normalizarTextoMec(h)==='UNIDADE ADMINISTRATIVA');
+  const fazenda = state.fazendas.find(f=>f.id===fazendaId);
+  const unidadeEsperada = fazenda ? unidadePimsDaFazenda(fazenda.nome) : null;
+  const totalOriginal = dados.length;
+
+  // Se o arquivo não trouxer a coluna ou a fazenda ainda não estiver mapeada,
+  // não removemos linhas silenciosamente; a interface exibirá um aviso.
+  if(idxUnidade===-1 || !unidadeEsperada){
+    return {
+      dados,
+      totalOriginal,
+      removidas:0,
+      unidadeEsperada,
+      filtroAplicado:false,
+      motivo:idxUnidade===-1 ? 'coluna-ausente' : 'fazenda-nao-mapeada'
+    };
+  }
+
+  const unidadeNormalizada = normalizarTextoMec(unidadeEsperada);
+  const dadosFiltrados = dados.filter(row=>normalizarTextoMec(row[idxUnidade])===unidadeNormalizada);
+  return {
+    dados:dadosFiltrados,
+    totalOriginal,
+    removidas:totalOriginal-dadosFiltrados.length,
+    unidadeEsperada,
+    filtroAplicado:true,
+    motivo:null
+  };
+}
+
 function processarArquivoMecanizadas(file){
   const fazendaId = fazendaSelecionadaId();
   const leitor = new FileReader();
@@ -2012,6 +2057,8 @@ function processarArquivoMecanizadas(file){
       alert('Não foi possível ler o arquivo. Confira se é um .xlsx, .xls ou .csv válido.');
       return;
     }
+    const preLimpeza = filtrarMecanizadasPorFazenda(headers, dados, fazendaId);
+    dados = preLimpeza.dados;
     const v1 = validarPeriodoCentroCusto(headers, dados);
     const v2 = validarAnoAgricolaData(headers, dados);
     const v3 = validarRegrasOperacionais(headers, dados);
@@ -2019,7 +2066,7 @@ function processarArquivoMecanizadas(file){
     const atencoes = mesclarMensagens(v2.atencoes, v3.atencoes);
     const validacao = { aplicavel: v1.aplicavel || v3.aplicavel, erros };
     const validacaoAtencao = { aplicavel: v2.aplicavel || v3.aplicavel, atencoes };
-    mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao, validacaoAtencao };
+    mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao, validacaoAtencao, preLimpeza };
     renderTabelaMecanizadas();
   };
   leitor.readAsArrayBuffer(file);
@@ -2041,7 +2088,7 @@ function renderTabelaMecanizadas(){
     tabelaEl.innerHTML = '';
     return;
   }
-  const { headers, dados, nomeArquivo, validacao, validacaoAtencao } = atual;
+  const { headers, dados, nomeArquivo, validacao, validacaoAtencao, preLimpeza } = atual;
   const mostrarColunaErro = !!(validacao && validacao.aplicavel);
   const qtdErros = mostrarColunaErro ? validacao.erros.filter(e=>e).length : 0;
   const mostrarColunaAtencao = !!(validacaoAtencao && validacaoAtencao.aplicavel);
@@ -2063,6 +2110,14 @@ function renderTabelaMecanizadas(){
     resumoValidacao += `<div class="aviso">Não encontrei as colunas "Período de Produção" e/ou "Data" nesse arquivo — validação de atenção não aplicada.</div>`;
   }
   const qtdSemErro = dados.filter((_,i)=>!validacao.erros[i] && !validacaoAtencao.atencoes[i]).length;
+  let preLimpezaHtml = '';
+  if(preLimpeza && preLimpeza.filtroAplicado){
+    preLimpezaHtml = `<div class="aviso-ok"><b>Pré-limpeza aplicada:</b> mantidas ${dados.length} linha(s) da unidade <b>${preLimpeza.unidadeEsperada}</b> e removidas ${preLimpeza.removidas} linha(s) de outras fazendas.</div>`;
+  } else if(preLimpeza && preLimpeza.motivo==='coluna-ausente'){
+    preLimpezaHtml = `<div class="aviso"><b>Pré-limpeza não aplicada:</b> a coluna "Unidade Administrativa" não foi encontrada neste arquivo.</div>`;
+  } else if(preLimpeza && preLimpeza.motivo==='fazenda-nao-mapeada'){
+    preLimpezaHtml = `<div class="aviso"><b>Pré-limpeza não aplicada:</b> a fazenda selecionada ainda não possui correspondência configurada para o padrão do PIMS.</div>`;
+  }
   const opcoesFiltro = [
     ['todos','Todos',dados.length],
     ['erro','Com erro',qtdErros],
@@ -2095,6 +2150,7 @@ function renderTabelaMecanizadas(){
         <div class="mec-resumo-card atencao"><div><div class="mec-resumo-num">${qtdAtencoes}</div><div class="mec-resumo-label">Boletins que exigem atenção</div></div></div>
         <div class="mec-resumo-card ok"><div><div class="mec-resumo-num">${qtdSemErro}</div><div class="mec-resumo-label">Boletins sem erro ou atenção</div></div></div>
       </div>
+      ${preLimpezaHtml}
       ${filtroHtml}
       ${(!mostrarColunaErro || !mostrarColunaAtencao) ? `<div>${resumoValidacao}</div>` : ''}
     </div>
