@@ -2297,10 +2297,27 @@ async function criarNovoUsuario(){
     return;
   }
 
-  // o gatilho do banco já criou um perfil básico ao criar o login;
-  // aqui só ajustamos para o nome/perfil escolhidos
-  const { error: erroPerfil } = await sb.from('perfis').update({ nome, perfil }).eq('id', novoId);
-  if(erroPerfil){ btn.disabled=false; btn.textContent='Criar usuário'; alert('Login criado, mas houve erro ao salvar o perfil: '+erroPerfil.message); return; }
+  // Garante que o perfil exista antes de vincular as fazendas. O gatilho do
+  // banco normalmente cria esse registro, mas um update simples não fazia
+  // nada quando o gatilho falhava e a inserção das permissões quebrava pela FK.
+  const { error: erroPerfil } = await sb.from('perfis').upsert(
+    { id: novoId, nome, email, perfil },
+    { onConflict:'id' }
+  );
+  if(erroPerfil){
+    btn.disabled=false; btn.textContent='Criar usuário';
+    alert('O login foi criado, mas não foi possível criar o perfil. Não tente cadastrar o mesmo e-mail novamente. Erro: '+erroPerfil.message);
+    return;
+  }
+
+  // Confirma que o perfil já está visível no banco antes de criar permissões.
+  const { data: perfilCriado, error: erroConfirmarPerfil } = await sb
+    .from('perfis').select('id').eq('id', novoId).maybeSingle();
+  if(erroConfirmarPerfil || !perfilCriado){
+    btn.disabled=false; btn.textContent='Criar usuário';
+    alert('O login foi criado, mas o perfil ainda não ficou disponível. Atualize a página e verifique a lista de usuários antes de tentar novamente.');
+    return;
+  }
 
   if(fazendasPermitidas.length){
     const linhas = fazendasPermitidas.map(fid=>({ usuario_id: novoId, fazenda_id: fid }));
@@ -2438,7 +2455,14 @@ async function tentarLogin(){
   btn.disabled = true; btn.textContent = 'Entrando…';
   const { error } = await sb.auth.signInWithPassword({ email, password: senha });
   btn.disabled = false; btn.textContent = 'Entrar';
-  if(error){ erroEl.textContent = 'E-mail ou senha incorretos.'; return; }
+  if(error){
+    if(/email not confirmed/i.test(error.message)){
+      erroEl.textContent = 'Este e-mail ainda não foi confirmado. Peça para o administrador rodar a confirmação manual no Supabase.';
+    } else {
+      erroEl.textContent = 'E-mail ou senha incorretos.';
+    }
+    return;
+  }
   await carregarSessaoEDados();
 }
 async function sair(){
