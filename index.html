@@ -452,6 +452,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
         <span>Mecanizadas</span>
       </button>
+      <button class="categoria-card admin-only" id="card-administracao">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
+        <span>Administração de usuários</span>
+      </button>
     </div>
     <div class="categoria-rodape">
       <span id="categoria-usuario-logado"></span>
@@ -481,15 +485,17 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <button class="nav-btn" data-page="safras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Safras</button>
         <button class="nav-btn admin-only" data-page="fazendas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11 12 4l8 7"/><path d="M6 10v10h12V10"/></svg>Fazendas</button>
       </nav>
-      <div class="nav-eyebrow admin-only">Administração</div>
-      <nav class="admin-only">
-        <button class="nav-btn" data-page="usuarios"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Usuários</button>
-      </nav>
     </div>
     <div id="nav-mecanizadas" style="display:none">
       <div class="nav-eyebrow">Mecanizadas</div>
       <nav>
         <button class="nav-btn" data-page="importar-mecanizadas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>Importar Boletim</button>
+      </nav>
+    </div>
+    <div id="nav-administracao" style="display:none">
+      <div class="nav-eyebrow">Administração</div>
+      <nav>
+        <button class="nav-btn" data-page="usuarios"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Usuários</button>
       </nav>
     </div>
     <div class="sidebar-foot">
@@ -863,7 +869,7 @@ const state = {
   usuarios: []
 };
 let sessao = null;
-let categoriaAtual = null; // 'algodao' | 'mecanizadas'
+let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao'
 
 /* ---- conversão entre o formato do banco (snake_case) e o do app (camelCase) ---- */
 function compararTalhao(a, b){
@@ -2531,6 +2537,8 @@ function mostrarTelaLogin(){
 function mostrarCategoriaScreen(){
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'flex';
+  const cardAdministracao = document.getElementById('card-administracao');
+  if(cardAdministracao) cardAdministracao.style.display = sessao && sessao.perfil==='admin' ? '' : 'none';
   if(sessao){
     document.getElementById('categoria-usuario-logado').textContent = sessao.nome;
   }
@@ -2539,6 +2547,7 @@ function entrarAlgodao(){
   categoriaAtual = 'algodao';
   document.getElementById('nav-algodao').style.display = '';
   document.getElementById('nav-mecanizadas').style.display = 'none';
+  document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('relatorio');
@@ -2547,12 +2556,24 @@ function entrarMecanizadas(){
   categoriaAtual = 'mecanizadas';
   document.getElementById('nav-algodao').style.display = 'none';
   document.getElementById('nav-mecanizadas').style.display = '';
+  document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('importar-mecanizadas');
 }
+function entrarAdministracao(){
+  if(!sessao || sessao.perfil!=='admin') return;
+  categoriaAtual = 'administracao';
+  document.getElementById('nav-algodao').style.display = 'none';
+  document.getElementById('nav-mecanizadas').style.display = 'none';
+  document.getElementById('nav-administracao').style.display = '';
+  document.getElementById('categoria-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = '';
+  irPara('usuarios');
+}
 document.getElementById('card-algodao').addEventListener('click', entrarAlgodao);
 document.getElementById('card-mecanizadas').addEventListener('click', entrarMecanizadas);
+document.getElementById('card-administracao').addEventListener('click', entrarAdministracao);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
 
 async function tentarLogin(){
