@@ -1753,10 +1753,26 @@ function ehPeriodoPecuaria(periodoNorm){
 const PERIODOS_SEM_REGRA_AINDA = ['COMPLEXO', 'BENEFICIAMENTO'];
 const CC_EXCLUSIVO_PECUARIA = 'COLIGADA PECUARIA';
 const UNIDADES_PERMITIDAS_PECUARIA = new Set(['GLOBO', 'GUAPIRAMA', 'DOURADO']);
+const CENTROS_PERMITIDOS_ADM = new Set([
+  'APOIO',
+  'COORDENADORES DE CAMPO',
+  'DEPOSITO DE ADUBOS',
+  'DEPOSITO DE DEFENSIVOS',
+  'ESCRITORIO ADM E/OU REGIONAL',
+  'ESTRADAS',
+  'GERENCIA DE UNIDADE',
+  'OFICINA MECANICA',
+  'PULVERIZACAO AEREA',
+  'SEGURANCA DO TRABALHO (CIPA)',
+  'VIGILANCIA PATRIMONIAL',
+  'VILA RESIDENCIAL'
+]);
+const UNIDADES_PULVERIZACAO_AEREA_ADM = new Set(['GLOBO', 'SIRIEMA']);
 
 // Regra 1: em período de cultura (inclui preparo de solo/cobertura), o centro
-// de custo tem que ser o respectivo àquele período; em período ADM, jamais
-// pode ter centro de custo de cultura, preparo de solo, cobertura ou pecuária.
+// de custo tem que ser o respectivo àquele período. Em período ADM, somente
+// os centros da lista fixa são aceitos; Pulverização Aérea tem ainda uma
+// restrição adicional de unidade (apenas Globo e Siriema).
 // O "esperado" de cada período de cultura é aprendido a partir do próprio
 // arquivo (o centro de custo mais usado para aquele período) — assim não é
 // preciso fixar nomes de cultura no código.
@@ -1811,10 +1827,18 @@ function validarPeriodoCentroCusto(headers, dados){
   const erros = linhasInfo.map(info=>{
     if(!info.periodoDesc) return null;
     if(info.ehAdm){
-      if(info.ccDesc && centrosCulturais.has(info.ccDesc)){
-        return `Período ADM não pode usar centro de custo de cultura/cobertura/pecuária ("${info.ccDesc}")`;
+      const motivos = [];
+      if(!CENTROS_PERMITIDOS_ADM.has(info.ccDesc)){
+        motivos.push(`Centro de custo "${info.ccDesc || 'VAZIO'}" não é permitido em período ADM`);
       }
-      return null;
+      if(info.ccDesc === 'PULVERIZACAO AEREA'){
+        if(idxUnidade === -1){
+          motivos.push('Não foi possível validar Pulverização Aérea: coluna "Unidade Administrativa" não encontrada');
+        } else if(!UNIDADES_PULVERIZACAO_AEREA_ADM.has(info.unidadeDesc)){
+          motivos.push(`Pulverização Aérea em período ADM só é permitida nas unidades Globo e Siriema — veio "${info.unidadeDesc || 'VAZIO'}"`);
+        }
+      }
+      return motivos.length ? motivos.join(' | ') : null;
     }
     if(info.ehPecuaria){
       const motivos = [];
