@@ -313,6 +313,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .mec-filtros-topo{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
 .mec-filtros-titulo{font-size:12px;font-weight:700;color:var(--verde-escuro);text-transform:uppercase;letter-spacing:.045em;}
 .mec-filtros-ajuda{font-size:11.5px;color:var(--texto-suave);}
+.mec-filtros-conteudo{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;}
 .mec-filtros-opcoes{display:flex;gap:8px;flex-wrap:wrap;}
 .mec-filtro-opcao{position:relative;cursor:pointer;}
 .mec-filtro-opcao input{position:absolute;opacity:0;pointer-events:none;}
@@ -322,12 +323,20 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .mec-filtro-opcao input:focus-visible + span{outline:2px solid var(--dourado);outline-offset:2px;}
 .mec-filtro-opcao input:checked + span{background:var(--verde-escuro);border-color:var(--verde-escuro);color:#fff;box-shadow:0 2px 7px rgba(16,54,50,.16);}
 .mec-filtro-opcao input:checked + span::before{background:var(--dourado);box-shadow:0 0 0 3px rgba(219,138,8,.2);}
+.mec-filtros-detalhes{display:flex;gap:8px;flex:1;justify-content:flex-end;min-width:360px;}
+.mec-filtro-detalhe{width:min(310px,100%);min-height:35px;padding:7px 34px 7px 11px;border:1px solid var(--linha);border-radius:8px;background:#fff;color:var(--verde-escuro);font-family:inherit;font-size:12px;font-weight:600;cursor:pointer;overflow:hidden;text-overflow:ellipsis;}
+.mec-filtro-detalhe:hover{border-color:#9DB4A8;}
+.mec-filtro-detalhe:focus{outline:2px solid rgba(219,138,8,.28);border-color:var(--dourado);}
+.mec-filtro-detalhe.erro.ativo{border-color:#D98E84;background:#FFF7F6;color:#8F2F25;}
+.mec-filtro-detalhe.atencao.ativo{border-color:#DDBD58;background:#FFFBEF;color:#705300;}
 .mec-resultado-acoes{display:flex;justify-content:flex-end;}
 @media (max-width:640px){
   .mec-resumo-grid{grid-template-columns:1fr;}
   .mec-arquivo-info,.mec-filtros-topo{align-items:flex-start;flex-direction:column;}
   .mec-filtros-opcoes{display:grid;grid-template-columns:1fr 1fr;width:100%;}
   .mec-filtro-opcao span{width:100%;justify-content:flex-start;}
+  .mec-filtros-detalhes{display:grid;grid-template-columns:1fr;min-width:100%;width:100%;}
+  .mec-filtro-detalhe{width:100%;}
 }
 
 .page{display:none;}
@@ -1733,7 +1742,9 @@ function normalizarTextoMec(s){
     .trim();
 }
 function removerAnoDoPeriodo(periodoNorm){
-  return periodoNorm.replace(/\s+\d{2}\/\d{2}$/, '').replace(/\s+\d{4}$/, '').trim();
+  return periodoNorm
+    .replace(/\s+(?:\d{4}\/\d{4}|\d{2}\/\d{2}|\d{4})$/, '')
+    .trim();
 }
 function ehPeriodoAdm(periodoNorm){
   return /^ADM(\s|$)/.test(periodoNorm);
@@ -1765,6 +1776,7 @@ const CENTROS_PERMITIDOS_ADM = new Set([
   'ESCRITORIO ADM E/OU REGIONAL',
   'ESTRADAS',
   'GERENCIA DE UNIDADE',
+  'OBRA CIVIL',
   'OFICINA MECANICA',
   'PULVERIZACAO AEREA',
   'SEGURANCA DO TRABALHO (CIPA)',
@@ -1951,7 +1963,9 @@ function periodoTemCultura(periodoNorm){
   return /ALGODAO|SOJA|MILHO|SORGO|MILHETO/.test(periodoNorm);
 }
 function periodoEhCoberturaSolo(periodoNorm){
-  return /COBERTURA DE SOLO/.test(periodoNorm);
+  // Padrões registrados na tabela oficial de períodos de produção:
+  // COBERTURA, COBERTURA DO SOLO, COBERTURA DE SOLO e COBERTURA SOLO.
+  return /^COBERTURA(?:\s+(?:(?:DE|DO)\s+)?SOLO)?(?:\s|$)/.test(periodoNorm);
 }
 function periodoEhPecuaria(periodoNorm){
   return ehPeriodoPecuaria(periodoNorm);
@@ -1963,9 +1977,10 @@ function verificarRegra3(ctx){
   const ehPlantio = OPS_PLANTIO.has(ctx.operacaoCod);
   if(!ehColheita && !ehPlantio) return null;
   if(!ctx.periodoDesc) return null;
-  // Exceção operacional: plantio também é válido em COBERTURA DE SOLO.
+  // Exceções operacionais: plantio também é válido em COBERTURA DE SOLO
+  // (com ou sem "DE" no nome) e em períodos de PECUÁRIA.
   // Colheita continua restrita exclusivamente aos períodos de cultura.
-  if(ehPlantio && periodoEhCoberturaSolo(ctx.periodoDesc)) return null;
+  if(ehPlantio && (periodoEhCoberturaSolo(ctx.periodoDesc) || periodoEhPecuaria(ctx.periodoDesc))) return null;
   if(!periodoTemCultura(ctx.periodoDesc)){
     if(ehColheita){
       return `Colheita só pode ser lançada em período de cultura (algodão, soja, milho, sorgo, milheto) — veio em "${ctx.periodoDescOriginal}"`;
@@ -2132,6 +2147,10 @@ function processarArquivoMecanizadas(file){
     const validacao = { aplicavel: v1.aplicavel || v3.aplicavel, erros };
     const validacaoAtencao = { aplicavel: v2.aplicavel || v3.aplicavel, atencoes };
     mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao, validacaoAtencao, preLimpeza };
+    mecFiltroTipo = 'todos';
+    mecFiltroErroDetalhe = '';
+    mecFiltroAtencaoDetalhe = '';
+    mecPaginaAtual = 1;
     renderTabelaMecanizadas();
   };
   leitor.readAsArrayBuffer(file);
@@ -2139,7 +2158,34 @@ function processarArquivoMecanizadas(file){
 
 const MEC_LINHAS_POR_PAGINA = 200;
 let mecFiltroTipo = 'todos'; // todos | erro | atencao | sem-erro
+let mecFiltroErroDetalhe = '';
+let mecFiltroAtencaoDetalhe = '';
 let mecPaginaAtual = 1;
+
+function resumirMotivoMec(mensagem){
+  let resumo = String(mensagem||'').trim();
+  if(/^Data \(/.test(resumo)){
+    resumo = resumo
+      .replace(/^Data \([^)]*\)/, 'Data')
+      .replace(/\s+\([^)]*\)$/, '');
+  }
+  return resumo.replace(/\s+— veio(?: em)?\s+"[^"]*"$/, '');
+}
+function listarMotivosMecanizadas(mensagens){
+  const contagem = new Map();
+  mensagens.filter(Boolean).forEach(msg=>{
+    String(msg).split(' | ').map(item=>item.trim()).filter(Boolean).forEach(item=>{
+      const motivo = resumirMotivoMec(item);
+      contagem.set(motivo, (contagem.get(motivo)||0) + 1);
+    });
+  });
+  return Array.from(contagem, ([mensagem, quantidade])=>({mensagem, quantidade}));
+}
+function escaparHtmlMec(valor){
+  return String(valor==null?'':valor)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
 
 function renderTabelaMecanizadas(){
   const resEl = document.getElementById('mec-resultado');
@@ -2189,16 +2235,32 @@ function renderTabelaMecanizadas(){
     ['atencao','Com atenção',qtdAtencoes],
     ['sem-erro','Sem erro',qtdSemErro]
   ];
+  const motivosErro = listarMotivosMecanizadas(validacao.erros);
+  const motivosAtencao = listarMotivosMecanizadas(validacaoAtencao.atencoes);
+  if(mecFiltroErroDetalhe && !motivosErro.some(item=>item.mensagem===mecFiltroErroDetalhe)) mecFiltroErroDetalhe='';
+  if(mecFiltroAtencaoDetalhe && !motivosAtencao.some(item=>item.mensagem===mecFiltroAtencaoDetalhe)) mecFiltroAtencaoDetalhe='';
   const filtroHtml = `<div class="mec-filtros-box">
     <div class="mec-filtros-topo">
       <div class="mec-filtros-titulo">Filtrar boletins</div>
       <div class="mec-filtros-ajuda">Selecione uma opção para visualizar</div>
     </div>
-    <div class="mec-filtros-opcoes">
-      ${opcoesFiltro.map(([valor,rotulo,qtd])=>`<label class="mec-filtro-opcao">
-        <input type="radio" name="mec-filtro" value="${valor}" ${mecFiltroTipo===valor?'checked':''}>
-        <span>${rotulo} · ${qtd}</span>
-      </label>`).join('')}
+    <div class="mec-filtros-conteudo">
+      <div class="mec-filtros-opcoes">
+        ${opcoesFiltro.map(([valor,rotulo,qtd])=>`<label class="mec-filtro-opcao">
+          <input type="radio" name="mec-filtro" value="${valor}" ${mecFiltroTipo===valor?'checked':''}>
+          <span>${rotulo} · ${qtd}</span>
+        </label>`).join('')}
+      </div>
+      <div class="mec-filtros-detalhes">
+        <select id="mec-filtro-erro-detalhe" class="mec-filtro-detalhe erro ${mecFiltroErroDetalhe?'ativo':''}" aria-label="Filtrar pelo erro apresentado">
+          <option value="">Erros apresentados · Todos</option>
+          ${motivosErro.map((item,i)=>`<option value="${i}" ${item.mensagem===mecFiltroErroDetalhe?'selected':''}>${escaparHtmlMec(item.mensagem)} · ${item.quantidade}</option>`).join('')}
+        </select>
+        <select id="mec-filtro-atencao-detalhe" class="mec-filtro-detalhe atencao ${mecFiltroAtencaoDetalhe?'ativo':''}" aria-label="Filtrar pelo ponto de atenção apresentado">
+          <option value="">Pontos de atenção · Todos</option>
+          ${motivosAtencao.map((item,i)=>`<option value="${i}" ${item.mensagem===mecFiltroAtencaoDetalhe?'selected':''}>${escaparHtmlMec(item.mensagem)} · ${item.quantidade}</option>`).join('')}
+        </select>
+      </div>
     </div>
   </div>`;
   resEl.innerHTML = `
@@ -2223,14 +2285,32 @@ function renderTabelaMecanizadas(){
   document.getElementById('btn-trocar-arquivo-mec').addEventListener('click', ()=>{
     delete mecanizadasPorFazenda[fazendaId];
     document.getElementById('input-arquivo-mec').value = '';
-    mecFiltroTipo = 'todos'; mecPaginaAtual = 1;
+    mecFiltroTipo = 'todos'; mecFiltroErroDetalhe = ''; mecFiltroAtencaoDetalhe = ''; mecPaginaAtual = 1;
     renderTabelaMecanizadas();
   });
   document.querySelectorAll('input[name="mec-filtro"]').forEach(radio=>radio.addEventListener('change', e=>{
     mecFiltroTipo = e.target.value;
+    mecFiltroErroDetalhe = '';
+    mecFiltroAtencaoDetalhe = '';
     mecPaginaAtual = 1;
     renderTabelaMecanizadas();
   }));
+  document.getElementById('mec-filtro-erro-detalhe').addEventListener('change', e=>{
+    const indice = e.target.value==='' ? -1 : Number(e.target.value);
+    mecFiltroErroDetalhe = indice>=0 && motivosErro[indice] ? motivosErro[indice].mensagem : '';
+    mecFiltroAtencaoDetalhe = '';
+    mecFiltroTipo = 'erro';
+    mecPaginaAtual = 1;
+    renderTabelaMecanizadas();
+  });
+  document.getElementById('mec-filtro-atencao-detalhe').addEventListener('change', e=>{
+    const indice = e.target.value==='' ? -1 : Number(e.target.value);
+    mecFiltroAtencaoDetalhe = indice>=0 && motivosAtencao[indice] ? motivosAtencao[indice].mensagem : '';
+    mecFiltroErroDetalhe = '';
+    mecFiltroTipo = 'atencao';
+    mecPaginaAtual = 1;
+    renderTabelaMecanizadas();
+  });
 
   if(!dados.length){
     tabelaEl.innerHTML = '<div class="aviso">Nenhuma linha de dados encontrada nesse arquivo.</div>';
@@ -2243,10 +2323,17 @@ function renderTabelaMecanizadas(){
   for(let i=0;i<dados.length;i++){
     const temErro = !!(mostrarColunaErro && validacao.erros[i]);
     const temAtencao = !!(mostrarColunaAtencao && validacaoAtencao.atencoes[i]);
-    if(mecFiltroTipo==='todos') indicesVisiveis.push(i);
-    else if(mecFiltroTipo==='erro' && temErro) indicesVisiveis.push(i);
-    else if(mecFiltroTipo==='atencao' && temAtencao) indicesVisiveis.push(i);
-    else if(mecFiltroTipo==='sem-erro' && !temErro && !temAtencao) indicesVisiveis.push(i);
+    let incluir = mecFiltroTipo==='todos'
+      || (mecFiltroTipo==='erro' && temErro)
+      || (mecFiltroTipo==='atencao' && temAtencao)
+      || (mecFiltroTipo==='sem-erro' && !temErro && !temAtencao);
+    if(incluir && mecFiltroErroDetalhe){
+      incluir = String(validacao.erros[i]||'').split(' | ').map(resumirMotivoMec).includes(mecFiltroErroDetalhe);
+    }
+    if(incluir && mecFiltroAtencaoDetalhe){
+      incluir = String(validacaoAtencao.atencoes[i]||'').split(' | ').map(resumirMotivoMec).includes(mecFiltroAtencaoDetalhe);
+    }
+    if(incluir) indicesVisiveis.push(i);
   }
   const totalPaginas = Math.max(1, Math.ceil(indicesVisiveis.length / MEC_LINHAS_POR_PAGINA));
   if(mecPaginaAtual > totalPaginas) mecPaginaAtual = totalPaginas;
