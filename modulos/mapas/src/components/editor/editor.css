@@ -1,0 +1,70 @@
+/* Editor de mapa (Novo mapa / Editar mapa) */
+.pagina.pagina-editor { max-width: none; }
+.editor { display: grid; grid-template-columns: minmax(330px, 400px) minmax(0, 1fr); gap: 18px; align-items: start; }
+.editor-lado { display: flex; flex-direction: column; gap: 14px; }
+.editor-principal { display: flex; flex-direction: column; gap: 14px; position: sticky; top: 12px; }
+.editor-lado h2 { color: var(--verde); }
+.editor-lado details > summary { cursor: pointer; color: var(--verde); list-style-position: inside; }
+.editor-lado details[open] > summary { margin-bottom: 12px; }
+@media (max-width: 1100px) {
+  .editor { grid-template-columns: minmax(0, 1fr); }
+  .editor-principal { position: static; order: -1; }
+}
+
+.previa { position: relative; width: 100%; }
+.previa-canvas { display: block; border-radius: 4px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); cursor: grab; touch-action: none; }
+.previa-canvas:active { cursor: grabbing; }
+.previa-vazia {
+  display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px;
+  background: repeating-linear-gradient(45deg, #f3f6f5, #f3f6f5 12px, #eef2f1 12px, #eef2f1 24px);
+  border: 2px dashed var(--borda); border-radius: 6px; color: var(--texto-suave); font-weight: 600; min-height: 240px;
+}
+.previa-ocupado {
+  position: absolute; top: 12px; right: 12px; background: rgba(12, 90, 80, 0.92); color: #fff; font-weight: 600;
+  font-size: 0.85rem; padding: 6px 12px; border-radius: 999px; box-shadow: var(--sombra);
+}
+.previa-erro {
+  position: absolute; left: 12px; right: 12px; bottom: 12px; background: #fcebea; color: var(--erro); font-weight: 600;
+  font-size: 0.85rem; padding: 8px 12px; border: 1px solid #efbdb9; border-radius: var(--raio); box-shadow: var(--sombra);
+}
+.dica-previa { margin: 8px 0 0; font-size: 0.82rem; }
+.desatualizado { opacity: 0.55; transition: opacity 0.2s; }
+
+.lista-pics { max-height: 320px; }
+.lista-talhoes { max-height: 460px; }
+.lista-pics .tabela td, .lista-talhoes .tabela td { padding-top: 5px; padding-bottom: 5px; }
+.tabela th .ordenar { font: inherit; font-weight: 700; color: inherit; padding: 0; white-space: nowrap; }
+
+.grade-textos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.grade-textos .campo-largo { grid-column: 1 / -1; }
+.grade-textos textarea { resize: vertical; min-height: 44px; }
+.editado { color: var(--laranja-escuro); font-style: normal; font-weight: 600; }
+.pilha.pilha-justa { gap: 6px; }
+
+.chip {
+  font: inherit; font-size: 0.82rem; padding: 4px 12px; border-radius: 999px; border: 1.5px solid var(--borda);
+  background: #fff; color: var(--texto-suave); cursor: pointer;
+}
+.chip.ativo { border-color: var(--verde); background: var(--verde-claro); color: var(--verde); font-weight: 600; }
+
+.indicadores { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.indicador { border: 1px solid var(--borda); border-radius: var(--raio); padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
+.indicador span { font-size: 0.82rem; color: var(--texto-suave); font-weight: 600; }
+.indicador strong { font-size: 1.5rem; color: var(--verde); }
+.indicador small { color: var(--texto-suave); font-size: 0.8rem; }
+.indicador-plantado { border-color: var(--laranja); background: var(--laranja-claro); }
+.indicador-plantado strong { color: var(--laranja-escuro); }
+.indicador-vazio strong { color: var(--texto-suave); }
+
+/* Histórico */
+.grade-mapas { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.mapa-cartao { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+/* caixa fixa (proporção do A3 paisagem) para todos os cartões; a folha inteira aparece, em paisagem ou retrato */
+.mapa-cartao .miniatura {
+  display: block; box-sizing: border-box; width: 100%; aspect-ratio: 420 / 297; padding: 6px;
+  object-fit: contain; object-position: center; background: var(--verde-claro);
+}
+.mapa-cartao .miniatura-vazia { display: flex; align-items: center; justify-content: center; color: var(--texto-suave); font-size: 0.85rem; }
+.mapa-cartao-corpo { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.mapa-cartao-corpo h3 { color: var(--verde); }
+.mapa-cartao-corpo .linha { margin-top: auto; padding-top: 8px; }

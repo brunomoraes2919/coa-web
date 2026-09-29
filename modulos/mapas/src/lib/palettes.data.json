@@ -1,0 +1,1348 @@
+[
+ {
+  "id": "locks_0_160",
+  "nome": "Período curto (1 a 160 mm)",
+  "origem": "ESTILOS ANTIGOS/Precipitacao_Locks.qml",
+  "classes": [
+   {
+    "max": 1,
+    "color": "#ffffff",
+    "label": "<= 1 mm"
+   },
+   {
+    "max": 5,
+    "color": "#0994fa",
+    "label": "1 - 5 mm"
+   },
+   {
+    "max": 10,
+    "color": "#0561c8",
+    "label": "5 - 10 mm"
+   },
+   {
+    "max": 15,
+    "color": "#00ff3d",
+    "label": "10 - 15 mm"
+   },
+   {
+    "max": 20,
+    "color": "#01e30d",
+    "label": "15 - 20 mm"
+   },
+   {
+    "max": 30,
+    "color": "#15a217",
+    "label": "20 - 30 mm"
+   },
+   {
+    "max": 40,
+    "color": "#c1f203",
+    "label": "30 - 40 mm"
+   },
+   {
+    "max": 50,
+    "color": "#f4ee00",
+    "label": "40 - 50 mm"
+   },
+   {
+    "max": 60,
+    "color": "#fdde32",
+    "label": "50 - 60 mm"
+   },
+   {
+    "max": 70,
+    "color": "#fcc651",
+    "label": "60 - 70 mm"
+   },
+   {
+    "max": 80,
+    "color": "#ff9700",
+    "label": "70 - 80 mm"
+   },
+   {
+    "max": 90,
+    "color": "#ff7100",
+    "label": "80 - 90 mm"
+   },
+   {
+    "max": 110,
+    "color": "#e25c04",
+    "label": "90 - 110 mm"
+   },
+   {
+    "max": 120,
+    "color": "#ee0a0c",
+    "label": "110 - 120 mm"
+   },
+   {
+    "max": 130,
+    "color": "#9c060d",
+    "label": "120 - 130 mm"
+   },
+   {
+    "max": 140,
+    "color": "#cd529a",
+    "label": "130 - 140 mm"
+   },
+   {
+    "max": 150,
+    "color": "#f651f6",
+    "label": "140 - 150 mm"
+   },
+   {
+    "max": 160,
+    "color": "#ff00ff",
+    "label": "150 - 160 mm"
+   }
+  ]
+ },
+ {
+  "id": "acum_atual",
+  "nome": "Acumulado (50 a 2.000 mm)",
+  "origem": "ESTILOS ANTIGOS/Precipitacao_Acumulado_ATUAL.qml",
+  "classes": [
+   {
+    "max": 50,
+    "color": "#ffffff",
+    "label": "<= 50 mm"
+   },
+   {
+    "max": 100,
+    "color": "#26c1e8",
+    "label": "50 - 100 mm"
+   },
+   {
+    "max": 150,
+    "color": "#0188ff",
+    "label": "100 - 150 mm"
+   },
+   {
+    "max": 200,
+    "color": "#0800ff",
+    "label": "150 - 200 mm"
+   },
+   {
+    "max": 250,
+    "color": "#00ff6e",
+    "label": "200 - 250 mm"
+   },
+   {
+    "max": 300,
+    "color": "#00ff08",
+    "label": "250 - 300 mm"
+   },
+   {
+    "max": 350,
+    "color": "#059a19",
+    "label": "300 - 350 mm"
+   },
+   {
+    "max": 400,
+    "color": "#ddff00",
+    "label": "350 - 400 mm"
+   },
+   {
+    "max": 450,
+    "color": "#ffe600",
+    "label": "400 - 450 mm"
+   },
+   {
+    "max": 500,
+    "color": "#fbd56d",
+    "label": "450 - 500 mm"
+   },
+   {
+    "max": 550,
+    "color": "#ff9900",
+    "label": "500 - 550 mm"
+   },
+   {
+    "max": 600,
+    "color": "#ff6a00",
+    "label": "550 - 600 mm"
+   },
+   {
+    "max": 650,
+    "color": "#d25406",
+    "label": "600 - 650 mm"
+   },
+   {
+    "max": 700,
+    "color": "#fb040c",
+    "label": "650 - 700 mm"
+   },
+   {
+    "max": 750,
+    "color": "#c41e0c",
+    "label": "700 - 750 mm"
+   },
+   {
+    "max": 800,
+    "color": "#93010d",
+    "label": "750 - 800 mm"
+   },
+   {
+    "max": 850,
+    "color": "#f284f2",
+    "label": "800 - 850 mm"
+   },
+   {
+    "max": 900,
+    "color": "#fc07fc",
+    "label": "850 - 900 mm"
+   },
+   {
+    "max": 950,
+    "color": "#be33be",
+    "label": "900 - 950 mm"
+   },
+   {
+    "max": 1000,
+    "color": "#593759",
+    "label": "950 - 1000 mm"
+   },
+   {
+    "max": 2000,
+    "color": "#3c083c",
+    "label": "1000 - 2000 mm"
+   }
+  ]
+ },
+ {
+  "id": "acum_v2",
+  "nome": "Acumulado V2 (50 a 2.000 mm)",
+  "origem": "ESTILOS ANTIGOS/Precipitacao_Acumulado_V2.qml",
+  "classes": [
+   {
+    "max": 50,
+    "color": "#ffffff",
+    "label": "<= 50 mm"
+   },
+   {
+    "max": 100,
+    "color": "#26c1e8",
+    "label": "50 - 100 mm"
+   },
+   {
+    "max": 150,
+    "color": "#0188ff",
+    "label": "100 - 150 mm"
+   },
+   {
+    "max": 200,
+    "color": "#0800ff",
+    "label": "150 - 200 mm"
+   },
+   {
+    "max": 250,
+    "color": "#00ff6e",
+    "label": "200 - 250 mm"
+   },
+   {
+    "max": 300,
+    "color": "#00ff08",
+    "label": "250 - 300 mm"
+   },
+   {
+    "max": 350,
+    "color": "#059a19",
+    "label": "300 - 350 mm"
+   },
+   {
+    "max": 400,
+    "color": "#ddff00",
+    "label": "350 - 400 mm"
+   },
+   {
+    "max": 450,
+    "color": "#ffe600",
+    "label": "400 - 450 mm"
+   },
+   {
+    "max": 500,
+    "color": "#fbd56d",
+    "label": "450 - 500 mm"
+   },
+   {
+    "max": 550,
+    "color": "#ff9900",
+    "label": "500 - 550 mm"
+   },
+   {
+    "max": 600,
+    "color": "#ff6a00",
+    "label": "550 - 600 mm"
+   },
+   {
+    "max": 650,
+    "color": "#d25406",
+    "label": "600 - 650 mm"
+   },
+   {
+    "max": 700,
+    "color": "#fb040c",
+    "label": "650 - 700 mm"
+   },
+   {
+    "max": 750,
+    "color": "#c41e0c",
+    "label": "700 - 750 mm"
+   },
+   {
+    "max": 800,
+    "color": "#93010d",
+    "label": "750 - 800 mm"
+   },
+   {
+    "max": 850,
+    "color": "#f284f2",
+    "label": "800 - 850 mm"
+   },
+   {
+    "max": 900,
+    "color": "#fc07fc",
+    "label": "850 - 900 mm"
+   },
+   {
+    "max": 950,
+    "color": "#be33be",
+    "label": "900 - 950 mm"
+   },
+   {
+    "max": 1000,
+    "color": "#593759",
+    "label": "950 - 1000 mm"
+   },
+   {
+    "max": 1100,
+    "color": "#3c083c",
+    "label": "1000 - 1100 mm"
+   },
+   {
+    "max": 1200,
+    "color": "#c0f4e6",
+    "label": "1100 - 1200 mm"
+   },
+   {
+    "max": 1300,
+    "color": "#19e1b2",
+    "label": "1200 - 1300 mm"
+   },
+   {
+    "max": 1400,
+    "color": "#618d11",
+    "label": "1300 - 1400 mm"
+   },
+   {
+    "max": 1500,
+    "color": "#a8f60b",
+    "label": "1400 - 1500 mm"
+   },
+   {
+    "max": 1600,
+    "color": "#684510",
+    "label": "1500 - 1600 mm"
+   },
+   {
+    "max": 1700,
+    "color": "#a3927b",
+    "label": "1600 - 1700 mm"
+   },
+   {
+    "max": 1800,
+    "color": "#9365d4",
+    "label": "1700 - 1800 mm"
+   },
+   {
+    "max": 2000,
+    "color": "#5d00fe",
+    "label": "1800 - 2000 mm"
+   }
+  ]
+ },
+ {
+  "id": "acum_anual",
+  "nome": "Acumulado anual (500 a 2.500 mm)",
+  "origem": "ESTILOS ANTIGOS/Precipitacao_Acumulado_ANUAL.qml",
+  "classes": [
+   {
+    "max": 500,
+    "color": "#ffffff",
+    "label": "<= 500 mm"
+   },
+   {
+    "max": 600,
+    "color": "#26c1e8",
+    "label": "500 - 600 mm"
+   },
+   {
+    "max": 700,
+    "color": "#0188ff",
+    "label": "600 - 700 mm"
+   },
+   {
+    "max": 800,
+    "color": "#0800ff",
+    "label": "700 - 800 mm"
+   },
+   {
+    "max": 900,
+    "color": "#00ff6e",
+    "label": "800 - 900 mm"
+   },
+   {
+    "max": 1000,
+    "color": "#00ff08",
+    "label": "900 - 1000 mm"
+   },
+   {
+    "max": 1100,
+    "color": "#059a19",
+    "label": "1000 - 1100 mm"
+   },
+   {
+    "max": 1200,
+    "color": "#ddff00",
+    "label": "1100 - 1200 mm"
+   },
+   {
+    "max": 1300,
+    "color": "#ffe600",
+    "label": "1200 - 1300 mm"
+   },
+   {
+    "max": 1400,
+    "color": "#fbd56d",
+    "label": "1300 - 1400 mm"
+   },
+   {
+    "max": 1500,
+    "color": "#ff9900",
+    "label": "1400 - 1500 mm"
+   },
+   {
+    "max": 1600,
+    "color": "#ff6a00",
+    "label": "1500 - 1600 mm"
+   },
+   {
+    "max": 1700,
+    "color": "#d25406",
+    "label": "1600 - 1700 mm"
+   },
+   {
+    "max": 1800,
+    "color": "#fb040c",
+    "label": "1700 - 1800 mm"
+   },
+   {
+    "max": 1900,
+    "color": "#c41e0c",
+    "label": "1800 - 1900 mm"
+   },
+   {
+    "max": 2000,
+    "color": "#93010d",
+    "label": "1900 - 2000 mm"
+   },
+   {
+    "max": 2100,
+    "color": "#f284f2",
+    "label": "2000 - 2100 mm"
+   },
+   {
+    "max": 2200,
+    "color": "#fc07fc",
+    "label": "2100 - 2200 mm"
+   },
+   {
+    "max": 2300,
+    "color": "#be33be",
+    "label": "2200 - 2300 mm"
+   },
+   {
+    "max": 2400,
+    "color": "#593759",
+    "label": "2300 - 2400 mm"
+   },
+   {
+    "max": 2500,
+    "color": "#3c083c",
+    "label": "2400 - 2500 mm"
+   }
+  ]
+ },
+ {
+  "id": "acum_2000",
+  "nome": "Acumulado acima de 2.000 mm",
+  "origem": "ESTILOS ANTIGOS/Precipitacao_Acumulado_acima_2000mm.qml",
+  "classes": [
+   {
+    "max": 500,
+    "color": "#ffffff",
+    "label": "<= 500 mm"
+   },
+   {
+    "max": 700,
+    "color": "#26c1e8",
+    "label": "500 - 700 mm"
+   },
+   {
+    "max": 700,
+    "color": "#0188ff",
+    "label": "700 - 700 mm"
+   },
+   {
+    "max": 800,
+    "color": "#0800ff",
+    "label": "700 - 800 mm"
+   },
+   {
+    "max": 900,
+    "color": "#00ff6e",
+    "label": "800 - 900 mm"
+   },
+   {
+    "max": 1000,
+    "color": "#00ff08",
+    "label": "900 - 1000 mm"
+   },
+   {
+    "max": 1100,
+    "color": "#059a19",
+    "label": "1000 - 1100 mm"
+   },
+   {
+    "max": 1200,
+    "color": "#ddff00",
+    "label": "1100 - 1200 mm"
+   },
+   {
+    "max": 1300,
+    "color": "#ffe600",
+    "label": "1200 - 1300 mm"
+   },
+   {
+    "max": 1400,
+    "color": "#fbd56d",
+    "label": "1300 - 1400 mm"
+   },
+   {
+    "max": 1500,
+    "color": "#ff9900",
+    "label": "1400 - 1500 mm"
+   },
+   {
+    "max": 1600,
+    "color": "#ff6a00",
+    "label": "1500 - 1600 mm"
+   },
+   {
+    "max": 1700,
+    "color": "#d25406",
+    "label": "1600 - 1700 mm"
+   },
+   {
+    "max": 1800,
+    "color": "#fb040c",
+    "label": "1700 - 1800 mm"
+   },
+   {
+    "max": 1900,
+    "color": "#c41e0c",
+    "label": "1800 - 1900 mm"
+   },
+   {
+    "max": 2000,
+    "color": "#93010d",
+    "label": "1900 - 2000 mm"
+   },
+   {
+    "max": 2100,
+    "color": "#f284f2",
+    "label": "2000 - 2100 mm"
+   },
+   {
+    "max": 2200,
+    "color": "#fc07fc",
+    "label": "2100 - 2200 mm"
+   },
+   {
+    "max": 2300,
+    "color": "#be33be",
+    "label": "2200 - 2300 mm"
+   },
+   {
+    "max": 2400,
+    "color": "#593759",
+    "label": "2300 - 2400 mm"
+   },
+   {
+    "max": 2500,
+    "color": "#3c083c",
+    "label": "2400 - 2500 mm"
+   }
+  ]
+ },
+ {
+  "id": "novo_0_160",
+  "nome": "Novo padrão (em teste) 0 a 160 mm",
+  "origem": "(NÃO USAR AINDA) NOVOS ESTILOS PADRÃO/Precipitacao_0_160_mm.qml",
+  "classes": [
+   {
+    "max": 1,
+    "color": "#ffffff",
+    "label": "<= 1 mm"
+   },
+   {
+    "max": 5,
+    "color": "#0994fa",
+    "label": "1 - 5 mm"
+   },
+   {
+    "max": 10,
+    "color": "#0561c8",
+    "label": "5 - 10 mm"
+   },
+   {
+    "max": 15,
+    "color": "#00ff3d",
+    "label": "10 - 15 mm"
+   },
+   {
+    "max": 20,
+    "color": "#01e30d",
+    "label": "15 - 20 mm"
+   },
+   {
+    "max": 30,
+    "color": "#15a217",
+    "label": "20 - 30 mm"
+   },
+   {
+    "max": 40,
+    "color": "#c1f203",
+    "label": "30 - 40 mm"
+   },
+   {
+    "max": 50,
+    "color": "#f4ee00",
+    "label": "40 - 50 mm"
+   },
+   {
+    "max": 60,
+    "color": "#fdde32",
+    "label": "50 - 60 mm"
+   },
+   {
+    "max": 70,
+    "color": "#fcc651",
+    "label": "60 - 70 mm"
+   },
+   {
+    "max": 80,
+    "color": "#ff9700",
+    "label": "70 - 80 mm"
+   },
+   {
+    "max": 90,
+    "color": "#ff7100",
+    "label": "80 - 90 mm"
+   },
+   {
+    "max": 110,
+    "color": "#e25c04",
+    "label": "90 - 110 mm"
+   },
+   {
+    "max": 120,
+    "color": "#ee0a0c",
+    "label": "110 - 120 mm"
+   },
+   {
+    "max": 130,
+    "color": "#9c060d",
+    "label": "120 - 130 mm"
+   },
+   {
+    "max": 140,
+    "color": "#cd529a",
+    "label": "130 - 140 mm"
+   },
+   {
+    "max": 150,
+    "color": "#f651f6",
+    "label": "140 - 150 mm"
+   },
+   {
+    "max": 160,
+    "color": "#ff00ff",
+    "label": "150 - 160 mm"
+   }
+  ]
+ },
+ {
+  "id": "novo_50_500",
+  "nome": "Novo padrão (em teste) 50 a 500 mm",
+  "origem": "(NÃO USAR AINDA) NOVOS ESTILOS PADRÃO/Precipitacao_50_500_mm.qml",
+  "classes": [
+   {
+    "max": 50,
+    "color": "#26c1e8",
+    "label": "<= 50 mm"
+   },
+   {
+    "max": 70,
+    "color": "#0188ff",
+    "label": "50 - 70 mm"
+   },
+   {
+    "max": 90,
+    "color": "#0800ff",
+    "label": "70 - 90 mm"
+   },
+   {
+    "max": 110,
+    "color": "#00ff6e",
+    "label": "90 - 110 mm"
+   },
+   {
+    "max": 130,
+    "color": "#00ff08",
+    "label": "110 - 130 mm"
+   },
+   {
+    "max": 150,
+    "color": "#059a19",
+    "label": "130 - 150 mm"
+   },
+   {
+    "max": 170,
+    "color": "#ddff00",
+    "label": "150 - 170 mm"
+   },
+   {
+    "max": 190,
+    "color": "#ffe600",
+    "label": "170 - 190 mm"
+   },
+   {
+    "max": 210,
+    "color": "#fbd56d",
+    "label": "190 - 210 mm"
+   },
+   {
+    "max": 230,
+    "color": "#ff9900",
+    "label": "210 - 230 mm"
+   },
+   {
+    "max": 250,
+    "color": "#ff6a00",
+    "label": "230 - 250 mm"
+   },
+   {
+    "max": 270,
+    "color": "#d25406",
+    "label": "250 - 270 mm"
+   },
+   {
+    "max": 290,
+    "color": "#fb040c",
+    "label": "270 - 290 mm"
+   },
+   {
+    "max": 310,
+    "color": "#c41e0c",
+    "label": "290 - 310 mm"
+   },
+   {
+    "max": 350,
+    "color": "#93010d",
+    "label": "310 - 350 mm"
+   },
+   {
+    "max": 400,
+    "color": "#f284f2",
+    "label": "350 - 400 mm"
+   },
+   {
+    "max": 450,
+    "color": "#fc07fc",
+    "label": "400 - 450 mm"
+   },
+   {
+    "max": 500,
+    "color": "#be33be",
+    "label": "450 - 500 mm"
+   }
+  ]
+ },
+ {
+  "id": "novo_80_600",
+  "nome": "Novo padrão (em teste) 80 a 600 mm",
+  "origem": "(NÃO USAR AINDA) NOVOS ESTILOS PADRÃO/Precipitacao_80_600_mm.qml",
+  "classes": [
+   {
+    "max": 80,
+    "color": "#26c1e8",
+    "label": "<= 80 mm"
+   },
+   {
+    "max": 100,
+    "color": "#0188ff",
+    "label": "80 - 100 mm"
+   },
+   {
+    "max": 120,
+    "color": "#0800ff",
+    "label": "100 - 120 mm"
+   },
+   {
+    "max": 140,
+    "color": "#00ff6e",
+    "label": "120 - 140 mm"
+   },
+   {
+    "max": 160,
+    "color": "#00ff08",
+    "label": "140 - 160 mm"
+   },
+   {
+    "max": 180,
+    "color": "#059a19",
+    "label": "160 - 180 mm"
+   },
+   {
+    "max": 200,
+    "color": "#ddff00",
+    "label": "180 - 200 mm"
+   },
+   {
+    "max": 225,
+    "color": "#ffe600",
+    "label": "200 - 225 mm"
+   },
+   {
+    "max": 250,
+    "color": "#fbd56d",
+    "label": "225 - 250 mm"
+   },
+   {
+    "max": 275,
+    "color": "#ff9900",
+    "label": "250 - 275 mm"
+   },
+   {
+    "max": 300,
+    "color": "#ff6a00",
+    "label": "275 - 300 mm"
+   },
+   {
+    "max": 330,
+    "color": "#d25406",
+    "label": "300 - 330 mm"
+   },
+   {
+    "max": 360,
+    "color": "#fb040c",
+    "label": "330 - 360 mm"
+   },
+   {
+    "max": 390,
+    "color": "#c41e0c",
+    "label": "360 - 390 mm"
+   },
+   {
+    "max": 430,
+    "color": "#93010d",
+    "label": "390 - 430 mm"
+   },
+   {
+    "max": 475,
+    "color": "#f284f2",
+    "label": "430 - 475 mm"
+   },
+   {
+    "max": 540,
+    "color": "#fc07fc",
+    "label": "475 - 540 mm"
+   },
+   {
+    "max": 600,
+    "color": "#be33be",
+    "label": "540 - 600 mm"
+   }
+  ]
+ },
+ {
+  "id": "novo_160_800",
+  "nome": "Novo padrão (em teste) 160 a 800 mm",
+  "origem": "(NÃO USAR AINDA) NOVOS ESTILOS PADRÃO/Precipitacao_160_800_mm.qml",
+  "classes": [
+   {
+    "max": 160,
+    "color": "#26c1e8",
+    "label": "<= 160 mm"
+   },
+   {
+    "max": 190,
+    "color": "#0188ff",
+    "label": "160 - 190 mm"
+   },
+   {
+    "max": 220,
+    "color": "#0800ff",
+    "label": "190 - 220 mm"
+   },
+   {
+    "max": 250,
+    "color": "#00ff6e",
+    "label": "220 - 250 mm"
+   },
+   {
+    "max": 280,
+    "color": "#00ff08",
+    "label": "250 - 280 mm"
+   },
+   {
+    "max": 310,
+    "color": "#059a19",
+    "label": "280 - 310 mm"
+   },
+   {
+    "max": 340,
+    "color": "#ddff00",
+    "label": "310 - 340 mm"
+   },
+   {
+    "max": 370,
+    "color": "#ffe600",
+    "label": "340 - 370 mm"
+   },
+   {
+    "max": 400,
+    "color": "#fbd56d",
+    "label": "370 - 400 mm"
+   },
+   {
+    "max": 430,
+    "color": "#ff9900",
+    "label": "400 - 430 mm"
+   },
+   {
+    "max": 460,
+    "color": "#ff6a00",
+    "label": "430 - 460 mm"
+   },
+   {
+    "max": 490,
+    "color": "#d25406",
+    "label": "460 - 490 mm"
+   },
+   {
+    "max": 520,
+    "color": "#fb040c",
+    "label": "490 - 520 mm"
+   },
+   {
+    "max": 550,
+    "color": "#c41e0c",
+    "label": "520 - 550 mm"
+   },
+   {
+    "max": 580,
+    "color": "#93010d",
+    "label": "550 - 580 mm"
+   },
+   {
+    "max": 620,
+    "color": "#f284f2",
+    "label": "580 - 620 mm"
+   },
+   {
+    "max": 800,
+    "color": "#fc07fc",
+    "label": "620 - 800 mm"
+   }
+  ]
+ },
+ {
+  "id": "novo_300_1200",
+  "nome": "Novo padrão (em teste) 300 a 1.200 mm",
+  "origem": "(NÃO USAR AINDA) NOVOS ESTILOS PADRÃO/Precipitacao_300_1200_mm.qml",
+  "classes": [
+   {
+    "max": 300,
+    "color": "#26c1e8",
+    "label": "<= 300 mm"
+   },
+   {
+    "max": 330,
+    "color": "#0188ff",
+    "label": "300 - 330 mm"
+   },
+   {
+    "max": 360,
+    "color": "#0800ff",
+    "label": "330 - 360 mm"
+   },
+   {
+    "max": 390,
+    "color": "#00ff6e",
+    "label": "360 - 390 mm"
+   },
+   {
+    "max": 420,
+    "color": "#00ff08",
+    "label": "390 - 420 mm"
+   },
+   {
+    "max": 450,
+    "color": "#059a19",
+    "label": "420 - 450 mm"
+   },
+   {
+    "max": 480,
+    "color": "#ddff00",
+    "label": "450 - 480 mm"
+   },
+   {
+    "max": 510,
+    "color": "#ffe600",
+    "label": "480 - 510 mm"
+   },
+   {
+    "max": 540,
+    "color": "#fbd56d",
+    "label": "510 - 540 mm"
+   },
+   {
+    "max": 570,
+    "color": "#ff9900",
+    "label": "540 - 570 mm"
+   },
+   {
+    "max": 600,
+    "color": "#ff6a00",
+    "label": "570 - 600 mm"
+   },
+   {
+    "max": 640,
+    "color": "#d25406",
+    "label": "600 - 640 mm"
+   },
+   {
+    "max": 680,
+    "color": "#fb040c",
+    "label": "640 - 680 mm"
+   },
+   {
+    "max": 720,
+    "color": "#c41e0c",
+    "label": "680 - 720 mm"
+   },
+   {
+    "max": 770,
+    "color": "#93010d",
+    "label": "720 - 770 mm"
+   },
+   {
+    "max": 830,
+    "color": "#f284f2",
+    "label": "770 - 830 mm"
+   },
+   {
+    "max": 1020,
+    "color": "#fc07fc",
+    "label": "830 - 1020 mm"
+   },
+   {
+    "max": 1200,
+    "color": "#be33be",
+    "label": "1020 - 1200 mm"
+   }
+  ]
+ },
+ {
+  "id": "novo_500_2000",
+  "nome": "Novo padrão (em teste) 500 a 2.000 mm",
+  "origem": "(NÃO USAR AINDA) NOVOS ESTILOS PADRÃO/Precipitacao_500_2000_mm.qml",
+  "classes": [
+   {
+    "max": 500,
+    "color": "#26c1e8",
+    "label": "<= 500 mm"
+   },
+   {
+    "max": 550,
+    "color": "#0188ff",
+    "label": "500 - 550 mm"
+   },
+   {
+    "max": 600,
+    "color": "#0800ff",
+    "label": "550 - 600 mm"
+   },
+   {
+    "max": 650,
+    "color": "#00ff6e",
+    "label": "600 - 650 mm"
+   },
+   {
+    "max": 700,
+    "color": "#00ff08",
+    "label": "650 - 700 mm"
+   },
+   {
+    "max": 750,
+    "color": "#059a19",
+    "label": "700 - 750 mm"
+   },
+   {
+    "max": 800,
+    "color": "#ddff00",
+    "label": "750 - 800 mm"
+   },
+   {
+    "max": 850,
+    "color": "#ffe600",
+    "label": "800 - 850 mm"
+   },
+   {
+    "max": 900,
+    "color": "#fbd56d",
+    "label": "850 - 900 mm"
+   },
+   {
+    "max": 950,
+    "color": "#ff9900",
+    "label": "900 - 950 mm"
+   },
+   {
+    "max": 1000,
+    "color": "#ff6a00",
+    "label": "950 - 1000 mm"
+   },
+   {
+    "max": 1100,
+    "color": "#d25406",
+    "label": "1000 - 1100 mm"
+   },
+   {
+    "max": 1200,
+    "color": "#fb040c",
+    "label": "1100 - 1200 mm"
+   },
+   {
+    "max": 1350,
+    "color": "#c41e0c",
+    "label": "1200 - 1350 mm"
+   },
+   {
+    "max": 1550,
+    "color": "#93010d",
+    "label": "1350 - 1550 mm"
+   },
+   {
+    "max": 1750,
+    "color": "#f284f2",
+    "label": "1550 - 1750 mm"
+   },
+   {
+    "max": 1950,
+    "color": "#fc07fc",
+    "label": "1750 - 1950 mm"
+   },
+   {
+    "max": 2000,
+    "color": "#be33be",
+    "label": "1950 - 2000 mm"
+   }
+  ]
+ },
+ {
+  "id": "novo_800_2500",
+  "nome": "Novo padrão (em teste) 800 a 2.500 mm",
+  "origem": "(NÃO USAR AINDA) NOVOS ESTILOS PADRÃO/Precipitacao_800_2500_mm.qml",
+  "classes": [
+   {
+    "max": 800,
+    "color": "#26c1e8",
+    "label": "<= 800 mm"
+   },
+   {
+    "max": 850,
+    "color": "#0188ff",
+    "label": "800 - 850 mm"
+   },
+   {
+    "max": 900,
+    "color": "#0800ff",
+    "label": "850 - 900 mm"
+   },
+   {
+    "max": 950,
+    "color": "#00ff6e",
+    "label": "900 - 950 mm"
+   },
+   {
+    "max": 1000,
+    "color": "#00ff08",
+    "label": "950 - 1000 mm"
+   },
+   {
+    "max": 1100,
+    "color": "#059a19",
+    "label": "1000 - 1100 mm"
+   },
+   {
+    "max": 1200,
+    "color": "#ddff00",
+    "label": "1100 - 1200 mm"
+   },
+   {
+    "max": 1300,
+    "color": "#ffe600",
+    "label": "1200 - 1300 mm"
+   },
+   {
+    "max": 1400,
+    "color": "#fbd56d",
+    "label": "1300 - 1400 mm"
+   },
+   {
+    "max": 1500,
+    "color": "#ff9900",
+    "label": "1400 - 1500 mm"
+   },
+   {
+    "max": 1600,
+    "color": "#ff6a00",
+    "label": "1500 - 1600 mm"
+   },
+   {
+    "max": 1700,
+    "color": "#d25406",
+    "label": "1600 - 1700 mm"
+   },
+   {
+    "max": 1850,
+    "color": "#fb040c",
+    "label": "1700 - 1850 mm"
+   },
+   {
+    "max": 2000,
+    "color": "#c41e0c",
+    "label": "1850 - 2000 mm"
+   },
+   {
+    "max": 2150,
+    "color": "#93010d",
+    "label": "2000 - 2150 mm"
+   },
+   {
+    "max": 2300,
+    "color": "#f284f2",
+    "label": "2150 - 2300 mm"
+   },
+   {
+    "max": 2450,
+    "color": "#fc07fc",
+    "label": "2300 - 2450 mm"
+   }
+  ]
+ },
+ {
+  "id": "novo_800_2500_v2",
+  "nome": "Novo padrão (em teste) 800 a 2.500 mm v2",
+  "origem": "(NÃO USAR AINDA) NOVOS ESTILOS PADRÃO/Precipitacao_800_2500_mm_v2.qml",
+  "classes": [
+   {
+    "max": 800,
+    "color": "#26c1e8",
+    "label": "<= 800 mm"
+   },
+   {
+    "max": 880,
+    "color": "#0188ff",
+    "label": "800 - 880 mm"
+   },
+   {
+    "max": 960,
+    "color": "#0800ff",
+    "label": "880 - 960 mm"
+   },
+   {
+    "max": 1040,
+    "color": "#00ff6e",
+    "label": "960 - 1040 mm"
+   },
+   {
+    "max": 1120,
+    "color": "#00ff08",
+    "label": "1040 - 1120 mm"
+   },
+   {
+    "max": 1200,
+    "color": "#059a19",
+    "label": "1120 - 1200 mm"
+   },
+   {
+    "max": 1290,
+    "color": "#ddff00",
+    "label": "1200 - 1290 mm"
+   },
+   {
+    "max": 1380,
+    "color": "#ffe600",
+    "label": "1290 - 1380 mm"
+   },
+   {
+    "max": 1480,
+    "color": "#fbd56d",
+    "label": "1380 - 1480 mm"
+   },
+   {
+    "max": 1590,
+    "color": "#ff9900",
+    "label": "1480 - 1590 mm"
+   },
+   {
+    "max": 1710,
+    "color": "#ff6a00",
+    "label": "1590 - 1710 mm"
+   },
+   {
+    "max": 1840,
+    "color": "#d25406",
+    "label": "1710 - 1840 mm"
+   },
+   {
+    "max": 1980,
+    "color": "#fb040c",
+    "label": "1840 - 1980 mm"
+   },
+   {
+    "max": 2130,
+    "color": "#c41e0c",
+    "label": "1980 - 2130 mm"
+   },
+   {
+    "max": 2290,
+    "color": "#93010d",
+    "label": "2130 - 2290 mm"
+   },
+   {
+    "max": 2460,
+    "color": "#f284f2",
+    "label": "2290 - 2460 mm"
+   },
+   {
+    "max": 2500,
+    "color": "#fc07fc",
+    "label": "2460 - 2500 mm"
+   }
+  ]
+ }
+]

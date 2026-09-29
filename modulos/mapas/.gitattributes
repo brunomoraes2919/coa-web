@@ -1,0 +1,7 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+# o CSV de exemplo imita o arquivo real da ZEUS (CRLF): manter como está
+tests/fixtures/*.csv -text
+*.png binary
+*.jpg binary
+*.woff2 binary

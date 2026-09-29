@@ -1,0 +1,10 @@
+# módulo MAPAS (código em modulos/mapas, build em mapas/)
+modulos/mapas/node_modules/
+modulos/mapas/dist/
+# dados da Locks: nunca vão para o repositório público
+modulos/mapas/public/dados/
+modulos/mapas/dados-teste/
+modulos/mapas/dados-fonte/
+*.zip
+# rascunhos do desenvolvimento
+.superpowers/
