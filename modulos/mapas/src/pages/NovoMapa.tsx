@@ -14,7 +14,7 @@ import { useMapaPlantio, useTalhoesEPlantio } from '../components/editor/usePlan
 import '../components/editor/editor.css';
 import { aparenciaDoMapaSalvo, avisosPeriodoSafra, avisosPicsDistantes, layoutPadrao, textosAutomaticos } from '../lib/editor';
 import { editarTexto } from '../lib/editorRegras';
-import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarPng, gerarPngEMiniatura, nomeArquivoMapa } from '../lib/exportar';
+import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarCopiaHistorico, gerarPng, nomeArquivoMapa } from '../lib/exportar';
 import { DPI_HISTORICO, identidadeMapa, type ModoSalvar } from '../lib/historico';
 import { isoData, parseIsoData } from '../lib/format';
 import { resolvePalette } from '../lib/palettes';
@@ -201,8 +201,8 @@ export default function NovoMapa() {
     setErro(null);
     setOcupado('Salvando no histórico…');
     try {
-      // a cópia do histórico é sempre em 150 dpi (≈ 4 MB), com a miniatura tirada do mesmo desenho
-      const { png, miniatura, avisos: av } = await gerarPngEMiniatura(renderInput, DPI_HISTORICO);
+      // a cópia do histórico é sempre JPEG em 150 dpi (≈ 1 MB), com a miniatura PNG tirada do mesmo desenho
+      const { imagem, miniatura, avisos: av } = await gerarCopiaHistorico(renderInput, DPI_HISTORICO);
       setAvisosRender(av);
       const m: MapaSalvo = {
         ...identidadeMapa(modo, mapaAtual, new Date(), () => crypto.randomUUID()),
@@ -217,7 +217,7 @@ export default function NovoMapa() {
         pngPath: null,
         thumbPath: null,
       };
-      const salvo = await repo().salvarMapa(m, png, miniatura);
+      const salvo = await repo().salvarMapa(m, imagem, miniatura);
       const copia = !!mapaAtual && salvo.id !== mapaAtual.id;
       abertoRef.current = salvo.id;
       setMapaAtual(salvo);
@@ -257,7 +257,7 @@ export default function NovoMapa() {
         </div>
         <div className="linha">
           {aguardando && !ocupado && <span className="suave">Aguarde a interpolação terminar…</span>}
-          <label className="linha" title={`Resolução do PNG baixado (a cópia do histórico é sempre em ${DPI_HISTORICO} dpi)`}>
+          <label className="linha" title={`Resolução do PNG baixado (a cópia do histórico é sempre JPEG em ${DPI_HISTORICO} dpi)`}>
             <select value={dpi} onChange={(e) => setDpi(Number(e.target.value))} aria-label="Resolução do PNG baixado">
               {DPI_OPCOES.map((d) => (
                 <option key={d} value={d}>

@@ -1,18 +1,30 @@
 import { useEffect, useState } from 'react';
-import { carregarPlantioPims } from '../lib/plantioPims';
+import { repo } from '../data';
 import type { PlantioPimsArquivo } from '../lib/types';
 
-/** Releitura do plantio.json no máximo a cada 5 min (a rotina do GitHub Actions o atualiza 1×/h). */
+/** Releitura do plantio do PIMS no máximo a cada 5 min (a rotina do PIMS o atualiza 1×/h). */
 const VALIDADE_MS = 5 * 60 * 1000;
 let cache: { quando: number; promessa: Promise<PlantioPimsArquivo | null> } | null = null;
 
-/** plantio.json compartilhado entre as telas (sem arquivo, sem rede ou inválido → null). */
+/**
+ * Plantio do PIMS compartilhado entre as telas, lido pelo repositório (local: plantio.json; Supabase:
+ * tabela mapas_plantio_pims). Sem dados → null. Falha na leitura (rede, banco sem a tabela...) também
+ * vira null — as telas seguem com o plantio manual — e não fica no cache: a próxima chamada tenta de novo.
+ */
 export function lerPlantioPims(): Promise<PlantioPimsArquivo | null> {
-  if (!cache || Date.now() - cache.quando > VALIDADE_MS) cache = { quando: Date.now(), promessa: carregarPlantioPims() };
-  return cache.promessa;
+  if (cache && Date.now() - cache.quando <= VALIDADE_MS) return cache.promessa;
+  const promessa: Promise<PlantioPimsArquivo | null> = Promise.resolve()
+    .then(() => repo().lerPlantioPims())
+    .catch((e: unknown) => {
+      console.warn('Não foi possível ler o plantio do PIMS', e);
+      if (cache?.promessa === promessa) cache = null;
+      return null;
+    });
+  cache = { quando: Date.now(), promessa };
+  return promessa;
 }
 
-/** Arquivo do plantio do PIMS; `undefined` enquanto carrega, `null` se não houver. */
+/** Plantio do PIMS; `undefined` enquanto carrega, `null` se não houver. */
 export function usePlantioPims(): PlantioPimsArquivo | null | undefined {
   const [arq, setArq] = useState<PlantioPimsArquivo | null | undefined>(undefined);
   useEffect(() => {

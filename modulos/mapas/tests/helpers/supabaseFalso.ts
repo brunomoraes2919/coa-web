@@ -1,36 +1,60 @@
 /**
  * Cliente Supabase falso, em memória e sem rede, para testar o supabaseRepo. Imita o que importa do
  * PostgREST: cada resposta de select traz no máximo `maxLinhas` linhas (1000 no Supabase), com
- * .range/.order/.eq/.in, count exato, upsert pela chave primária, delete e update; e o Storage.
+ * .range/.order/.eq/.in, count exato, upsert pela chave primária, delete e update; o Storage; e a
+ * sessão (auth.getSession). Tabela desconhecida responde com o erro do PostgREST (PGRST205), então
+ * um nome de tabela errado no repositório aparece nos testes. Registra os nomes usados em from(nome)
+ * e storage.from(nome).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 type Linha = Record<string, unknown>;
-type Erro = { message: string } | null;
+type Erro = { message: string; code?: string } | null;
 
 export interface Requisicao {
+  /** tabela, ou "storage:<bucket>" nas operações do Storage */
   tabela: string;
-  op: 'select' | 'upsert' | 'delete' | 'update';
+  op: 'select' | 'upsert' | 'delete' | 'update' | 'upload' | 'remove';
   /** tamanho de cada lista .in(...) */
   listasIn: number[];
   /** linhas enviadas (upsert) */
   linhas: number;
+  /** arquivos (upload/remove) */
+  paths?: string[];
 }
 
+export interface Envio {
+  bucket: string;
+  path: string;
+  contentType: string | undefined;
+  upsert: boolean | undefined;
+}
+
+/** Chaves primárias: tabelas do módulo (mapas_*) e as do COA WEB lidas pelo módulo (fazendas, perfis). */
 const CHAVES: Record<string, string[]> = {
+  mapas_fazendas: ['id'],
+  mapas_talhoes: ['id'],
+  mapas_safras: ['id'],
+  mapas_plantios: ['safra_id', 'talhao_id'],
+  mapas_areas_cultura: ['id'],
+  mapas_chuva: ['id'],
+  mapas_plantio_pims: ['safra', 'unidade'],
   fazendas: ['id'],
-  talhoes: ['id'],
-  safras: ['id'],
-  plantios: ['safra_id', 'talhao_id'],
-  mapas: ['id'],
-  areas_cultura: ['id'],
+  perfis: ['id'],
 };
 
 export class BancoFalso {
-  tabelas: Record<string, Linha[]> = { fazendas: [], talhoes: [], safras: [], plantios: [], mapas: [], areas_cultura: [] };
+  tabelas: Record<string, Linha[]> = Object.fromEntries(Object.keys(CHAVES).map((t) => [t, []]));
   arquivos = new Map<string, Blob>();
   requisicoes: Requisicao[] = [];
-  /** devolve uma mensagem para simular erro do servidor nesta requisição */
+  /** nomes passados a client.from(nome) */
+  tabelasUsadas = new Set<string>();
+  /** nomes passados a client.storage.from(nome) */
+  buckets = new Set<string>();
+  envios: Envio[] = [];
+  /** sessão devolvida por auth.getSession (null = sem login) */
+  sessao: { user: { id: string } } | null = null;
+  /** devolve uma mensagem para simular erro do servidor nesta requisição (tabelas e Storage) */
   falhar: ((r: Requisicao) => string | null) | null = null;
 
   constructor(public maxLinhas = 1000) {}
@@ -39,31 +63,53 @@ export class BancoFalso {
     for (const l of linhas) this.tabelas[tabela].push({ ...(l as Linha) });
   }
 
+  /** Registra a operação do Storage; devolve o erro simulado, se houver. */
+  private storage(bucket: string, op: 'upload' | 'remove', paths: string[]): Erro {
+    const req: Requisicao = { tabela: `storage:${bucket}`, op, listasIn: [], linhas: 0, paths };
+    this.requisicoes.push(req);
+    const msg = this.falhar?.(req);
+    return msg ? { message: msg } : null;
+  }
+
   cliente(): SupabaseClient {
     return {
-      from: (tabela: string) => new Consulta(this, tabela),
+      from: (tabela: string) => {
+        this.tabelasUsadas.add(tabela);
+        return new Consulta(this, tabela);
+      },
+      auth: {
+        getSession: async () => ({ data: { session: this.sessao }, error: null }),
+      },
       storage: {
-        from: () => ({
-          upload: async (path: string, blob: Blob) => {
-            this.arquivos.set(path, blob);
-            return { data: { path }, error: null };
-          },
-          remove: async (paths: string[]) => {
-            paths.forEach((p) => this.arquivos.delete(p));
-            return { data: [], error: null };
-          },
-          createSignedUrl: async (path: string) =>
-            this.arquivos.has(path)
-              ? { data: { signedUrl: `https://falso/${path}` }, error: null }
-              : { data: null, error: { message: 'Object not found' } },
-        }),
+        from: (bucket: string) => {
+          this.buckets.add(bucket);
+          return {
+            upload: async (path: string, blob: Blob, opcoes?: { contentType?: string; upsert?: boolean }) => {
+              const error = this.storage(bucket, 'upload', [path]);
+              if (error) return { data: null, error };
+              this.envios.push({ bucket, path, contentType: opcoes?.contentType, upsert: opcoes?.upsert });
+              this.arquivos.set(path, blob);
+              return { data: { path }, error: null };
+            },
+            remove: async (paths: string[]) => {
+              const error = this.storage(bucket, 'remove', paths);
+              if (error) return { data: null, error };
+              paths.forEach((p) => this.arquivos.delete(p));
+              return { data: [], error: null };
+            },
+            createSignedUrl: async (path: string) =>
+              this.arquivos.has(path)
+                ? { data: { signedUrl: `https://falso/${path}` }, error: null }
+                : { data: null, error: { message: 'Object not found' } },
+          };
+        },
       },
     } as unknown as SupabaseClient;
   }
 }
 
 class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: number | null }> {
-  private op: Requisicao['op'] = 'select';
+  private op: 'select' | 'upsert' | 'delete' | 'update' = 'select';
   private colunas = '*';
   private comContagem = false;
   private filtros: ((l: Linha) => boolean)[] = [];
@@ -131,9 +177,12 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
   private executar(): { data: unknown; error: Erro; count: number | null } {
     const req: Requisicao = { tabela: this.tabela, op: this.op, listasIn: this.listasIn, linhas: this.payload.length };
     this.banco.requisicoes.push(req);
+    const tabela = this.banco.tabelas[this.tabela];
+    if (!tabela) {
+      return { data: null, error: { code: 'PGRST205', message: `Could not find the table 'public.${this.tabela}' in the schema cache` }, count: null };
+    }
     const msg = this.banco.falhar?.(req);
     if (msg) return { data: null, error: { message: msg }, count: null };
-    const tabela = this.banco.tabelas[this.tabela];
     const passa = (l: Linha) => this.filtros.every((f) => f(l));
 
     if (this.op === 'upsert') {

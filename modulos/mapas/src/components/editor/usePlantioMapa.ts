@@ -11,7 +11,7 @@ const SEM_AREAS: AreaCultura[] = [];
 
 /**
  * Plantio manual e áreas da cultura da safra × fazenda, independentes: se as áreas falharem (ex.:
- * Supabase sem a migração 0002, sem a tabela areas_cultura), o plantio manual continua valendo e o
+ * Supabase sem a tabela mapas_areas_cultura, rede, permissão), o plantio manual continua valendo e o
  * erro vem traduzido em `erro`; e vice-versa.
  */
 export async function carregarPlantioEAreas(

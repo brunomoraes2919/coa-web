@@ -1,20 +1,38 @@
 /**
  * Conversão entre o domínio (camelCase, src/lib/types.ts) e as linhas das tabelas do Supabase
  * (snake_case; geom/atributos/colunas/config/pics/resumo em colunas jsonb). Tudo puro.
- * Também completa registros antigos (anteriores ao plantio do PIMS) com os campos novos.
+ * Também completa registros antigos (anteriores ao plantio do PIMS e ao vínculo com o COA WEB) com
+ * os campos novos.
  */
 import { completarPlantio } from '../lib/plantioPims';
-import type { AreaCultura, Fazenda, MapaSalvo, Pic, Plantio, Safra, Talhao } from '../lib/types';
+import type { AreaCultura, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, Safra, Talhao } from '../lib/types';
 
 export { completarPlantio };
+
+/**
+ * Tabelas do módulo no Supabase do COA WEB (supabase/coa-web/0001_mapas.sql). As do COA WEB
+ * (fazendas, perfis) são só lidas pelo repositório, pelo nome delas.
+ */
+export const TABELAS = {
+  fazendas: 'mapas_fazendas',
+  talhoes: 'mapas_talhoes',
+  safras: 'mapas_safras',
+  plantios: 'mapas_plantios',
+  areasCultura: 'mapas_areas_cultura',
+  mapas: 'mapas_chuva',
+  plantioPims: 'mapas_plantio_pims',
+} as const;
+
+/** Bucket privado com a imagem e a miniatura dos mapas salvos. */
+export const BUCKET = 'mapas-chuva';
 
 // ---------------------------------------------------------------------------------------------
 // Compatibilidade: registros gravados antes do plantio do PIMS não têm os campos novos.
 // ---------------------------------------------------------------------------------------------
 
-/** Fazenda antiga: unidadePims/campoCodigo = null. */
+/** Fazenda antiga: unidadePims/campoCodigo/coaFazendaId = null. */
 export function completarFazenda(f: Fazenda): Fazenda {
-  return { ...f, unidadePims: f.unidadePims ?? null, campoCodigo: f.campoCodigo ?? null };
+  return { ...f, unidadePims: f.unidadePims ?? null, campoCodigo: f.campoCodigo ?? null, coaFazendaId: numeroOuNull(f.coaFazendaId) };
 }
 
 /** Talhão antigo: codigo = null. */
@@ -97,6 +115,8 @@ export interface FazendaRow {
   criado_em: string;
   unidade_pims: string | null;
   campo_codigo: string | null;
+  /** fazendas.id do COA WEB (bigint) */
+  coa_fazenda_id: number | null;
 }
 
 export function fazendaParaRow(f: Fazenda): FazendaRow {
@@ -109,6 +129,7 @@ export function fazendaParaRow(f: Fazenda): FazendaRow {
     criado_em: f.criadoEm,
     unidade_pims: f.unidadePims ?? null,
     campo_codigo: f.campoCodigo ?? null,
+    coa_fazenda_id: f.coaFazendaId ?? null,
   };
 }
 
@@ -122,6 +143,7 @@ export function rowParaFazenda(r: FazendaRow): Fazenda {
     criadoEm: r.criado_em,
     unidadePims: r.unidade_pims ?? null,
     campoCodigo: r.campo_codigo ?? null,
+    coaFazendaId: numeroOuNull(r.coa_fazenda_id),
   };
 }
 
@@ -290,4 +312,17 @@ export function rowParaMapa(r: MapaRow): MapaSalvo {
     thumbPath: r.thumb_path,
     criadoEm: r.criado_em,
   };
+}
+
+/** Linha de mapas_plantio_pims (gravada pela rotina do PIMS com a chave de serviço; o app só lê). */
+export interface PlantioPimsRow {
+  safra: string;
+  unidade: string;
+  gerado_em: string;
+  talhoes: PlantioPimsTalhao[];
+}
+
+/** talhoes (jsonb) nulo ou que não é lista vira lista vazia; a validação de cada talhão fica em montarPlantioPims. */
+export function rowParaLinhaPlantioPims(r: PlantioPimsRow): LinhaPlantioPims {
+  return { safra: r.safra, unidade: r.unidade, geradoEm: r.gerado_em, talhoes: Array.isArray(r.talhoes) ? r.talhoes : [] };
 }

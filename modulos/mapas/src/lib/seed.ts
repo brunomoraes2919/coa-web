@@ -184,6 +184,8 @@ async function gravarFazenda(repo: Repositorio, sf: SeedFazenda, fc: FeatureColl
     criadoEm: existente?.criadoEm ?? new Date().toISOString(),
     unidadePims: sf.unidadePims,
     campoCodigo: sf.campoCodigo,
+    // mantém o vínculo com a fazenda do COA WEB que a fazenda já tinha
+    coaFazendaId: existente?.coaFazendaId ?? null,
   };
   await repo.atualizarFazenda(fazenda, []);
   const porId = new Map(atuais.map((t) => [t.id, t]));

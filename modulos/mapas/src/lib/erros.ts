@@ -4,8 +4,8 @@
  * em português, passam como estão. Puro: usado pela interface e pelo worker da interpolação.
  */
 
-/** Banco do Supabase sem a migração 0002 (tabela areas_cultura ou colunas novas de plantios). */
-const BANCO_DESATUALIZADO = 'Banco desatualizado: rode a migração supabase/migrations/0002_plantio_pims.sql';
+/** Supabase do COA WEB sem o script do módulo (tabelas mapas_* ou colunas inexistentes). */
+const BANCO_DESATUALIZADO = 'Banco desatualizado: rode o script supabase/coa-web/0001_mapas.sql no Supabase do COA WEB';
 /** Códigos do Postgres/PostgREST para tabela ou coluna inexistente. */
 const CODIGOS_BANCO_DESATUALIZADO = new Set(['42P01', 'PGRST204', 'PGRST205']);
 
@@ -15,7 +15,7 @@ const TRADUCOES: [RegExp, string][] = [
   [/jwt expired|invalid jwt/i, 'Sua sessão expirou. Faça login de novo.'],
   [
     /row-level security|permission denied/i,
-    'Sem permissão para acessar estes dados. Entre de novo com o seu e-mail e confira se o script supabase/migrations/0001_init.sql foi executado no projeto.',
+    'Sem permissão para acessar estes dados. Entre de novo com o seu e-mail; se continuar, peça a um administrador do COA WEB acesso a esta fazenda.',
   ],
   [
     /payload too large|exceeded the maximum allowed size/i,

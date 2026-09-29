@@ -2,10 +2,24 @@
 import type { MapaSalvo } from './types';
 
 /**
- * Resolução da cópia guardada no histórico: um A3 em 150 dpi tem ≈ 4 MB (em 300 dpi seriam ~14 MB e
- * em 600 dpi ~39 MB). Para outra resolução, abra o mapa e baixe o PNG no dpi desejado.
+ * Resolução da cópia guardada no histórico: um A3 em 150 dpi tem ≈ 1 MB em JPEG (≈ 4 MB em PNG; o
+ * plano gratuito do Supabase tem 1 GB de storage). Para outra resolução ou para o PNG, abra o mapa e
+ * baixe o PNG no dpi desejado.
  */
 export const DPI_HISTORICO = 150;
+
+/** Qualidade do JPEG da cópia do histórico (0 a 1). */
+export const QUALIDADE_JPEG_HISTORICO = 0.9;
+
+/** Tipo aceito para os arquivos do histórico pelo tipo do blob: JPEG, ou PNG em qualquer outro caso (inclusive vazio). */
+export function tipoImagem(tipoBlob: string): 'image/jpeg' | 'image/png' {
+  return /^image\/jpe?g$/i.test(tipoBlob.trim()) ? 'image/jpeg' : 'image/png';
+}
+
+/** Extensão do arquivo pelo tipo do blob: 'jpg' (JPEG) ou 'png'. */
+export function extensaoImagem(tipoBlob: string): 'jpg' | 'png' {
+  return tipoImagem(tipoBlob) === 'image/jpeg' ? 'jpg' : 'png';
+}
 
 export type ModoSalvar = 'atualizar' | 'novo';
 
@@ -23,9 +37,10 @@ export function identidadeMapa(
   return { id: novoId(), criadoEm: agora.toISOString() };
 }
 
-/** Texto do botão de download no cartão do histórico. */
-export function rotuloBaixarHistorico(): string {
-  return `Baixar PNG (${DPI_HISTORICO} dpi)`;
+/** Texto do botão de download no cartão do histórico, pelo arquivo guardado (mapas antigos estão em PNG). */
+export function rotuloBaixarHistorico(path: string | null | undefined): string {
+  const formato = /\.jpe?g$/i.test(path ?? '') ? 'JPEG' : 'PNG';
+  return `Baixar ${formato} (${DPI_HISTORICO} dpi)`;
 }
 
 /** lado maior da miniatura do histórico, em pixels */

@@ -1,11 +1,11 @@
-import type { AreaCultura, Fazenda, MapaSalvo, Plantio, Safra, Talhao } from '../lib/types';
+import type { AreaCultura, Fazenda, FazendaCoa, MapaSalvo, PerfilUsuario, Plantio, PlantioPimsArquivo, Safra, Talhao } from '../lib/types';
 
 /** Contrato do repositório (implementado por localRepo.ts e supabaseRepo.ts). */
 
 /**
- * Formato do backup exportável/importável (JSON puro, sem os PNGs). Backups antigos não têm
- * `areasCultura` nem os campos novos (unidadePims, codigo, nomePims, origem/status...): ao importar,
- * eles são completados com null / { origem: 'manual', status: 'plantado' }.
+ * Formato do backup exportável/importável (JSON puro, sem as imagens). Backups antigos não têm
+ * `areasCultura` nem os campos novos (unidadePims, codigo, nomePims, coaFazendaId, origem/status...):
+ * ao importar, eles são completados com null / { origem: 'manual', status: 'plantado' }.
  */
 export interface BackupJson {
   versao: 1;
@@ -20,6 +20,19 @@ export interface BackupJson {
 
 export interface Repositorio {
   modo: 'local' | 'supabase';
+
+  /**
+   * Perfil do usuário logado no COA WEB. Local: 'admin'. Supabase: perfis.perfil do usuário da
+   * sessão; sem sessão ou sem linha em perfis → null; valor desconhecido → 'colaborador'.
+   */
+  perfil(): Promise<PerfilUsuario | null>;
+  /** Fazendas do COA WEB visíveis ao usuário (id e nome), por nome. Local: []. */
+  listarFazendasCoa(): Promise<FazendaCoa[]>;
+  /**
+   * Plantio do PIMS. Local: public/dados/plantio.json (sem arquivo, sem rede ou inválido → null).
+   * Supabase: as linhas visíveis de mapas_plantio_pims montadas no mesmo formato (sem linhas → null).
+   */
+  lerPlantioPims(): Promise<PlantioPimsArquivo | null>;
 
   listarFazendas(): Promise<Fazenda[]>;
   obterTalhoes(fazendaId: string): Promise<Talhao[]>;
@@ -54,18 +67,23 @@ export interface Repositorio {
   listarMapas(): Promise<MapaSalvo[]>;
   /** Um mapa do histórico pelo id; null se não existir. */
   obterMapa(id: string): Promise<MapaSalvo | null>;
-  /** Salva PNG e miniatura, define pngPath/thumbPath e retorna o mapa salvo com os paths preenchidos. */
-  salvarMapa(m: MapaSalvo, png: Blob, thumb: Blob): Promise<MapaSalvo>;
+  /**
+   * Salva a imagem do histórico (JPEG; mapas antigos têm PNG) e a miniatura PNG — arquivos
+   * "<id>.<extensão pelo tipo do blob>" e "<id>-thumb.png" —, define pngPath/thumbPath e retorna o mapa
+   * salvo com os paths preenchidos. Se o mapa já existia com outro arquivo (ex.: "<id>.png"), o antigo é
+   * removido depois de gravar o registro; se essa remoção falhar, o salvamento vale assim mesmo.
+   */
+  salvarMapa(m: MapaSalvo, imagem: Blob, thumb: Blob): Promise<MapaSalvo>;
   /** Object URL (local) ou signed URL de 1h (Supabase). */
   urlArquivo(path: string): Promise<string>;
-  /** Remove o mapa e os arquivos (PNG e miniatura) associados. */
+  /** Remove o mapa e os arquivos (imagem e miniatura) associados. */
   excluirMapa(m: MapaSalvo): Promise<void>;
 
   exportarBackup(): Promise<BackupJson>;
   /**
    * Upsert de tudo (fazendas, talhões, safras, plantios, áreas da cultura, mapas). O backup não leva
-   * os PNGs: um mapa importado fica com pngPath/thumbPath = null, a não ser que já exista aqui com os
-   * próprios arquivos.
+   * as imagens: um mapa importado fica com pngPath/thumbPath = null, a não ser que já exista aqui com
+   * os próprios arquivos.
    */
   importarBackup(b: BackupJson): Promise<void>;
 }

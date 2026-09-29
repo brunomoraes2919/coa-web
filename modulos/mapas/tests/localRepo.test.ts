@@ -26,7 +26,7 @@ function repoNovo(): Repositorio {
 const poligono: Polygon = { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] };
 
 function fazenda(parciais: Partial<Fazenda> = {}): Fazenda {
-  return { id: 'faz-1', nome: 'Fazenda Teste', campoNome: 'NOME', campoSetor: null, colunas: ['NOME'], criadoEm: '2026-01-01T00:00:00.000Z', unidadePims: null, campoCodigo: null, ...parciais };
+  return { id: 'faz-1', nome: 'Fazenda Teste', campoNome: 'NOME', campoSetor: null, colunas: ['NOME'], criadoEm: '2026-01-01T00:00:00.000Z', unidadePims: null, campoCodigo: null, coaFazendaId: null, ...parciais };
 }
 
 function talhao(parciais: Partial<Talhao> = {}): Talhao {

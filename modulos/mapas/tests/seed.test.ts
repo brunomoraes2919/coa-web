@@ -156,7 +156,7 @@ describe('carregarSeed', () => {
 
   it('reaproveita fazenda e safra cadastradas à mão (mesmo nome), sem duplicar nem trocar os talhões do usuário', async () => {
     const repo = repoNovo();
-    const minha = { id: 'minha-faz', nome: 'SIRIEMA', campoNome: 'TALHAO', campoSetor: null, colunas: ['TALHAO'], criadoEm: '2026-01-01T00:00:00.000Z', unidadePims: null, campoCodigo: null };
+    const minha = { id: 'minha-faz', nome: 'SIRIEMA', campoNome: 'TALHAO', campoSetor: null, colunas: ['TALHAO'], criadoEm: '2026-01-01T00:00:00.000Z', unidadePims: null, campoCodigo: null, coaFazendaId: null };
     await repo.salvarFazenda(minha, [{ id: 'meu-talhao', fazendaId: 'minha-faz', nome: 'T1', setor: null, areaHa: 1, geom: quadrado(0), atributos: {}, codigo: null }]);
     await repo.salvarSafra({ id: 'minha-safra', nome: 'SOJA 26/27', cultura: 'SOJA', anoSafra: '26/27', inicio: '2026-09-15', fim: '2027-03-31', nomePims: null });
 

@@ -7,7 +7,7 @@ import Modal from '../components/Modal';
 import '../components/editor/editor.css';
 import { baixarDeUrl, nomeArquivoMapa } from '../lib/exportar';
 import { fmtPeriodo, parseIsoData } from '../lib/format';
-import { rotuloBaixarHistorico } from '../lib/historico';
+import { extensaoImagem, rotuloBaixarHistorico } from '../lib/historico';
 import type { Fazenda, MapaSalvo, Safra } from '../lib/types';
 
 interface Item {
@@ -29,7 +29,7 @@ export default function Mapas() {
   const [erro, setErro] = useState<string | null>(null);
   const [excluir, setExcluir] = useState<MapaSalvo | null>(null);
   const [filtro, setFiltro] = useState('');
-  /** id do mapa cujo PNG está sendo baixado */
+  /** id do mapa cuja imagem está sendo baixada */
   const [baixando, setBaixando] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,11 +77,13 @@ export default function Mapas() {
     setBaixando(m.id);
     let url: string | null = null;
     try {
-      // local: object URL; Supabase: signed URL de outro domínio (o atributo download seria ignorado)
+      // local: object URL; Supabase: signed URL de outro domínio (o atributo download seria ignorado).
+      // A extensão segue o tipo do arquivo guardado: JPEG (mapas novos) ou PNG (mapas antigos).
       url = await repo().urlArquivo(m.pngPath);
-      await baixarDeUrl(url, nomeArquivoMapa(m.config.textos.fazenda || nomeFazenda(m.fazendaId), m.config.textos.periodo));
+      const fazenda = m.config.textos.fazenda || nomeFazenda(m.fazendaId);
+      await baixarDeUrl(url, (blob) => nomeArquivoMapa(fazenda, m.config.textos.periodo, extensaoImagem(blob.type)));
     } catch (e) {
-      setErro(`Não foi possível baixar o PNG: ${mensagemDeErro(e)}`);
+      setErro(`Não foi possível baixar a imagem: ${mensagemDeErro(e)}`);
     } finally {
       if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
       setBaixando(null);
@@ -166,14 +168,14 @@ export default function Mapas() {
                         title="Cópia guardada no histórico. Para outra resolução, abra o mapa e baixe o PNG."
                         onClick={() => void baixar(mapa)}
                       >
-                        {baixando === mapa.id ? 'Baixando…' : rotuloBaixarHistorico()}
+                        {baixando === mapa.id ? 'Baixando…' : rotuloBaixarHistorico(mapa.pngPath)}
                       </button>
                     ) : null}
                     <button type="button" className="botao botao-pequeno botao-perigo" onClick={() => setExcluir(mapa)}>
                       Excluir
                     </button>
                   </div>
-                  {!mapa.pngPath && <span className="suave">PNG não disponível — abra o mapa para gerar de novo</span>}
+                  {!mapa.pngPath && <span className="suave">Imagem não disponível — abra o mapa para gerar de novo</span>}
                 </div>
               </article>
             ))}
@@ -195,7 +197,7 @@ export default function Mapas() {
           </>
         }
       >
-        <p>Excluir o mapa “{excluir?.titulo}” do histórico? O PNG salvo também será apagado.</p>
+        <p>Excluir o mapa “{excluir?.titulo}” do histórico? A imagem salva também será apagada.</p>
       </Modal>
     </div>
   );

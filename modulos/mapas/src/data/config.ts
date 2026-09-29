@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { TABELAS } from './supabaseLinhas';
 
 /** Configuração de acesso a dados: modo local (IndexedDB) ou Supabase. */
 export interface AppConfig {
@@ -52,7 +53,7 @@ export function salvarConfig(c: AppConfig): void {
   }
 }
 
-/** Cria um client Supabase temporário e faz select de 1 linha de "safras" para validar a conexão. */
+/** Cria um client Supabase temporário e faz select de 1 linha de "mapas_safras" para validar a conexão. */
 export async function testarConexao(c: AppConfig): Promise<void> {
   if (!c.supabaseUrl.trim() || !c.supabaseKey.trim()) {
     throw new Error('Informe a URL e a chave anon do Supabase.');
@@ -63,7 +64,7 @@ export async function testarConexao(c: AppConfig): Promise<void> {
   } catch {
     throw new Error('URL do Supabase inválida.');
   }
-  const { error } = await client.from('safras').select('id').limit(1);
+  const { error } = await client.from(TABELAS.safras).select('id').limit(1);
   if (error) {
     throw new Error(`Não foi possível conectar ao Supabase: ${error.message}`);
   }

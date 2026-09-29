@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { DPI_HISTORICO, identidadeMapa, LADO_MINIATURA, rotuloBaixarHistorico, tamanhoMiniatura } from '../src/lib/historico';
+import {
+  DPI_HISTORICO,
+  extensaoImagem,
+  identidadeMapa,
+  LADO_MINIATURA,
+  QUALIDADE_JPEG_HISTORICO,
+  rotuloBaixarHistorico,
+  tamanhoMiniatura,
+  tipoImagem,
+} from '../src/lib/historico';
 
 const aberto = { id: 'mapa-antigo', criadoEm: '2026-01-10T12:00:00.000Z' };
 const agora = new Date('2026-09-28T15:00:00.000Z');
@@ -21,12 +30,26 @@ describe('identidadeMapa (editar um mapa reaberto não apaga o histórico)', () 
 });
 
 describe('cópia do histórico', () => {
-  it('é sempre guardada em 150 dpi (≈ 4 MB por mapa A3), qualquer que seja o dpi escolhido para baixar', () => {
+  it('é sempre guardada em JPEG de 150 dpi, qualidade 0,9 (≈ 1 MB por mapa A3), qualquer que seja o dpi escolhido para baixar', () => {
     expect(DPI_HISTORICO).toBe(150);
+    expect(QUALIDADE_JPEG_HISTORICO).toBe(0.9);
   });
 
-  it('o botão do cartão diz a resolução guardada', () => {
-    expect(rotuloBaixarHistorico()).toBe('Baixar PNG (150 dpi)');
+  it('o botão do cartão diz o formato (pelo arquivo guardado) e a resolução', () => {
+    expect(rotuloBaixarHistorico('mapas/abc.jpg')).toBe('Baixar JPEG (150 dpi)');
+    expect(rotuloBaixarHistorico('abc.JPEG')).toBe('Baixar JPEG (150 dpi)');
+    // mapas antigos, guardados em PNG
+    expect(rotuloBaixarHistorico('abc.png')).toBe('Baixar PNG (150 dpi)');
+    expect(rotuloBaixarHistorico(null)).toBe('Baixar PNG (150 dpi)');
+  });
+
+  it('extensão e tipo do arquivo seguem o tipo do blob (JPEG ou, nos demais casos, PNG)', () => {
+    expect(extensaoImagem('image/jpeg')).toBe('jpg');
+    expect(extensaoImagem('image/png')).toBe('png');
+    expect(extensaoImagem('')).toBe('png');
+    expect(tipoImagem('image/jpeg')).toBe('image/jpeg');
+    expect(tipoImagem('image/png')).toBe('image/png');
+    expect(tipoImagem('')).toBe('image/png');
   });
 });
 

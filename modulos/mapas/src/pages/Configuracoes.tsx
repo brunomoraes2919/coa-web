@@ -208,38 +208,27 @@ export default function Configuracoes({ acessoDados = true }: Props) {
         </div>
 
         {cfg.modo === 'supabase' && (
-          <Aviso tipo="info" titulo="Como criar o projeto no Supabase">
+          <Aviso tipo="info" titulo="Como ligar ao Supabase do COA WEB">
             <ol className="passos">
-              <li>Crie uma conta e um projeto em supabase.com (o plano gratuito atende).</li>
               <li>
-                No <em>SQL Editor</em>, rode o conteúdo de <span className="codigo">supabase/migrations/0001_init.sql</span>{' '}
-                (cria as tabelas, as regras de acesso e o bucket <span className="codigo">mapas</span>) e depois o de{' '}
-                <span className="codigo">supabase/migrations/0002_plantio_pims.sql</span> (plantio do PIMS e áreas da cultura).
-              </li>
-              <li>
-                <strong>
-                  Em <em>Authentication → Sign In / Providers</em>, desative <em>Allow new users to sign up</em>
-                </strong>{' '}
-                (veja o alerta abaixo).
-              </li>
-              <li>
-                Em <em>Authentication → Users → Add user</em>, crie os usuários da equipe (e-mail e senha).
+                No <em>SQL Editor</em> do projeto Supabase do COA WEB, rode o conteúdo de{' '}
+                <span className="codigo">supabase/coa-web/0001_mapas.sql</span> (cria só objetos novos: as tabelas{' '}
+                <span className="codigo">mapas_*</span>, as regras de acesso e o bucket{' '}
+                <span className="codigo">mapas-chuva</span>; não altera nada do COA WEB).
               </li>
               <li>
                 Em <em>Project Settings → API</em>, copie a <em>Project URL</em> e a chave <em>anon public</em> para os
                 campos acima.
               </li>
-              <li>Use "Testar conexão", salve e entre com o seu e-mail. O passo a passo completo está no README.</li>
+              <li>Salve e entre com o seu e-mail e senha do COA WEB. O passo a passo completo está no README.</li>
             </ol>
           </Aviso>
         )}
         {cfg.modo === 'supabase' && (
-          <Aviso tipo="alerta" titulo="Importante: desative novos cadastros no Supabase">
-            As regras do banco liberam os dados para qualquer usuário com login. Se o cadastro público ficar ligado,
-            qualquer pessoa com a URL e a chave anon (que ficam no site publicado) pode criar uma conta e ver, alterar ou
-            apagar fazendas e mapas. Com ele desligado, só entram os usuários que você criar em{' '}
-            <em>Authentication → Users</em>. Em painéis mais antigos a opção fica em{' '}
-            <em>Authentication → Providers → Email</em>.
+          <Aviso tipo="info" titulo="Quem vê o quê">
+            As permissões são as do COA WEB: o admin vê e altera tudo; o colaborador vê as fazendas liberadas para ele
+            e nelas salva e exclui mapas de chuva. Fazendas, talhões, safras e plantio só o admin altera. Uma fazenda de
+            mapa sem vínculo com uma fazenda do COA WEB só aparece para o admin.
           </Aviso>
         )}
       </div>
@@ -247,7 +236,7 @@ export default function Configuracoes({ acessoDados = true }: Props) {
       <div className="cartao pilha">
         <h2>Backup</h2>
         <p className="suave">
-          O backup em JSON guarda fazendas, talhões, safras, plantios e o histórico de mapas (sem as imagens PNG). Serve
+          O backup em JSON guarda fazendas, talhões, safras, plantios e o histórico de mapas (sem as imagens). Serve
           também para migrar do modo local para o Supabase: exporte no modo local, troque o modo e importe.
         </p>
         {atual.modo === 'local' && (

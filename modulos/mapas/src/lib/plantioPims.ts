@@ -1,12 +1,24 @@
 /**
- * Plantio automático do PIMS: leitura de public/dados/plantio.json (gerado por
- * scripts/sincronizar-plantio.mjs no GitHub Actions) e casamento com os talhões/áreas da cultura
- * pelo par (fazenda.unidadePims, código normalizado).
+ * Plantio automático do PIMS: leitura de public/dados/plantio.json (modo local; gerado por
+ * scripts/sincronizar-plantio.mjs) ou montagem a partir das linhas de mapas_plantio_pims (Supabase),
+ * e casamento com os talhões/áreas da cultura pelo par (fazenda.unidadePims, código normalizado).
  */
 import { normalizarCodigo } from './codigoTalhao';
-import type { AreaCultura, Fazenda, Plantio, PlantioPimsArquivo, PlantioPimsTalhao, Safra, StatusPlantio, Talhao } from './types';
+import type {
+  AreaCultura,
+  Fazenda,
+  LinhaPlantioPims,
+  Plantio,
+  PlantioPimsArquivo,
+  PlantioPimsTalhao,
+  Safra,
+  StatusPlantio,
+  Talhao,
+} from './types';
 
 const URL_PLANTIO = './dados/plantio.json';
+/** Mesma fonte que scripts/sincronizar-plantio.mjs grava no plantio.json. */
+const FONTE_PIMS = 'PIMS via Agrovex';
 
 /** Nome de safra/unidade para comparação: maiúsculas, sem acento, sem espaços nas pontas e repetidos. */
 function chaveNome(s: string | null | undefined): string {
@@ -42,7 +54,7 @@ export function completarPlantio(p: Plantio): Plantio {
 
 const ehObjeto = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-function pareceTalhao(v: unknown): boolean {
+function pareceTalhao(v: unknown): v is PlantioPimsTalhao {
   return ehObjeto(v) && typeof v.codigo === 'string' && STATUS.includes(v.status as StatusPlantio);
 }
 
@@ -69,6 +81,39 @@ export async function carregarPlantioPims(fetchImpl: typeof fetch = (u, i) => fe
   } catch {
     return null;
   }
+}
+
+const porNome = (a: string, b: string) => a.localeCompare(b, 'pt-BR');
+
+/**
+ * Monta o plantio do PIMS (mesmo formato do plantio.json) a partir das linhas de mapas_plantio_pims
+ * (uma por safra × unidade; o RLS já deixou só as unidades visíveis ao usuário). Sem linhas → null.
+ * Safras agrupadas pelo nome e unidades em ordem alfabética; geradoEm = a linha mais recente (ISO);
+ * talhões que não passam na validação do plantio.json são descartados.
+ */
+export function montarPlantioPims(linhas: LinhaPlantioPims[]): PlantioPimsArquivo | null {
+  if (!linhas.length) return null;
+  const safras = new Map<string, Map<string, PlantioPimsTalhao[]>>();
+  let maisRecente = -Infinity;
+  for (const l of linhas) {
+    const ms = Date.parse(l.geradoEm);
+    if (ms > maisRecente) maisRecente = ms;
+    const unidades = safras.get(l.safra) ?? new Map<string, PlantioPimsTalhao[]>();
+    safras.set(l.safra, unidades);
+    const validos = (Array.isArray(l.talhoes) ? l.talhoes : []).filter(pareceTalhao);
+    unidades.set(l.unidade, [...(unidades.get(l.unidade) ?? []), ...validos]);
+  }
+  return {
+    versao: 1,
+    geradoEm: Number.isFinite(maisRecente) ? new Date(maisRecente).toISOString() : linhas[0].geradoEm,
+    fonte: FONTE_PIMS,
+    safras: [...safras.entries()]
+      .sort(([a], [b]) => porNome(a, b))
+      .map(([nome, unidades]) => ({
+        nome,
+        unidades: [...unidades.entries()].sort(([a], [b]) => porNome(a, b)).map(([unidade, talhoes]) => ({ unidade, talhoes })),
+      })),
+  };
 }
 
 export interface PlantioCasado {

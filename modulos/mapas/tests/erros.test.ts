@@ -20,8 +20,9 @@ describe('mensagemDeErro (erros técnicos em inglês viram português)', () => {
   });
 
   it('sem permissão (RLS / permission denied)', () => {
-    for (const m of ['new row violates row-level security policy for table "mapas"', 'permission denied for table fazendas']) {
+    for (const m of ['new row violates row-level security policy for table "mapas_chuva"', 'permission denied for table mapas_fazendas']) {
       expect(mensagemDeErro(new Error(m))).toMatch(/^Sem permissão para acessar estes dados/);
+      expect(mensagemDeErro(new Error(m))).toMatch(/COA WEB/);
     }
   });
 
@@ -37,12 +38,12 @@ describe('mensagemDeErro (erros técnicos em inglês viram português)', () => {
     );
   });
 
-  it('banco sem a migração 0002 (tabela ou coluna inexistente: 42P01, PGRST204/PGRST205)', () => {
-    const esperado = 'Banco desatualizado: rode a migração supabase/migrations/0002_plantio_pims.sql';
+  it('banco sem o script 0001_mapas.sql (tabela ou coluna inexistente: 42P01, PGRST204/PGRST205)', () => {
+    const esperado = 'Banco desatualizado: rode o script supabase/coa-web/0001_mapas.sql no Supabase do COA WEB';
     for (const m of [
-      'Não foi possível listar as áreas da cultura: relation "public.areas_cultura" does not exist',
-      "Could not find the table 'public.areas_cultura' in the schema cache",
-      "Could not find the 'origem' column of 'plantios' in the schema cache",
+      'Não foi possível listar as áreas da cultura: relation "public.mapas_areas_cultura" does not exist',
+      "Could not find the table 'public.mapas_areas_cultura' in the schema cache",
+      "Could not find the 'origem' column of 'mapas_plantios' in the schema cache",
     ]) {
       expect(mensagemDeErro(new Error(m))).toBe(esperado);
     }

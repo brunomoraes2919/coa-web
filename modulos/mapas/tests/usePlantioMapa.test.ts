@@ -11,12 +11,12 @@ describe('carregarPlantioEAreas', () => {
     expect(r).toEqual({ plantios: [plantio], areas: [area], erro: null });
   });
 
-  it('sem a tabela areas_cultura (banco sem a migração 0002): mantém o plantio manual e avisa', async () => {
+  it('sem a tabela mapas_areas_cultura (banco sem o script 0001_mapas.sql): mantém o plantio manual e avisa', async () => {
     const r = await carregarPlantioEAreas(
       {
         listarPlantios: async () => [plantio],
         listarAreasCultura: async () => {
-          throw new Error('Não foi possível listar as áreas da cultura: relation "public.areas_cultura" does not exist');
+          throw new Error('Não foi possível listar as áreas da cultura: relation "public.mapas_areas_cultura" does not exist');
         },
       },
       's',
@@ -24,7 +24,7 @@ describe('carregarPlantioEAreas', () => {
     );
     expect(r.plantios).toEqual([plantio]);
     expect(r.areas).toEqual([]);
-    expect(r.erro).toBe('Não foi possível carregar as áreas da cultura: Banco desatualizado: rode a migração supabase/migrations/0002_plantio_pims.sql');
+    expect(r.erro).toBe('Não foi possível carregar as áreas da cultura: Banco desatualizado: rode o script supabase/coa-web/0001_mapas.sql no Supabase do COA WEB');
   });
 
   it('falha no plantio: erro do plantio (as áreas ainda valem)', async () => {

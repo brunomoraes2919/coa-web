@@ -1,5 +1,5 @@
 import { paginaDe, renderLayout, type RenderInput } from '../render';
-import { tamanhoMiniatura } from './historico';
+import { DPI_HISTORICO, QUALIDADE_JPEG_HISTORICO, tamanhoMiniatura } from './historico';
 import { definirDpiPng } from './pngDpi';
 
 export const DPI_OPCOES = [150, 300, 600] as const;
@@ -43,9 +43,9 @@ export async function renderizarPagina(inp: RenderInput, pxPorMm: number): Promi
   }
 }
 
-function paraBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+function paraBlob(canvas: HTMLCanvasElement, tipo = 'image/png', qualidade?: number): Promise<Blob> {
   return new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Falha ao gerar a imagem'))), 'image/png'),
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('Falha ao gerar a imagem'))), tipo, qualidade),
   );
 }
 
@@ -81,23 +81,35 @@ export async function gerarPng(inp: RenderInput, dpi: number = DPI_PADRAO): Prom
 }
 
 /**
- * PNG em alta definição e miniatura PNG para o histórico (lado maior de 480 px, em paisagem ou retrato),
- * com um único desenho da página (a miniatura é reduzida do PNG grande, sem baixar os tiles de novo).
+ * Arquivos do histórico a partir da página já desenhada: a cópia em JPEG (qualidade
+ * QUALIDADE_JPEG_HISTORICO, ≈ 4× menor que o PNG) e a miniatura PNG (lado maior de 480 px, em
+ * paisagem ou retrato), reduzida do mesmo canvas. Não libera `pagina` (é de quem chamou).
  */
-export async function gerarPngEMiniatura(
-  inp: RenderInput,
-  dpi: number = DPI_PADRAO,
-): Promise<{ png: Blob; miniatura: Blob; avisos: string[] }> {
-  const { canvas, avisos } = await renderizarPagina(inp, dpi / 25.4);
-  let mini: HTMLCanvasElement | null = null;
+export async function codificarCopiaHistorico(pagina: HTMLCanvasElement): Promise<{ imagem: Blob; miniatura: Blob }> {
+  const t = tamanhoMiniatura({ w: pagina.width, h: pagina.height });
+  const mini = reduzirCanvas(pagina, t.w, t.h);
   try {
-    const t = tamanhoMiniatura({ w: canvas.width, h: canvas.height });
-    mini = reduzirCanvas(canvas, t.w, t.h);
-    const [bruto, miniatura] = await Promise.all([paraBlob(canvas), paraBlob(mini)]);
-    return { png: await definirDpiPng(bruto, dpi), miniatura, avisos };
+    const [imagem, miniatura] = await Promise.all([paraBlob(pagina, 'image/jpeg', QUALIDADE_JPEG_HISTORICO), paraBlob(mini)]);
+    return { imagem, miniatura };
+  } finally {
+    liberarCanvas(mini);
+  }
+}
+
+/**
+ * Cópia do histórico (JPEG no dpi do histórico) e miniatura PNG, com um único desenho da página (a
+ * miniatura é reduzida do desenho grande, sem baixar os tiles de novo). O download pelo editor
+ * continua sendo o PNG de gerarPng, no dpi escolhido.
+ */
+export async function gerarCopiaHistorico(
+  inp: RenderInput,
+  dpi: number = DPI_HISTORICO,
+): Promise<{ imagem: Blob; miniatura: Blob; avisos: string[] }> {
+  const { canvas, avisos } = await renderizarPagina(inp, dpi / 25.4);
+  try {
+    return { ...(await codificarCopiaHistorico(canvas)), avisos };
   } finally {
     liberarCanvas(canvas);
-    liberarCanvas(mini);
   }
 }
 
@@ -113,13 +125,15 @@ export function baixarArquivo(blob: Blob, nome: string): void {
 }
 
 /**
- * Baixa o arquivo de uma URL com o nome escolhido. Busca o conteúdo antes: numa URL de outro domínio
- * (signed URL do Supabase) o navegador ignora o atributo `download` e abriria a imagem em vez de salvar.
+ * Baixa o arquivo de uma URL com o nome escolhido (ou calculado pelo conteúdo, ex.: a extensão pelo
+ * tipo do blob). Busca o conteúdo antes: numa URL de outro domínio (signed URL do Supabase) o
+ * navegador ignora o atributo `download` e abriria a imagem em vez de salvar.
  */
-export async function baixarDeUrl(url: string, nome: string): Promise<void> {
+export async function baixarDeUrl(url: string, nome: string | ((blob: Blob) => string)): Promise<void> {
   const resp = await fetch(url);
   if (!resp.ok) throw new Error(`arquivo indisponível (erro ${resp.status})`);
-  baixarArquivo(await resp.blob(), nome);
+  const blob = await resp.blob();
+  baixarArquivo(blob, typeof nome === 'function' ? nome(blob) : nome);
 }
 
 /** "MAPA_CHUVA_GUAPIRAMA_01-02-2025_a_15-02-2025.png" */

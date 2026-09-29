@@ -59,6 +59,7 @@ const fazenda = (unidadePims: string | null): Fazenda => ({
   criadoEm: '2026-01-01',
   unidadePims,
   campoCodigo: 'COD',
+  coaFazendaId: null,
 });
 
 const arquivo = (talhoes: PlantioPimsTalhao[]): PlantioPimsArquivo => ({

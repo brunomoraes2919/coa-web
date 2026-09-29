@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { carregarPlantioPims, casarPlantio, combinarPlantios } from '../src/lib/plantioPims';
-import type { AreaCultura, Fazenda, Plantio, PlantioPimsArquivo, PlantioPimsTalhao, Safra, Talhao } from '../src/lib/types';
+import { carregarPlantioPims, casarPlantio, combinarPlantios, montarPlantioPims } from '../src/lib/plantioPims';
+import type { AreaCultura, Fazenda, LinhaPlantioPims, Plantio, PlantioPimsArquivo, PlantioPimsTalhao, Safra, Talhao } from '../src/lib/types';
 
 const geom: Talhao['geom'] = { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] };
 
@@ -40,6 +40,7 @@ const fazenda: Fazenda = {
   criadoEm: '2026-01-01T00:00:00.000Z',
   unidadePims: 'SIRIEMA',
   campoCodigo: 'codigo',
+  coaFazendaId: null,
 };
 
 const safra: Safra = { id: 'saf-1', nome: 'Soja 2026/27', cultura: 'SOJA', anoSafra: '26/27', inicio: '2026-09-01', fim: '2027-08-31', nomePims: 'SOJA 26/27' };
@@ -100,6 +101,76 @@ describe('carregarPlantioPims', () => {
     for (const m of malformados) await expect(carregarPlantioPims(resp(m))).resolves.toBeNull();
     const valido = arquivo([pims()]);
     expect(await carregarPlantioPims(resp(valido))).toEqual(valido);
+  });
+});
+
+describe('montarPlantioPims (linhas de mapas_plantio_pims → mesmo formato do plantio.json)', () => {
+  const linha = (safra: string, unidade: string, geradoEm: string, talhoes: unknown[] = [pims()]): LinhaPlantioPims => ({
+    safra,
+    unidade,
+    geradoEm,
+    talhoes: talhoes as PlantioPimsTalhao[],
+  });
+
+  it('sem linhas → null', () => {
+    expect(montarPlantioPims([])).toBeNull();
+  });
+
+  it('agrupa por safra; safras e unidades em ordem alfabética; versão 1 e fonte do PIMS', () => {
+    const arq = montarPlantioPims([
+      linha('SOJA 26/27', 'SIRIEMA', '2026-09-28T10:00:00.000Z', [pims({ codigo: '001' })]),
+      linha('MILHO 2ª SAFRA 26/27', 'GLOBO', '2026-09-28T10:00:00.000Z', [pims({ codigo: '010' })]),
+      linha('SOJA 26/27', 'DOURADO', '2026-09-28T10:00:00.000Z', [pims({ codigo: '002' }), pims({ codigo: '003' })]),
+      linha('SOJA 26/27', 'GUAPIRAMA', '2026-09-28T10:00:00.000Z', []),
+    ]);
+    expect(arq).toEqual({
+      versao: 1,
+      geradoEm: '2026-09-28T10:00:00.000Z',
+      fonte: 'PIMS via Agrovex',
+      safras: [
+        { nome: 'MILHO 2ª SAFRA 26/27', unidades: [{ unidade: 'GLOBO', talhoes: [pims({ codigo: '010' })] }] },
+        {
+          nome: 'SOJA 26/27',
+          unidades: [
+            { unidade: 'DOURADO', talhoes: [pims({ codigo: '002' }), pims({ codigo: '003' })] },
+            { unidade: 'GUAPIRAMA', talhoes: [] },
+            { unidade: 'SIRIEMA', talhoes: [pims({ codigo: '001' })] },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('geradoEm = a maior data das linhas (em ISO), mesmo com fusos diferentes', () => {
+    const arq = montarPlantioPims([
+      linha('SOJA 26/27', 'A', '2026-09-28T10:00:00+00:00'),
+      linha('SOJA 26/27', 'B', '2026-09-28T08:30:00-03:00'), // 11:30 UTC
+      linha('SOJA 26/27', 'C', '2026-09-28T11:00:00.000Z'),
+    ]);
+    expect(arq?.geradoEm).toBe('2026-09-28T11:30:00.000Z');
+  });
+
+  it('descarta talhões inválidos (mesma validação do plantio.json) e mantém os válidos', () => {
+    const arq = montarPlantioPims([
+      linha('SOJA 26/27', 'SIRIEMA', '2026-09-28T10:00:00.000Z', [
+        pims({ codigo: '001' }),
+        null,
+        { codigo: 7, status: 'plantado' },
+        { codigo: '002', status: 'colhido' },
+        'x',
+        pims({ codigo: '003', status: 'a_plantar' }),
+      ]),
+      { safra: 'SOJA 26/27', unidade: 'GLOBO', geradoEm: '2026-09-28T10:00:00.000Z', talhoes: null as unknown as PlantioPimsTalhao[] },
+    ]);
+    expect(arq!.safras[0].unidades).toEqual([
+      { unidade: 'GLOBO', talhoes: [] },
+      { unidade: 'SIRIEMA', talhoes: [pims({ codigo: '001' }), pims({ codigo: '003', status: 'a_plantar' })] },
+    ]);
+  });
+
+  it('o arquivo montado casa com a fazenda como o plantio.json', () => {
+    const arq = montarPlantioPims([linha('SOJA 26/27', 'SIRIEMA', '2026-09-28T10:00:00.000Z', [pims({ codigo: '39B', status: 'plantando' })])]);
+    expect(casarPlantio(arq!, safra, fazenda, [talhao('t1', '039B')], [])?.porCodigo.get('039B')?.status).toBe('plantando');
   });
 });
 

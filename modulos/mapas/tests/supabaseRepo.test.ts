@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { criarSupabaseRepo } from '../src/data/supabaseRepo';
 import {
@@ -13,86 +12,27 @@ import {
   rowParaSafra,
   rowParaTalhao,
   safraParaRow,
+  TABELAS,
   talhaoParaRow,
   type FazendaRow,
   type PlantioRow,
   type SafraRow,
   type TalhaoRow,
 } from '../src/data/supabaseLinhas';
-import { IDW_PADRAO, type AreaCultura, type Fazenda, type MapaSalvo, type Plantio, type Safra, type Talhao } from '../src/lib/types';
+import type { Plantio } from '../src/lib/types';
+import { area, fazenda, geom, mapa, plantio, safra, talhao, uuid } from './helpers/dominio';
 import { BancoFalso } from './helpers/supabaseFalso';
-
-const uuid = (prefixo: string, i: number) => `${prefixo}-${String(i).padStart(6, '0')}`;
-const geom: Talhao['geom'] = { type: 'Polygon', coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] };
-
-const fazenda = (i: number): Fazenda => ({
-  id: uuid('faz', i),
-  nome: `Fazenda ${i}`,
-  campoNome: 'NOME',
-  campoSetor: null,
-  colunas: ['NOME'],
-  criadoEm: '2026-01-01T00:00:00.000Z',
-  unidadePims: null,
-  campoCodigo: null,
-});
-const talhao = (i: number, fazendaId: string): Talhao => ({ id: uuid('tal', i), fazendaId, nome: `T${i}`, setor: null, areaHa: 1, geom, atributos: {}, codigo: null });
-const safra = (i: number): Safra => ({ id: uuid('saf', i), nome: `SOJA ${i}`, cultura: 'SOJA', anoSafra: '26/27', inicio: '2026-09-01', fim: '2027-03-31', nomePims: null });
-const plantio = (safraId: string, talhaoId: string, parciais: Partial<Plantio> = {}): Plantio => ({
-  safraId,
-  talhaoId,
-  dataPlantio: null,
-  origem: 'manual',
-  status: 'plantado',
-  areaPrevista: null,
-  areaPlantada: null,
-  inicio: null,
-  fim: null,
-  variedade: null,
-  ...parciais,
-});
-const area = (i: number, safraId: string, fazendaId: string): AreaCultura => ({ id: uuid('are', i), safraId, fazendaId, codigo: String(i).padStart(3, '0'), areaHa: 2, geom });
-
-function mapa(i: number, parciais: Partial<MapaSalvo> = {}): MapaSalvo {
-  const estat = { media: 10, min: 5, max: 15, areaHa: 1 };
-  return {
-    id: uuid('map', i),
-    fazendaId: uuid('faz', 0),
-    safraId: null,
-    titulo: `Mapa ${i}`,
-    periodoInicio: '2025-02-01',
-    periodoFim: '2025-02-28',
-    config: {
-      pagina: 'A3',
-      textos: { titulo: 'T', fazenda: 'F', safra: '', periodo: '', fonte: 'ZEUS', talhoes: 'TODOS', setor: 'TODOS', observacao: '', data: '01/01/2026' },
-      paletaId: 'auto',
-      estiloPlantado: 'quadriculado',
-      mapaBase: 'nenhum',
-      mostrarRotulosTalhoes: true,
-      mostrarValoresPics: true,
-      mostrarGrade: false,
-      legendaCompacta: false,
-      extent: null,
-      idw: IDW_PADRAO,
-    },
-    pics: [{ id: 'p', nome: 'PIC', lat: -13, lon: -57, chuva: 1, inativo: false, inicio: new Date('2025-02-01T00:00:00.000Z'), fim: null, incluir: true }],
-    resumo: { geral: estat, plantado: null, talhoes: [] },
-    pngPath: `${uuid('map', i)}.png`,
-    thumbPath: `${uuid('map', i)}-thumb.png`,
-    criadoEm: `2026-01-01T00:00:${String(i % 60).padStart(2, '0')}.${String(i).padStart(3, '0').slice(-3)}Z`,
-    ...parciais,
-  };
-}
 
 /** Banco com 2 fazendas: a 0 com 1500 talhões e a 1 com 1200; 2700 plantios na safra 0. */
 function bancoGrande(maxLinhas = 1000) {
   const banco = new BancoFalso(maxLinhas);
-  banco.inserir('fazendas', [fazenda(0), fazenda(1)].map(fazendaParaRow));
+  banco.inserir(TABELAS.fazendas, [fazenda(0), fazenda(1)].map(fazendaParaRow));
   const t0 = Array.from({ length: 1500 }, (_, i) => talhao(i, uuid('faz', 0)));
   const t1 = Array.from({ length: 1200 }, (_, i) => talhao(10_000 + i, uuid('faz', 1)));
-  banco.inserir('talhoes', [...t0, ...t1].map(talhaoParaRow));
-  banco.inserir('safras', [safra(0)].map(safraParaRow));
+  banco.inserir(TABELAS.talhoes, [...t0, ...t1].map(talhaoParaRow));
+  banco.inserir(TABELAS.safras, [safra(0)].map(safraParaRow));
   banco.inserir(
-    'plantios',
+    TABELAS.plantios,
     [...t0, ...t1].map((t) => plantioParaRow(plantio(uuid('saf', 0), t.id))),
   );
   return { banco, t0, t1 };
@@ -107,9 +47,9 @@ describe('supabaseRepo: listagens paginadas (o servidor devolve no máximo 1000 
 
   it('obterTalhoes, listarFazendas, listarSafras e listarMapas também leem tudo', async () => {
     const { banco } = bancoGrande();
-    banco.inserir('fazendas', Array.from({ length: 1100 }, (_, i) => fazendaParaRow(fazenda(100 + i))));
-    banco.inserir('safras', Array.from({ length: 1001 }, (_, i) => safraParaRow(safra(100 + i))));
-    banco.inserir('mapas', Array.from({ length: 1005 }, (_, i) => mapaParaRow(mapa(i))));
+    banco.inserir(TABELAS.fazendas, Array.from({ length: 1100 }, (_, i) => fazendaParaRow(fazenda(100 + i))));
+    banco.inserir(TABELAS.safras, Array.from({ length: 1001 }, (_, i) => safraParaRow(safra(100 + i))));
+    banco.inserir(TABELAS.mapas, Array.from({ length: 1005 }, (_, i) => mapaParaRow(mapa(i))));
     const repo = criarSupabaseRepo(banco.cliente());
 
     expect(await repo.obterTalhoes(uuid('faz', 0))).toHaveLength(1500);
@@ -130,7 +70,7 @@ describe('supabaseRepo: listagens paginadas (o servidor devolve no máximo 1000 
 
   it('exportarBackup traz todas as linhas de todas as tabelas', async () => {
     const { banco } = bancoGrande();
-    banco.inserir('mapas', Array.from({ length: 1003 }, (_, i) => mapaParaRow(mapa(i))));
+    banco.inserir(TABELAS.mapas, Array.from({ length: 1003 }, (_, i) => mapaParaRow(mapa(i))));
     const b = await criarSupabaseRepo(banco.cliente()).exportarBackup();
     expect(b.fazendas).toHaveLength(2);
     expect(b.talhoes).toHaveLength(2700);
@@ -161,7 +101,7 @@ describe('supabaseRepo: salvarPlantios', () => {
     const { banco, t0 } = bancoGrande();
     const repo = criarSupabaseRepo(banco.cliente());
     const novos = t0.slice(0, 3).map((t) => plantio(uuid('saf', 0), t.id, { dataPlantio: '2026-10-02' }));
-    banco.falhar = (r) => (r.tabela === 'plantios' && r.op === 'delete' ? 'falha simulada' : null);
+    banco.falhar = (r) => (r.tabela === TABELAS.plantios && r.op === 'delete' ? 'falha simulada' : null);
 
     await expect(repo.salvarPlantios(uuid('saf', 0), uuid('faz', 0), novos)).rejects.toThrow('falha simulada');
 
@@ -181,7 +121,7 @@ describe('supabaseRepo: salvarPlantios', () => {
 describe('supabaseRepo: obterMapa', () => {
   it('devolve o mapa pelo id (com as datas dos PICs revividas) ou null', async () => {
     const banco = new BancoFalso();
-    banco.inserir('mapas', [mapaParaRow(mapa(1)), mapaParaRow(mapa(2))]);
+    banco.inserir(TABELAS.mapas, [mapaParaRow(mapa(1)), mapaParaRow(mapa(2))]);
     const repo = criarSupabaseRepo(banco.cliente());
     const m = await repo.obterMapa(uuid('map', 2));
     expect(m?.titulo).toBe('Mapa 2');
@@ -225,7 +165,7 @@ describe('supabaseRepo: importarBackup', () => {
 
     const antigo = { versao: 1, fazendas: [], talhoes: [], safras: [], plantios: [{ safraId: uuid('saf', 0), talhaoId: uuid('tal', 1), dataPlantio: null }], mapas: [] };
     await repo.importarBackup(antigo as never);
-    expect(destino.tabelas.plantios[0]).toMatchObject({ origem: 'manual', status: 'plantado' });
+    expect(destino.tabelas[TABELAS.plantios][0]).toMatchObject({ origem: 'manual', status: 'plantado' });
   });
 });
 
@@ -247,50 +187,17 @@ describe('supabaseRepo: áreas da cultura', () => {
     expect((await repo.listarAreasCultura(s0, f1)).map((a) => a.id)).toEqual([uuid('are', 5000)]);
     expect((await repo.listarAreasCultura(s1, f0)).map((a) => a.id)).toEqual([uuid('are', 6000)]);
     for (const r of banco.requisicoes) for (const n of r.listasIn) expect(n).toBeLessThanOrEqual(200);
-    const ops = banco.requisicoes.filter((r) => r.tabela === 'areas_cultura').map((r) => r.op);
+    const ops = banco.requisicoes.filter((r) => r.tabela === TABELAS.areasCultura).map((r) => r.op);
     expect(ops.indexOf('upsert')).toBeLessThan(ops.indexOf('delete'));
-  });
-});
-
-describe('supabase/migrations/0002_plantio_pims.sql', () => {
-  const sql0001 = readFileSync('supabase/migrations/0001_init.sql', 'utf8');
-  const sql0002 = readFileSync('supabase/migrations/0002_plantio_pims.sql', 'utf8');
-
-  it('todas as colunas gravadas pelos mapeadores existem nas migrações', () => {
-    const f = { ...fazenda(1), unidadePims: 'X', campoCodigo: 'C' };
-    const s = safra(1);
-    const linhas: [string, object][] = [
-      ['fazendas', fazendaParaRow(f)],
-      ['talhoes', talhaoParaRow(talhao(1, f.id))],
-      ['safras', safraParaRow(s)],
-      ['plantios', plantioParaRow(plantio(s.id, 'x'))],
-      ['areas_cultura', areaCulturaParaRow(area(1, s.id, f.id))],
-    ];
-    const sql = sql0001 + sql0002;
-    for (const [tabela, linha] of linhas) {
-      for (const coluna of Object.keys(linha)) expect(sql, `${tabela}.${coluna}`).toMatch(new RegExp(`\\b${coluna}\\b`));
-    }
-  });
-
-  it('é idempotente e dá a areas_cultura o mesmo RLS/privilégios das demais tabelas', () => {
-    const semComentarios = sql0002.replace(/--.*$/gm, '');
-    for (const m of semComentarios.matchAll(/add column\s+(?!if not exists)/gi)) throw new Error(`add column sem "if not exists": ${m[0]}`);
-    expect(semComentarios).toMatch(/create table if not exists public\.areas_cultura/);
-    expect(semComentarios).toMatch(/alter table public\.areas_cultura enable row level security;/);
-    expect(semComentarios).toMatch(/drop policy if exists areas_cultura_authenticated_all on public\.areas_cultura;/);
-    expect(semComentarios).toMatch(/revoke all on table public\.areas_cultura from anon;/);
-    expect(semComentarios).toMatch(/grant select, insert, update, delete on table public\.areas_cultura to authenticated;/);
-    expect(semComentarios).toMatch(/references public\.safras \(id\) on delete cascade/);
-    expect(semComentarios).toMatch(/references public\.fazendas \(id\) on delete cascade/);
   });
 });
 
 describe('supabaseRepo: upsertTalhoes', () => {
   it('insere e atualiza pelo id sem apagar os demais talhões nem os plantios', async () => {
     const banco = new BancoFalso();
-    banco.inserir('fazendas', [fazendaParaRow(fazenda(0))]);
-    banco.inserir('talhoes', [talhao(1, uuid('faz', 0)), talhao(2, uuid('faz', 0))].map(talhaoParaRow));
-    banco.inserir('plantios', [plantioParaRow(plantio(uuid('saf', 0), uuid('tal', 1)))]);
+    banco.inserir(TABELAS.fazendas, [fazendaParaRow(fazenda(0))]);
+    banco.inserir(TABELAS.talhoes, [talhao(1, uuid('faz', 0)), talhao(2, uuid('faz', 0))].map(talhaoParaRow));
+    banco.inserir(TABELAS.plantios, [plantioParaRow(plantio(uuid('saf', 0), uuid('tal', 1)))]);
     const repo = criarSupabaseRepo(banco.cliente());
 
     await repo.upsertTalhoes(uuid('faz', 0), [{ ...talhao(1, 'outra'), codigo: '001', areaHa: 9 }, talhao(3, 'outra')]);
@@ -305,7 +212,7 @@ describe('supabaseRepo: upsertTalhoes', () => {
 describe('supabaseLinhas: mapeamento domínio <-> linhas do banco', () => {
   it('fazenda, talhão, safra e plantio fazem a ida e volta', () => {
     const f = fazenda(1);
-    expect(fazendaParaRow(f)).toEqual({ id: f.id, nome: f.nome, campo_nome: 'NOME', campo_setor: null, colunas: ['NOME'], criado_em: f.criadoEm, unidade_pims: null, campo_codigo: null });
+    expect(fazendaParaRow(f)).toEqual({ id: f.id, nome: f.nome, campo_nome: 'NOME', campo_setor: null, colunas: ['NOME'], criado_em: f.criadoEm, unidade_pims: null, campo_codigo: null, coa_fazenda_id: null });
     expect(rowParaFazenda(fazendaParaRow(f))).toEqual(f);
     const t = { ...talhao(1, f.id), setor: 'S1', atributos: { A: 1 } };
     expect(talhaoParaRow(t)).toMatchObject({ fazenda_id: f.id, area_ha: 1, setor: 'S1' });
@@ -351,7 +258,7 @@ describe('supabaseLinhas: mapeamento domínio <-> linhas do banco', () => {
 
   it('linhas antigas (sem as colunas novas) viram null / plantio manual plantado', () => {
     const f = fazenda(1);
-    const { unidade_pims: _u, campo_codigo: _c, ...fazendaAntiga } = fazendaParaRow(f);
+    const { unidade_pims: _u, campo_codigo: _c, coa_fazenda_id: _coa, ...fazendaAntiga } = fazendaParaRow(f);
     expect(rowParaFazenda(fazendaAntiga as FazendaRow)).toEqual(f);
     const t = talhao(1, f.id);
     const { codigo: _cod, ...talhaoAntigo } = talhaoParaRow(t);
@@ -362,6 +269,17 @@ describe('supabaseLinhas: mapeamento domínio <-> linhas do banco', () => {
     const antigo = { safra_id: s.id, talhao_id: t.id, data_plantio: '2026-10-01' } as PlantioRow;
     expect(rowParaPlantio(antigo)).toEqual(plantio(s.id, t.id, { dataPlantio: '2026-10-01' }));
     expect(plantioParaRow({ safraId: s.id, talhaoId: t.id, dataPlantio: null } as Plantio)).toMatchObject({ origem: 'manual', status: 'plantado' });
+  });
+
+  it('fazenda do COA WEB: coaFazendaId <-> coa_fazenda_id (bigint pode chegar como texto)', () => {
+    const f = { ...fazenda(1), coaFazendaId: 7 };
+    expect(fazendaParaRow(f)).toMatchObject({ coa_fazenda_id: 7 });
+    expect(rowParaFazenda(fazendaParaRow(f))).toEqual(f);
+    expect(rowParaFazenda({ ...fazendaParaRow(f), coa_fazenda_id: '12' as unknown as number }).coaFazendaId).toBe(12);
+    expect(rowParaFazenda({ ...fazendaParaRow(f), coa_fazenda_id: null }).coaFazendaId).toBeNull();
+    // fazenda antiga (sem o campo) grava null: sem vínculo, só o admin vê
+    const { coaFazendaId: _c, ...antiga } = f;
+    expect(fazendaParaRow(antiga as typeof f).coa_fazenda_id).toBeNull();
   });
 
   it('colunas jsonb nulas viram listas/objetos vazios', () => {

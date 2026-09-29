@@ -117,6 +117,8 @@ export default function FazendaNova() {
         criadoEm: new Date().toISOString(),
         unidadePims: unidadePims?.trim() || null,
         campoCodigo,
+        // sem vínculo com uma fazenda do COA WEB: no Supabase, só o admin vê até ser ligada
+        coaFazendaId: null,
       };
       const talhoes: Talhao[] = feicoes.map((f, i) => ({
         id: crypto.randomUUID(),

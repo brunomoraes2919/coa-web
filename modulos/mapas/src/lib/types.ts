@@ -39,6 +39,20 @@ export interface Fazenda {
   unidadePims: string | null;
   /** coluna do shape com o código do talhão no PIMS (CD_UPNIVEL3) */
   campoCodigo: string | null;
+  /**
+   * fazenda do COA WEB (fazendas.id) que define quem vê esta fazenda de mapa; null = sem vínculo
+   * (no Supabase, só o admin vê). Registros antigos (IndexedDB/backup) sem o campo são lidos como null.
+   */
+  coaFazendaId: number | null;
+}
+
+/** Perfil do usuário no COA WEB (tabela perfis). */
+export type PerfilUsuario = 'admin' | 'colaborador';
+
+/** Fazenda do COA WEB (tabela fazendas), só leitura. */
+export interface FazendaCoa {
+  id: number;
+  nome: string;
 }
 
 export interface Talhao {
@@ -116,7 +130,21 @@ export interface PlantioPimsTalhao {
   variedade: string | null;
 }
 
-/** Arquivo public/dados/plantio.json gerado por scripts/sincronizar-plantio.mjs. */
+/** Uma linha de mapas_plantio_pims (Supabase): o plantio do PIMS de uma safra × unidade. */
+export interface LinhaPlantioPims {
+  /** nome da safra no PIMS, ex.: 'SOJA 26/27' */
+  safra: string;
+  /** unidade (fazenda) no PIMS, ex.: 'SIRIEMA' */
+  unidade: string;
+  /** ISO com hora */
+  geradoEm: string;
+  talhoes: PlantioPimsTalhao[];
+}
+
+/**
+ * Plantio do PIMS no formato do public/dados/plantio.json gerado por scripts/sincronizar-plantio.mjs
+ * (modo local); no Supabase, montado a partir das linhas de mapas_plantio_pims (montarPlantioPims).
+ */
 export interface PlantioPimsArquivo {
   versao: 1;
   /** ISO com hora */

@@ -1,18 +1,69 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import {
+  areaCulturaParaRow,
+  BUCKET,
+  fazendaParaRow,
+  mapaParaRow,
+  plantioParaRow,
+  safraParaRow,
+  TABELAS,
+  talhaoParaRow,
+  type PlantioPimsRow,
+} from '../src/data/supabaseLinhas';
+import { area, fazenda, mapa, plantio, safra, talhao } from './helpers/dominio';
 
-const sql = readFileSync('supabase/migrations/0001_init.sql', 'utf8');
-const TABELAS = ['fazendas', 'talhoes', 'safras', 'plantios', 'mapas'];
+const sql = readFileSync('supabase/coa-web/0001_mapas.sql', 'utf8').replace(/--.*$/gm, '');
 
-describe('supabase/migrations/0001_init.sql (segurança)', () => {
-  it('avisa no topo para desativar novos cadastros (qualquer usuário logado lê e grava tudo)', () => {
-    const topo = sql.slice(0, 1500);
-    expect(topo).toMatch(/Allow new users to sign up/);
-    expect(topo).toMatch(/ATENÇÃO/);
+/** Colunas de cada "create table if not exists public.<nome> ( ... );" do script. */
+function colunasDasTabelas(): Map<string, Set<string>> {
+  const tabelas = new Map<string, Set<string>>();
+  for (const [, nome, corpo] of sql.matchAll(/create table if not exists public\.(\w+) \(([\s\S]*?)\n\);/g)) {
+    const colunas = corpo
+      .split('\n')
+      .map((l) => /^\s+(\w+)\s/.exec(l)?.[1])
+      .filter((c): c is string => !!c && c !== 'primary' && c !== 'constraint');
+    tabelas.set(nome, new Set(colunas));
+  }
+  return tabelas;
+}
+
+describe('supabase/coa-web/0001_mapas.sql × repositório', () => {
+  const tabelas = colunasDasTabelas();
+
+  it('cria exatamente as tabelas de TABELAS', () => {
+    expect([...tabelas.keys()].sort()).toEqual(Object.values(TABELAS).sort());
   });
 
-  it.each(TABELAS)('tabela %s: nenhum privilégio para anon e acesso explícito para authenticated', (t) => {
-    expect(sql).toMatch(new RegExp(`revoke all on table public\\.${t}\\s+from anon;`));
-    expect(sql).toMatch(new RegExp(`grant select, insert, update, delete on table public\\.${t}\\s+to authenticated;`));
+  it('todas as colunas gravadas pelos mapeadores existem na tabela certa', () => {
+    const f = { ...fazenda(1), unidadePims: 'X', campoCodigo: 'C', coaFazendaId: 3 };
+    const s = safra(1);
+    const pims: PlantioPimsRow = { safra: 'SOJA 26/27', unidade: 'SIRIEMA', gerado_em: '2026-09-28T10:00:00Z', talhoes: [] };
+    const linhas: [string, object][] = [
+      [TABELAS.fazendas, fazendaParaRow(f)],
+      [TABELAS.talhoes, talhaoParaRow({ ...talhao(1, f.id), codigo: '001' })],
+      [TABELAS.safras, safraParaRow(s)],
+      [TABELAS.plantios, plantioParaRow(plantio(s.id, 'x'))],
+      [TABELAS.areasCultura, areaCulturaParaRow(area(1, s.id, f.id))],
+      [TABELAS.mapas, mapaParaRow(mapa(1))],
+      [TABELAS.plantioPims, pims],
+    ];
+    for (const [tabela, linha] of linhas) {
+      for (const coluna of Object.keys(linha)) expect(tabelas.get(tabela)?.has(coluna), `${tabela}.${coluna}`).toBe(true);
+    }
+  });
+
+  it.each(Object.values(TABELAS))('tabela %s: RLS ligado, nada para anon, acesso explícito para authenticated', (t) => {
+    expect(sql).toMatch(new RegExp(`alter table public\\.${t}\\s+enable row level security;`));
+    expect(sql).toMatch(new RegExp(`revoke all on table public\\.${t}\\s+from anon, authenticated;`));
+    const privilegios = t === TABELAS.plantioPims ? 'select' : 'select, insert, update, delete';
+    expect(sql).toMatch(new RegExp(`grant ${privilegios}\\s+on table public\\.${t}\\s+to authenticated;`));
+  });
+
+  it('bucket privado do repositório, só PNG/JPEG; arquivos do mapa começam pelo id do mapa', () => {
+    expect(BUCKET).toBe('mapas-chuva');
+    expect(sql).toMatch(/values \('mapas-chuva', 'mapas-chuva', false, \d+, '\{image\/png,image\/jpeg\}'\)/);
+    expect(sql).toMatch(/starts_with\(lower\(png_path\), id::text\)/);
+    expect(sql).toMatch(/starts_with\(lower\(thumb_path\), id::text\)/);
   });
 });

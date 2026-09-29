@@ -1,4 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
+import { extensaoImagem } from '../lib/historico';
+import { carregarPlantioPims } from '../lib/plantioPims';
 import type { AreaCultura, Fazenda, MapaSalvo, Plantio, Safra, Talhao } from '../lib/types';
 import type { BackupJson, Repositorio } from './repo';
 import { completarFazenda, completarPlantio, completarSafra, completarTalhao, reviverPics } from './supabaseLinhas';
@@ -6,9 +8,10 @@ import { completarFazenda, completarPlantio, completarSafra, completarTalhao, re
 /**
  * Repositório local (IndexedDB via idb). Stores: fazendas, talhoes (índice fazendaId), safras,
  * plantios (chave composta [safraId, talhaoId], índices safraId e talhaoId), mapas, arquivos
- * (blobs de PNG/miniatura, chaveados pelo path "mapas/<id>.png" / "mapas/<id>-thumb.png") e, desde a
- * versão 2 do banco, areasCultura (índices safraFazenda [safraId, fazendaId], safraId e fazendaId).
- * Registros gravados antes da versão 2 não têm os campos novos: são completados na leitura.
+ * (blobs da imagem/miniatura, chaveados pelo path "mapas/<id>.jpg" — ".png" nos mapas antigos — e
+ * "mapas/<id>-thumb.png") e, desde a versão 2 do banco, areasCultura (índices safraFazenda
+ * [safraId, fazendaId], safraId e fazendaId). Registros antigos não têm os campos novos (plantio do
+ * PIMS, coaFazendaId): são completados na leitura. Sem login no modo local: o usuário é admin.
  */
 
 interface ArquivoRegistro {
@@ -116,7 +119,7 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
     await tx.done;
   }
 
-  /** Remove um mapa e os arquivos (PNG/miniatura) associados a ele. */
+  /** Remove um mapa e os arquivos (imagem/miniatura) associados a ele. */
   async function removerMapaEArquivos(db: IDBPDatabase<CoaChuvaDB>, mapa: MapaSalvo): Promise<void> {
     const tx = db.transaction(['mapas', 'arquivos'], 'readwrite');
     if (mapa.pngPath) await tx.objectStore('arquivos').delete(mapa.pngPath);
@@ -127,6 +130,18 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
 
   return {
     modo: 'local',
+
+    async perfil() {
+      return 'admin';
+    },
+
+    async listarFazendasCoa() {
+      return [];
+    },
+
+    async lerPlantioPims() {
+      return carregarPlantioPims();
+    },
 
     async listarFazendas() {
       const db = await dbPromise;
@@ -143,7 +158,7 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
       const db = await dbPromise;
       const antigos = await db.getAllFromIndex('talhoes', 'fazendaId', f.id);
       await excluirTalhoesEPlantios(db, antigos.map((t) => t.id));
-      await db.put('fazendas', f);
+      await db.put('fazendas', completarFazenda(f));
       const tx = db.transaction('talhoes', 'readwrite');
       for (const t of talhoes) await tx.store.put({ ...t, fazendaId: f.id });
       await tx.done;
@@ -151,7 +166,7 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
 
     async atualizarFazenda(f, talhoes) {
       const db = await dbPromise;
-      await db.put('fazendas', f);
+      await db.put('fazendas', completarFazenda(f));
       const tx = db.transaction('talhoes', 'readwrite');
       for (const t of talhoes) {
         const existente = await tx.store.get(t.id);
@@ -256,15 +271,20 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
       return (await db.get('mapas', id)) ?? null;
     },
 
-    async salvarMapa(m, png, thumb) {
+    async salvarMapa(m, imagem, thumb) {
       const db = await dbPromise;
-      const pngPath = `mapas/${m.id}.png`;
-      const thumbPath = `mapas/${m.id}-thumb.png`;
+      const pngPath = `mapas/${m.id}.${extensaoImagem(imagem.type)}`;
+      const thumbPath = `mapas/${m.id}-thumb.${extensaoImagem(thumb.type)}`;
       const salvo: MapaSalvo = { ...m, pngPath, thumbPath };
       const tx = db.transaction(['mapas', 'arquivos'], 'readwrite');
-      await tx.objectStore('arquivos').put({ path: pngPath, blob: png });
+      const anterior = await tx.objectStore('mapas').get(m.id);
+      await tx.objectStore('arquivos').put({ path: pngPath, blob: imagem });
       await tx.objectStore('arquivos').put({ path: thumbPath, blob: thumb });
       await tx.objectStore('mapas').put(salvo);
+      // arquivo que o mapa deixou de usar (ex.: "<id>.png" de antes do JPEG)
+      for (const p of [anterior?.pngPath, anterior?.thumbPath]) {
+        if (p && p !== pngPath && p !== thumbPath) await tx.objectStore('arquivos').delete(p);
+      }
       await tx.done;
       return salvo;
     },
@@ -311,7 +331,7 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
       for (const p of b.plantios) await tx.objectStore('plantios').put(completarPlantio(p));
       for (const a of b.areasCultura ?? []) await tx.objectStore('areasCultura').put(a);
       for (const m of b.mapas) {
-        // O backup não leva os PNGs: só um mapa que já existe aqui continua apontando para os seus arquivos.
+        // O backup não leva as imagens: só um mapa que já existe aqui continua apontando para os seus arquivos.
         const atual = await tx.objectStore('mapas').get(m.id);
         // Revive datas dos PICs (caso o backup tenha vindo de um arquivo JSON.parse) antes de gravar.
         await tx.objectStore('mapas').put({

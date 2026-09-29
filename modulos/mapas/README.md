@@ -14,7 +14,8 @@ a partir do CSV exportado da ZEUS, sem precisar do QGIS.
   plantando com **hachura amarela** e os a plantar com **contorno tracejado cinza**.
 - Tabela de chuva média, mínima e máxima por talhão, exportável para o Excel.
 - Layout pronto na identidade visual do COA, com textos editáveis, e **PNG em 150, 300 ou 600 dpi**.
-- Histórico dos mapas gerados (cópia em PNG de 150 dpi, que pode ser reaberta, atualizada ou salva como novo mapa).
+- Histórico dos mapas gerados (cópia em JPEG de 150 dpi, que pode ser reaberta, atualizada ou salva como novo
+  mapa; para o PNG, reabra o mapa e baixe no dpi desejado).
 
 ## Como testar agora (no seu computador)
 
@@ -51,42 +52,38 @@ com `npm test`.
   modo anônimo). O app pede ao navegador para guardar os dados de forma persistente, mas isso não é
   garantido: **exporte o backup com frequência** (ex.: toda semana) e guarde o arquivo JSON numa pasta
   com cópia de segurança.
-- O backup em JSON não leva as imagens PNG do histórico: depois de importar, o cartão do mapa mostra
-  "PNG não disponível"; abra o mapa e use **Atualizar este mapa** para gerar a imagem de novo.
+- O backup em JSON não leva as imagens do histórico: depois de importar, o cartão do mapa mostra
+  "Imagem não disponível"; abra o mapa e use **Atualizar este mapa** para gerar a imagem de novo.
 
-## Modo Supabase (dados compartilhados entre usuários)
+## Modo Supabase (Supabase do COA WEB)
 
-1. Crie um projeto em [supabase.com](https://supabase.com) (o plano gratuito atende).
-2. No projeto, abra **SQL Editor**, cole o conteúdo de `supabase/migrations/0001_init.sql` e execute.
-   O script cria as tabelas (`fazendas`, `talhoes`, `safras`, `plantios`, `mapas`), as regras de acesso
-   (RLS: só usuário logado lê e grava) e o bucket privado `mapas`, onde ficam os PNGs. **Depois rode
-   também `supabase/migrations/0002_plantio_pims.sql`** (obrigatória: colunas do PIMS e tabela
-   `areas_cultura`; pode ser reexecutada sem erro, e bancos criados antes dela mantêm os dados).
-3. Em **Authentication → Sign In / Providers** (em painéis mais antigos: **Authentication → Providers →
-   Email**), mantenha o e-mail habilitado e **desative "Allow new users to sign up"**. Isso é obrigatório:
-   as regras do banco liberam os dados para qualquer usuário com login, e a URL e a chave anon ficam no
-   site publicado; com o cadastro aberto, qualquer pessoa poderia criar uma conta e ver ou alterar os dados.
-   Cadastre os usuários do COA em **Authentication → Users → Add user**.
-4. Em **Project Settings → API**, copie a **Project URL** e a chave **anon public**.
-5. No app, abra **Configurações**, escolha *Supabase*, cole a URL e a chave, clique em
-   **Testar conexão** e salve. Ou, para já publicar configurado, use os secrets do GitHub (abaixo).
+Os dados ficam no mesmo projeto Supabase do COA WEB, em tabelas próprias do módulo, com o login e as
+permissões do COA WEB.
+
+1. No projeto Supabase do COA WEB, abra **SQL Editor**, cole o conteúdo de
+   `supabase/coa-web/0001_mapas.sql` e execute. O script só cria objetos novos: as tabelas
+   `mapas_fazendas`, `mapas_talhoes`, `mapas_safras`, `mapas_plantios`, `mapas_areas_cultura`,
+   `mapas_chuva` (mapas salvos) e `mapas_plantio_pims` (plantio do PIMS), as regras de acesso (RLS) e o
+   bucket privado `mapas-chuva`, onde ficam as imagens do histórico. Não altera nem apaga nada do COA
+   WEB e pode ser executado de novo sem erro, mantendo os dados. Antes de publicar, rode também
+   `supabase/coa-web/verificar-permissoes.sql` (só leitura) para conferir as regras do COA WEB.
+2. **Quem vê o quê** (tabelas `perfis` e `usuario_fazendas` do COA WEB): o admin vê e altera tudo; o
+   colaborador vê as fazendas liberadas para ele e nelas salva e exclui mapas de chuva; fazendas, talhões,
+   safras e plantio só o admin altera. Cada fazenda de mapa é ligada a uma fazenda do COA WEB; sem esse
+   vínculo, só o admin a vê.
+3. Em **Project Settings → API**, copie a **Project URL** e a chave **anon public**.
+4. No app, abra **Configurações**, escolha *Supabase*, cole a URL e a chave, salve e entre com o e-mail
+   e a senha do COA WEB.
 
 Para levar o que foi cadastrado no modo local: em **Configurações → Exportar backup** (no modo local),
-depois troque para o Supabase, faça login e use **Importar backup**. Para começar do cadastro padrão,
-faça login e use **Configurações → Importar cadastro padrão**.
+depois troque para o Supabase, faça login como admin e use **Importar backup**. Para começar do cadastro
+padrão, faça login como admin e use **Configurações → Importar cadastro padrão**.
 
-**Espaço no plano gratuito:** o histórico guarda cada mapa como PNG de 150 dpi (≈ 4 MB por mapa A3, mais a
-miniatura). O Storage gratuito tem 1 GB, o que dá **cerca de 250 mapas**; exclua mapas antigos do histórico
-quando precisar de espaço. Para um PNG em 300 ou 600 dpi, abra o mapa e use **Baixar PNG** (o arquivo vai
-para o seu computador, não para o histórico).
-
-### Atualizando uma instalação existente
-
-Quem já usa o app com o Supabase precisa **rodar `supabase/migrations/0002_plantio_pims.sql` no SQL
-Editor antes de publicar esta versão** (antes do push que dispara o deploy). Sem ela, o app avisa "Banco
-desatualizado: rode a migração supabase/migrations/0002_plantio_pims.sql" ao abrir o plantio ou as áreas
-da cultura; o plantio manual continua aparecendo no editor, mas as áreas da cultura e as colunas do PIMS
-não. A migração pode ser reexecutada sem erro e mantém os dados.
+**Espaço no plano gratuito:** o histórico guarda cada mapa como JPEG de 150 dpi (≈ 1 MB por mapa A3, mais
+a miniatura PNG). O Storage gratuito tem 1 GB, o que dá **cerca de 1000 mapas**; exclua mapas antigos do
+histórico quando precisar de espaço. Para um PNG em 150, 300 ou 600 dpi, abra o mapa e use **Baixar PNG**
+(o arquivo vai para o seu computador, não para o histórico). Mapas salvos antes em PNG continuam abrindo;
+ao atualizar um deles, a cópia passa a ser JPEG e o PNG antigo é apagado.
 
 **Projeto pausado:** no plano gratuito, o Supabase pausa o projeto depois de um período sem uso (cerca de
 uma semana). Se o app parar de conectar, entre em [supabase.com](https://supabase.com), abra o projeto e
@@ -128,7 +125,8 @@ GitHub Actions (1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) ──▶ pub
    `$env:AGROVEX_TOKEN='...'; npm run plantio`) atualiza `public/dados/plantio.json`. As safras
    consultadas ficam em `scripts/plantio.config.json` (padrão: as do ano-safra atual e do seguinte, sem as
    administrativas).
-4. **Modo Supabase**: rode antes a migração `supabase/migrations/0002_plantio_pims.sql` (veja acima).
+4. **Modo Supabase**: o app lê o plantio da tabela `mapas_plantio_pims` (criada por
+   `supabase/coa-web/0001_mapas.sql`; veja acima), e não do `plantio.json`.
 5. **Rotina parada**: o GitHub **desativa os workflows agendados depois de 60 dias sem atividade no
    repositório** (vale para repositórios públicos; confira na aba Actions). Se o plantio parar de
    atualizar, abra **Actions → Sincronizar plantio** e clique em **Enable workflow**.
@@ -212,7 +210,7 @@ src/worker/    interpolação em Web Worker
 src/render/    desenho do layout em Canvas (a prévia e o PNG usam o mesmo código)
 src/data/      persistência: IndexedDB (modo local) ou Supabase
 src/pages/     telas
-supabase/      scripts SQL do banco (0001_init, 0002_plantio_pims)
+supabase/      scripts SQL do Supabase do COA WEB (coa-web/0001_mapas.sql, coa-web/verificar-permissoes.sql)
 scripts/       sincronizar-plantio.mjs (PIMS → plantio.json), gerar-seed.mjs, gerar-paletas.mjs
 public/dados/  plantio.json (gerado pela rotina) e seed/ (cadastro padrão)
 docs/          design e plano de implementação
