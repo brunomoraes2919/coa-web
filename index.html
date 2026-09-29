@@ -427,6 +427,27 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   .metrica .valor{font-size:19px;}
   .checks-fazendas label{padding:5px 10px;font-size:12px;}
 }
+
+/* ---------- categoria MAPAS: módulo num iframe (mapas/index.html?embed=1) ----------
+   O módulo já aplica o respiro do conteúdo do COA WEB; aqui o iframe encosta nas bordas
+   do <main> (compensa o padding dele) e ocupa a altura da tela abaixo do topo, sem rolagem dupla. */
+.app.modo-mapas{min-height:0;}
+.app.modo-mapas main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
+.app.modo-mapas .topbar{flex:none;margin-bottom:0;}
+.app.modo-mapas .page[data-page="mapas"].active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin:0 -34px -60px;}
+#mapas-frame{display:block;flex:1 1 auto;width:100%;min-height:0;border:0;background:var(--fundo);}
+@media (max-width:900px){
+  .app.modo-mapas{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+  .app.modo-mapas .sidebar{flex:none;}
+  .app.modo-mapas main{flex:1 1 auto;min-height:0;height:auto;}
+  .app.modo-mapas .page[data-page="mapas"].active{margin:0 -18px -18px;}
+}
+@media (max-width:640px){
+  .app.modo-mapas .page[data-page="mapas"].active{margin:0 -14px -14px;}
+}
+@media (max-width:480px){
+  .app.modo-mapas .page[data-page="mapas"].active{margin:0 -12px -12px;}
+}
 </style>
 </head>
 <body>
@@ -460,6 +481,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <button class="categoria-card" id="card-mecanizadas">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
         <span>Mecanizadas</span>
+      </button>
+      <button class="categoria-card" id="card-mapas">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4Z"/><path d="M9 4v13.5M15 6.5V20"/></svg>
+        <span>Mapas</span>
       </button>
       <button class="categoria-card admin-only" id="card-administracao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
@@ -505,6 +530,18 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <div class="nav-eyebrow">Administração</div>
       <nav>
         <button class="nav-btn" data-page="usuarios"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Usuários</button>
+      </nav>
+    </div>
+    <div id="nav-mapas" style="display:none">
+      <div class="nav-eyebrow">Mapa de Chuva</div>
+      <nav>
+        <button class="nav-btn" data-page="mapas" data-rota="/mapas/novo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>Novo mapa</button>
+        <button class="nav-btn" data-page="mapas" data-rota="/mapas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4Z"/><path d="M9 4v13.5M15 6.5V20"/></svg>Mapas salvos</button>
+      </nav>
+      <div class="nav-eyebrow admin-only">Cadastros</div>
+      <nav class="admin-only">
+        <button class="nav-btn admin-only" data-page="mapas" data-rota="/fazendas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 21 9.5 17.5 20h-11L3 9.5Z"/></svg>Fazendas e shapes</button>
+        <button class="nav-btn admin-only" data-page="mapas" data-rota="/safras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21v-9"/><path d="M12 12C12 8 9 6 5 6c0 4 3 6 7 6Z"/><path d="M12 12c0-4 3-7 7-7 0 4-3 7-7 7Z"/></svg>Safras e plantio</button>
       </nav>
     </div>
     <div class="sidebar-foot">
@@ -820,6 +857,9 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <div id="mec-tabela-wrap"></div>
     </section>
 
+    <!-- ===================== MAPAS (módulo num iframe; o iframe #mapas-frame é criado na primeira entrada) ===================== -->
+    <section class="page" data-page="mapas"></section>
+
   </main>
 </div>
 
@@ -878,7 +918,13 @@ const state = {
   usuarios: []
 };
 let sessao = null;
-let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao'
+let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas'
+/* ---- categoria MAPAS: estado do iframe do módulo (ver a seção MAPAS mais abaixo) ---- */
+const MAPAS_ROTA_INICIAL = '/mapas/novo';
+let mapasFrame = null;         // iframe #mapas-frame (criado na primeira entrada; removido ao sair)
+let mapasCarregado = false;    // o módulo já terminou de carregar no iframe
+let mapasRotaAtual = MAPAS_ROTA_INICIAL; // última rota pedida/recebida do módulo
+let mapasTitulo = null;        // último título recebido do módulo (mensagem 'mapas-rota')
 
 /* ---- conversão entre o formato do banco (snake_case) e o do app (camelCase) ---- */
 function compararTalhao(a, b){
@@ -986,22 +1032,31 @@ const titulos = {
   fazendas:['Fazendas','Unidades produtivas do grupo'],
   usuarios:['Usuários','Gestão de acesso — perfis e fazendas permitidas'],
   'importar-mecanizadas':['Importar Boletim','Suba o relatório de atividades mecanizadas extraído do TOTVS PIMS'],
+  mapas:['Mapas','Mapa de Chuva'], // o título real vem do módulo (mensagem 'mapas-rota')
 };
 document.querySelectorAll('.nav-btn').forEach(btn=>{
-  btn.addEventListener('click', ()=>irPara(btn.dataset.page));
+  btn.addEventListener('click', ()=>{
+    // botões da categoria MAPAS (data-rota) trocam a rota do módulo no iframe
+    if(btn.dataset.rota) irParaMapas(btn.dataset.rota);
+    else irPara(btn.dataset.page);
+  });
 });
 const PAGINAS_ADMIN = ['fazendas','usuarios'];
 function irPara(pagina){
   if(PAGINAS_ADMIN.includes(pagina) && (!sessao || sessao.perfil!=='admin')) pagina = 'relatorio';
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.page===pagina));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.dataset.page===pagina));
+  document.getElementById('app-shell').classList.toggle('modo-mapas', pagina==='mapas');
   renderTudo();
 }
 function atualizarCabecalhoPagina(){
   const paginaAtiva = document.querySelector('.page.active')?.dataset.page;
   if(!paginaAtiva || !titulos[paginaAtiva]) return;
-  document.getElementById('titulo-pagina').textContent = titulos[paginaAtiva][0];
+  let titulo = titulos[paginaAtiva][0];
+  if(paginaAtiva === 'mapas' && mapasTitulo) titulo = mapasTitulo;
+  document.getElementById('titulo-pagina').textContent = titulo;
   let subtitulo = titulos[paginaAtiva][1];
+  if(paginaAtiva === 'mapas' && /^\/(fazendas|safras)(\/|$)/.test(mapasRotaAtual)) subtitulo = 'Cadastros dos mapas';
   if(paginaAtiva === 'relatorio'){
     const fazendaAtual = state.fazendas.find(f=>f.id===fazendaSelecionadaId());
     if(fazendaAtual) subtitulo = fazendaAtual.nome + ' — ' + subtitulo;
@@ -2595,6 +2650,114 @@ document.getElementById('btn-add-usuario').addEventListener('click', ()=>{
 });
 
 /* =====================================================================
+   MAPAS — módulo Mapa de Chuva num iframe da mesma origem
+   (mapas/index.html?embed=1#<rota>; a sessão do Supabase é a mesma do COA WEB)
+   - COA → módulo: { tipo:'coa-fazenda', id:number|null, nome:string|null }
+   - módulo → COA: { tipo:'mapas-rota', rota, titulo }
+   Sempre com targetOrigin = location.origin; só aceita mensagens da mesma
+   origem vindas do próprio iframe.
+===================================================================== */
+function urlMapas(rota){
+  return 'mapas/index.html?embed=1#' + rota;
+}
+// botão do menu MAPAS que corresponde à rota (o de prefixo mais longo:
+// '/mapas/abc' → "Mapas salvos"; '/mapas/novo' → "Novo mapa"; '/fazendas/3' → "Fazendas e shapes")
+function botaoMapasDaRota(rota){
+  let melhor = null;
+  document.querySelectorAll('#nav-mapas .nav-btn[data-rota]').forEach(b=>{
+    const base = b.dataset.rota;
+    if((rota===base || rota.startsWith(base + '/')) && (!melhor || base.length > melhor.dataset.rota.length)) melhor = b;
+  });
+  return melhor;
+}
+// o irPara('mapas') destaca todos os botões com data-page="mapas"; deixa só o da rota atual
+function destacarBotaoMapas(){
+  const ativo = botaoMapasDaRota(mapasRotaAtual);
+  document.querySelectorAll('#nav-mapas .nav-btn').forEach(b=>b.classList.toggle('active', b===ativo));
+}
+function criarMapasFrame(rota){
+  const frame = document.createElement('iframe');
+  frame.id = 'mapas-frame';
+  frame.title = 'Mapas';
+  frame.addEventListener('load', ()=>{
+    if(frame !== mapasFrame) return;
+    mapasCarregado = true;
+    enviarFazendaMapas();
+  });
+  frame.src = urlMapas(rota);
+  mapasFrame = frame;
+  mapasCarregado = false;
+  document.querySelector('.page[data-page="mapas"]').appendChild(frame);
+}
+// o iframe está mostrando o módulo em modo embutido? (mapas/, mapas/index.html, ?embed=1)
+function iframeNoModuloMapas(loc){
+  const pasta = new URL('mapas/', location.href).pathname.replace(/\/$/, '');
+  return loc.pathname.replace(/\/(index\.html)?$/, '') === pasta
+    && new URLSearchParams(loc.search).get('embed') === '1';
+}
+// depois de criado, trocar de botão só muda o hash do iframe (o módulo não recarrega)
+function navegarMapas(rota){
+  let loc = null;
+  try{ loc = mapasFrame.contentWindow.location; if(!iframeNoModuloMapas(loc)) loc = null; }catch(e){ loc = null; }
+  if(mapasCarregado && loc){
+    loc.hash = rota;
+  } else {
+    // ainda carregando (ou o iframe saiu do módulo): recarrega já na rota pedida
+    mapasCarregado = false;
+    mapasFrame.src = urlMapas(rota);
+  }
+}
+function irParaMapas(rota){
+  if(rota){
+    const botao = botaoMapasDaRota(rota);
+    if(botao && botao.classList.contains('admin-only') && (!sessao || sessao.perfil!=='admin')) rota = MAPAS_ROTA_INICIAL;
+    mapasRotaAtual = rota;
+  }
+  irPara('mapas');
+  if(!mapasFrame) criarMapasFrame(mapasRotaAtual);
+  else if(rota) navegarMapas(rota);
+  destacarBotaoMapas();
+}
+// fazenda do topo do menu (#sb-fazenda: value = id da fazenda) → módulo
+function fazendaCoaParaMapas(){
+  const el = document.getElementById('sb-fazenda');
+  const valor = el ? el.value : '';
+  const id = (valor==='' || valor==='todas') ? NaN : Number(valor);
+  if(!Number.isFinite(id)) return { id:null, nome:null };
+  const opcao = el.options[el.selectedIndex];
+  return { id, nome: opcao ? opcao.textContent : null };
+}
+function enviarFazendaMapas(){
+  if(!mapasFrame || !mapasCarregado || !mapasFrame.contentWindow) return;
+  const f = fazendaCoaParaMapas();
+  try{
+    mapasFrame.contentWindow.postMessage({ tipo:'coa-fazenda', id:f.id, nome:f.nome }, location.origin);
+  }catch(e){ console.warn('MAPAS: não foi possível avisar a fazenda ao módulo', e); }
+}
+document.getElementById('sb-fazenda').addEventListener('change', enviarFazendaMapas);
+// ao sair: descarrega o módulo e marca para recriar o iframe na próxima entrada
+function descarregarMapas(){
+  if(mapasFrame){
+    mapasFrame.src = 'about:blank';
+    mapasFrame.remove();
+  }
+  mapasFrame = null;
+  mapasCarregado = false;
+  mapasRotaAtual = MAPAS_ROTA_INICIAL;
+  mapasTitulo = null;
+}
+window.addEventListener('message', ev=>{
+  if(ev.origin !== location.origin) return;
+  if(!mapasFrame || ev.source !== mapasFrame.contentWindow) return;
+  const d = ev.data;
+  if(!d || typeof d !== 'object' || d.tipo !== 'mapas-rota' || typeof d.rota !== 'string') return;
+  mapasRotaAtual = d.rota;
+  mapasTitulo = (typeof d.titulo === 'string' && d.titulo.trim()) ? d.titulo : null;
+  destacarBotaoMapas();
+  atualizarCabecalhoPagina();
+});
+
+/* =====================================================================
    LOGIN / LOGOUT — Supabase Auth
 ===================================================================== */
 function aplicarPermissoesNav(){
@@ -2691,6 +2854,7 @@ function entrarAlgodao(){
   document.getElementById('nav-algodao').style.display = '';
   document.getElementById('nav-mecanizadas').style.display = 'none';
   document.getElementById('nav-administracao').style.display = 'none';
+  document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('relatorio');
@@ -2700,6 +2864,7 @@ function entrarMecanizadas(){
   document.getElementById('nav-algodao').style.display = 'none';
   document.getElementById('nav-mecanizadas').style.display = '';
   document.getElementById('nav-administracao').style.display = 'none';
+  document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('importar-mecanizadas');
@@ -2710,13 +2875,26 @@ function entrarAdministracao(){
   document.getElementById('nav-algodao').style.display = 'none';
   document.getElementById('nav-mecanizadas').style.display = 'none';
   document.getElementById('nav-administracao').style.display = '';
+  document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('usuarios');
 }
+function entrarMapas(){
+  categoriaAtual = 'mapas';
+  document.getElementById('nav-algodao').style.display = 'none';
+  document.getElementById('nav-mecanizadas').style.display = 'none';
+  document.getElementById('nav-administracao').style.display = 'none';
+  document.getElementById('nav-mapas').style.display = '';
+  document.getElementById('categoria-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = '';
+  irParaMapas(null); // 1ª entrada: cria o iframe na rota inicial; depois mantém o módulo onde estava
+  enviarFazendaMapas();
+}
 document.getElementById('card-algodao').addEventListener('click', entrarAlgodao);
 document.getElementById('card-mecanizadas').addEventListener('click', entrarMecanizadas);
 document.getElementById('card-administracao').addEventListener('click', entrarAdministracao);
+document.getElementById('card-mapas').addEventListener('click', entrarMapas);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
 
 async function tentarLogin(){
@@ -2740,6 +2918,7 @@ async function tentarLogin(){
   await carregarSessaoEDados();
 }
 async function sair(){
+  descarregarMapas();
   if(canalRealtime){ sb.removeChannel(canalRealtime); canalRealtime = null; }
   await sb.auth.signOut();
   sessao = null;
@@ -2779,7 +2958,7 @@ function renderTudo(){
   else { mostrarTelaLogin(); }
 })();
 sb.auth.onAuthStateChange((event)=>{
-  if(event === 'SIGNED_OUT') mostrarTelaLogin();
+  if(event === 'SIGNED_OUT'){ descarregarMapas(); mostrarTelaLogin(); }
 });
 
 </script>
