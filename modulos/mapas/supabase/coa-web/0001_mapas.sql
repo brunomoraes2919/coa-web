@@ -59,7 +59,7 @@ create table if not exists public.mapas_fazendas (
   -- coluna do shape com o código do talhão (ex.: CD_UPNIVEL3)
   campo_codigo   text,
   -- fazenda do COA WEB que define quem vê esta fazenda de mapa (nula = só admin)
-  coa_fazenda_id integer references public.fazendas (id) on delete set null
+  coa_fazenda_id bigint references public.fazendas (id) on delete set null
 );
 
 -- Talhões de cada fazenda de mapa (geometria em GeoJSON WGS84).
@@ -214,7 +214,7 @@ $$;
 
 -- O usuário logado pode ver esta fazenda do COA WEB? Admin vê todas; colaborador (com linha em
 -- perfis) vê as liberadas em usuario_fazendas; fazenda nula (fazenda de mapa sem vínculo) -> só admin.
-create or replace function public.mapas_pode_ver(p_coa_fazenda_id integer)
+create or replace function public.mapas_pode_ver(p_coa_fazenda_id bigint)
 returns boolean
 language sql
 stable
@@ -278,13 +278,13 @@ $$;
 
 revoke all on function public.mapas_eh_admin() from public, anon;
 revoke all on function public.mapas_eh_usuario() from public, anon;
-revoke all on function public.mapas_pode_ver(integer) from public, anon;
+revoke all on function public.mapas_pode_ver(bigint) from public, anon;
 revoke all on function public.mapas_pode_ver_fazenda(uuid) from public, anon;
 revoke all on function public.mapas_pode_ver_arquivo(text) from public, anon;
 
 grant execute on function public.mapas_eh_admin() to authenticated;
 grant execute on function public.mapas_eh_usuario() to authenticated;
-grant execute on function public.mapas_pode_ver(integer) to authenticated;
+grant execute on function public.mapas_pode_ver(bigint) to authenticated;
 grant execute on function public.mapas_pode_ver_fazenda(uuid) to authenticated;
 grant execute on function public.mapas_pode_ver_arquivo(text) to authenticated;
 
