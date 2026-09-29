@@ -59,3 +59,5 @@ export function gravarSupabase(
   arquivo: PlantioPimsScript,
   opcoes: { url: string; chave: string; fetch: FetchLike },
 ): Promise<void>;
+export function cabecalhosSupabase(chave: string): Record<string, string>;
+export function semChave(texto: string, chave: string): string;

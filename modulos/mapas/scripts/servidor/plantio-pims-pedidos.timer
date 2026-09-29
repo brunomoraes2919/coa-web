@@ -1,0 +1,11 @@
+# /etc/systemd/system/plantio-pims-pedidos.timer
+[Unit]
+Description=Confere os pedidos de Atualizar plantio a cada 30 s
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=30s
+AccuracySec=2s
+
+[Install]
+WantedBy=timers.target

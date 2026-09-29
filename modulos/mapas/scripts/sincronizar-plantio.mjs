@@ -279,14 +279,14 @@ function ehChaveJwt(chave) {
   return chave.startsWith('eyJ');
 }
 
-function cabecalhosSupabase(chave) {
+export function cabecalhosSupabase(chave) {
   const h = { apikey: chave };
   if (ehChaveJwt(chave)) h.Authorization = `Bearer ${chave}`;
   return h;
 }
 
 /** Tira a chave do corpo da resposta (caso ela seja ecoada de volta) antes de colocá-lo num erro. */
-function semChave(texto, chave) {
+export function semChave(texto, chave) {
   return chave ? texto.split(chave).join('[REDACTED]') : texto;
 }
 
