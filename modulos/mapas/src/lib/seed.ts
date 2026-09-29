@@ -9,7 +9,7 @@
 import turfArea from '@turf/area';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { Repositorio } from '../data/repo';
-import { nomeComparavel, normalizarCodigo } from './codigoTalhao';
+import { nomeComparavel, normalizarCodigo, unidadePimsCanonica } from './codigoTalhao';
 import { leitorHttp } from './seedLeitores';
 import type { AreaCultura, Fazenda, FazendaCoa, Geometry, LeitorSeed, ResultadoSeed, Safra, Talhao } from './types';
 
@@ -121,15 +121,15 @@ function colunasDe(fc: FeatureCollection): string[] {
   return [...colunas];
 }
 
-/**
- * Fazendas do COA WEB por nome comparável. Nome repetido (ambíguo) fica de fora: o vínculo define quem
- * vê a fazenda, então é melhor deixar sem vínculo (o admin escolhe à mão) do que ligar à fazenda errada.
- */
 /** Nome para ligar à fazenda do COA WEB: comparável e sem o prefixo "Fazenda"/"Faz." ("Fazenda Globo" ↔ "Globo"). */
 function chaveCoa(nome: string | null | undefined): string {
   return nomeComparavel(nome).replace(/^FAZ(?:ENDA)?\.?\s+/, '');
 }
 
+/**
+ * Fazendas do COA WEB por nome comparável. Nome repetido (ambíguo) fica de fora: o vínculo define quem
+ * vê a fazenda, então é melhor deixar sem vínculo (o admin escolhe à mão) do que ligar à fazenda errada.
+ */
 function coaPorNome(lista: FazendaCoa[]): Map<string, number> {
   const ids = new Map<string, number[]>();
   for (const f of lista) {
@@ -167,7 +167,7 @@ async function gravarFazenda(repo: Repositorio, sf: SeedFazenda, fc: FeatureColl
   const talhoesDoUsuario = atuais.length > 0 && !atuais.some((t) => idsSeed.has(t.id));
 
   if (existente && talhoesDoUsuario) {
-    await repo.atualizarFazenda({ ...existente, unidadePims: existente.unidadePims ?? sf.unidadePims, coaFazendaId }, []);
+    await repo.atualizarFazenda({ ...existente, unidadePims: existente.unidadePims ?? unidadePimsCanonica(sf.unidadePims), coaFazendaId }, []);
     return { id, talhoes: 0, nome: existente.nome, coaFazendaId };
   }
   const fazenda: Fazenda = {
@@ -177,7 +177,7 @@ async function gravarFazenda(repo: Repositorio, sf: SeedFazenda, fc: FeatureColl
     campoSetor: sf.campoSetor,
     colunas: colunasDe(fc),
     criadoEm: existente?.criadoEm ?? new Date().toISOString(),
-    unidadePims: sf.unidadePims,
+    unidadePims: unidadePimsCanonica(sf.unidadePims),
     campoCodigo: sf.campoCodigo,
     coaFazendaId,
   };

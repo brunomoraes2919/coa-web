@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+# uma rodada por vez: a limpeza por gerado_em de uma rodada não pode correr junto com o upsert da outra
+concurrency:
+  group: plantio-pims
+  cancel-in-progress: false
+
 jobs:
   sincronizar:
     runs-on: ubuntu-latest
@@ -17,11 +22,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Configurar Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
+      # sem setup-node: o ubuntu-latest já traz Node >= 20 (fetch nativo) e o script não tem dependências
       - name: Verificar secrets
         env:
           AGROVEX_TOKEN: ${{ secrets.AGROVEX_TOKEN }}

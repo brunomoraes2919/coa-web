@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { repo } from '../data/index';
-import type { Fazenda } from '../lib/types';
+import type { Fazenda, FazendaCoa } from '../lib/types';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
+import { nomeVinculoCoa } from '../components/CampoFazendaCoa';
 import { useImportarCadastroPadrao } from '../components/ImportarCadastroPadrao';
 
 interface Linha {
@@ -27,11 +28,32 @@ export default function Fazendas() {
   /** muda ao fim de uma importação do cadastro padrão: recarrega a lista */
   const [versao, setVersao] = useState(0);
   const importacao = useImportarCadastroPadrao(() => setVersao((v) => v + 1));
+  /** fazendas do COA WEB, para a coluna do vínculo (modo local: vazia → coluna escondida) */
+  const [fazendasCoa, setFazendasCoa] = useState<FazendaCoa[]>([]);
+  const [erroCoa, setErroCoa] = useState<string | null>(null);
 
   // limpa a mensagem do histórico para não reaparecer ao recarregar
   useEffect(() => {
     if (loc.state) navigate(loc.pathname, { replace: true, state: null });
   }, [loc.state, loc.pathname, navigate]);
+
+  // a lista do COA WEB muda pouco: carregada uma vez; se falhar, a coluna fica escondida (com aviso)
+  useEffect(() => {
+    let ativo = true;
+    repo()
+      .listarFazendasCoa()
+      .then(
+        (lista) => {
+          if (ativo) setFazendasCoa(lista);
+        },
+        (e: unknown) => {
+          if (ativo) setErroCoa(`Não foi possível listar as fazendas do COA WEB (coluna "COA WEB" oculta): ${mensagemDeErro(e)}`);
+        },
+      );
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   useEffect(() => {
     let ativo = true;
@@ -62,6 +84,14 @@ export default function Fazendas() {
     };
   }, [versao]);
 
+  const comCoa = fazendasCoa.length > 0;
+  const celulaCoa = (fazenda: Fazenda) =>
+    nomeVinculoCoa(fazenda.coaFazendaId, fazendasCoa) ?? (
+      <span className="chip chip-alerta" title="Sem fazenda do COA WEB ligada: só administradores veem esta fazenda e os mapas dela.">
+        Sem vínculo (só admin)
+      </span>
+    );
+
   return (
     <div className="pagina">
       <div className="pagina-cabecalho">
@@ -84,6 +114,11 @@ export default function Fazendas() {
       )}
       {importacao.aviso}
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      {erroCoa && (
+        <Aviso tipo="alerta" onFechar={() => setErroCoa(null)}>
+          {erroCoa}
+        </Aviso>
+      )}
 
       <div className="cartao">
         {linhas === null ? (
@@ -106,6 +141,7 @@ export default function Fazendas() {
                   <th>Fazenda</th>
                   <th className="num">Talhões</th>
                   <th className="num">Área (ha)</th>
+                  {comCoa && <th>COA WEB</th>}
                   <th>Coluna do nome</th>
                   <th>Coluna do setor</th>
                   <th>Cadastrada em</th>
@@ -120,6 +156,7 @@ export default function Fazendas() {
                     </td>
                     <td className="num">{talhoes}</td>
                     <td className="num">{fmtHa(area)}</td>
+                    {comCoa && <td>{celulaCoa(fazenda)}</td>}
                     <td>{fazenda.campoNome}</td>
                     <td>{fazenda.campoSetor ?? '—'}</td>
                     <td>{fmtDataCurta(fazenda.criadoEm)}</td>

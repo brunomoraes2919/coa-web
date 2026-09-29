@@ -24,7 +24,7 @@ Registro das decisões que o assistente tomou por delegação do usuário, extra
 - Ruling: incluir na rodada 1 da Task 6 os minors #2 (cache do índice de classes), #3 (reuso de ImageData) e #4 (rótulos de coordenada reservados no LabelPlacer) — afetam a prévia interativa da Task 8 — custo: nenhum
 - Ruling: incluir na rodada 1 da Task 8 os minors 3-12, 14-18 (arquivo task-8-achados.md) — são visíveis ao usuário ou afetam memória a 600 dpi — custo: rodada maior
 - Task 8: minor (parked): passos "interpolação" e "exportação" como selo de progresso e botões no cabeçalho — Ruling: UX mais direta (interpola sozinho) — custo: nenhum
-- Ruling: I3 sem allowlist de membros — com cadastro público desativado só há usuários criados pelo admin; configuração fica simples — custo se errado: se alguém esquecer de desativar o cadastro, qualquer pessoa com a URL cria conta e acessa os dados (mitigado pelo alerta no app e no SQL)
+- Ruling: I3 sem allowlist de membros — com cadastro público desativado só há usuários criados pelo admin; configuração fica simples — custo se errado: se alguém esquecer de desativar o cadastro, qualquer pessoa com a URL cria conta e acessa os dados (mitigado pelo alerta no app e no SQL). Superado pela integração com o COA WEB (módulo MAPAS): o módulo não tem login nem cadastro próprios; usa a sessão e os perfis do COA WEB, e o RLS libera por `perfis`/`usuario_fazendas` (fazenda de mapa sem vínculo com o COA WEB: só o admin vê).
 - Ruling: I2 edição mostra "Atualizar este mapa" e "Salvar como novo" — evita sobrescrita silenciosa — custo: um botão a mais
 - Ruling: I5 cópia do histórico sempre em 150 dpi (~4 MB) — cabe ~250 mapas/GB no plano gratuito; alta resolução é regenerável pelo editor — custo: baixar do histórico dá 150 dpi
 - Ruling: adiados da revisão final: M4, M5, M7, M9, M13, M17 (ver final-achados.md) — custo: polimento/volume no modo Supabase
@@ -32,7 +32,7 @@ Registro das decisões que o assistente tomou por delegação do usuário, extra
 - Ruling: Siriema + São Miguel = uma fazenda com setores (PIMS trata como unidade SIRIEMA).
 - Ruling: status plantado = DT_PLANT_ENC ou área apontada >= 99% da prevista; plantando = parcial; a_plantar = sem apontamento.
 - Ruling: PIMS prevalece sobre o plantio manual; manual só para talhões sem registro no PIMS.
-- Ruling: seed (limites das unidades e áreas de soja) commitado em public/dados/seed — o usuário pediu pré-cadastro; repositório público expõe os limites (avisar).
+- Ruling: seed (limites das unidades e áreas de soja) commitado em public/dados/seed — o usuário pediu pré-cadastro; repositório público expõe os limites (avisar). Superado pela integração com o COA WEB (módulo MAPAS): `public/dados/` (seed e `plantio.json`) saiu do git e da publicação; o admin importa o `cadastro-padrao-mapas.zip` (`npm run pacote-seed`) em Mapas → Fazendas e shapes, e os dados ficam no Supabase, atrás do login.
 
 ## 2026-09-28-plantio-pims
 
@@ -50,4 +50,4 @@ Registro das decisões que o assistente tomou por delegação do usuário, extra
 - Ao concluir o cadastro padrão na primeira abertura, as telas são recarregadas (edições não salvas se perdem).
 - Três Flechas está sem shape de soja 26/27 (o zip enviado veio vazio); importar em Safras → Importar áreas.
 - 'Manter manual' não existe: o PIMS prevalece; o plantio manual vale só onde o PIMS não tem registro.
-- Repositório ainda sem remoto: criar no GitHub, configurar Pages (GitHub Actions) e o secret `AGROVEX_TOKEN`.
+- ~~Repositório ainda sem remoto: criar no GitHub, configurar Pages (GitHub Actions) e o secret `AGROVEX_TOKEN`.~~ Superado: o módulo vive em `modulos/mapas` do coa-web, e o COA WEB publica `mapas/` (saída de `npm run publicar`, commitada) a partir do `main` pela Vercel e pelo GitHub Pages (deploy from branch), sem build — não trocar o Pages para GitHub Actions. Pendente: conferir os secrets `AGROVEX_TOKEN` e `SUPABASE_SERVICE_ROLE_KEY` do workflow `plantio-pims.yml` no coa-web.

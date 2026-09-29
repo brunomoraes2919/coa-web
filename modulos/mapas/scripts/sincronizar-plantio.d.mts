@@ -50,6 +50,10 @@ export function sincronizar(opcoes: {
 }): Promise<PlantioPimsScript>;
 export function mesmosDados(antigo: PlantioPimsScript | null, novo: PlantioPimsScript): boolean;
 export function resumo(dados: PlantioPimsScript): string[];
+export function linhasDeLog(
+  dados: PlantioPimsScript,
+  opcoes?: { supabase?: boolean; githubActions?: boolean },
+): string[];
 export function linhasSupabase(arquivo: PlantioPimsScript): LinhaSupabaseScript[];
 export function gravarSupabase(
   arquivo: PlantioPimsScript,

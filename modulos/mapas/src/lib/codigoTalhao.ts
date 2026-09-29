@@ -27,6 +27,16 @@ export function nomeComparavel(s: string | null | undefined): string {
     .replace(/\s+/g, ' ');
 }
 
+/**
+ * Unidade no PIMS como é gravada na fazenda (digitada ou escolhida pelo usuário): a forma canônica de
+ * nomeComparavel. O app casa o plantio por nomeComparavel, mas o RLS de mapas_plantio_pims compara só
+ * `upper(unidade_pims) = upper(unidade)`; gravando sem acento e com espaços simples, os dois concordam.
+ * Vazia → null (sem vínculo com o PIMS).
+ */
+export function unidadePimsCanonica(s: string | null | undefined): string | null {
+  return nomeComparavel(s) || null;
+}
+
 function tresDigitos(numero: string): string {
   return numero.replace(/^0+(?=\d)/, '').padStart(3, '0');
 }

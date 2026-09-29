@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizarCodigo, sugerirColunaCodigo, unirPorCodigo } from '../src/lib/codigoTalhao';
+import { nomeComparavel, normalizarCodigo, sugerirColunaCodigo, unidadePimsCanonica, unirPorCodigo } from '../src/lib/codigoTalhao';
 import type { Polygon } from 'geojson';
 import type { Geometry } from '../src/lib/types';
 
@@ -54,6 +54,26 @@ describe('normalizarCodigo', () => {
 
   it('não remove "TH" que faz parte do código', () => {
     expect(normalizarCodigo('THX')).toBe('THX');
+  });
+});
+
+describe('unidadePimsCanonica (gravada na fazenda; o RLS compara upper(unidade_pims) = upper(unidade))', () => {
+  it('maiúsculas, sem acento, sem espaços nas pontas e com espaços simples', () => {
+    expect(unidadePimsCanonica('  três   flechas ')).toBe('TRES FLECHAS');
+    expect(unidadePimsCanonica('São Miguel')).toBe('SAO MIGUEL');
+    expect(unidadePimsCanonica('SIRIEMA')).toBe('SIRIEMA');
+    expect(unidadePimsCanonica('sm3')).toBe('SM3');
+  });
+
+  it('vazia, só espaços ou null → null (sem vínculo com o PIMS)', () => {
+    expect(unidadePimsCanonica('')).toBeNull();
+    expect(unidadePimsCanonica('   ')).toBeNull();
+    expect(unidadePimsCanonica(null)).toBeNull();
+    expect(unidadePimsCanonica(undefined)).toBeNull();
+  });
+
+  it('é a mesma forma de nomeComparavel (o app casa a unidade do plantio por ela)', () => {
+    for (const u of ['Três Flechas', ' globo ', 'NEBRASKA']) expect(unidadePimsCanonica(u)).toBe(nomeComparavel(u));
   });
 });
 

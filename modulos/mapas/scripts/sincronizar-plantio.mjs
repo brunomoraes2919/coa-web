@@ -3,7 +3,8 @@
 // que sumiram do PIMS); sem elas, grava public/dados/plantio.json como antes (uso local).
 // Uso: AGROVEX_TOKEN=... node scripts/sincronizar-plantio.mjs   (ou npm run plantio)
 // Configuração: scripts/plantio.config.json  { "safras": "auto" | ["SOJA 26/27", ...], "url": "..." }
-// Sem dependências (Node >= 20, fetch nativo). O token e a chave de serviço nunca são gravados nem impressos.
+// Sem dependências (Node >= 20, fetch nativo). O token e a chave de serviço nunca são gravados nem impressos;
+// no Supabase ou no GitHub Actions (logs públicos) o log só traz totais, sem nomes de fazenda (linhasDeLog).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -327,6 +328,19 @@ export function resumo(dados) {
   return linhas;
 }
 
+/**
+ * O que imprimir da rodada. O repositório é público e os logs do GitHub Actions também: gravando no
+ * Supabase ou rodando no Actions, só totais agregados (sem nome de fazenda nem contagem por fazenda).
+ * O detalhe por safra/unidade (resumo) fica para o modo local (plantio.json na própria máquina).
+ */
+export function linhasDeLog(dados, { supabase = false, githubActions = false } = {}) {
+  if (!supabase && !githubActions) return resumo(dados);
+  const linhas = linhasSupabase(dados);
+  const talhoes = linhas.reduce((soma, l) => soma + l.talhoes.length, 0);
+  const destino = supabase ? ' gravadas no Supabase' : '';
+  return [`${linhas.length} linhas (safra × unidade)${destino}, ${talhoes} talhões, geradoEm ${dados.geradoEm}.`];
+}
+
 // ---------- execução pela linha de comando ----------
 
 async function main() {
@@ -344,15 +358,19 @@ async function main() {
     safras: config.safras ?? 'auto',
     excluirPrefixos: config.excluirPrefixos ?? [],
   });
-  for (const l of resumo(dados)) console.log(l);
-
   const supabaseUrl = process.env.SUPABASE_URL?.trim();
   const supabaseChave = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (supabaseUrl && supabaseChave) {
+  const noSupabase = Boolean(supabaseUrl && supabaseChave);
+  const log = () => {
+    const opcoes = { supabase: noSupabase, githubActions: Boolean(process.env.GITHUB_ACTIONS) };
+    for (const l of linhasDeLog(dados, opcoes)) console.log(l);
+  };
+  if (noSupabase) {
     await gravarSupabase(dados, { url: supabaseUrl, chave: supabaseChave, fetch });
-    console.log(`Gravado em mapas_plantio_pims via Supabase (${dados.geradoEm}).`);
+    log();
     return;
   }
+  log();
 
   const destino = join(raiz, 'public', 'dados', 'plantio.json');
   let antigo = null;

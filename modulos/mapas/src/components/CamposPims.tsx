@@ -14,7 +14,7 @@ interface Props {
   onUnidadePims(u: string | null): void;
 }
 
-/** Coluna do código PIMS do talhão e unidade da fazenda no PIMS (lista das unidades do plantio.json). */
+/** Coluna do código PIMS do talhão e unidade da fazenda no PIMS (lista das unidades do plantio do PIMS). */
 export default function CamposPims({ colunas, exemplos, campoCodigo, onCampoCodigo, unidadePims, onUnidadePims }: Props) {
   const arquivo = usePlantioPims();
   const unidades = useMemo(() => unidadesDoArquivo(arquivo ?? null), [arquivo]);
@@ -74,7 +74,7 @@ export default function CamposPims({ colunas, exemplos, campoCodigo, onCampoCodi
           {arquivo === undefined
             ? 'Carregando as unidades do plantio do PIMS…'
             : unidades.length
-              ? 'Unidades encontradas no plantio do PIMS (plantio.json).'
+              ? 'Unidades encontradas no plantio do PIMS.'
               : 'Plantio do PIMS indisponível: digite o nome da unidade como está no PIMS.'}
           {digitando && (
             <>

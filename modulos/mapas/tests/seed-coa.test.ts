@@ -111,3 +111,24 @@ describe('carregarSeed: ligação com as fazendas do COA WEB', () => {
     expect(await local.listarFazendas()).toEqual([]);
   });
 });
+
+describe('carregarSeed: unidade no PIMS na forma canônica', () => {
+  const comUnidade = (unidadePims: string) => leitorFalso({
+    ...ARQUIVOS,
+    'seed.json': { ...ARQUIVOS['seed.json'], fazendas: [{ ...base('Três Flechas', 'base/TRES_FLECHAS.geojson'), unidadePims }] },
+  });
+
+  it('grava sem acento, em maiúsculas e com espaços simples (o RLS do plantio compara só upper())', async () => {
+    const repo = repoNovo();
+    await carregarSeed(repo, comUnidade(' Três  flechas '));
+    expect((await repo.listarFazendas()).map((f) => f.unidadePims)).toEqual(['TRES FLECHAS']);
+  });
+
+  it('fazenda cadastrada à mão (talhões próprios, sem unidade) recebe a unidade canônica', async () => {
+    const repo = repoNovo();
+    const minha = { id: 'minha-tf', nome: 'Três Flechas', campoNome: 'T', campoSetor: null, colunas: ['T'], criadoEm: '2026-01-01T00:00:00.000Z', unidadePims: null, campoCodigo: null, coaFazendaId: null };
+    await repo.salvarFazenda(minha, [{ id: 'meu-talhao', fazendaId: 'minha-tf', nome: 'T1', setor: null, areaHa: 1, geom: quadrado(0), atributos: {}, codigo: null }]);
+    await carregarSeed(repo, comUnidade('três flechas'));
+    expect((await repo.listarFazendas()).find((f) => f.id === 'minha-tf')?.unidadePims).toBe('TRES FLECHAS');
+  });
+});

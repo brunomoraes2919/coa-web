@@ -6,6 +6,7 @@ import {
   classificar,
   filtrarSafras,
   gravarSupabase,
+  linhasDeLog,
   linhasSupabase,
   mesmosDados,
   montarSql,
@@ -285,6 +286,46 @@ describe('mesmosDados / resumo', () => {
   });
   it('resume por safra/unidade/status', () => {
     expect(resumo(base)).toEqual(['SOJA 26/27', '  SIRIEMA: 2 talhões (plantado 1, plantando 1, a plantar 0)']);
+  });
+});
+
+describe('linhasDeLog (logs do GitHub Actions são públicos)', () => {
+  const dados = {
+    versao: 1 as const, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS via Agrovex',
+    safras: [
+      { nome: 'SOJA 26/27', unidades: [
+        { unidade: 'GLOBO', talhoes: [
+          { codigo: '02PIVO', codigoPims: '02PIVO', setor: 'GLEBA', status: 'a_plantar' as const, areaPrevista: 68, areaPlantada: 0, inicio: null, fim: null, variedade: null },
+        ] },
+        { unidade: 'SIRIEMA', talhoes: [
+          { codigo: '001', codigoPims: '001', setor: 'SIRIEMA', status: 'plantado' as const, areaPrevista: 97, areaPlantada: 97, inicio: null, fim: null, variedade: null },
+          { codigo: '007', codigoPims: '007', setor: 'SIRIEMA', status: 'plantando' as const, areaPrevista: 228, areaPlantada: 208, inicio: null, fim: null, variedade: null },
+        ] },
+        { unidade: 'VAZIA', talhoes: [] },
+      ] },
+    ],
+  };
+  const semNomesDeFazenda = (linhas: string[]) => {
+    const texto = linhas.join('\n');
+    for (const nome of ['GLOBO', 'SIRIEMA', 'VAZIA']) expect(texto).not.toContain(nome);
+  };
+
+  it('modo local (JSON, fora do Actions): mantém o resumo detalhado por unidade', () => {
+    expect(linhasDeLog(dados, { supabase: false, githubActions: false })).toEqual(resumo(dados));
+    expect(linhasDeLog(dados)).toEqual(resumo(dados));
+  });
+
+  it('gravando no Supabase: só totais agregados, sem nome nem contagem por fazenda', () => {
+    const linhas = linhasDeLog(dados, { supabase: true, githubActions: false });
+    expect(linhas).toEqual(['2 linhas (safra × unidade) gravadas no Supabase, 3 talhões, geradoEm 2026-09-28T10:00:00.000Z.']);
+    semNomesDeFazenda(linhas);
+  });
+
+  it('no GitHub Actions (mesmo sem Supabase): só totais agregados', () => {
+    const linhas = linhasDeLog(dados, { supabase: false, githubActions: true });
+    expect(linhas).toEqual(['2 linhas (safra × unidade), 3 talhões, geradoEm 2026-09-28T10:00:00.000Z.']);
+    semNomesDeFazenda(linhas);
+    semNomesDeFazenda(linhasDeLog(dados, { supabase: true, githubActions: true }));
   });
 });
 

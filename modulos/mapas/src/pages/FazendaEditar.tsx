@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { repo } from '../data/index';
 import type { Fazenda, FazendaCoa, Talhao } from '../lib/types';
-import { normalizarCodigo } from '../lib/codigoTalhao';
+import { normalizarCodigo, unidadePimsCanonica } from '../lib/codigoTalhao';
 import MapaLeaflet from '../components/MapaLeaflet';
 import CamposPims from '../components/CamposPims';
 import CampoFazendaCoa from '../components/CampoFazendaCoa';
@@ -118,7 +118,7 @@ export default function FazendaEditar() {
     setSucesso(null);
     setSalvando(true);
     try {
-      const atualizada: Fazenda = { ...fazenda, nome: n, campoNome, campoSetor, campoCodigo, unidadePims: unidadePims?.trim() || null, coaFazendaId };
+      const atualizada: Fazenda = { ...fazenda, nome: n, campoNome, campoSetor, campoCodigo, unidadePims: unidadePimsCanonica(unidadePims), coaFazendaId };
       await repo().atualizarFazenda(atualizada, editados);
       // atualizarFazenda só grava nome/setor dos talhões: o código vai por upsert (mesma geometria, plantios preservados)
       const antes = new Map(talhoes.map((t) => [t.id, t.codigo]));
@@ -130,6 +130,7 @@ export default function FazendaEditar() {
       }
       // os nomes vêm sempre de `atributos`; manter `talhoes` evita redesenhar e reenquadrar o mapa
       setFazenda(atualizada);
+      setUnidadePims(atualizada.unidadePims);
       setNomesSalvos(new Map(editados.map((t) => [t.id, t.nome])));
       setSucesso('Alterações salvas.');
     } catch (e) {
@@ -170,7 +171,9 @@ export default function FazendaEditar() {
     campoNome !== fazenda.campoNome ||
     campoSetor !== fazenda.campoSetor ||
     campoCodigo !== fazenda.campoCodigo ||
-    (unidadePims?.trim() || null) !== fazenda.unidadePims ||
+    // compara a forma que será gravada: uma unidade antiga fora da forma canônica (com acento, espaços
+    // duplos) conta como alteração, e salvar a corrige para o RLS casá-la com o plantio do PIMS
+    unidadePimsCanonica(unidadePims) !== (fazenda.unidadePims ?? null) ||
     coaFazendaId !== (fazenda.coaFazendaId ?? null);
 
   return (

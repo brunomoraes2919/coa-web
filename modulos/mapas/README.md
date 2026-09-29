@@ -7,7 +7,9 @@ a partir do CSV exportado da ZEUS, sem precisar do QGIS.
 - Cadastro de safras (ex.: **SOJA 26/27**, com período de produção) e marcação dos talhões plantados.
 - **Plantio automático do PIMS**: plantado, plantando e a plantar lidos do PIMS a cada hora e pintados
   no mapa (sem digitação), casados pelo código do talhão.
-- **Cadastro padrão**: o app já vem com as sete unidades do COA, a safra SOJA 26/27 e as áreas de soja.
+- **Cadastro padrão**: no modo local (desenvolvimento), o app já vem com as sete unidades do COA, a safra
+  SOJA 26/27 e as áreas de soja; no COA WEB, o admin importa o `cadastro-padrao-mapas.zip` (veja
+  [Cadastro padrão](#cadastro-padrão)).
 - Interpolação da chuva com **o mesmo modelo do QGIS** (`MAPA_CHUVA_V3_ATUAL.model3`): IDW do GRASS
   com potência 4, 12 vizinhos e pixel de 5 m, em UTM SIRGAS 2000, recortado pelos talhões com buffer de 10 m.
 - Talhões plantados aparecem **quadriculados** (contorno laranja) sobre a interpolação, os que estão
@@ -44,12 +46,16 @@ categoria **MAPAS**. O COA WEB mostra o módulo num `iframe` da mesma origem
   eles dentro do editor. Quem garante o acesso é o RLS do banco.
 - **Cadastro padrão no COA WEB**: a publicação não leva `public/dados/`. Em `modulos/mapas`,
   `npm run pacote-seed` gera `cadastro-padrao-mapas.zip` (seed.json + GeoJSONs; dados da Locks, nunca vai
-  para o git nem para a publicação); o admin usa **Fazendas → Importar cadastro padrão** e escolhe o zip.
-  Cada unidade é ligada à fazenda do COA WEB de mesmo nome (sem acento, sem diferença de maiúsculas e sem o
-  prefixo "Fazenda": `Três Flechas` ↔ `Tres Flechas`, `Globo` ↔ `Fazenda Globo`); o aviso final lista as que ficaram sem vínculo (só administradores as
-  veem). Na tela da fazenda, o campo **Fazenda no COA WEB** ajusta o vínculo à mão; importar de novo não
+  para o git nem para a publicação); o admin usa **Mapas → Fazendas e shapes → Importar cadastro padrão** e
+  escolhe o zip. Cada unidade é ligada à fazenda do COA WEB de mesmo nome (sem acento, sem diferença de
+  maiúsculas e sem o prefixo "Fazenda": `Três Flechas` ↔ `Tres Flechas`, `Globo` ↔ `Fazenda Globo`); o aviso
+  final lista as que ficaram sem vínculo (só administradores as veem). Na tela da fazenda, o campo **Fazenda no COA WEB** ajusta o vínculo à mão; importar de novo não
   troca um vínculo escolhido, mas religa pelo nome uma fazenda deixada em "Sem vínculo" (desligue de novo se
-  for o caso).
+  for o caso). Uma fazenda nova já pode ser ligada no próprio cadastro, e a lista de fazendas tem a coluna
+  **COA WEB**, que destaca as "Sem vínculo (só admin)".
+- **Dados**: no módulo publicado, os dados ficam só no Supabase do COA WEB (as cópias de segurança são as do
+  Supabase). A tela de backup em JSON (**Configurações**) só existe no modo local/desenvolvimento.
+- **Publicação**: veja [Publicação](#publicação).
 
 ## Como testar agora (no seu computador)
 
@@ -78,10 +84,9 @@ com `npm test`.
 
 ### Cuidados com o modo local
 
-- **Cada endereço tem o seu próprio banco local.** `http://localhost:5173` (`npm run dev`),
-  `http://localhost:4173` (`iniciar.bat`) e o site no GitHub Pages não enxergam os dados uns dos outros,
-  mesmo no mesmo navegador. Para levar os dados de um para outro, use **Configurações → Exportar backup** e
-  **Importar backup**.
+- **Cada endereço tem o seu próprio banco local.** `http://localhost:5173` (`npm run dev`) e
+  `http://localhost:4173` (`iniciar.bat`) não enxergam os dados um do outro, mesmo no mesmo navegador. Para
+  levar os dados de um para outro, use **Configurações → Exportar backup** e **Importar backup**.
 - **O navegador pode apagar os dados** do site (limpeza de dados de navegação, falta de espaço em disco,
   modo anônimo). O app pede ao navegador para guardar os dados de forma persistente, mas isso não é
   garantido: **exporte o backup com frequência** (ex.: toda semana) e guarde o arquivo JSON numa pasta
@@ -105,13 +110,18 @@ permissões do COA WEB.
    colaborador vê as fazendas liberadas para ele e nelas salva e exclui mapas de chuva; fazendas, talhões,
    safras e plantio só o admin altera. Cada fazenda de mapa é ligada a uma fazenda do COA WEB; sem esse
    vínculo, só o admin a vê.
-3. Em **Project Settings → API**, copie a **Project URL** e a chave **anon public**.
-4. No app, abra **Configurações**, escolha *Supabase*, cole a URL e a chave, salve e entre com o e-mail
-   e a senha do COA WEB.
+3. **No COA WEB publicado** não há o que configurar: o build já sai em modo Supabase fixo (URL e chave anon
+   do COA WEB, em `.env.coa-web`) e usa o login do COA WEB. Os dados ficam só no Supabase (cópias de
+   segurança pelo Supabase); não há tela de Configurações nem backup em JSON.
+4. **Só no desenvolvimento** (`npm run dev`), para testar contra o Supabase: em **Project Settings → API**,
+   copie a **Project URL** e a chave **anon public**; no app, abra **Configurações**, escolha *Supabase*,
+   cole a URL e a chave, salve e entre com o e-mail e a senha do COA WEB.
 
-Para levar o que foi cadastrado no modo local: em **Configurações → Exportar backup** (no modo local),
-depois troque para o Supabase, faça login como admin e use **Importar backup**. Para começar do cadastro
-padrão, faça login como admin e use **Configurações → Importar cadastro padrão**.
+**Só no desenvolvimento (Configurações):** para levar o que foi cadastrado no modo local, use
+**Configurações → Exportar backup** (no modo local), depois troque para o Supabase, faça login como admin e
+use **Importar backup**; **Configurações → Importar cadastro padrão** também só existe aí. No COA WEB
+publicado, o cadastro padrão entra por **Mapas → Fazendas e shapes → Importar cadastro padrão**, com o
+`cadastro-padrao-mapas.zip` gerado por `npm run pacote-seed`.
 
 **Espaço no plano gratuito:** o histórico guarda cada mapa como JPEG de 150 dpi (≈ 1 MB por mapa A3, mais
 a miniatura PNG). O Storage gratuito tem 1 GB, o que dá **cerca de 1000 mapas**; exclua mapas antigos do
@@ -123,22 +133,13 @@ ao atualizar um deles, a cópia passa a ser JPEG e o PNG antigo é apagado.
 uma semana). Se o app parar de conectar, entre em [supabase.com](https://supabase.com), abra o projeto e
 clique em **Restore project**; os dados continuam lá.
 
-## Publicar no GitHub Pages
+## Publicação
 
-1. Crie um repositório no GitHub (ex.: `mapa-chuva-coa`) e envie este projeto:
-   ```bash
-   git remote add origin https://github.com/SEU-USUARIO/mapa-chuva-coa.git
-   git push -u origin master
-   ```
-2. No repositório: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-3. (Opcional) **Settings → Secrets and variables → Actions**: crie `VITE_SUPABASE_URL` e
-   `VITE_SUPABASE_ANON_KEY` para o site já abrir conectado ao Supabase.
-4. Cada `push` roda os testes, gera o site e publica em `https://SEU-USUARIO.github.io/mapa-chuva-coa/`.
-
-GitHub Pages em repositório **privado** exige plano pago (Pro, Team ou Enterprise). Os únicos dados da
-Locks no repositório (e no site publicado) são o **cadastro padrão** (`public/dados/seed/`: limites das
-unidades e áreas de soja) e o **plantio do PIMS** (`public/dados/plantio.json`); CSVs e mapas ficam no
-navegador ou no Supabase. Se o repositório for público, esses dois também ficam públicos.
+O COA WEB publica a pasta `mapas/` (saída de `npm run publicar`, que vai no commit) a partir do branch
+`main`, pela Vercel e pelo GitHub Pages (*deploy from branch*), **sem etapa de build**. Não há publicação
+própria do módulo: não troque a origem do GitHub Pages para *GitHub Actions*, o que quebraria a publicação
+do COA WEB. O cadastro padrão (limites das unidades e áreas de soja) e o plantio do PIMS **não** estão no
+repositório (que é público) nem no site: ficam no Supabase, atrás do login.
 
 ## Plantio automático do PIMS
 
@@ -162,8 +163,11 @@ GitHub Actions (1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) ──▶ ups
      `index.html`).
 2. **Workflow** `.github/workflows/plantio-pims.yml` (raiz do repositório): roda a cada hora
    (`17 * * * *`) e também sob demanda (**Actions → Sincronizar plantio PIMS → Run workflow**). Falha com
-   mensagem clara se algum dos dois secrets não estiver configurado. Não roda `npm ci` (o script não tem
-   dependências) e não faz commit — só grava no Supabase.
+   mensagem clara se algum dos dois secrets não estiver configurado. Não roda `npm ci` nem `setup-node` (o
+   script não tem dependências e usa o Node do `ubuntu-latest`), roda uma rodada por vez (`concurrency`) e
+   não faz commit — só grava no Supabase. Como os logs do Actions são públicos, o log só traz totais
+   (linhas safra × unidade, talhões, `geradoEm`), sem nomes de fazenda; o resumo por unidade aparece só ao
+   rodar no seu computador gravando o `plantio.json`.
 3. **No seu computador**: sem `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` no ambiente, `AGROVEX_TOKEN=...
    npm run plantio` (no PowerShell: `$env:AGROVEX_TOKEN='...'; npm run plantio`) grava
    `public/dados/plantio.json` como antes (uso local/desenvolvimento). As safras consultadas ficam em
@@ -179,7 +183,8 @@ GitHub Actions (1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) ──▶ ups
 Regra da situação (por talhão × safra): **plantado** = plantio encerrado no PIMS ou área apontada ≥ 99% da
 prevista; **plantando** = área apontada entre 0 e 99%; **a plantar** = sem apontamento.
 
-Como o app usa o arquivo:
+Como o app usa o plantio do PIMS (tabela `mapas_plantio_pims` no COA WEB; `plantio.json` só no
+desenvolvimento):
 
 - O talhão do shape é casado com o PIMS pelo par **unidade no PIMS** (cadastro da fazenda) + **código do
   talhão** (coluna do código PIMS; normalizado dos dois lados: `TH 33A` → `033A`, `PIVÔ 02` → `02PIVO`).
@@ -197,20 +202,24 @@ Como o app usa o arquivo:
   como linhas próprias, marcadas "(área da cultura)", com a chuva da própria área.
 - Cada área da cultura pertence ao **talhão base que a contém** (pela posição, não pelo código): é isso
   que define o setor dela no filtro de setores e em qual quadro do mapa ela aparece.
-- Sem `plantio.json` (ou sem internet), o app segue só com o plantio manual.
+- Sem plantio do PIMS (tabela `mapas_plantio_pims` vazia; no desenvolvimento, sem `plantio.json`) ou sem
+  internet, o app segue só com o plantio manual.
 
 ## Cadastro padrão
 
-`public/dados/seed/` traz as sete unidades do COA (Dourado, Globo, Guapirama, Nebraska, Siriema com São
-Miguel, SM3 e Três Flechas) com os limites dos talhões e a coluna do código PIMS já escolhida, a safra
-**SOJA 26/27** (01/09/2026 a 31/08/2027) e as áreas de soja 26/27 de cada unidade (Três Flechas ainda sem
-área de soja). É gerado por `npm run seed` a partir dos shapes originais.
+`public/dados/seed/` (fora do git e da publicação) traz as sete unidades do COA (Dourado, Globo,
+Guapirama, Nebraska, Siriema com São Miguel, SM3 e Três Flechas) com os limites dos talhões e a coluna do
+código PIMS já escolhida, a safra **SOJA 26/27** (01/09/2026 a 31/08/2027) e as áreas de soja 26/27 de cada
+unidade (Três Flechas ainda sem área de soja). É gerado por `npm run seed` a partir dos shapes originais.
 
-- **Modo local**: carregado sozinho na primeira abertura (sem nenhuma fazenda), com o aviso "Cadastro
-  padrão do COA carregado (7 unidades, safra SOJA 26/27)".
-- **Configurações → Recarregar cadastro padrão** (local) ou **Importar cadastro padrão** (Supabase, com
-  login): atualiza unidades, talhões e a safra sem apagar dados — nomes editados e plantios marcados são
-  mantidos — e substitui as áreas da cultura dessas unidades na SOJA 26/27.
+- **COA WEB (publicado)**: **Mapas → Fazendas e shapes → Importar cadastro padrão**, escolhendo o
+  `cadastro-padrao-mapas.zip` (gerado por `npm run pacote-seed` a partir de `public/dados/seed/`).
+- **Modo local (desenvolvimento)**: carregado sozinho na primeira abertura (sem nenhuma fazenda), com o
+  aviso "Cadastro padrão do COA carregado (7 unidades, safra SOJA 26/27)". Em **Configurações** (só no
+  desenvolvimento): **Recarregar cadastro padrão** (local) ou **Importar cadastro padrão** (Supabase, com
+  login).
+- Em todos os caminhos, a importação atualiza unidades, talhões e a safra sem apagar dados — nomes editados
+  e plantios marcados são mantidos — e substitui as áreas da cultura dessas unidades na SOJA 26/27.
 
 ## Como a interpolação reproduz o QGIS
 
@@ -254,8 +263,9 @@ src/render/    desenho do layout em Canvas (a prévia e o PNG usam o mesmo códi
 src/data/      persistência: IndexedDB (modo local) ou Supabase
 src/pages/     telas
 supabase/      scripts SQL do Supabase do COA WEB (coa-web/0001_mapas.sql, coa-web/verificar-permissoes.sql)
-scripts/       sincronizar-plantio.mjs (PIMS → plantio.json), gerar-seed.mjs, gerar-paletas.mjs
-public/dados/  plantio.json (gerado pela rotina) e seed/ (cadastro padrão)
+scripts/       sincronizar-plantio.mjs (PIMS → mapas_plantio_pims no Supabase; sem ele, plantio.json),
+               gerar-seed.mjs, pacote-seed.mjs, gerar-paletas.mjs, verificar-publicacao.mjs
+public/dados/  só no desenvolvimento, fora do git: plantio.json e seed/ (cadastro padrão)
 docs/          design e plano de implementação
 ```
 

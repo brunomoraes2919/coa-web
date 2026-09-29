@@ -1,12 +1,13 @@
-import { useMemo, useRef, useState, type DragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { repo } from '../data/index';
 import { areaHa, importarShape, ShapeError, sugerirColunaNome, sugerirColunaSetor } from '../lib/shapes';
 import type { ShapeImport } from '../lib/shapes';
-import type { Fazenda, Talhao } from '../lib/types';
-import { normalizarCodigo, sugerirColunaCodigo, unirPorCodigo } from '../lib/codigoTalhao';
+import type { Fazenda, FazendaCoa, Talhao } from '../lib/types';
+import { normalizarCodigo, sugerirColunaCodigo, unidadePimsCanonica, unirPorCodigo } from '../lib/codigoTalhao';
 import MapaLeaflet from '../components/MapaLeaflet';
 import CamposPims from '../components/CamposPims';
+import CampoFazendaCoa from '../components/CampoFazendaCoa';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
 
@@ -55,7 +56,29 @@ export default function FazendaNova() {
   const [nomeFazenda, setNomeFazenda] = useState('');
   const [campoCodigo, setCampoCodigo] = useState<string | null>(null);
   const [unidadePims, setUnidadePims] = useState<string | null>(null);
+  const [coaFazendaId, setCoaFazendaId] = useState<number | null>(null);
+  /** fazendas do COA WEB para o vínculo (modo local: vazia → campo escondido) */
+  const [fazendasCoa, setFazendasCoa] = useState<FazendaCoa[]>([]);
+  const [erroCoa, setErroCoa] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+
+  // a lista do COA WEB é só para o vínculo: se falhar, o cadastro segue (sem vínculo, com aviso)
+  useEffect(() => {
+    let ativo = true;
+    repo()
+      .listarFazendasCoa()
+      .then(
+        (lista) => {
+          if (ativo) setFazendasCoa(lista);
+        },
+        (e: unknown) => {
+          if (ativo) setErroCoa(`Não foi possível listar as fazendas do COA WEB (ligue esta fazenda depois, na tela dela): ${mensagemDeErro(e)}`);
+        },
+      );
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   async function receber(lista: FileList | null) {
     const arquivos = lista ? Array.from(lista) : [];
@@ -115,10 +138,10 @@ export default function FazendaNova() {
         campoSetor,
         colunas: imp.colunas,
         criadoEm: new Date().toISOString(),
-        unidadePims: unidadePims?.trim() || null,
+        unidadePims: unidadePimsCanonica(unidadePims),
         campoCodigo,
-        // sem vínculo com uma fazenda do COA WEB: no Supabase, só o admin vê até ser ligada
-        coaFazendaId: null,
+        // vínculo com a fazenda do COA WEB; null (sem vínculo): no Supabase, só o admin vê até ser ligada
+        coaFazendaId,
       };
       const talhoes: Talhao[] = feicoes.map((f, i) => ({
         id: crypto.randomUUID(),
@@ -257,6 +280,12 @@ export default function FazendaNova() {
                   placeholder="Ex.: Guapirama"
                 />
               </label>
+              <CampoFazendaCoa fazendas={fazendasCoa} valor={coaFazendaId} onValor={setCoaFazendaId} />
+              {erroCoa && (
+                <Aviso tipo="alerta" onFechar={() => setErroCoa(null)}>
+                  {erroCoa}
+                </Aviso>
+              )}
               <div className="linha linha-fim">
                 <Link to="/fazendas" className="botao">
                   Cancelar
