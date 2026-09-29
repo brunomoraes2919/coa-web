@@ -1,8 +1,10 @@
 name: Sincronizar plantio PIMS
 
 on:
-  schedule:
-    - cron: '17 * * * *'
+  # Horário pausado: o Cloudflare do Agrovex barra os servidores do GitHub com uma página de verificação
+  # (HTTP 403). Volte a ligar quando o Agrovex liberar a rota /mcp para chamadas com token:
+  # schedule:
+  #   - cron: '17 * * * *'
   workflow_dispatch:
 
 permissions:
