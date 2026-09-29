@@ -15,11 +15,17 @@
 --   2. RLS da tabela: "RLS ligado" deve ser true em perfis, usuario_fazendas e fazendas.
 --   3. privilégio: o que anon e authenticated podem fazer nessas tabelas (o RLS vale por cima).
 --   4. gatilho em auth.users / 5. função do gatilho: se um gatilho cria linha em perfis para toda
---      conta nova, qualquer pessoa que se cadastre (o cadastro público está ligado) ganha perfil e,
---      no MAPAS, passa a ver as safras e a poder enviar arquivos. Leia o corpo da função.
+--      conta nova, qualquer pessoa que se cadastre (o cadastro público está ligado) ganha perfil.
+--      Por isso o MAPAS nunca usa "ter perfil" como permissão: só admin ou colaborador com fazenda
+--      liberada em usuario_fazendas. Leia o corpo da função.
 --   6. papel das funções mapas_*: elas rodam como quem executou 0001_mapas.sql (security definer)
 --      e precisam ler perfis e usuario_fazendas sem o RLS: esse papel deve ser o dono das tabelas
 --      (seção 2, "dono") ou ter "ignora RLS" = true — e as tabelas não podem ter "RLS forçado".
+--   7. outras regras em storage.objects (fora as mapas_chuva_storage_*): as regras "permissive" se
+--      somam, então uma regra de outro bucket que NÃO filtre o próprio bucket_id (ex.: "using
+--      (true)" ou só "auth.uid() is not null") libera também os arquivos do bucket mapas-chuva.
+--   8. bucket mapas-chuva: deve estar "público=false", limite 20971520 bytes e tipos PNG/JPEG
+--      (ou "(não existe)" antes de rodar 0001_mapas.sql).
 
 with
 tabelas (ordem_tabela, nome) as (
@@ -105,6 +111,41 @@ itens (ordem, secao, objeto, nome, detalhe) as (
          format('superusuário=%s | ignora RLS (rolbypassrls)=%s', r.rolsuper, r.rolbypassrls)
   from pg_catalog.pg_roles r
   where r.rolname = current_user
+
+  -- 7. regras em storage.objects que não são do MAPAS (valem para todos os buckets somadas às nossas)
+  union all
+  select 7, '7. outra regra em storage.objects', 'storage.objects', p.policyname::text,
+         format('comando=%s | %s | papéis=%s | using: %s | with check: %s',
+                p.cmd, lower(p.permissive), p.roles::text,
+                coalesce(p.qual, '(nenhum)'), coalesce(p.with_check, '(nenhum)'))
+  from pg_catalog.pg_policies p
+  where p.schemaname = 'storage'
+    and p.tablename = 'objects'
+    and p.policyname not like 'mapas\_chuva\_storage\_%'
+
+  union all
+  select 7, '7. outra regra em storage.objects', 'storage.objects', '(nenhuma)',
+         'nenhuma regra além das mapas_chuva_storage_*'
+  where not exists (
+    select 1
+    from pg_catalog.pg_policies p
+    where p.schemaname = 'storage'
+      and p.tablename = 'objects'
+      and p.policyname not like 'mapas\_chuva\_storage\_%'
+  )
+
+  -- 8. o bucket do MAPAS
+  union all
+  select 8, '8. bucket mapas-chuva', 'storage.buckets', coalesce(b.id, '(não existe)'),
+         case
+           when b.id is null then 'bucket ainda não criado (rode 0001_mapas.sql)'
+           else format('público=%s | limite=%s | tipos=%s',
+                       b.public,
+                       coalesce(b.file_size_limit::text || ' bytes', '(sem limite)'),
+                       coalesce(b.allowed_mime_types::text, '(qualquer tipo)'))
+         end
+  from (values ('mapas-chuva'::text)) v (id)
+  left join storage.buckets b on b.id = v.id
 )
 select secao, objeto, nome, detalhe
 from itens

@@ -12,21 +12,32 @@
 --   * NÃO altera nem apaga tabelas, funções, regras ou dados que já existem (fazendas, talhoes,
 --     safras, variedades, perfis, usuario_fazendas...). A única ligação com elas é a chave
 --     estrangeira mapas_fazendas.coa_fazenda_id -> fazendas.id (on delete set null): apagar uma
---     fazenda do COA WEB só desliga dela a fazenda de mapa; nada é apagado;
+--     fazenda do COA WEB só desliga dela a fazenda de mapa; nada é apagado. Efeito colateral dessa
+--     chave: um "truncate public.fazendas" passaria a exigir "cascade" (que esvaziaria também as
+--     tabelas mapas_*) — o COA WEB não usa truncate;
 --   * só LÊ perfis e usuario_fazendas, para aplicar as mesmas permissões do COA WEB:
 --       admin (perfis.perfil = 'admin') -> vê e altera tudo;
---       colaborador (tem linha em perfis) -> vê as fazendas liberadas em usuario_fazendas, e nelas
---                                            salva/exclui mapas de chuva; cadastros só o admin altera;
---       sem linha em perfis -> não vê nada (o cadastro público de contas está ligado no COA WEB,
---                              então "estar logado" não basta).
+--       colaborador com fazenda liberada em usuario_fazendas -> vê essas fazendas e as safras, e
+--                                  nelas salva/exclui mapas de chuva; cadastros só o admin altera;
+--       qualquer outra conta -> não vê nada. O cadastro público está ligado e o COA WEB cria
+--                                  sozinho um perfil 'colaborador' para toda conta nova, então nem
+--                                  "estar logado" nem "ter perfil" bastam: é preciso fazenda liberada.
 --   * mapas_plantio_pims não tem regra de escrita: só a rotina do PIMS, com a chave de serviço
 --     (que ignora o RLS), grava nela.
 --
 -- Idempotente e atômico: pode ser executado de novo sem erro nem perda de dados (create ... if not
--- exists, create or replace function, drop policy if exists + create policy, bucket com on conflict
--- do nothing) e roda numa transação só: se algo falhar, nada fica aplicado.
+-- exists, create or replace function, drop policy if exists + create policy, bucket com on conflict)
+-- e roda numa transação só: se algo falhar, nada fica aplicado.
+--
+-- Aviso do SQL Editor: por causa dos "drop policy if exists", o Supabase pede para confirmar uma
+-- "destructive operation". Pode confirmar: esses drops só apagam (para recriar logo em seguida) as
+-- regras do próprio script — mapas_* nas tabelas mapas_* e mapas_chuva_storage_* em storage.objects.
 
 begin;
+
+-- Se alguma tabela estiver ocupada (ex.: fazendas, pela chave estrangeira), desiste em 5 s e desfaz
+-- tudo, em vez de ficar esperando e travar o COA WEB. É só rodar de novo depois.
+set local lock_timeout = '5s';
 
 -- =================================================================================================
 -- Tabelas (mesmas colunas do Mapa de Chuva avulso; os ids uuid são gerados no cliente)
@@ -159,6 +170,9 @@ create index if not exists mapas_areas_cultura_fazenda_id_idx on public.mapas_ar
 create index if not exists mapas_chuva_fazenda_id_idx on public.mapas_chuva (fazenda_id);
 create index if not exists mapas_chuva_safra_id_idx on public.mapas_chuva (safra_id);
 create index if not exists mapas_chuva_criado_em_idx on public.mapas_chuva (criado_em desc);
+-- regras do storage: acham o mapa dono de um arquivo pelo nome
+create index if not exists mapas_chuva_png_path_idx on public.mapas_chuva (png_path);
+create index if not exists mapas_chuva_thumb_path_idx on public.mapas_chuva (thumb_path);
 
 -- =================================================================================================
 -- Funções de permissão
@@ -167,19 +181,6 @@ create index if not exists mapas_chuva_criado_em_idx on public.mapas_chuva (cria
 -- usuario_fazendas, mapas_fazendas e mapas_chuva sem passar pelo RLS dessas tabelas. Isso evita
 -- regras que se chamam em círculo e não depende das regras do COA WEB. Nomes sempre com schema e
 -- search_path fixo. Só o papel authenticated pode executá-las (anon e public não).
-
--- O usuário logado tem perfil no COA WEB (admin ou colaborador)?
-create or replace function public.mapas_tem_perfil()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.perfis p where p.id = auth.uid()
-  );
-$$;
 
 -- O usuário logado é admin do COA WEB?
 create or replace function public.mapas_eh_admin()
@@ -194,8 +195,25 @@ as $$
   );
 $$;
 
--- O usuário logado pode ver esta fazenda do COA WEB? Admin vê todas; colaborador (com perfil) vê as
--- liberadas em usuario_fazendas; fazenda nula (fazenda de mapa sem vínculo) -> só admin.
+-- O usuário logado usa o módulo? Admin, ou colaborador com pelo menos uma fazenda liberada em
+-- usuario_fazendas. "Ter perfil" não serve: o COA WEB cria um perfil 'colaborador' para toda conta
+-- nova, e o cadastro público está ligado.
+create or replace function public.mapas_eh_usuario()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.mapas_eh_admin()
+      or (
+        exists (select 1 from public.perfis p where p.id = auth.uid())
+        and exists (select 1 from public.usuario_fazendas uf where uf.usuario_id = auth.uid())
+      );
+$$;
+
+-- O usuário logado pode ver esta fazenda do COA WEB? Admin vê todas; colaborador (com linha em
+-- perfis) vê as liberadas em usuario_fazendas; fazenda nula (fazenda de mapa sem vínculo) -> só admin.
 create or replace function public.mapas_pode_ver(p_coa_fazenda_id integer)
 returns boolean
 language sql
@@ -206,7 +224,9 @@ as $$
   select public.mapas_eh_admin()
       or (
         p_coa_fazenda_id is not null
-        and public.mapas_tem_perfil()
+        and exists (
+          select 1 from public.perfis p where p.id = auth.uid()
+        )
         and exists (
           select 1
           from public.usuario_fazendas uf
@@ -232,9 +252,9 @@ $$;
 -- O usuário logado pode usar este arquivo do bucket "mapas-chuva"?
 --   * arquivo de algum mapa salvo -> sim, se ele pode ver a fazenda de um desses mapas;
 --   * arquivo que nenhum mapa usa (enviado antes de gravar a linha do mapa, ou sobra de um
---     salvamento que falhou) -> sim, se ele tem perfil.
+--     salvamento que falhou) -> sim, se ele usa o módulo (mapas_eh_usuario).
 -- Precisa ser security definer: com o RLS, um mapa de outra fazenda seria invisível e o arquivo
--- dele pareceria "sem mapa", liberando-o para qualquer perfil.
+-- dele pareceria "sem mapa", liberando-o para qualquer usuário do módulo.
 create or replace function public.mapas_pode_ver_arquivo(p_nome text)
 returns boolean
 language sql
@@ -252,18 +272,18 @@ as $$
       where p_nome in (m.png_path, m.thumb_path)
         and public.mapas_pode_ver_fazenda(m.fazenda_id)
     )
-    else public.mapas_tem_perfil()
+    else public.mapas_eh_usuario()
   end;
 $$;
 
-revoke all on function public.mapas_tem_perfil() from public, anon;
 revoke all on function public.mapas_eh_admin() from public, anon;
+revoke all on function public.mapas_eh_usuario() from public, anon;
 revoke all on function public.mapas_pode_ver(integer) from public, anon;
 revoke all on function public.mapas_pode_ver_fazenda(uuid) from public, anon;
 revoke all on function public.mapas_pode_ver_arquivo(text) from public, anon;
 
-grant execute on function public.mapas_tem_perfil() to authenticated;
 grant execute on function public.mapas_eh_admin() to authenticated;
+grant execute on function public.mapas_eh_usuario() to authenticated;
 grant execute on function public.mapas_pode_ver(integer) to authenticated;
 grant execute on function public.mapas_pode_ver_fazenda(uuid) to authenticated;
 grant execute on function public.mapas_pode_ver_arquivo(text) to authenticated;
@@ -401,12 +421,12 @@ create policy mapas_plantios_delete on public.mapas_plantios
   for delete to authenticated
   using ((select public.mapas_eh_admin()));
 
--- ---- mapas_safras: vê quem tem perfil; só admin altera ------------------------------------------
+-- ---- mapas_safras: vê quem usa o módulo (admin ou colaborador com fazenda); só admin altera -----
 
 drop policy if exists mapas_safras_select on public.mapas_safras;
 create policy mapas_safras_select on public.mapas_safras
   for select to authenticated
-  using ((select public.mapas_tem_perfil()));
+  using ((select public.mapas_eh_usuario()));
 
 drop policy if exists mapas_safras_insert on public.mapas_safras;
 create policy mapas_safras_insert on public.mapas_safras
@@ -467,11 +487,16 @@ create policy mapas_plantio_pims_select on public.mapas_plantio_pims
 -- Storage: bucket privado "mapas-chuva" (imagem e miniatura dos mapas salvos)
 -- =================================================================================================
 -- Toda regra começa por bucket_id = 'mapas-chuva': nenhuma delas libera arquivo de outro bucket.
--- O app envia com upsert (insert + select + update) e exclui arquivos (delete).
+-- O app envia com upsert (insert + select + update) e exclui arquivos (delete). Enviar um arquivo
+-- novo (que nenhum mapa usa ainda) exige mapas_eh_usuario(), via mapas_pode_ver_arquivo.
+-- Só PNG/JPEG de até 20 MB. O bucket é do próprio script: se já existir, volta a estas opções.
 
-insert into storage.buckets (id, name, public)
-values ('mapas-chuva', 'mapas-chuva', false)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('mapas-chuva', 'mapas-chuva', false, 20971520, '{image/png,image/jpeg}')
+on conflict (id) do update
+  set public             = false,
+      file_size_limit    = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists mapas_chuva_storage_select on storage.objects;
 create policy mapas_chuva_storage_select on storage.objects
