@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { rmSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 
@@ -22,10 +23,16 @@ function semDadosLocks(): Plugin {
   };
 }
 
+/** pasta deste arquivo (modulos/mapas): raiz do projeto, qualquer que seja o diretório atual */
+const RAIZ = fileURLToPath(new URL('.', import.meta.url));
+/** build do COA WEB: mapas/ na raiz do repositório coa-web (a única pasta que o emptyOutDir pode esvaziar) */
+const SAIDA_COA_WEB = resolve(RAIZ, '../../mapas');
+
 // base './' permite publicar em qualquer caminho (mapas/ do COA WEB, GitHub Pages...)
 export default defineConfig(({ mode }) => {
   const coaWeb = mode === 'coa-web';
   return {
+    root: RAIZ,
     base: './',
     plugins: coaWeb ? [react(), semDadosLocks()] : [react()],
     worker: { format: 'es' },
@@ -33,7 +40,7 @@ export default defineConfig(({ mode }) => {
       // pacote inicial ~510 kB (React + Supabase + proj4); as telas pesadas são carregadas sob demanda
       chunkSizeWarningLimit: 600,
       // modo coa-web: grava direto em mapas/ na raiz do COA WEB (servido sem build pela Vercel/Pages)
-      ...(coaWeb ? { outDir: '../../mapas', emptyOutDir: true } : {}),
+      ...(coaWeb ? { outDir: SAIDA_COA_WEB, emptyOutDir: true } : {}),
     },
     test: {
       environment: 'node',

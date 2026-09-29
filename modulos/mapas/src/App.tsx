@@ -6,7 +6,7 @@ import { onAuthChange, sair, sessaoAtual } from './data/auth';
 import Shell from './components/Shell';
 import Carregando from './components/Carregando';
 import Aviso, { mensagemDeErro, type TipoAviso } from './components/Aviso';
-import { PerfilContexto, useCarregarPerfil, usePerfil } from './components/usePerfil';
+import { PerfilContexto, useCarregarPerfil, useErroPerfil, usePerfil } from './components/usePerfil';
 import { repo } from './data';
 import { avisarRota, emEmbed } from './lib/embed';
 import { carregarSeed, seedJaCarregado } from './lib/seed';
@@ -97,10 +97,15 @@ function RequerSessao({ permitido, carregando }: { permitido: boolean; carregand
 /** Aviso mostrado em Mapas quando o colaborador tenta abrir um cadastro. */
 const AVISO_SOMENTE_ADMIN = 'Somente administradores podem abrir os cadastros de fazendas e safras.';
 
-/** Cadastros (fazendas, safras): só admin; os demais voltam para os mapas com um aviso (o RLS garante o resto). */
+/**
+ * Cadastros (fazendas, safras): só admin; os demais voltam para os mapas com um aviso (o RLS garante o
+ * resto). Se o perfil não pôde ser lido, fica na tela com o erro (mostrado pelo Shell).
+ */
 function SomenteAdmin() {
   const perfil = usePerfil();
+  const erroPerfil = useErroPerfil();
   if (perfil === undefined) return <Carregando texto="Verificando o perfil…" />;
+  if (erroPerfil) return null;
   if (perfil !== 'admin') return <Navigate to="/mapas" replace state={{ aviso: AVISO_SOMENTE_ADMIN }} />;
   return <Outlet />;
 }
@@ -179,10 +184,10 @@ export default function App() {
   }, []);
 
   const permitido = modo === 'local' || sessao !== null;
-  const perfil = useCarregarPerfil(modo, sessao?.user.id ?? null, carregando);
+  const estadoPerfil = useCarregarPerfil(modo, sessao?.user.id ?? null, carregando);
 
   return (
-    <PerfilContexto.Provider value={perfil}>
+    <PerfilContexto.Provider value={estadoPerfil}>
       <HashRouter>
         <AvisarRota />
         <FaixaSeed preparando={preparandoSeed} aviso={avisoSeed} onFechar={() => setAvisoSeed(null)} />
@@ -191,7 +196,7 @@ export default function App() {
             path="/login"
             element={
               fixo ? (
-                <EntrePeloCoa logado={sessao !== null} carregando={carregando} />
+                <EntrePeloCoa logado={sessao !== null} carregando={carregando} erro={erroSessao} />
               ) : (
                 <Login modo={modo} logado={sessao !== null} erroInicial={erroSessao} onEntrou={aoEntrar} />
               )

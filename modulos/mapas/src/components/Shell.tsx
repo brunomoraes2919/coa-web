@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { usePerfil } from './usePerfil';
+import Aviso from './Aviso';
+import { useErroPerfil, usePerfil } from './usePerfil';
 
 interface Props {
   modo: 'local' | 'supabase';
@@ -115,11 +116,19 @@ const ICONE_SAIR = svg(
 export default function Shell({ modo, fixo, embed, email, onSair }: Props) {
   const { pathname } = useLocation();
   const perfil = usePerfil();
+  const erroPerfil = useErroPerfil();
+  // falha ao ler o perfil: avisa (os cadastros ficam escondidos, como para quem não é admin)
+  const avisoPerfil = erroPerfil && (
+    <div className="pagina" style={{ marginBottom: 18 }}>
+      <Aviso tipo="erro">{erroPerfil}</Aviso>
+    </div>
+  );
 
   if (embed) {
     return (
       <div className="app app-embed">
         <main className="conteudo">
+          {avisoPerfil}
           <Outlet />
         </main>
       </div>
@@ -177,6 +186,7 @@ export default function Shell({ modo, fixo, embed, email, onSair }: Props) {
         </div>
       </aside>
       <main className="conteudo">
+        {avisoPerfil}
         <Outlet />
       </main>
     </div>

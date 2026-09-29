@@ -5,6 +5,7 @@ modulos/mapas/dist/
 modulos/mapas/public/dados/
 modulos/mapas/dados-teste/
 modulos/mapas/dados-fonte/
+mapas/dados/
 *.zip
 # rascunhos do desenvolvimento
 .superpowers/

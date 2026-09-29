@@ -23,9 +23,10 @@ function traduzir(e: unknown): string {
 
 /**
  * Build do COA WEB (modo fixo): o login é o do COA WEB. Sem sessão, só o caminho de volta para ele
- * (target _top: dentro do iframe, abre o COA WEB na janela inteira).
+ * (target _top: dentro do iframe, abre o COA WEB na janela inteira). Se a verificação da sessão
+ * falhou, mostra o erro real.
  */
-export function EntrePeloCoa({ logado, carregando }: { logado: boolean; carregando: boolean }) {
+export function EntrePeloCoa({ logado, carregando, erro }: { logado: boolean; carregando: boolean; erro: string | null }) {
   const loc = useLocation();
   const destino = (loc.state as { de?: string } | null)?.de ?? '/mapas';
   if (carregando) return <Carregando texto="Verificando a sessão…" />;
@@ -34,10 +35,14 @@ export function EntrePeloCoa({ logado, carregando }: { logado: boolean; carregan
     <div className="login-fundo">
       <div className="login-cartao">
         <img src="./logo-coa.png" alt="COA — Centro de Operações Agrícolas" />
-        <h1>Entre pelo COA WEB</h1>
-        <p className="suave" style={{ textAlign: 'center' }}>
-          O Mapa de Chuva usa o login do COA WEB. Entre por lá e abra a categoria Mapas.
-        </p>
+        <h1>{erro ? 'Sessão do COA WEB' : 'Entre pelo COA WEB'}</h1>
+        {erro ? (
+          <Aviso tipo="erro">{erro}</Aviso>
+        ) : (
+          <p className="suave" style={{ textAlign: 'center' }}>
+            O Mapa de Chuva usa o login do COA WEB. Entre por lá e abra a categoria Mapas.
+          </p>
+        )}
         <a className="botao botao-primario" href="../index.html" target="_top">
           Ir para o COA WEB
         </a>

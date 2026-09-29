@@ -4,7 +4,7 @@ import type { Fazenda, FazendaCoaSelecionada, MensagemMapasRota } from './types'
 /**
  * Modo embutido: o COA WEB mostra o módulo num iframe da mesma origem
  * (`mapas/index.html?embed=1#/<rota>`). As mensagens vão e vêm por postMessage, sempre com
- * `targetOrigin = location.origin` e aceitando só `event.origin === location.origin`:
+ * `targetOrigin = location.origin` e aceitando só `event.origin === location.origin` vindas do pai:
  * - COA WEB → módulo: `{ tipo: 'coa-fazenda', id, nome }` (fazenda do topo do menu);
  * - módulo → COA WEB: `{ tipo: 'mapas-rota', rota, titulo }` (destaca o botão e troca o título).
  */
@@ -49,14 +49,14 @@ function lerMensagemFazenda(dados: unknown): FazendaCoaSelecionada | null {
 }
 
 /**
- * Escuta a fazenda do topo do COA WEB. Ignora mensagens de outra origem e de formato inválido.
- * Retorna a função que para de escutar.
+ * Escuta a fazenda do topo do COA WEB. Ignora mensagens de outra origem, que não venham da janela
+ * pai (o COA WEB) ou de formato inválido. Retorna a função que para de escutar.
  */
 export function ouvirFazendaCoa(cb: (f: FazendaCoaSelecionada) => void): () => void {
   if (typeof window === 'undefined') return () => {};
   const aoReceber = (ev: Event) => {
-    const { origin, data } = ev as MessageEvent;
-    if (origin !== window.location.origin) return;
+    const { origin, source, data } = ev as MessageEvent;
+    if (origin !== window.location.origin || source !== window.parent) return;
     const f = lerMensagemFazenda(data);
     if (f) cb(f);
   };

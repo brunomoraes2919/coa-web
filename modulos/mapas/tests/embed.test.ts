@@ -17,9 +17,12 @@ function janelaFalsa(search: string, opcoes: { semPai?: boolean } = {}) {
   return { janela: alvo, postMessage };
 }
 
-/** Evento 'message' com origem e dados (o MessageEvent do node não é garantido em todas as versões). */
-function mensagem(data: unknown, origin = ORIGEM): Event {
-  return Object.assign(new Event('message'), { data, origin });
+/**
+ * Evento 'message' com dados, origem e janela de origem (por padrão, o pai da janela falsa: o COA WEB).
+ * O MessageEvent do node não é garantido em todas as versões.
+ */
+function mensagem(data: unknown, origin = ORIGEM, source: unknown = (globalThis as { window?: { parent: unknown } }).window?.parent): Event {
+  return Object.assign(new Event('message'), { data, origin, source });
 }
 
 async function carregarEmbed() {
@@ -124,6 +127,19 @@ describe('ouvirFazendaCoa', () => {
     expect(cb).not.toHaveBeenCalled();
   });
 
+  it('ignora mensagens da mesma origem que não vêm do pai (outra janela ou a própria)', async () => {
+    const { janela } = janelaFalsa('?embed=1');
+    const { ouvirFazendaCoa } = await carregarEmbed();
+    const cb = vi.fn();
+    ouvirFazendaCoa(cb);
+    janela.dispatchEvent(mensagem({ tipo: 'coa-fazenda', id: 7, nome: 'Siriema' }, ORIGEM, { postMessage: vi.fn() }));
+    janela.dispatchEvent(mensagem({ tipo: 'coa-fazenda', id: 7, nome: 'Siriema' }, ORIGEM, janela));
+    janela.dispatchEvent(mensagem({ tipo: 'coa-fazenda', id: 7, nome: 'Siriema' }, ORIGEM, null));
+    expect(cb).not.toHaveBeenCalled();
+    janela.dispatchEvent(mensagem({ tipo: 'coa-fazenda', id: 7, nome: 'Siriema' }));
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
   it('ignora formato inválido', async () => {
     const { janela } = janelaFalsa('?embed=1');
     const { ouvirFazendaCoa } = await carregarEmbed();
@@ -157,6 +173,7 @@ describe('fazenda do COA guardada pelo módulo', () => {
     janela.dispatchEvent(mensagem({ tipo: 'coa-fazenda', id: 3, nome: 'Rio Negro' }));
     janela.dispatchEvent(mensagem({ tipo: 'coa-fazenda', id: 9, nome: 'Siriema' }));
     janela.dispatchEvent(mensagem({ tipo: 'coa-fazenda', id: 1, nome: 'Outra' }, 'https://outro.site'));
+    janela.dispatchEvent(mensagem({ tipo: 'coa-fazenda', id: 2, nome: 'Outra janela' }, ORIGEM, janela));
     expect(ultimaFazendaCoa()).toEqual({ id: 9, nome: 'Siriema' });
   });
 
