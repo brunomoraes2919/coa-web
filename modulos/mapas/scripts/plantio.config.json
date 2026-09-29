@@ -1,5 +1,6 @@
 {
   "safras": "auto",
   "excluirPrefixos": ["ADM", "CORREC", "COBERTURA", "ABERTURA"],
-  "url": "https://mcp.agrovex.com.br/mcp"
+  "url": "https://mcp.agrovex.com.br/mcp",
+  "acompanhamento": true
 }

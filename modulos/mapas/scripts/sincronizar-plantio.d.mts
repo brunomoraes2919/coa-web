@@ -61,3 +61,68 @@ export function gravarSupabase(
 ): Promise<void>;
 export function cabecalhosSupabase(chave: string): Record<string, string>;
 export function semChave(texto: string, chave: string): string;
+
+// ---- Acompanhamento Operacional (tabela acomp_pims) ----
+
+export interface TalhaoAcompScript {
+  setor: string | null;
+  id: string | null;
+  t: string | null;
+  area: number;
+  dano: number;
+  variedade: string | null;
+  enc: string | null;
+}
+
+export interface ApontamentoAcompScript {
+  op: 'PLANTIO' | 'COLHEITA';
+  id: string | null;
+  t: string | null;
+  d: string;
+  a: number;
+  eq: string | null;
+  e: string;
+  rep: boolean;
+}
+
+export interface LinhaAcompScript {
+  safra: string;
+  unidade: string;
+  gerado_em: string;
+  talhoes: TalhaoAcompScript[];
+  apontamentos: ApontamentoAcompScript[];
+}
+
+export interface AcompanhamentoScript {
+  geradoEm: string;
+  safras: string[];
+  linhas: LinhaAcompScript[];
+}
+
+type Resultado = { columns: string[]; rows: unknown[][] };
+
+export function montarSqlAcompanhamento(safras: string[]): { talhoes: string; plantio: string; colheita: string };
+export function limparVariedade(v: string | null | undefined): string | null;
+export function primeiroNome(s: string | null | undefined): string;
+export function linhasAcompanhamento(
+  r: { talhoes: Resultado; plantio: Resultado; colheita: Resultado },
+  geradoEm: string,
+): LinhaAcompScript[];
+export function sincronizarAcompanhamento(opcoes: {
+  url: string;
+  token: string;
+  safras: 'auto' | string[];
+  excluirPrefixos?: string[];
+  fetchImpl?: FetchLike;
+  agora?: Date;
+}): Promise<AcompanhamentoScript>;
+export function gravarAcompanhamentoSupabase(
+  dados: AcompanhamentoScript,
+  opcoes: { url: string; chave: string; fetch: FetchLike },
+): Promise<'ok' | 'vazio' | 'sem-tabela'>;
+export function logAcompanhamento(dados: AcompanhamentoScript, situacao: string): string;
+export function rodarAcompanhamento(opcoes: {
+  agrovex: { url: string; token: string; safras: 'auto' | string[]; excluirPrefixos?: string[] };
+  supabase: { url: string; chave: string };
+  fetchImpl?: FetchLike;
+}): Promise<string | null>;

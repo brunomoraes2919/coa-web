@@ -6,6 +6,8 @@ export function limparAntigos(ctx: Ctx, agora?: Date): Promise<void>;
 export function atenderPedidos(opcoes: {
   supabase: { url: string; chave: string };
   agrovex: { url: string; token: string; safras: 'auto' | string[]; excluirPrefixos?: string[] };
+  /** também atualiza o Acompanhamento Operacional (acomp_pims) */
+  acompanhamento?: boolean;
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<boolean>;

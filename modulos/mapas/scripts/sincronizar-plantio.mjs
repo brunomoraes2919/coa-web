@@ -363,6 +363,186 @@ export function linhasDeLog(dados, { supabase = false, githubActions = false } =
   return [`${linhas.length} linhas (safra × unidade)${destino}, ${talhoes} talhões, geradoEm ${dados.geradoEm}.`];
 }
 
+// ---------- Acompanhamento Operacional (módulo acompanhamento/ do COA WEB) ----------
+// Talhões e apontamentos diários de plantio e colheita, gravados em acomp_pims (uma linha por
+// safra × unidade). O painel calcula os indicadores no navegador. Roda depois do plantio dos mapas
+// e nunca derruba a rotina deles: sem a tabela acomp_pims (script SQL ainda não aplicado), só avisa.
+
+const PIMS = 'PIMSMCPRD.dbo.';
+const listaSql = (nomes) => nomes.map((n) => `'${String(n).replace(/'/g, "''")}'`).join(',');
+
+/** SELECTs do acompanhamento (validadas no Agrovex em 28/09/2026). ID_UPNIVEL3 vai como texto: o bigint perde precisão no JSON. */
+export function montarSqlAcompanhamento(safras) {
+  const em = listaSql(safras);
+  return {
+    talhoes: `SELECT u.DE_UNI_ADM AS unidade, u2.DE_UPNIVEL2 AS setor, ps.DE_PER_SAFRA AS safra,
+  CONVERT(varchar(30), up.ID_UPNIVEL3) AS id, up.CD_UPNIVEL3 AS codigo,
+  up.QT_AREA_PROD AS area, ISNULL(up.QT_AREA_DANO,0) AS dano, v.DE_VARIEDADE AS variedade,
+  CONVERT(varchar(10), up.DT_PLANT_ENC, 120) AS encerrado
+FROM ${PIMS}UPNIVEL3 up
+JOIN ${PIMS}PERIODOSAFRA ps ON up.ID_PERIODOSAFRA = ps.ID_PERIODOSAFRA
+JOIN ${PIMS}UPNIVEL2 u2 ON up.ID_UPNIVEL2 = u2.ID_UPNIVEL2
+JOIN ${PIMS}UPNIVEL1 u1 ON u2.ID_UPNIVEL1 = u1.ID_UPNIVEL1
+JOIN ${PIMS}UNIDADEADM u ON u1.ID_UNIDADEADM = u.ID_UNIDADEADM
+LEFT JOIN ${PIMS}VARIEDADE v ON v.ID_VARIEDADE = up.ID_VARIEDADE
+WHERE ps.DE_PER_SAFRA IN (${em}) AND up.QT_AREA_PROD > 0.1`,
+    plantio: `SELECT u.DE_UNI_ADM AS unidade, ps.DE_PER_SAFRA AS safra, CONVERT(varchar(30), up.ID_UPNIVEL3) AS id,
+  up.CD_UPNIVEL3 AS codigo, CONVERT(varchar(10), a.DT_OPERACAO, 120) AS data, a.QT_AREA AS area,
+  e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS cd_operacao, a.FG_REPLANTIO AS replantio
+FROM ${PIMS}APPLANTIO a
+JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO AND os.ID_UNIDADEADM = a.ID_UNIDADEADM
+JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = a.ID_UPNIVEL3
+JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+LEFT JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
+LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
+WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN (${em})`,
+    colheita: `SELECT u.DE_UNI_ADM AS unidade, ps.DE_PER_SAFRA AS safra, CONVERT(varchar(30), up.ID_UPNIVEL3) AS id,
+  up.CD_UPNIVEL3 AS codigo, CONVERT(varchar(10), a.DT_OPERACAO, 120) AS data, a.QT_AREA_EXEC AS area,
+  e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS cd_operacao
+FROM ${PIMS}APATIVPROD a
+JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO AND os.ID_UNIDADEADM = a.ID_UNIDADEADM
+JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = a.ID_UPNIVEL3
+JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
+LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
+WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em})`,
+  };
+}
+
+/** 'SEMENTE DE SOJA 84KA92 CE' -> '84KA92 CE' (mesma limpeza do relatório Power BI). */
+export function limparVariedade(v) {
+  const t = txt(v);
+  if (!t) return null;
+  return t.replace(/^SEMENTE\s+(DE\s+)?(SOJA|MILHO|ALGODAO|SORGO|MILHETO)\s+/i, '').replace(/\s+(SOJA|MILHO|ALGODAO)$/i, '').trim() || null;
+}
+
+/** 'HENRIQUE RAMOS CARDOSO' -> 'Henrique' ("Equipe ..." -> 'Terceiro', como no Power BI). */
+export function primeiroNome(s) {
+  const n = txt(s);
+  if (!n) return 'Sem equipe';
+  const p = n.split(/\s+/)[0].toLowerCase();
+  const nome = p.charAt(0).toUpperCase() + p.slice(1);
+  return nome === 'Equipe' ? 'Terceiro' : nome;
+}
+
+function objetosDe({ columns, rows }) {
+  const cols = columns.map((c) => String(c).toLowerCase());
+  return rows.map((r) => Object.fromEntries(cols.map((c, i) => [c, r[i] ?? null])));
+}
+
+/**
+ * Monta as linhas de acomp_pims (uma por safra × unidade que tenha talhão) a partir das três
+ * consultas. Apontamento sem data ou de talhão/unidade sem talhão cadastrado na safra é descartado.
+ */
+export function linhasAcompanhamento({ talhoes, plantio, colheita }, geradoEm) {
+  const linhas = new Map();
+  const chave = (s, u) => `${s}\u0000${u}`;
+  for (const r of objetosDe(talhoes)) {
+    const s = txt(r.safra);
+    const u = txt(r.unidade);
+    if (!s || !u) continue;
+    if (!linhas.has(chave(s, u))) linhas.set(chave(s, u), { safra: s, unidade: u, gerado_em: geradoEm, talhoes: [], apontamentos: [] });
+    linhas.get(chave(s, u)).talhoes.push({
+      setor: txt(r.setor), id: txt(r.id), t: txt(r.codigo), area: num(r.area), dano: num(r.dano),
+      variedade: limparVariedade(r.variedade), enc: txt(r.encerrado),
+    });
+  }
+  const somar = (res, op) => {
+    for (const r of objetosDe(res)) {
+      const l = linhas.get(chave(txt(r.safra), txt(r.unidade)));
+      const d = txt(r.data);
+      if (!l || !d) continue;
+      l.apontamentos.push({
+        op, id: txt(r.id), t: txt(r.codigo), d, a: num(r.area), eq: txt(r.equipe), e: primeiroNome(r.equipe),
+        rep: op === 'PLANTIO' && (txt(r.replantio) === 'S' || Number(r.cd_operacao) === 18),
+      });
+    }
+  };
+  somar(plantio, 'PLANTIO');
+  somar(colheita, 'COLHEITA');
+  return [...linhas.values()].sort((a, b) => comparar(a.safra, b.safra) || comparar(a.unidade, b.unidade));
+}
+
+/** Consulta o PIMS pelo Agrovex e devolve { geradoEm, safras, linhas } do acompanhamento (não grava nada). */
+export async function sincronizarAcompanhamento({ url, token, safras, excluirPrefixos = [], fetchImpl = fetch, agora = new Date() }) {
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    let nomes;
+    if (safras === 'auto') {
+      const lista = await cliente.consultar(SQL_SAFRAS, 'lista de safras do PIMS', 'lista de safras');
+      nomes = filtrarSafras(lista.rows.map((r) => r[0]), safrasPadrao(agora), excluirPrefixos);
+    } else {
+      nomes = [...new Set(safras.map((s) => String(s).trim()).filter(Boolean))];
+    }
+    const geradoEm = agora.toISOString();
+    if (!nomes.length) return { geradoEm, safras: [], linhas: [] };
+    const sql = montarSqlAcompanhamento(nomes);
+    const talhoes = await cliente.consultar(sql.talhoes, 'talhões do acompanhamento operacional', 'talhões do acompanhamento');
+    const plantio = await cliente.consultar(sql.plantio, 'apontamentos de plantio do acompanhamento operacional', 'plantio do acompanhamento');
+    const colheita = await cliente.consultar(sql.colheita, 'apontamentos de colheita do acompanhamento operacional', 'colheita do acompanhamento');
+    return { geradoEm, safras: nomes, linhas: linhasAcompanhamento({ talhoes, plantio, colheita }, geradoEm) };
+  } finally {
+    await cliente.fechar();
+  }
+}
+
+/**
+ * Grava em acomp_pims: upsert e, só depois dele, apaga as linhas de rodadas anteriores. Devolve
+ * 'ok', 'vazio' (PIMS sem talhão: não mexe no Supabase) ou 'sem-tabela' (script
+ * modulos/acompanhamento/supabase/0001_acompanhamento.sql ainda não aplicado: só avisa).
+ */
+export async function gravarAcompanhamentoSupabase(dados, { url, chave, fetch: fetchImpl = globalThis.fetch }) {
+  if (!dados.linhas.length) {
+    console.warn('Acompanhamento: o PIMS não retornou nenhum talhão; acomp_pims não foi alterada.');
+    return 'vazio';
+  }
+  const resp = await fetchImpl(`${url}/rest/v1/acomp_pims?on_conflict=safra,unidade`, {
+    method: 'POST',
+    headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(dados.linhas),
+  });
+  if (!resp.ok) {
+    const texto = await resp.clone().text().catch(() => '');
+    if (resp.status === 404 || /PGRST205|42P01/.test(texto)) {
+      console.warn('Acompanhamento: a tabela acomp_pims ainda não existe no Supabase (rode modulos/acompanhamento/supabase/0001_acompanhamento.sql).');
+      return 'sem-tabela';
+    }
+    await erroSupabase(resp, chave, 'o upsert em acomp_pims');
+  }
+  const limpeza = await fetchImpl(`${url}/rest/v1/acomp_pims?gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, {
+    method: 'DELETE',
+    headers: cabecalhosSupabase(chave),
+  });
+  if (!limpeza.ok) await erroSupabase(limpeza, chave, 'a limpeza de acomp_pims');
+  return 'ok';
+}
+
+/** Linha de log do acompanhamento: só totais (os logs podem ser públicos). */
+export function logAcompanhamento(dados, situacao) {
+  const n = (op) => dados.linhas.reduce((s, l) => s + l.apontamentos.filter((a) => a.op === op).length, 0);
+  const talhoes = dados.linhas.reduce((s, l) => s + l.talhoes.length, 0);
+  return `Acompanhamento: ${situacao}; ${dados.linhas.length} linhas (safra × unidade), ${talhoes} talhões, ${n('PLANTIO')} apontamentos de plantio, ${n('COLHEITA')} de colheita.`;
+}
+
+/**
+ * Etapa do acompanhamento dentro da rotina: consulta, grava e registra. Erro aqui não interrompe o
+ * plantio dos mapas (já gravado); é devolvido para quem chamou decidir o código de saída.
+ */
+export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globalThis.fetch }) {
+  try {
+    const dados = await sincronizarAcompanhamento({ ...agrovex, fetchImpl });
+    const situacao = await gravarAcompanhamentoSupabase(dados, { ...supabase, fetch: fetchImpl });
+    console.log(logAcompanhamento(dados, situacao === 'ok' ? 'gravado no Supabase' : situacao));
+    return null;
+  } catch (e) {
+    const msg = semChave(semChave(e instanceof Error ? e.message : String(e), supabase.chave), agrovex.token);
+    console.error(`Acompanhamento: erro (o plantio dos mapas não foi afetado): ${msg}`);
+    return msg;
+  }
+}
+
 // ---------- execução pela linha de comando ----------
 
 async function main() {
@@ -390,6 +570,14 @@ async function main() {
   if (gravaNoSupabase) {
     await gravarSupabase(dados, { url: supabaseUrl, chave: supabaseChave, fetch });
     log();
+    // Acompanhamento Operacional: depois do plantio dos mapas; um erro nele não desfaz o que já foi gravado
+    if (config.acompanhamento !== false) {
+      const erro = await rodarAcompanhamento({
+        agrovex: { url: process.env.AGROVEX_URL || config.url, token, safras: config.safras ?? 'auto', excluirPrefixos: config.excluirPrefixos ?? [] },
+        supabase: { url: supabaseUrl, chave: supabaseChave },
+      });
+      if (erro) process.exitCode = 1;
+    }
     return;
   }
   log();

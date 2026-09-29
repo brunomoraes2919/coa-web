@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { cabecalhosSupabase, gravarSupabase, semChave, sincronizar } from './sincronizar-plantio.mjs';
+import { cabecalhosSupabase, gravarSupabase, rodarAcompanhamento, semChave, sincronizar } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -59,7 +59,7 @@ export async function limparAntigos({ url, chave, fetch: fetchImpl = globalThis.
  * Uma verificação: sem pendentes → false (não faz nada); com pendentes → roda a rotina do PIMS, grava e
  * marca os pedidos; devolve true. Um erro da rotina vira o `resultado` dos pedidos (e é relançado).
  */
-export async function atenderPedidos({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+export async function atenderPedidos({ supabase, agrovex, acompanhamento = false, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const ctx = { ...supabase, fetch: fetchImpl };
   const ids = await pedidosPendentes(ctx);
   if (!ids.length) return false;
@@ -67,6 +67,8 @@ export async function atenderPedidos({ supabase, agrovex, fetch: fetchImpl = glo
   try {
     const dados = await sincronizar({ ...agrovex, fetchImpl });
     await gravarSupabase(dados, ctx);
+    // o mesmo botão atualiza o Acompanhamento Operacional (erro nele só vai para o log)
+    if (acompanhamento) await rodarAcompanhamento({ agrovex, supabase, fetchImpl });
     await marcarAtendidos(ctx, ateId, 'ok', agora());
     console.log(`== ${agora().toISOString()} ${ids.length} pedido(s) atendido(s); plantio geradoEm ${dados.geradoEm}.`);
   } catch (e) {
@@ -87,6 +89,7 @@ async function main() {
   if (!token || !url || !chave) throw new Error('Faltam AGROVEX_TOKEN, SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY.');
   await atenderPedidos({
     supabase: { url, chave },
+    acompanhamento: config.acompanhamento !== false,
     agrovex: {
       url: process.env.AGROVEX_URL || config.url,
       token,
