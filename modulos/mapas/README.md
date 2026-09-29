@@ -142,29 +142,38 @@ navegador ou no Supabase. Se o repositório for público, esses dois também fic
 ## Plantio automático do PIMS
 
 O site é estático e o Agrovex (que dá acesso ao PIMS) não aceita chamadas do navegador nem pode ter o
-token exposto. Por isso uma rotina do GitHub Actions consulta o PIMS e publica o resultado como um
-arquivo do site:
+token exposto. Por isso uma rotina do GitHub Actions, na raiz do coa-web, consulta o PIMS e grava o
+resultado direto no Supabase (sem commit no repositório):
 
 ```
-GitHub Actions (1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) ──▶ public/dados/plantio.json ──▶ deploy do site
+GitHub Actions (1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) ──▶ upsert em mapas_plantio_pims (Supabase)
 ```
 
-1. **Secret**: em **Settings → Secrets and variables → Actions**, crie `AGROVEX_TOKEN` com o token do
-   Agrovex. Ele nunca vai para o código nem para o site; sem ele a rotina só avisa e termina.
-2. **Workflow** `.github/workflows/plantio.yml`: roda a cada hora (`0 * * * *`) e também sob demanda
-   (**Actions → Sincronizar plantio → Run workflow**). Gera o `plantio.json`, faz commit só se mudou e
-   dispara o deploy do site.
-3. **No seu computador**: `AGROVEX_TOKEN=... npm run plantio` (no PowerShell:
-   `$env:AGROVEX_TOKEN='...'; npm run plantio`) atualiza `public/dados/plantio.json`. As safras
-   consultadas ficam em `scripts/plantio.config.json` (padrão: as do ano-safra atual e do seguinte, sem as
-   administrativas).
+1. **Secrets** (no coa-web, **Settings → Secrets and variables → Actions**):
+   - `AGROVEX_TOKEN`: o token do Agrovex. Nunca vai para o código nem para o site; sem ele a rotina só
+     avisa e termina.
+   - `SUPABASE_SERVICE_ROLE_KEY`: a chave de serviço (`service_role`) do Supabase do COA WEB — **não** é
+     a chave anon. Em **supabase.com → o projeto do COA WEB → Project Settings → API**, seção
+     "Project API keys": copie a chave marcada `service_role` (rótulo pode aparecer como "secret"
+     também, formato novo `sb_secret_…`). Nunca use essa chave no app nem a exponha no site: ela ignora
+     o RLS.
+   - `SUPABASE_URL` **não** é secret: já vai fixo no workflow (é a mesma URL pública usada no
+     `index.html`).
+2. **Workflow** `.github/workflows/plantio-pims.yml` (raiz do repositório): roda a cada hora
+   (`17 * * * *`) e também sob demanda (**Actions → Sincronizar plantio PIMS → Run workflow**). Falha com
+   mensagem clara se algum dos dois secrets não estiver configurado. Não roda `npm ci` (o script não tem
+   dependências) e não faz commit — só grava no Supabase.
+3. **No seu computador**: sem `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` no ambiente, `AGROVEX_TOKEN=...
+   npm run plantio` (no PowerShell: `$env:AGROVEX_TOKEN='...'; npm run plantio`) grava
+   `public/dados/plantio.json` como antes (uso local/desenvolvimento). As safras consultadas ficam em
+   `scripts/plantio.config.json` (padrão: as do ano-safra atual e do seguinte, sem as administrativas).
 4. **Modo Supabase**: o app lê o plantio da tabela `mapas_plantio_pims` (criada por
-   `supabase/coa-web/0001_mapas.sql`; veja acima), e não do `plantio.json`.
+   `supabase/coa-web/0001_mapas.sql`; veja acima), e não do `plantio.json`. A rotina faz upsert (uma
+   linha por safra × unidade) e, depois, apaga as linhas que sumiram do PIMS (que não foram atualizadas
+   nesta rodada).
 5. **Rotina parada**: o GitHub **desativa os workflows agendados depois de 60 dias sem atividade no
    repositório** (vale para repositórios públicos; confira na aba Actions). Se o plantio parar de
-   atualizar, abra **Actions → Sincronizar plantio** e clique em **Enable workflow**.
-6. **Histórico**: cada mudança do `plantio.json` vira um commit, então o histórico do repositório cresce
-   ao longo da safra (dezenas de commits por dia no auge do plantio). É esperado; o arquivo em si é pequeno.
+   atualizar, abra **Actions → Sincronizar plantio PIMS** e clique em **Enable workflow**.
 
 Regra da situação (por talhão × safra): **plantado** = plantio encerrado no PIMS ou área apontada ≥ 99% da
 prevista; **plantando** = área apontada entre 0 e 99%; **a plantar** = sem apontamento.

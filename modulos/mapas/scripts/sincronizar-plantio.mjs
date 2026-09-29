@@ -1,7 +1,9 @@
-// Sincroniza o status de plantio do PIMS (via Agrovex MCP) em public/dados/plantio.json.
+// Sincroniza o status de plantio do PIMS (via Agrovex MCP). Com SUPABASE_URL e
+// SUPABASE_SERVICE_ROLE_KEY no ambiente, grava em mapas_plantio_pims (upsert + limpeza das linhas
+// que sumiram do PIMS); sem elas, grava public/dados/plantio.json como antes (uso local).
 // Uso: AGROVEX_TOKEN=... node scripts/sincronizar-plantio.mjs   (ou npm run plantio)
 // Configuração: scripts/plantio.config.json  { "safras": "auto" | ["SOJA 26/27", ...], "url": "..." }
-// Sem dependências (Node >= 20, fetch nativo). O token nunca é gravado nem impresso.
+// Sem dependências (Node >= 20, fetch nativo). O token e a chave de serviço nunca são gravados nem impressos.
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -247,6 +249,65 @@ export function mesmosDados(antigo, novo) {
   return JSON.stringify(antigo.safras) === JSON.stringify(novo.safras);
 }
 
+// ---------- gravação no Supabase (upsert + limpeza) ----------
+
+/** PlantioPimsArquivo → linhas de mapas_plantio_pims (uma por safra × unidade; só unidades com talhões). */
+export function linhasSupabase(arquivo) {
+  const linhas = [];
+  for (const s of arquivo.safras) {
+    for (const u of s.unidades) {
+      if (!u.talhoes.length) continue;
+      linhas.push({ safra: s.nome, unidade: u.unidade, gerado_em: arquivo.geradoEm, talhoes: u.talhoes });
+    }
+  }
+  return linhas;
+}
+
+/** A chave de serviço legada é um JWT ('eyJ...'); as novas (sb_secret_…) não usam Authorization. */
+function ehChaveJwt(chave) {
+  return chave.startsWith('eyJ');
+}
+
+function cabecalhosSupabase(chave) {
+  const h = { apikey: chave };
+  if (ehChaveJwt(chave)) h.Authorization = `Bearer ${chave}`;
+  return h;
+}
+
+/** Tira a chave do corpo da resposta (caso ela seja ecoada de volta) antes de colocá-lo num erro. */
+function semChave(texto, chave) {
+  return chave ? texto.split(chave).join('[REDACTED]') : texto;
+}
+
+async function erroSupabase(resp, chave, acao) {
+  const texto = await resp.text().catch(() => '');
+  throw new Error(`Supabase recusou ${acao} (HTTP ${resp.status}): ${semChave(texto, chave).slice(0, 300)}`);
+}
+
+/**
+ * Grava o plantio em mapas_plantio_pims: upsert (uma linha por safra × unidade) e, só depois de
+ * bem-sucedido, apaga as linhas com gerado_em anterior a esta rodada (sumiram do PIMS).
+ */
+export async function gravarSupabase(arquivo, { url, chave, fetch: fetchImpl = globalThis.fetch }) {
+  const linhas = linhasSupabase(arquivo);
+  const respUpsert = await fetchImpl(`${url}/rest/v1/mapas_plantio_pims?on_conflict=safra,unidade`, {
+    method: 'POST',
+    headers: {
+      ...cabecalhosSupabase(chave),
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify(linhas),
+  });
+  if (!respUpsert.ok) await erroSupabase(respUpsert, chave, 'o upsert em mapas_plantio_pims');
+
+  const respLimpeza = await fetchImpl(
+    `${url}/rest/v1/mapas_plantio_pims?gerado_em=lt.${encodeURIComponent(arquivo.geradoEm)}`,
+    { method: 'DELETE', headers: cabecalhosSupabase(chave) },
+  );
+  if (!respLimpeza.ok) await erroSupabase(respLimpeza, chave, 'a limpeza de mapas_plantio_pims');
+}
+
 export function resumo(dados) {
   const linhas = [];
   for (const s of dados.safras) {
@@ -278,6 +339,14 @@ async function main() {
     excluirPrefixos: config.excluirPrefixos ?? [],
   });
   for (const l of resumo(dados)) console.log(l);
+
+  const supabaseUrl = process.env.SUPABASE_URL?.trim();
+  const supabaseChave = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  if (supabaseUrl && supabaseChave) {
+    await gravarSupabase(dados, { url: supabaseUrl, chave: supabaseChave, fetch });
+    console.log(`Gravado em mapas_plantio_pims via Supabase (${dados.geradoEm}).`);
+    return;
+  }
 
   const destino = join(raiz, 'public', 'dados', 'plantio.json');
   let antigo = null;

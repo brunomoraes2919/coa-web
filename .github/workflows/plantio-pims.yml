@@ -1,0 +1,43 @@
+name: Sincronizar plantio PIMS
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verificar secrets
+        env:
+          AGROVEX_TOKEN: ${{ secrets.AGROVEX_TOKEN }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          faltando=""
+          if [ -z "$AGROVEX_TOKEN" ]; then faltando="$faltando AGROVEX_TOKEN"; fi
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then faltando="$faltando SUPABASE_SERVICE_ROLE_KEY"; fi
+          if [ -n "$faltando" ]; then
+            echo "::error::Secret(s) ausente(s) em Settings > Secrets and variables > Actions:$faltando"
+            exit 1
+          fi
+
+      - name: Sincronizar plantio
+        env:
+          AGROVEX_TOKEN: ${{ secrets.AGROVEX_TOKEN }}
+          SUPABASE_URL: https://pkaxbitsqxjxjlwnhjhd.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node modulos/mapas/scripts/sincronizar-plantio.mjs

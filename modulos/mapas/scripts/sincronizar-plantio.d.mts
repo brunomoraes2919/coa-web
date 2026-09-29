@@ -22,6 +22,13 @@ export interface PlantioPimsScript {
   safras: { nome: string; unidades: { unidade: string; talhoes: TalhaoPimsScript[] }[] }[];
 }
 
+export interface LinhaSupabaseScript {
+  safra: string;
+  unidade: string;
+  gerado_em: string;
+  talhoes: TalhaoPimsScript[];
+}
+
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
 export function normalizarCodigo(s: string | null | undefined): string;
@@ -43,3 +50,8 @@ export function sincronizar(opcoes: {
 }): Promise<PlantioPimsScript>;
 export function mesmosDados(antigo: PlantioPimsScript | null, novo: PlantioPimsScript): boolean;
 export function resumo(dados: PlantioPimsScript): string[];
+export function linhasSupabase(arquivo: PlantioPimsScript): LinhaSupabaseScript[];
+export function gravarSupabase(
+  arquivo: PlantioPimsScript,
+  opcoes: { url: string; chave: string; fetch: FetchLike },
+): Promise<void>;

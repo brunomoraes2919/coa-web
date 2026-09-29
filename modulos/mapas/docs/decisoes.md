@@ -28,7 +28,7 @@ Registro das decisões que o assistente tomou por delegação do usuário, extra
 - Ruling: I2 edição mostra "Atualizar este mapa" e "Salvar como novo" — evita sobrescrita silenciosa — custo: um botão a mais
 - Ruling: I5 cópia do histórico sempre em 150 dpi (~4 MB) — cabe ~250 mapas/GB no plano gratuito; alta resolução é regenerável pelo editor — custo: baixar do histórico dá 150 dpi
 - Ruling: adiados da revisão final: M4, M5, M7, M9, M13, M17 (ver final-achados.md) — custo: polimento/volume no modo Supabase
-- Ruling: integração Agrovex via GitHub Actions gerando plantio.json (CORS bloqueia navegador; token fica em secret) — custo: dado com até 1 h de atraso.
+- Ruling: integração Agrovex via GitHub Actions gerando plantio.json (CORS bloqueia navegador; token fica em secret) — custo: dado com até 1 h de atraso. Superado pela Task 5 do módulo MAPAS: no coa-web a rotina grava direto em `mapas_plantio_pims` via API REST do Supabase (chave de serviço), sem commit; o `plantio.json` local continua existindo só para uso sem as variáveis do Supabase (desenvolvimento).
 - Ruling: Siriema + São Miguel = uma fazenda com setores (PIMS trata como unidade SIRIEMA).
 - Ruling: status plantado = DT_PLANT_ENC ou área apontada >= 99% da prevista; plantando = parcial; a_plantar = sem apontamento.
 - Ruling: PIMS prevalece sobre o plantio manual; manual só para talhões sem registro no PIMS.

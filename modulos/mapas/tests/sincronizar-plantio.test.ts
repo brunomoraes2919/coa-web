@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest';
 import {
   classificar,
   filtrarSafras,
+  gravarSupabase,
+  linhasSupabase,
   mesmosDados,
   montarSql,
   normalizarCodigo,
@@ -283,6 +285,149 @@ describe('mesmosDados / resumo', () => {
   });
   it('resume por safra/unidade/status', () => {
     expect(resumo(base)).toEqual(['SOJA 26/27', '  SIRIEMA: 2 talhões (plantado 1, plantando 1, a plantar 0)']);
+  });
+});
+
+// ---------- linhasSupabase / gravarSupabase ----------
+
+const TALHOES_SIRIEMA = [
+  { codigo: '001', codigoPims: '001', setor: 'SIRIEMA', status: 'plantado' as const, areaPrevista: 97, areaPlantada: 97, inicio: null, fim: null, variedade: null },
+];
+const TALHOES_GLOBO = [
+  { codigo: '02PIVO', codigoPims: '02PIVO', setor: 'GLEBA DUAS BARRAS', status: 'a_plantar' as const, areaPrevista: 68, areaPlantada: 0, inicio: null, fim: null, variedade: null },
+];
+
+const ARQUIVO = {
+  versao: 1 as const,
+  geradoEm: '2026-09-28T10:00:00.000Z',
+  fonte: 'PIMS via Agrovex',
+  safras: [
+    {
+      nome: 'SOJA 26/27',
+      unidades: [
+        { unidade: 'GLOBO', talhoes: TALHOES_GLOBO },
+        { unidade: 'SIRIEMA', talhoes: TALHOES_SIRIEMA },
+        { unidade: '(sem unidade)', talhoes: [] },
+      ],
+    },
+    {
+      nome: 'MILHO 2ª SAFRA 26/27',
+      unidades: [{ unidade: 'SIRIEMA', talhoes: TALHOES_SIRIEMA }],
+    },
+  ],
+};
+
+describe('linhasSupabase', () => {
+  it('uma linha por safra × unidade, só unidades com talhões', () => {
+    expect(linhasSupabase(ARQUIVO)).toEqual([
+      { safra: 'SOJA 26/27', unidade: 'GLOBO', gerado_em: '2026-09-28T10:00:00.000Z', talhoes: TALHOES_GLOBO },
+      { safra: 'SOJA 26/27', unidade: 'SIRIEMA', gerado_em: '2026-09-28T10:00:00.000Z', talhoes: TALHOES_SIRIEMA },
+      { safra: 'MILHO 2ª SAFRA 26/27', unidade: 'SIRIEMA', gerado_em: '2026-09-28T10:00:00.000Z', talhoes: TALHOES_SIRIEMA },
+    ]);
+  });
+
+  it('arquivo sem nenhum talhão devolve lista vazia', () => {
+    expect(linhasSupabase({ ...ARQUIVO, safras: [{ nome: 'SOJA 26/27', unidades: [{ unidade: 'X', talhoes: [] }] }] })).toEqual([]);
+  });
+});
+
+interface ChamadaSupabase { url: string; init: { method?: string; headers?: HeadersInit; body?: BodyInit | null } }
+
+function fetchFalsoSupabase(respostas: (Response | (() => Response))[]) {
+  const chamadas: ChamadaSupabase[] = [];
+  let i = 0;
+  const impl: FetchLike = async (url, init) => {
+    chamadas.push({ url, init });
+    const r = respostas[Math.min(i, respostas.length - 1)];
+    i++;
+    return typeof r === 'function' ? r() : r;
+  };
+  return { impl, chamadas };
+}
+
+const JWT = 'eyJhbGciOiJIUzI1NiJ9.servicerole.assinatura';
+const SB_SECRET = 'sb_secret_abcdef123456';
+
+describe('gravarSupabase', () => {
+  it('faz upsert e depois limpa as linhas que sumiram do PIMS (chave JWT)', async () => {
+    const { impl, chamadas } = fetchFalsoSupabase([
+      new Response(null, { status: 200 }),
+      new Response(null, { status: 200 }),
+    ]);
+    await gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: impl });
+
+    expect(chamadas).toHaveLength(2);
+    const [upsert, limpeza] = chamadas;
+
+    expect(upsert.url).toBe('https://proj.supabase.co/rest/v1/mapas_plantio_pims?on_conflict=safra,unidade');
+    expect(upsert.init.method).toBe('POST');
+    const headersUpsert = Object.fromEntries(new Headers(upsert.init.headers).entries());
+    expect(headersUpsert['apikey']).toBe(JWT);
+    expect(headersUpsert['authorization']).toBe(`Bearer ${JWT}`);
+    expect(headersUpsert['content-type']).toBe('application/json');
+    expect(headersUpsert['prefer']).toBe('resolution=merge-duplicates,return=minimal');
+    expect(JSON.parse(String(upsert.init.body))).toEqual(linhasSupabase(ARQUIVO));
+
+    expect(limpeza.url).toBe(
+      `https://proj.supabase.co/rest/v1/mapas_plantio_pims?gerado_em=lt.${encodeURIComponent('2026-09-28T10:00:00.000Z')}`,
+    );
+    expect(limpeza.init.method).toBe('DELETE');
+    const headersLimpeza = Object.fromEntries(new Headers(limpeza.init.headers).entries());
+    expect(headersLimpeza['apikey']).toBe(JWT);
+    expect(headersLimpeza['authorization']).toBe(`Bearer ${JWT}`);
+  });
+
+  it('chave sb_secret_… manda apikey mas nunca Authorization', async () => {
+    const { impl, chamadas } = fetchFalsoSupabase([
+      new Response(null, { status: 200 }),
+      new Response(null, { status: 204 }),
+    ]);
+    await gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: SB_SECRET, fetch: impl });
+
+    for (const c of chamadas) {
+      const h = Object.fromEntries(new Headers(c.init.headers).entries());
+      expect(h['apikey']).toBe(SB_SECRET);
+      expect(h['authorization']).toBeUndefined();
+    }
+  });
+
+  it('só chama DELETE depois que o upsert deu certo', async () => {
+    const { impl, chamadas } = fetchFalsoSupabase([new Response('erro interno', { status: 500 })]);
+    await expect(gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: impl }))
+      .rejects.toThrow(/HTTP 500/);
+    expect(chamadas).toHaveLength(1);
+  });
+
+  it('erro no upsert traz status e corpo, nunca a chave', async () => {
+    const corpoErro = () => new Response(`negado: apikey ${JWT} inválida`, { status: 401 });
+    const { impl: implA } = fetchFalsoSupabase([corpoErro]);
+    await expect(gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: implA }))
+      .rejects.toThrow(/HTTP 401/);
+
+    const { impl: implB } = fetchFalsoSupabase([corpoErro]);
+    try {
+      await gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: implB });
+      expect.unreachable();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      expect(msg).not.toContain(JWT);
+      expect(msg).toContain('negado');
+    }
+  });
+
+  it('erro na limpeza (depois de um upsert ok) também não vaza a chave', async () => {
+    const { impl } = fetchFalsoSupabase([
+      new Response(null, { status: 200 }),
+      new Response(`falha ${JWT}`, { status: 500 }),
+    ]);
+    try {
+      await gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: impl });
+      expect.unreachable();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      expect(msg).not.toContain(JWT);
+      expect(msg).toContain('HTTP 500');
+    }
   });
 });
 
