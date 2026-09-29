@@ -287,9 +287,15 @@ async function erroSupabase(resp, chave, acao) {
 /**
  * Grava o plantio em mapas_plantio_pims: upsert (uma linha por safra × unidade) e, só depois de
  * bem-sucedido, apaga as linhas com gerado_em anterior a esta rodada (sumiram do PIMS).
+ * Sem nenhuma linha (PIMS não devolveu talhão nenhum), não mexe no Supabase: um upsert vazio seguido
+ * da limpeza por gerado_em apagaria a tabela inteira.
  */
 export async function gravarSupabase(arquivo, { url, chave, fetch: fetchImpl = globalThis.fetch }) {
   const linhas = linhasSupabase(arquivo);
+  if (!linhas.length) {
+    console.warn('PIMS não retornou nenhum talhão; o Supabase não foi alterado.');
+    return;
+  }
   const respUpsert = await fetchImpl(`${url}/rest/v1/mapas_plantio_pims?on_conflict=safra,unidade`, {
     method: 'POST',
     headers: {

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   classificar,
   filtrarSafras,
@@ -428,6 +428,35 @@ describe('gravarSupabase', () => {
       expect(msg).not.toContain(JWT);
       expect(msg).toContain('HTTP 500');
     }
+  });
+
+  it('sem nenhum talhão (arquivo vazio), não chama o Supabase (nem upsert nem limpeza)', async () => {
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { impl, chamadas } = fetchFalsoSupabase([new Response(null, { status: 200 })]);
+    const vazio = { versao: 1 as const, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS via Agrovex', safras: [] };
+    await gravarSupabase(vazio, { url: 'https://proj.supabase.co', chave: JWT, fetch: impl });
+    expect(chamadas).toHaveLength(0);
+    expect(aviso).toHaveBeenCalledWith(expect.stringContaining('não retornou nenhum talhão'));
+    aviso.mockRestore();
+  });
+
+  it('sem nenhum talhão (safras sem unidades ou unidades vazias), também não chama o Supabase', async () => {
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { impl, chamadas } = fetchFalsoSupabase([new Response(null, { status: 200 })]);
+    const semUnidades = {
+      versao: 1 as const,
+      geradoEm: '2026-09-28T10:00:00.000Z',
+      fonte: 'PIMS via Agrovex',
+      safras: [
+        { nome: 'SOJA 26/27', unidades: [] },
+        { nome: 'MILHO 2ª SAFRA 26/27', unidades: [{ unidade: 'SIRIEMA', talhoes: [] }] },
+      ],
+    };
+    await gravarSupabase(semUnidades, { url: 'https://proj.supabase.co', chave: JWT, fetch: impl });
+    expect(chamadas).toHaveLength(0);
+    expect(aviso).toHaveBeenCalledWith(expect.stringContaining('não retornou nenhum talhão'));
+    expect(aviso.mock.calls.flat().join(' ')).not.toContain(JWT);
+    aviso.mockRestore();
   });
 });
 
