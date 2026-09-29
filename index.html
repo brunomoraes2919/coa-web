@@ -2712,6 +2712,9 @@ function irParaMapas(rota){
     const botao = botaoMapasDaRota(rota);
     if(botao && botao.classList.contains('admin-only') && (!sessao || sessao.perfil!=='admin')) rota = MAPAS_ROTA_INICIAL;
     mapasRotaAtual = rota;
+    // título provisório (o do botão) até o módulo responder com o da rota
+    const botaoFinal = botaoMapasDaRota(rota);
+    mapasTitulo = botaoFinal ? botaoFinal.textContent.trim() : null;
   }
   irPara('mapas');
   if(!mapasFrame) criarMapasFrame(mapasRotaAtual);
