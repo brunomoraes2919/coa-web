@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import Aviso from '../Aviso';
 import Carregando from '../Carregando';
 import { usePerfil } from '../usePerfil';
-import type { Fazenda, PlantioPimsTalhao, Safra, StatusPlantio } from '../../lib/types';
+import type { Fazenda, FazendaCoaSelecionada, PlantioPimsTalhao, Safra, StatusPlantio } from '../../lib/types';
 import SecaoPlantioPims from './SecaoPlantioPims';
 
 export interface ResumoPlantio {
@@ -15,7 +15,10 @@ export interface ResumoPlantio {
 }
 
 interface Props {
+  /** fazendas da lista (no COA WEB: só as ligadas à fazenda do topo, mais a do mapa aberto) */
   fazendas: Fazenda[];
+  /** fazenda do topo do COA WEB; null/ausente = fora do iframe ou nenhuma recebida */
+  coa?: FazendaCoaSelecionada | null;
   safras: Safra[];
   fazendaId: string;
   safraId: string;
@@ -35,6 +38,8 @@ export default function SecaoFazenda(p: Props) {
   const fazenda = p.fazendas.find((f) => f.id === p.fazendaId) ?? null;
   const safra = p.safras.find((s) => s.id === p.safraId) ?? null;
   const admin = usePerfil() === 'admin';
+  /** fazenda do COA WEB escolhida no topo (id null = "todas": vale a lista inteira) */
+  const coa = p.coa && p.coa.id !== null ? p.coa : null;
 
   const alternarSetor = (s: string, ativo: boolean) => {
     const atual = p.setores ?? p.setoresDisponiveis;
@@ -45,7 +50,18 @@ export default function SecaoFazenda(p: Props) {
   return (
     <section className="cartao pilha">
       <h2>1. Fazenda e safra</h2>
-      {p.fazendas.length === 0 ? (
+      {p.fazendas.length === 0 && coa ? (
+        <Aviso tipo="info">
+          Nenhuma fazenda de mapa ligada a {coa.nome || 'esta fazenda'} no COA WEB.{' '}
+          {admin ? (
+            <>
+              Ligue uma em <Link to="/fazendas">Fazendas e shapes</Link> → Editar → Fazenda no COA WEB.
+            </>
+          ) : (
+            'Peça a um administrador.'
+          )}
+        </Aviso>
+      ) : p.fazendas.length === 0 ? (
         <Aviso tipo="info">
           {admin ? (
             <>

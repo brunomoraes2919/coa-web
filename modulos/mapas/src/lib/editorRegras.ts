@@ -101,6 +101,33 @@ export function panZoomPermitido(comp: { quadros: readonly unknown[] }): boolean
   return comp.quadros.length === 1;
 }
 
+export interface ControlesPrevia {
+  /** arraste e roda do mouse mexem no enquadramento (e a roda deixa de rolar a página) */
+  interativa: boolean;
+  /** cadeado e Centralizar aparecem (só com um quadro) */
+  botoes: boolean;
+  /** Centralizar habilitado: o enquadramento foi mexido (não é o automático) */
+  centralizar: boolean;
+  /** texto sob a prévia */
+  dica: string;
+}
+
+const MESMO_DESENHO = 'A prévia é o mesmo desenho do PNG.';
+
+/**
+ * Controles da prévia: `panZoom` (um quadro), `travado` (cadeado fechado, o padrão ao abrir o editor) e
+ * `automatico` (extent null = enquadramento automático). Travada, a prévia ignora arraste e roda.
+ */
+export function controlesPrevia(panZoom: boolean, travado: boolean, automatico: boolean): ControlesPrevia {
+  if (!panZoom) {
+    return { interativa: false, botoes: false, centralizar: false, dica: `Com vários quadros o enquadramento é automático. ${MESMO_DESENHO}` };
+  }
+  const dica = travado
+    ? `Mapa travado. Clique no cadeado para mover e aproximar. ${MESMO_DESENHO}`
+    : `Arraste o mapa para mover e use a roda do mouse para aproximar. ${MESMO_DESENHO}`;
+  return { interativa: !travado, botoes: true, centralizar: !automatico, dica };
+}
+
 /**
  * Retângulo `rect` (mm do desenho A3) em pixels CSS de uma prévia com `larguraCss` px de largura, para
  * um desenho de `desenhoW` mm de largura (420 em paisagem, 297 em retrato). `k` = px CSS por mm do desenho.

@@ -102,3 +102,17 @@ export function useFazendaCoa(): FazendaCoaSelecionada | null {
 export function fazendaDoCoa(fazendas: Fazenda[], coaId: number): Fazenda | null {
   return fazendas.find((f) => f.coaFazendaId === coaId) ?? null;
 }
+
+/**
+ * Fazendas da lista "Fazenda" do editor: sem fazenda do COA WEB (fora do iframe, ou "todas"), a lista
+ * inteira; com ela, só as fazendas de mapa ligadas a ela (coaFazendaId), mais a já escolhida quando não
+ * está entre elas (um mapa salvo de outra fazenda continua mostrando a sua). Mantém a ordem original.
+ */
+export function fazendasDoCoa(
+  fazendas: Fazenda[],
+  coa: { id: number | null; nome: string | null } | null,
+  fazendaAtualId: string,
+): Fazenda[] {
+  if (!coa || coa.id === null) return fazendas;
+  return fazendas.filter((f) => f.coaFazendaId === coa.id || (fazendaAtualId !== '' && f.id === fazendaAtualId));
+}

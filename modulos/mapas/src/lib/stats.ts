@@ -49,3 +49,18 @@ export function statsMascara(values: Float32Array, incluir: (i: number) => boole
   if (cont === 0) return { ...VAZIA };
   return { media: soma / cont, min, max, areaHa: (cont * areaCelulaM2) / 10000 };
 }
+
+/**
+ * Média aritmética da chuva dos PICs que choveram (valor finito > 0): zeros, NaN, infinitos e vazios
+ * ficam de fora. Nenhum PIC com chuva → null.
+ */
+export function mediaPicsComChuva(valores: readonly (number | null | undefined)[]): number | null {
+  let soma = 0;
+  let cont = 0;
+  for (const v of valores) {
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) continue;
+    soma += v;
+    cont++;
+  }
+  return cont === 0 ? null : soma / cont;
+}

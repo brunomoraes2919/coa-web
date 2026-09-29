@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { statsMascara, statsZonas } from '../src/lib/stats';
+import { mediaPicsComChuva, statsMascara, statsZonas } from '../src/lib/stats';
 
 describe('statsZonas', () => {
   it('calcula média, mínimo, máximo e área por zona, ignorando NaN e células fora', () => {
@@ -49,5 +49,22 @@ describe('statsMascara', () => {
     expect(r.min).toBeNaN();
     expect(r.max).toBeNaN();
     expect(r.areaHa).toBe(0);
+  });
+});
+
+describe('mediaPicsComChuva', () => {
+  it('média aritmética só dos PICs com chuva > 0 (zeros ficam de fora)', () => {
+    expect(mediaPicsComChuva([10, 0, 20, 0, 30])).toBe(20);
+    expect(mediaPicsComChuva([12.4])).toBe(12.4);
+  });
+
+  it('ignora NaN, infinitos, null e undefined', () => {
+    expect(mediaPicsComChuva([Number.NaN, 4, null, 8, undefined, Number.POSITIVE_INFINITY])).toBe(6);
+  });
+
+  it('nenhum PIC com chuva (todos zero, vazios ou negativos) → null', () => {
+    expect(mediaPicsComChuva([0, 0, 0])).toBeNull();
+    expect(mediaPicsComChuva([])).toBeNull();
+    expect(mediaPicsComChuva([null, Number.NaN, -1])).toBeNull();
   });
 });

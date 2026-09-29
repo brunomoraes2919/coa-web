@@ -246,3 +246,26 @@ describe('lerConfig no modo fixo (VITE_MODO_FIXO=supabase)', () => {
     expect(lerConfig()).toEqual({ modo: 'local', supabaseUrl: 'https://outro.supabase.co', supabaseKey: 'outra' });
   });
 });
+
+describe('fazendasDoCoa', () => {
+  const f = (id: string, coaFazendaId: number | null) => ({ id, coaFazendaId }) as unknown as Fazenda;
+  const lista = [f('a', null), f('b', 5), f('c', 7), f('d', 7)];
+
+  it('sem fazenda do COA WEB (fora do iframe ou "todas"): lista inteira', async () => {
+    const { fazendasDoCoa } = await carregarEmbed();
+    expect(fazendasDoCoa(lista, null, '').map((x) => x.id)).toEqual(['a', 'b', 'c', 'd']);
+    expect(fazendasDoCoa(lista, { id: null, nome: null }, '').map((x) => x.id)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('com fazenda do COA WEB: só as ligadas a ela', async () => {
+    const { fazendasDoCoa } = await carregarEmbed();
+    expect(fazendasDoCoa(lista, { id: 7, nome: 'Fazenda X' }, '').map((x) => x.id)).toEqual(['c', 'd']);
+    expect(fazendasDoCoa(lista, { id: 99, nome: 'Outra' }, '')).toEqual([]);
+  });
+
+  it('mantém a fazenda já escolhida (mapa salvo de outra fazenda)', async () => {
+    const { fazendasDoCoa } = await carregarEmbed();
+    expect(fazendasDoCoa(lista, { id: 7, nome: 'X' }, 'b').map((x) => x.id)).toEqual(['b', 'c', 'd']);
+    expect(fazendasDoCoa(lista, { id: 7, nome: 'X' }, 'c').map((x) => x.id)).toEqual(['c', 'd']);
+  });
+});

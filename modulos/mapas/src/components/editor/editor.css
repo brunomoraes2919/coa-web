@@ -28,6 +28,18 @@
   font-size: 0.85rem; padding: 8px 12px; border: 1px solid #efbdb9; border-radius: var(--raio); box-shadow: var(--sombra);
 }
 .dica-previa { margin: 8px 0 0; font-size: 0.82rem; }
+/* legenda sob a prévia com o cadeado e o Centralizar à direita (fora do desenho do mapa) */
+.previa-rodape { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.previa-rodape .dica-previa { margin: 0; }
+.previa-ferramentas { display: flex; gap: 6px; flex: none; }
+.botao-icone-previa {
+  display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
+  border: 1px solid #DCE3DC; border-radius: 8px; background: #fff; color: #0C5A50; cursor: pointer;
+}
+.botao-icone-previa:hover:not(:disabled) { background: var(--verde-claro); border-color: #0C5A50; }
+.botao-icone-previa:focus-visible { outline: 2px solid var(--laranja); outline-offset: 1px; }
+.botao-icone-previa:disabled { opacity: 0.45; cursor: not-allowed; }
+.botao-icone-previa.destravado, .botao-icone-previa.destravado:hover { background: #0C5A50; border-color: #0C5A50; color: #fff; }
 .desatualizado { opacity: 0.55; transition: opacity 0.2s; }
 
 .lista-pics { max-height: 320px; }

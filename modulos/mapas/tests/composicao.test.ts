@@ -9,6 +9,7 @@ import {
   compor,
   fracoesAltura,
   tamanhoRotuloMm,
+  tamanhoRotuloTalhaoMm,
   type Composicao,
 } from '../src/render/composicao';
 import type { Rect } from '../src/render/labels';
@@ -59,6 +60,23 @@ describe('tamanhoRotuloMm', () => {
   it('valor inválido cai no mínimo', () => {
     expect(tamanhoRotuloMm(Number.NaN)).toBe(1.6);
     expect(tamanhoRotuloMm(-10)).toBe(1.6);
+  });
+});
+
+describe('tamanhoRotuloTalhaoMm (número do talhão, discreto)', () => {
+  it('0,75 × o tamanho antigo', () => {
+    expect(tamanhoRotuloTalhaoMm(40)).toBeCloseTo(0.75 * 2.1, 10);
+    expect(tamanhoRotuloTalhaoMm(60)).toBeCloseTo(0.75 * tamanhoRotuloMm(60), 10);
+  });
+  it('nunca abaixo de 1,3 mm', () => {
+    expect(tamanhoRotuloTalhaoMm(0)).toBe(1.3);
+    expect(tamanhoRotuloTalhaoMm(5)).toBe(1.3);
+    expect(tamanhoRotuloTalhaoMm(Number.NaN)).toBe(1.3);
+    expect(tamanhoRotuloTalhaoMm(-10)).toBe(1.3);
+  });
+  it('nunca acima de 0,75 × 3,2 = 2,4 mm', () => {
+    expect(tamanhoRotuloTalhaoMm(10_000)).toBeCloseTo(2.4, 10);
+    for (const a of [1, 20, 40, 100, 400, 1e6]) expect(tamanhoRotuloTalhaoMm(a)).toBeLessThanOrEqual(2.4 + 1e-12);
   });
 });
 

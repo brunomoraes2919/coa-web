@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
 import { areaVisivel, composicaoDe, desenhoA3, PAGINA_MM, paginaDe, renderLayout, type RenderInput } from '../../render';
-import { alturaPrevia, arrastarExtent, larguraPrevia, panZoomPermitido, quadroEmCss, zoomNoPonto } from '../../lib/editorRegras';
+import { alturaPrevia, arrastarExtent, controlesPrevia, larguraPrevia, panZoomPermitido, quadroEmCss, zoomNoPonto } from '../../lib/editorRegras';
 import { liberarCanvas } from '../../lib/exportar';
 import type { MapExtent } from '../../lib/types';
+import BarraPrevia from './BarraPrevia';
 
 interface Props {
   /** null = nada para desenhar ainda */
   input: RenderInput | null;
   /** enquadramento efetivo do quadro único (config.extent ?? automático); null com vários quadros */
   extent: MapExtent | null;
-  onExtentChange(ext: MapExtent): void;
+  /** enquadramento automático (config.extent null): Centralizar fica desabilitado */
+  automatico: boolean;
+  /** null = volta ao enquadramento automático (Centralizar) */
+  onExtentChange(ext: MapExtent | null): void;
   /** texto sobreposto (ex.: "Interpolando… 42%") */
   ocupado?: string | null;
   onAvisos?(avisos: string[]): void;
@@ -22,10 +26,12 @@ const FRACAO_ALTURA_JANELA = 0.85;
 
 /**
  * Prévia do layout: usa o mesmo renderLayout da exportação, no tamanho da tela e na proporção da folha
- * da composição (paisagem ou retrato). Com um quadro, arrastar dentro dele move o enquadramento e a roda
- * do mouse aproxima/afasta; com vários, cada quadro se enquadra sozinho e a prévia não reage ao mouse.
+ * da composição (paisagem ou retrato). Com um quadro e o cadeado aberto, arrastar dentro dele move o
+ * enquadramento e a roda do mouse aproxima/afasta; travada (padrão ao abrir), a roda rola a página.
+ * Centralizar volta ao enquadramento automático. Com vários quadros, cada um se enquadra sozinho e a
+ * prévia não reage ao mouse (sem cadeado nem Centralizar).
  */
-export default function PreviaLayout({ input, extent, onExtentChange, ocupado, onAvisos }: Props) {
+export default function PreviaLayout({ input, extent, automatico, onExtentChange, ocupado, onAvisos }: Props) {
   const caixaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /** última imagem desenhada (base do retorno visual do arraste) */
@@ -36,11 +42,14 @@ export default function PreviaLayout({ input, extent, onExtentChange, ocupado, o
   const [erroDesenho, setErroDesenho] = useState<string | null>(null);
   const arrasteRef = useRef<{ x0: number; y0: number; dx: number; dy: number; base: MapExtent } | null>(null);
   const zoomRef = useRef<{ ext: MapExtent; timer: number } | null>(null);
+  /** cadeado: fechado a cada abertura do editor (não é guardado) */
+  const [travado, setTravado] = useState(true);
 
   const comp = input ? composicaoDe(input) : null;
   const pagina = input ? paginaDe(input) : PAGINA_MM.A3;
   const folha = desenhoA3(comp?.orientacao ?? 'paisagem');
   const panZoom = !!comp && panZoomPermitido(comp);
+  const controles = controlesPrevia(panZoom, travado, automatico);
   const dpr = typeof window !== 'undefined' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
   const alturaMax = typeof window !== 'undefined' ? window.innerHeight * FRACAO_ALTURA_JANELA : 0;
   /** largura exibida (px CSS) */
@@ -149,6 +158,13 @@ export default function PreviaLayout({ input, extent, onExtentChange, ocupado, o
     return z.ext;
   };
 
+  /** Descarta o zoom pendente da roda e volta ao enquadramento automático. */
+  const centralizar = () => {
+    if (zoomRef.current) window.clearTimeout(zoomRef.current.timer);
+    zoomRef.current = null;
+    onExtentChange(null);
+  };
+
   /** Redesenha a última imagem com o quadro do mapa deslocado (retorno visual do arraste). */
   const desenharDeslocado = (dx: number, dy: number) => {
     const c = canvasRef.current;
@@ -170,7 +186,7 @@ export default function PreviaLayout({ input, extent, onExtentChange, ocupado, o
   };
 
   const onPointerDown = (ev: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!panZoom || !extent || !dentroDoQuadro(ev)) return;
+    if (!controles.interativa || !extent || !dentroDoQuadro(ev)) return;
     // um zoom da roda ainda pendente vira a base do arraste (senão o arraste o desfaria, ou vice-versa)
     const base = aplicarZoomPendente() ?? extent;
     ev.currentTarget.setPointerCapture(ev.pointerId);
@@ -191,11 +207,13 @@ export default function PreviaLayout({ input, extent, onExtentChange, ocupado, o
     onExtentChange(arrastarExtent(a.base, a.dx / qc.q.k, a.dy / qc.q.k)); // px CSS → mm do desenho
   };
 
-  // Roda do mouse: listener não-passivo para poder impedir a rolagem da página.
+  // Roda do mouse: listener não-passivo para poder impedir a rolagem da página (só destravada;
+  // travada, a roda não é capturada e a página rola normalmente).
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
     const aoRolar = (ev: WheelEvent) => {
+      if (!controles.interativa) return;
       const alvo = dentroDoQuadro(ev);
       if (!alvo) return;
       ev.preventDefault();
@@ -225,12 +243,23 @@ export default function PreviaLayout({ input, extent, onExtentChange, ocupado, o
         <canvas
           ref={canvasRef}
           className="previa-canvas"
-          style={{ width: larguraCss, height: alturaCss, margin: '0 auto', cursor: panZoom ? undefined : 'default' }}
+          style={{
+            width: larguraCss,
+            height: alturaCss,
+            margin: '0 auto',
+            ...(controles.interativa ? {} : { cursor: 'default', touchAction: 'auto' }),
+          }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
-          title={panZoom ? 'Arraste o mapa para mover; use a roda do mouse para aproximar ou afastar' : 'Com vários quadros o enquadramento é automático'}
+          title={
+            controles.interativa
+              ? 'Arraste o mapa para mover; use a roda do mouse para aproximar ou afastar'
+              : panZoom
+                ? 'Mapa travado: clique no cadeado para mover e aproximar'
+                : 'Com vários quadros o enquadramento é automático'
+          }
         />
       ) : (
         <div className="previa-vazia" style={{ height: alturaCss || 300 }}>
@@ -244,11 +273,12 @@ export default function PreviaLayout({ input, extent, onExtentChange, ocupado, o
         </div>
       )}
       {input && (
-        <p className="suave dica-previa">
-          {panZoom
-            ? 'Arraste o mapa para mover e use a roda do mouse para aproximar. A prévia é o mesmo desenho do PNG.'
-            : 'Com vários quadros o enquadramento é automático. A prévia é o mesmo desenho do PNG.'}
-        </p>
+        <div className="previa-rodape">
+          <p className="suave dica-previa">{controles.dica}</p>
+          {controles.botoes && (
+            <BarraPrevia travado={travado} onTravado={setTravado} podeCentralizar={controles.centralizar} onCentralizar={centralizar} />
+          )}
+        </div>
       )}
     </div>
   );

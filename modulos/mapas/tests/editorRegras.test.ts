@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   alturaPrevia,
   arrastarExtent,
+  controlesPrevia,
   editarTexto,
   larguraPrevia,
   lerParametroIdw,
@@ -144,6 +145,41 @@ describe('prévia: pan/zoom só com um quadro', () => {
     expect(panZoomPermitido({ quadros: [q, q] })).toBe(false);
     expect(panZoomPermitido({ quadros: [q, q, q] })).toBe(false);
     expect(panZoomPermitido({ quadros: [] })).toBe(false);
+  });
+});
+
+describe('prévia: cadeado e Centralizar', () => {
+  it('travado (padrão): arraste e roda não mexem no mapa (a roda rola a página)', () => {
+    const c = controlesPrevia(true, true, false);
+    expect(c.interativa).toBe(false);
+    expect(c.botoes).toBe(true);
+    expect(c.dica).toBe('Mapa travado. Clique no cadeado para mover e aproximar. A prévia é o mesmo desenho do PNG.');
+  });
+
+  it('destravado: arraste e roda como antes', () => {
+    const c = controlesPrevia(true, false, false);
+    expect(c.interativa).toBe(true);
+    expect(c.botoes).toBe(true);
+    expect(c.dica).toBe('Arraste o mapa para mover e use a roda do mouse para aproximar. A prévia é o mesmo desenho do PNG.');
+  });
+
+  it('Centralizar só com enquadramento manual (travado ou não)', () => {
+    expect(controlesPrevia(true, true, false).centralizar).toBe(true);
+    expect(controlesPrevia(true, false, false).centralizar).toBe(true);
+    expect(controlesPrevia(true, true, true).centralizar).toBe(false);
+    expect(controlesPrevia(true, false, true).centralizar).toBe(false);
+  });
+
+  it('vários quadros: enquadramento automático, sem botões nem mouse', () => {
+    for (const travado of [true, false]) {
+      const c = controlesPrevia(false, travado, true);
+      expect(c).toEqual({
+        interativa: false,
+        botoes: false,
+        centralizar: false,
+        dica: 'Com vários quadros o enquadramento é automático. A prévia é o mesmo desenho do PNG.',
+      });
+    }
   });
 });
 

@@ -23,8 +23,8 @@ export function fmtMm(v: number): string {
 }
 
 /**
- * Pares do bloco de informações, na ordem do spec; valores vazios ficam de fora.
- * A fazenda vai no cabeçalho (subtítulo), não aqui.
+ * Pares do bloco de informações, na ordem do spec; valores vazios ficam de fora (média dos PICs com chuva:
+ * null = "sem chuva"; ausente em mapa salvo antes do campo = fora). A fazenda vai no cabeçalho, não aqui.
  */
 export function itensInformacao(inp: RenderInput): ParInfo[] {
   const t = inp.config.textos;
@@ -37,7 +37,7 @@ export function itensInformacao(inp: RenderInput): ParInfo[] {
     { rotulo: 'Talhões', valor: t.talhoes },
     { rotulo: 'Setor', valor: t.setor },
     { rotulo: 'Média da fazenda', valor: media(inp.resumo?.geral.media) },
-    { rotulo: 'Média na área plantada', valor: media(inp.resumo?.plantado?.media) },
+    { rotulo: 'Média dos PICs com chuva', valor: inp.resumo?.mediaPicsComChuva === null ? 'sem chuva' : media(inp.resumo?.mediaPicsComChuva) },
     { rotulo: 'Plantio', valor: pims ? `PIMS ${pims}` : '' },
     { rotulo: 'Data', valor: t.data },
     { rotulo: 'Observação', valor: t.observacao },

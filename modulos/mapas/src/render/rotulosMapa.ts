@@ -3,7 +3,7 @@ import polylabel from 'polylabel';
 import { fmtChuva } from '../lib/format';
 import { lonLatToMerc, type MultiPolyXY, type Ring } from '../lib/projection';
 import type { Talhao } from '../lib/types';
-import { tamanhoRotuloMm } from './composicao';
+import { tamanhoRotuloTalhaoMm } from './composicao';
 import { ALTURA_MAIUSC, LabelPlacer, caixaTexto, fonte, textoComHalo, type Rect } from './labels';
 import { desenharGota } from './patterns';
 import { estiloValorPic } from './picStyle';
@@ -45,8 +45,14 @@ function ancora(xy: MultiPolyXY, precisao: number): { x: number; y: number; area
   return Number.isFinite(p[0]) && Number.isFinite(p[1]) ? { x: p[0], y: p[1], area: maior } : null;
 }
 
+/** Número do talhão: cinza escuro (não preto) com halo fino e translúcido, discreto ao lado dos valores dos PICs. */
+const COR_ROTULO_TALHAO = '#3A4541';
+const HALO_ROTULO_TALHAO = 'rgba(255,255,255,0.75)';
+/** espessura do halo do número do talhão, em fração do tamanho da fonte (o mesmo nas caixas da anticolisão) */
+const FRACAO_HALO_TALHAO = 0.15;
+
 /**
- * Rótulos dos talhões (`geoms`, tamanho por `tamanhoRotuloMm` da área média), gotas e valores dos
+ * Rótulos dos talhões (`geoms`, tamanho por `tamanhoRotuloTalhaoMm` da área média), gotas e valores dos
  * PICs que caem no quadro visível. `reservas` = áreas onde nada é escrito (título, rosa, escala, grade).
  */
 export function desenharRotulosEPics(
@@ -99,8 +105,8 @@ export function desenharRotulosEPics(
   }
 
   // rótulos dos talhões (maiores primeiro; sem lugar livre = sem rótulo)
-  const pxTal = tamanhoRotuloMm(areaMediaMm2(geoms, s)) * s;
-  const haloTal = 0.28 * pxTal;
+  const pxTal = tamanhoRotuloTalhaoMm(areaMediaMm2(geoms, s)) * s;
+  const haloTal = FRACAO_HALO_TALHAO * pxTal;
   const capTal = pxTal * ALTURA_MAIUSC;
   const rotulos: { txt: string; r: Rect }[] = [];
   if (inp.config.mostrarRotulosTalhoes) {
@@ -121,7 +127,7 @@ export function desenharRotulosEPics(
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
   ctx.font = fonte(400, pxTal);
-  for (const { txt, r } of rotulos) textoComHalo(ctx, txt, r.x + haloTal, r.y + haloTal + capTal, '#000000', '#FFFFFF', haloTal);
+  for (const { txt, r } of rotulos) textoComHalo(ctx, txt, r.x + haloTal, r.y + haloTal + capTal, COR_ROTULO_TALHAO, HALO_ROTULO_TALHAO, haloTal);
   for (const { xy } of pics) desenharGota(ctx, xy[0], xy[1], altGota, s);
   ctx.font = fonte(700, pxPic);
   const estilo = estiloValorPic(inp.config.destaquePics);

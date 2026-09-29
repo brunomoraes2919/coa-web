@@ -272,7 +272,7 @@ describe('itensInformacao', () => {
   it('ordem do spec, médias do resumo e data do PIMS; vazios ficam de fora', () => {
     const est = (media: number) => ({ media, min: 0, max: 0, areaHa: 0 });
     const inp = entrada([], {
-      resumo: { geral: est(3.64), plantado: est(12), talhoes: [] },
+      resumo: { geral: est(3.64), plantado: est(12), talhoes: [], mediaPicsComChuva: 12.44 },
       plantioGeradoEm: '2026-09-28T07:05:00',
     });
     expect(itensInformacao(inp)).toEqual([
@@ -282,7 +282,7 @@ describe('itensInformacao', () => {
       { rotulo: 'Talhões', valor: 'TODOS' },
       { rotulo: 'Setor', valor: 'TODOS' },
       { rotulo: 'Média da fazenda', valor: '3,6 mm' },
-      { rotulo: 'Média na área plantada', valor: '12 mm' },
+      { rotulo: 'Média dos PICs com chuva', valor: '12,4 mm' },
       { rotulo: 'Plantio', valor: 'PIMS 28/09 07:05' },
       { rotulo: 'Data', valor: '28/09/2026' },
     ]);
@@ -294,6 +294,18 @@ describe('itensInformacao', () => {
     expect(rotulos).not.toContain('Média na área plantada');
     expect(rotulos).not.toContain('Plantio');
     expect(itensInformacao(entrada([])).map((p) => p.rotulo)).not.toContain('Média da fazenda');
+  });
+  it('média dos PICs com chuva: "sem chuva" quando nenhum PIC choveu; mapa antigo (sem o campo) não mostra o par', () => {
+    const est = { media: 3, min: 0, max: 0, areaHa: 0 };
+    const par = (resumo: NonNullable<RenderInput['resumo']> | null) =>
+      itensInformacao(entrada([], { resumo })).find((p) => p.rotulo === 'Média dos PICs com chuva');
+    expect(par({ geral: est, plantado: null, talhoes: [], mediaPicsComChuva: null })?.valor).toBe('sem chuva');
+    expect(par({ geral: est, plantado: null, talhoes: [], mediaPicsComChuva: 7 })?.valor).toBe('7 mm');
+    expect(par({ geral: est, plantado: est, talhoes: [] })).toBeUndefined();
+    expect(par(null)).toBeUndefined();
+    expect(itensInformacao(entrada([], { resumo: { geral: est, plantado: est, talhoes: [] } })).map((p) => p.rotulo)).not.toContain(
+      'Média na área plantada',
+    );
   });
 });
 

@@ -1,7 +1,7 @@
 import { idwGrid, type IdwPoint } from './idw';
 import { geomToXY, projetorUtm, utmEpsgFor } from './projection';
 import { dilate, gridSpecFromBounds, rasterizeZones } from './raster';
-import { statsMascara, statsZonas } from './stats';
+import { mediaPicsComChuva, statsMascara, statsZonas } from './stats';
 import type { AreaStats, Estat, Geometry, Grid, GridSpec, IdwParams, Pic, ResumoChuva, Talhao, TalhaoStats } from './types';
 
 export interface PipelineInput {
@@ -187,6 +187,10 @@ export function runPipeline(inp: PipelineInput, onProgress?: (f: number) => void
   }
 
   onProgress?.(1);
-  const resumo: ResumoChuva = comAreas ? { geral, plantado, talhoes, areas: porArea } : { geral, plantado, talhoes };
+  // média dos PICs com chuva: os mesmos pontos que entraram no IDW (válidos e dentro da região)
+  const mediaPics = mediaPicsComChuva(pts.map((p) => p.v));
+  const resumo: ResumoChuva = comAreas
+    ? { geral, plantado, talhoes, areas: porArea, mediaPicsComChuva: mediaPics }
+    : { geral, plantado, talhoes, mediaPicsComChuva: mediaPics };
   return { grid: { ...spec, epsg, values }, resumo, picsIgnorados };
 }

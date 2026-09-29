@@ -15,6 +15,7 @@ import { usePreSelecaoCoa } from '../components/editor/usePreSelecaoCoa';
 import '../components/editor/editor.css';
 import { aparenciaDoMapaSalvo, avisosPeriodoSafra, avisosPicsDistantes, layoutPadrao, textosAutomaticos } from '../lib/editor';
 import { editarTexto } from '../lib/editorRegras';
+import { fazendasDoCoa } from '../lib/embed';
 import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarCopiaHistorico, gerarPng, nomeArquivoMapa } from '../lib/exportar';
 import { DPI_HISTORICO, identidadeMapa, type ModoSalvar } from '../lib/historico';
 import { isoData, parseIsoData } from '../lib/format';
@@ -161,8 +162,8 @@ export default function NovoMapa() {
     setSetores(null);
     setAparencia((a) => ({ ...a, extent: null }));
   };
-  // novo mapa sem CSV: segue a fazenda do topo do COA WEB até o usuário escolher uma à mão
-  const escolheuFazenda = usePreSelecaoCoa(fazendas, fazendaId, !id && !csv, trocarFazenda);
+  // novo mapa: segue sempre a fazenda do topo do COA WEB (a lista só mostra as fazendas ligadas a ela)
+  const coa = usePreSelecaoCoa(fazendas, fazendaId, !id, trocarFazenda);
   const trocarSetores = (novos: string[] | null) => {
     setSetores(novos);
     setAparencia((a) => ({ ...a, extent: null }));
@@ -324,14 +325,12 @@ export default function NovoMapa() {
       <div className="editor">
         <div className="editor-lado">
           <SecaoFazenda
-            fazendas={fazendas}
+            fazendas={fazendasDoCoa(fazendas, coa, fazendaId)}
+            coa={coa}
             safras={safras}
             fazendaId={fazendaId}
             safraId={safraId}
-            onFazenda={(idF) => {
-              escolheuFazenda();
-              trocarFazenda(idF);
-            }}
+            onFazenda={trocarFazenda}
             onSafra={setSafraId}
             carregando={carregando}
             totalTalhoes={talhoes.length}
@@ -375,6 +374,7 @@ export default function NovoMapa() {
             <PreviaLayout
               input={renderInput}
               extent={extentEfetivo}
+              automatico={aparencia.extent === null}
               onExtentChange={(ext) => setAparencia((a) => ({ ...a, extent: ext }))}
               ocupado={ocupado ?? progressoTexto}
               onAvisos={setAvisosRender}

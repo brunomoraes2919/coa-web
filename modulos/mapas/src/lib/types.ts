@@ -242,6 +242,11 @@ export interface ResumoChuva {
   talhoes: TalhaoStats[];
   /** por área da cultura; ausente quando o mapa não usa áreas da cultura (e em mapas antigos) */
   areas?: AreaStats[];
+  /**
+   * Média da chuva dos PICs interpolados (dentro da região) com chuva > 0 (par "Média dos PICs com chuva"
+   * do painel); null = nenhum PIC choveu; ausente em mapas salvos antes deste campo.
+   */
+  mediaPicsComChuva?: number | null;
 }
 
 /** Um valor v cai na primeira classe com v <= max. */

@@ -194,6 +194,13 @@ describe('runPipeline — região do GRASS (v.surf.idw sem -n ignora PICs fora d
     expect(runPipeline(entrada()).picsIgnorados).toEqual([]);
   });
 
+  it('média dos PICs com chuva: só os interpolados (fora da região não conta) e com chuva > 0', () => {
+    const [p0, ...resto] = pics([10, 0, 20, 30]);
+    const lista = [p0, { lon: -57.3, lat: -13.9, chuva: 1000 }, ...resto]; // índice 1 = longe
+    expect(runPipeline(entrada({ pics: lista })).resumo.mediaPicsComChuva).toBe(20);
+    expect(runPipeline(entrada({ pics: pics([0, 0, 0, 0]) })).resumo.mediaPicsComChuva).toBeNull();
+  });
+
   it('meia célula fora das bordas norte/oeste fica (truncamento do C); 1,5 célula fora sai', () => {
     const { x0, y0, res, cols, rows } = base;
     const meioX = x0 + (cols / 2) * res;

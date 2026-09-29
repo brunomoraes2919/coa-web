@@ -80,6 +80,14 @@ export function tamanhoRotuloMm(areaMediaMm2: number): number {
   return Number.isFinite(v) ? Math.min(3.2, Math.max(1.6, v)) : 1.6;
 }
 
+/**
+ * Tamanho do número do talhão no mapa (mm): 0,75 × `tamanhoRotuloMm`, com piso de 1,3 mm (no máximo
+ * 2,4 mm), menor e mais discreto que os valores dos PICs (3,5 mm) para não se confundir com eles.
+ */
+export function tamanhoRotuloTalhaoMm(areaMediaMm2: number): number {
+  return Math.max(1.3, 0.75 * tamanhoRotuloMm(areaMediaMm2));
+}
+
 /** bbox Mercator do talhão; null se a geometria não tiver coordenadas válidas. */
 function bboxTalhao(t: Talhao): BBox | null {
   if (!t.geom || !Array.isArray(t.geom.coordinates)) return null;
