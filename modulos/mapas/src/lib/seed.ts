@@ -66,7 +66,7 @@ export function idDeterministico(chave: string): string {
 async function lerJson<T>(ler: LeitorSeed, caminho: string): Promise<T> {
   const texto = await ler(caminho);
   try {
-    return JSON.parse(texto.replace(/^﻿/, '')) as T;
+    return JSON.parse(texto.replace(/^\uFEFF/, '')) as T;
   } catch {
     throw new Error(`O arquivo ${caminho} do cadastro padrão não é um JSON válido.`);
   }
