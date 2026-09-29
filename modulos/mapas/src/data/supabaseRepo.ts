@@ -113,16 +113,33 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
         .range(de, ate),
     );
 
-  /** Arquivos que o mapa já tem no banco. Leitura só para a limpeza (melhor esforço): falha → []. */
+  /**
+   * Arquivos que o mapa já tem no banco. Leitura só para a limpeza (melhor esforço): falha → [] com um
+   * aviso no console (o arquivo antigo, se houver, fica no storage).
+   */
   async function arquivosAtuais(mapaId: string): Promise<string[]> {
     try {
       const { data, error } = await client.from(TABELAS.mapas).select('png_path, thumb_path').eq('id', mapaId).maybeSingle();
-      if (error || !data) return [];
+      if (error) falha('Não foi possível ler os arquivos do mapa', error);
+      if (!data) return [];
       const r = data as Pick<MapaRow, 'png_path' | 'thumb_path'>;
       return [r.png_path, r.thumb_path].filter((p): p is string => Boolean(p));
-    } catch {
+    } catch (e) {
+      console.warn('Não foi possível ler os arquivos antigos do mapa (não serão removidos do storage)', e);
       return [];
     }
+  }
+
+  /** Linhas de `tabela` com os ids informados (colunas `id` + `colunas`), em blocos de BLOCO_IDS ids. */
+  async function lerPorIds<T extends { id: string }>(contexto: string, tabela: string, colunas: string, ids: string[]): Promise<Map<string, T>> {
+    const linhas = new Map<string, T>();
+    for (const bloco of emBlocos(ids, BLOCO_IDS)) {
+      const pagina = await lerTodas<T>(contexto, (de, ate) =>
+        client.from(tabela).select(`id, ${colunas}`, { count: 'exact' }).in('id', bloco).order('id').range(de, ate),
+      );
+      for (const l of pagina) linhas.set(l.id, l);
+    }
+    return linhas;
   }
 
   return {
@@ -336,20 +353,28 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
 
     async importarBackup(b: BackupJson) {
       // Os mapeadores completam registros de backups antigos (campos novos = null; plantio = manual/plantado).
-      await gravar('Não foi possível importar as fazendas', TABELAS.fazendas, b.fazendas.map(fazendaParaRow));
+      // Fazenda do backup sem vínculo com o COA WEB não apaga o vínculo que ela já tem aqui (como o seed).
+      const semVinculo = b.fazendas.filter((f) => f.coaFazendaId == null).map((f) => f.id);
+      const vinculos = await lerPorIds<Pick<FazendaRow, 'id' | 'coa_fazenda_id'>>(
+        'Não foi possível importar as fazendas',
+        TABELAS.fazendas,
+        'coa_fazenda_id',
+        semVinculo,
+      );
+      const fazendas = b.fazendas.map((f) => fazendaParaRow({ ...f, coaFazendaId: f.coaFazendaId ?? vinculos.get(f.id)?.coa_fazenda_id ?? null }));
+      await gravar('Não foi possível importar as fazendas', TABELAS.fazendas, fazendas);
       await gravar('Não foi possível importar os talhões', TABELAS.talhoes, b.talhoes.map(talhaoParaRow));
       await gravar('Não foi possível importar as safras', TABELAS.safras, b.safras.map(safraParaRow));
       await gravar('Não foi possível importar os plantios', TABELAS.plantios, b.plantios.map(plantioParaRow));
       await gravar('Não foi possível importar as áreas da cultura', TABELAS.areasCultura, (b.areasCultura ?? []).map(areaCulturaParaRow));
       if (!b.mapas.length) return;
       // O backup não leva as imagens: só os mapas que já existem aqui continuam apontando para os seus arquivos.
-      const arquivos = new Map<string, Pick<MapaRow, 'png_path' | 'thumb_path'>>();
-      for (const bloco of emBlocos(b.mapas.map((m) => m.id), BLOCO_IDS)) {
-        const linhas = await lerTodas<Pick<MapaRow, 'id' | 'png_path' | 'thumb_path'>>('Não foi possível importar os mapas', (de, ate) =>
-          client.from(TABELAS.mapas).select('id, png_path, thumb_path', { count: 'exact' }).in('id', bloco).order('id').range(de, ate),
-        );
-        for (const l of linhas) arquivos.set(l.id, l);
-      }
+      const arquivos = await lerPorIds<Pick<MapaRow, 'id' | 'png_path' | 'thumb_path'>>(
+        'Não foi possível importar os mapas',
+        TABELAS.mapas,
+        'png_path, thumb_path',
+        b.mapas.map((m) => m.id),
+      );
       // Revive datas dos PICs (caso o backup tenha passado por JSON.stringify/parse) antes de gravar.
       const normalizados = b.mapas.map((m) => ({
         ...m,

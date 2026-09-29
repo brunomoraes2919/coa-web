@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { criarSupabaseRepo } from '../src/data/supabaseRepo';
-import { BUCKET, mapaParaRow, TABELAS, type PlantioPimsRow } from '../src/data/supabaseLinhas';
+import { BUCKET, fazendaParaRow, mapaParaRow, TABELAS, type PlantioPimsRow } from '../src/data/supabaseLinhas';
 import type { PlantioPimsTalhao } from '../src/lib/types';
 import { area, fazenda, mapa, plantio, safra, talhao, uuid } from './helpers/dominio';
 import { BancoFalso } from './helpers/supabaseFalso';
@@ -207,5 +207,50 @@ describe('supabaseRepo: salvarMapa (histórico em JPEG)', () => {
     aviso.mockRestore();
     expect(salvo.pngPath).toBe(`${uuid('map', 1)}.jpg`);
     expect(banco.tabelas[TABELAS.mapas][0]).toMatchObject({ png_path: salvo.pngPath });
+  });
+
+  it('falha ao ler os arquivos antigos avisa no console (e o salvamento continua)', async () => {
+    const banco = new BancoFalso();
+    banco.inserir(TABELAS.mapas, [mapaParaRow(mapa(1))]);
+    banco.falhar = (r) => (r.tabela === TABELAS.mapas && r.op === 'select' ? 'sem acesso' : null);
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const salvo = await criarSupabaseRepo(banco.cliente()).salvarMapa(mapa(1), jpeg(), png());
+    expect(aviso).toHaveBeenCalledOnce();
+    expect(String(aviso.mock.calls[0][0])).toMatch(/arquivos antigos do mapa/);
+    aviso.mockRestore();
+    expect(salvo.pngPath).toBe(`${uuid('map', 1)}.jpg`);
+    expect(banco.requisicoes.filter((r) => r.op === 'remove')).toEqual([]);
+  });
+
+  it('mapa novo (sem linha no banco) não avisa nada', async () => {
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await criarSupabaseRepo(new BancoFalso().cliente()).salvarMapa(mapa(1, { pngPath: null, thumbPath: null }), jpeg(), png());
+    expect(aviso).not.toHaveBeenCalled();
+    aviso.mockRestore();
+  });
+});
+
+describe('supabaseRepo: importarBackup e o vínculo com o COA WEB', () => {
+  const backup = (fazendas: ReturnType<typeof fazenda>[]) => ({ versao: 1 as const, fazendas, talhoes: [], safras: [], plantios: [], mapas: [] });
+  const vinculos = (banco: BancoFalso) => Object.fromEntries(banco.tabelas[TABELAS.fazendas].map((l) => [l.id, l.coa_fazenda_id]));
+
+  it('fazenda do backup sem vínculo (null ou campo ausente) não apaga o vínculo que já existe no banco', async () => {
+    const banco = new BancoFalso();
+    const [a, b, c, d] = [fazenda(1), fazenda(2), fazenda(3), fazenda(4)];
+    banco.inserir(TABELAS.fazendas, [fazendaParaRow({ ...a, coaFazendaId: 42 }), fazendaParaRow({ ...b, coaFazendaId: 5 }), fazendaParaRow({ ...d, coaFazendaId: 9 })]);
+    const { coaFazendaId: _, ...dAntigo } = { ...d, nome: 'Backup antigo' }; // backup de antes do campo
+    await criarSupabaseRepo(banco.cliente()).importarBackup(backup([a, { ...b, coaFazendaId: 7 }, c, dAntigo as typeof d]));
+    expect(vinculos(banco)).toEqual({ [a.id]: 42, [b.id]: 7, [c.id]: null, [d.id]: 9 });
+    expect(banco.tabelas[TABELAS.fazendas].find((l) => l.id === d.id)?.nome).toBe('Backup antigo'); // o resto é atualizado
+  });
+
+  it('lê os vínculos atuais em blocos de ids (backup grande)', async () => {
+    const banco = new BancoFalso();
+    const muitas = Array.from({ length: 450 }, (_, i) => fazenda(i));
+    banco.inserir(TABELAS.fazendas, muitas.map((f, i) => fazendaParaRow({ ...f, coaFazendaId: i })));
+    await criarSupabaseRepo(banco.cliente()).importarBackup(backup(muitas));
+    expect(banco.tabelas[TABELAS.fazendas].map((l) => l.coa_fazenda_id)).toEqual(muitas.map((_, i) => i));
+    const leituras = banco.requisicoes.filter((r) => r.tabela === TABELAS.fazendas && r.op === 'select');
+    expect(Math.max(...leituras.flatMap((r) => r.listasIn))).toBeLessThanOrEqual(200);
   });
 });

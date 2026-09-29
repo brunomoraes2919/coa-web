@@ -1,62 +1,21 @@
 import 'fake-indexeddb/auto';
 import { existsSync, readFileSync } from 'node:fs';
-import type { Feature, FeatureCollection, Polygon } from 'geojson';
+import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 import { criarLocalRepo } from '../src/data/localRepo';
 import type { Repositorio } from '../src/data/repo';
-import { carregarSeed, idDeterministico, seedJaCarregado } from '../src/lib/seed';
+import { carregarSeed, idDeterministico, leitorHttp, seedJaCarregado } from '../src/lib/seed';
+import { ARQUIVOS, leitorFalso, quadrado } from './helpers/seedFalso';
 
 let contador = 0;
 const repoNovo = (): Repositorio => criarLocalRepo(`coa-seed-teste-${++contador}`);
 
-const quadrado = (x: number): Polygon => ({ type: 'Polygon', coordinates: [[[x, 0], [x + 0.01, 0], [x + 0.01, 0.01], [x, 0.01], [x, 0]]] });
-const feicao = (x: number, props: Record<string, unknown>): Feature => ({ type: 'Feature', properties: props, geometry: quadrado(x) });
-const colecao = (features: Feature[]): FeatureCollection => ({ type: 'FeatureCollection', features });
-
-const SEED = {
-  versao: 1,
-  geradoEm: '2026-09-28T16:49:44.154Z',
-  fazendas: [
-    { nome: 'Siriema', unidadePims: 'SIRIEMA', campoNome: 'nome', campoCodigo: 'codigo', campoSetor: 'setor', arquivoBase: 'base/SIRIEMA.geojson' },
-    { nome: 'Globo', unidadePims: 'GLOBO', campoNome: 'nome', campoCodigo: 'codigo', campoSetor: null, arquivoBase: 'base/GLOBO.geojson' },
-  ],
-  safras: [
-    {
-      nome: 'SOJA 26/27',
-      nomePims: 'SOJA 26/27',
-      cultura: 'SOJA',
-      anoSafra: '26/27',
-      inicio: '2026-09-01',
-      fim: '2027-08-31',
-      areasCultura: [
-        { unidadePims: 'SIRIEMA', arquivo: 'soja-26-27/SIRIEMA.geojson' },
-        { unidadePims: 'NAO EXISTE', arquivo: 'soja-26-27/NAO_EXISTE.geojson' },
-      ],
-    },
-  ],
-};
-
-const ARQUIVOS: Record<string, unknown> = {
-  './dados/seed/seed.json': SEED,
-  './dados/seed/base/SIRIEMA.geojson': colecao([
-    feicao(0, { codigo: '007', codigoBruto: '007', nome: '007', setor: 'SIRIEMA' }),
-    feicao(1, { codigo: '039B', codigoBruto: '39B', nome: '39B', setor: 'SÃO MIGUEL' }),
-  ]),
-  './dados/seed/base/GLOBO.geojson': colecao([
-    feicao(2, { codigo: 'P11', codigoBruto: 'P11', nome: 'P11', setor: null }),
-    feicao(3, { codigo: '', codigoBruto: '', nome: 'Talhão 1', setor: null }),
-  ]),
-  './dados/seed/soja-26-27/SIRIEMA.geojson': colecao([
-    feicao(0, { codigo: '007', codigoBruto: '007' }),
-    feicao(1, { codigo: '018A', codigoBruto: '018A' }),
-    feicao(5, { codigo: '', codigoBruto: '' }),
-  ]),
-  './dados/seed/soja-26-27/NAO_EXISTE.geojson': colecao([feicao(9, { codigo: '001', codigoBruto: '001' })]),
-};
-
+/** fetch falso servindo ARQUIVOS em ./dados/seed/ (a pasta padrão do leitorHttp). */
 function fetchFalso(arquivos: Record<string, unknown> = ARQUIVOS): typeof fetch {
-  return (async (url: string) =>
-    url in arquivos ? new Response(JSON.stringify(arquivos[url]), { status: 200 }) : new Response('não encontrado', { status: 404 })) as unknown as typeof fetch;
+  return (async (url: string) => {
+    const caminho = url.replace(/^\.\/dados\/seed\//, '');
+    return caminho in arquivos ? new Response(JSON.stringify(arquivos[caminho]), { status: 200 }) : new Response('não encontrado', { status: 404 });
+  }) as unknown as typeof fetch;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -76,14 +35,15 @@ describe('carregarSeed', () => {
     const repo = repoNovo();
     expect(await seedJaCarregado(repo)).toBe(false);
 
-    const r = await carregarSeed(repo, fetchFalso());
+    const r = await carregarSeed(repo, leitorFalso());
 
-    expect(r).toEqual({ fazendas: 2, talhoes: 4, areas: 3 });
+    // modo local: nenhuma fazenda do COA WEB para ligar
+    expect(r).toEqual({ fazendas: 2, talhoes: 4, areas: 3, ligadas: 0, semVinculo: ['Siriema', 'Globo'] });
     expect(await seedJaCarregado(repo)).toBe(true);
     const fazendas = await repo.listarFazendas();
-    expect(fazendas.map((f) => [f.nome, f.unidadePims, f.campoCodigo, f.campoNome, f.campoSetor])).toEqual([
-      ['Globo', 'GLOBO', 'codigo', 'nome', null],
-      ['Siriema', 'SIRIEMA', 'codigo', 'nome', 'setor'],
+    expect(fazendas.map((f) => [f.nome, f.unidadePims, f.campoCodigo, f.campoNome, f.campoSetor, f.coaFazendaId])).toEqual([
+      ['Globo', 'GLOBO', 'codigo', 'nome', null, null],
+      ['Siriema', 'SIRIEMA', 'codigo', 'nome', 'setor', null],
     ]);
     const siriema = fazendas.find((f) => f.unidadePims === 'SIRIEMA')!;
     expect(siriema.id).toBe(idDeterministico('seed:fazenda:SIRIEMA'));
@@ -124,9 +84,9 @@ describe('carregarSeed', () => {
 
   it('é idempotente: rodar duas vezes não duplica nada', async () => {
     const repo = repoNovo();
-    await carregarSeed(repo, fetchFalso());
+    await carregarSeed(repo, leitorFalso());
     const antes = await repo.exportarBackup();
-    await carregarSeed(repo, fetchFalso());
+    await carregarSeed(repo, leitorFalso());
     const depois = await repo.exportarBackup();
     expect(depois.fazendas.map((f) => f.id).sort()).toEqual(antes.fazendas.map((f) => f.id).sort());
     expect(depois.talhoes).toHaveLength(4);
@@ -136,7 +96,7 @@ describe('carregarSeed', () => {
 
   it('não apaga dados do usuário: mantém nome da fazenda/talhão renomeados e o plantio marcado', async () => {
     const repo = repoNovo();
-    await carregarSeed(repo, fetchFalso());
+    await carregarSeed(repo, leitorFalso());
     const siriema = (await repo.listarFazendas()).find((f) => f.unidadePims === 'SIRIEMA')!;
     const [safra] = await repo.listarSafras();
     const t007 = (await repo.obterTalhoes(siriema.id)).find((t) => t.codigo === '007')!;
@@ -145,10 +105,11 @@ describe('carregarSeed', () => {
     await repo.salvarPlantios(safra.id, siriema.id, [plantio]);
     await repo.salvarSafra({ ...safra, nome: 'Soja 2026/2027' });
 
-    await carregarSeed(repo, fetchFalso());
+    const r = await carregarSeed(repo, leitorFalso());
 
     const f = (await repo.listarFazendas()).find((x) => x.id === siriema.id)!;
     expect(f.nome).toBe('Siriema + São Miguel');
+    expect(r.semVinculo).toEqual(['Siriema + São Miguel', 'Globo']); // o nome que o usuário vê
     expect((await repo.obterTalhoes(siriema.id)).find((t) => t.id === t007.id)?.nome).toBe('Sete');
     expect(await repo.listarPlantios(safra.id)).toEqual([plantio]);
     expect((await repo.listarSafras()).map((s) => s.nome)).toEqual(['Soja 2026/2027']);
@@ -160,7 +121,7 @@ describe('carregarSeed', () => {
     await repo.salvarFazenda(minha, [{ id: 'meu-talhao', fazendaId: 'minha-faz', nome: 'T1', setor: null, areaHa: 1, geom: quadrado(0), atributos: {}, codigo: null }]);
     await repo.salvarSafra({ id: 'minha-safra', nome: 'SOJA 26/27', cultura: 'SOJA', anoSafra: '26/27', inicio: '2026-09-15', fim: '2027-03-31', nomePims: null });
 
-    const r = await carregarSeed(repo, fetchFalso());
+    const r = await carregarSeed(repo, leitorFalso());
 
     expect(r.fazendas).toBe(2);
     const fazendas = await repo.listarFazendas();
@@ -173,31 +134,29 @@ describe('carregarSeed', () => {
     expect(await repo.listarAreasCultura('minha-safra', 'minha-faz')).toHaveLength(3);
   });
 
-  it('seed.json ausente → erro em português', async () => {
-    await expect(carregarSeed(repoNovo(), fetchFalso({}))).rejects.toThrow(/cadastro padrão/i);
+  it('avisa o andamento (leitura, cada unidade e as áreas da cultura)', async () => {
+    const etapas: string[] = [];
+    await carregarSeed(repoNovo(), leitorFalso(), { aoAvancar: (t) => etapas.push(t) });
+    expect(etapas).toEqual([
+      'Lendo os arquivos do cadastro padrão…',
+      'Gravando Siriema (1 de 2)…',
+      'Gravando Globo (2 de 2)…',
+      'Gravando as áreas da cultura da SOJA 26/27…',
+    ]);
   });
 
-  it('servidor que não responde: desiste no tempo limite com mensagem em português e cancela o fetch', async () => {
-    let sinal: AbortSignal | undefined;
-    const trava = ((_url: string, init?: RequestInit) => {
-      sinal = init?.signal ?? undefined;
-      return new Promise<Response>(() => undefined); // nunca responde (nem respeita o abort)
-    }) as unknown as typeof fetch;
-    await expect(carregarSeed(repoNovo(), trava, { timeoutMs: 20 })).rejects.toThrow(/Tempo esgotado ao ler o cadastro padrão \(seed\.json\)/);
-    expect(sinal?.aborted).toBe(true);
+  it('seed.json sem fazendas/safras → erro em português', async () => {
+    await expect(carregarSeed(repoNovo(), leitorFalso({ 'seed.json': { versao: 1 } }))).rejects.toThrow(/cadastro padrão.*seed\.json/i);
   });
 
-  it('corpo que trava depois do cabeçalho também cai no tempo limite', async () => {
-    const corpoTrava = (async () => ({ ok: true, status: 200, json: () => new Promise(() => undefined) }) as unknown as Response) as unknown as typeof fetch;
-    await expect(carregarSeed(repoNovo(), corpoTrava, { timeoutMs: 20 })).rejects.toThrow(/Tempo esgotado/);
+  it('arquivo que não é JSON → erro em português com o caminho', async () => {
+    const ler = async (c: string) => (c === 'seed.json' ? '{ quebrado' : '');
+    await expect(carregarSeed(repoNovo(), ler)).rejects.toThrow(/seed\.json.*cadastro padrão|cadastro padrão.*seed\.json/i);
   });
 
   const SEED_REAL = 'public/dados/seed/seed.json';
   it.skipIf(!existsSync(SEED_REAL))('carrega o seed real de public/dados/seed', async () => {
-    const lerPublico = (async (url: string) => {
-      const caminho = `public/${url.replace(/^\.\//, '')}`;
-      return existsSync(caminho) ? new Response(readFileSync(caminho, 'utf8'), { status: 200 }) : new Response('', { status: 404 });
-    }) as unknown as typeof fetch;
+    const lerPublico = (caminho: string) => readFile(`public/dados/seed/${caminho}`, 'utf8');
     const seed = JSON.parse(readFileSync(SEED_REAL, 'utf8'));
     const contar = (arq: string) => JSON.parse(readFileSync(`public/dados/seed/${arq}`, 'utf8')).features.length as number;
     const talhoesEsperados = seed.fazendas.reduce((n: number, f: { arquivoBase: string }) => n + contar(f.arquivoBase), 0);
@@ -206,7 +165,7 @@ describe('carregarSeed', () => {
     const repo = repoNovo();
     const r = await carregarSeed(repo, lerPublico);
 
-    expect(r).toEqual({ fazendas: seed.fazendas.length, talhoes: talhoesEsperados, areas: areasEsperadas });
+    expect(r).toMatchObject({ fazendas: seed.fazendas.length, talhoes: talhoesEsperados, areas: areasEsperadas, ligadas: 0 });
     const b = await repo.exportarBackup();
     expect(b.talhoes).toHaveLength(talhoesEsperados);
     expect(b.areasCultura).toHaveLength(areasEsperadas);
@@ -214,4 +173,41 @@ describe('carregarSeed', () => {
     await carregarSeed(repo, lerPublico);
     expect((await repo.exportarBackup()).talhoes).toHaveLength(talhoesEsperados);
   }, 60_000); // ~8 MB de GeoJSON, duas cargas no fake-indexeddb
+});
+
+describe('leitorHttp', () => {
+  it('lê da pasta ./dados/seed/ pelo caminho relativo (padrão do carregarSeed)', async () => {
+    const urls: string[] = [];
+    const f = (async (url: string) => {
+      urls.push(url);
+      return new Response('{"ok":true}', { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(await leitorHttp(undefined, { fetchImpl: f })('base/SM3.geojson')).toBe('{"ok":true}');
+    expect(await leitorHttp('/outra', { fetchImpl: f })('seed.json')).toBe('{"ok":true}');
+    expect(urls).toEqual(['./dados/seed/base/SM3.geojson', '/outra/seed.json']);
+  });
+
+  it('carregarSeed pelo leitorHttp cadastra o mesmo que pelo leitor em memória', async () => {
+    const r = await carregarSeed(repoNovo(), leitorHttp(undefined, { fetchImpl: fetchFalso() }));
+    expect(r).toMatchObject({ fazendas: 2, talhoes: 4, areas: 3 });
+  });
+
+  it('seed.json ausente (HTTP 404) → erro em português', async () => {
+    await expect(carregarSeed(repoNovo(), leitorHttp(undefined, { fetchImpl: fetchFalso({}) }))).rejects.toThrow(/cadastro padrão \(seed\.json\): HTTP 404/i);
+  });
+
+  it('servidor que não responde: desiste no tempo limite com mensagem em português e cancela o fetch', async () => {
+    let sinal: AbortSignal | undefined;
+    const trava = ((_url: string, init?: RequestInit) => {
+      sinal = init?.signal ?? undefined;
+      return new Promise<Response>(() => undefined); // nunca responde (nem respeita o abort)
+    }) as unknown as typeof fetch;
+    await expect(leitorHttp(undefined, { fetchImpl: trava, timeoutMs: 20 })('seed.json')).rejects.toThrow(/Tempo esgotado ao ler o cadastro padrão \(seed\.json\)/);
+    expect(sinal?.aborted).toBe(true);
+  });
+
+  it('corpo que trava depois do cabeçalho também cai no tempo limite', async () => {
+    const corpoTrava = (async () => ({ ok: true, status: 200, text: () => new Promise(() => undefined) }) as unknown as Response) as unknown as typeof fetch;
+    await expect(leitorHttp(undefined, { fetchImpl: corpoTrava, timeoutMs: 20 })('seed.json')).rejects.toThrow(/Tempo esgotado/);
+  });
 });

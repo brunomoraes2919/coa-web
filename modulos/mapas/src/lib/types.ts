@@ -55,6 +55,24 @@ export interface FazendaCoa {
   nome: string;
 }
 
+/**
+ * Lê um arquivo do cadastro padrão pelo caminho relativo à pasta do seed (ex.: 'seed.json',
+ * 'base/SM3.geojson') e devolve o texto; arquivo que falta → Error em português com o caminho.
+ */
+export type LeitorSeed = (caminho: string) => Promise<string>;
+
+/** Resultado de carregarSeed (cadastro padrão). */
+export interface ResultadoSeed {
+  /** unidades do cadastro padrão gravadas */
+  fazendas: number;
+  talhoes: number;
+  areas: number;
+  /** unidades que ficaram ligadas a uma fazenda do COA WEB (ligadas agora ou que já estavam) */
+  ligadas: number;
+  /** nomes (como aparecem na tela) das unidades sem fazenda do COA WEB: só administradores veem */
+  semVinculo: string[];
+}
+
 /** Fazenda escolhida no topo do menu do COA WEB (#sb-fazenda); id null = nenhuma/todas. */
 export interface FazendaCoaSelecionada {
   id: number | null;

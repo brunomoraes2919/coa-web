@@ -42,6 +42,13 @@ categoria **MAPAS**. O COA WEB mostra o módulo num `iframe` da mesma origem
 - **Perfis** (`perfis.perfil` do COA WEB): o colaborador não vê os cadastros (Fazendas e Safras; se abrir
   o endereço de um deles, volta para os mapas com o aviso "Somente administradores…") nem os links para
   eles dentro do editor. Quem garante o acesso é o RLS do banco.
+- **Cadastro padrão no COA WEB**: a publicação não leva `public/dados/`. Em `modulos/mapas`,
+  `npm run pacote-seed` gera `cadastro-padrao-mapas.zip` (seed.json + GeoJSONs; dados da Locks, nunca vai
+  para o git nem para a publicação); o admin usa **Fazendas → Importar cadastro padrão** e escolhe o zip.
+  Cada unidade é ligada à fazenda do COA WEB de mesmo nome (sem acento e sem diferença de maiúsculas:
+  `Três Flechas` ↔ `Tres Flechas`); o aviso final lista as que ficaram sem vínculo (só administradores as
+  veem). Na tela da fazenda, o campo **Fazenda no COA WEB** ajusta o vínculo à mão; importar de novo não
+  desfaz esse ajuste.
 
 ## Como testar agora (no seu computador)
 

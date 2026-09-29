@@ -4,6 +4,7 @@ import { repo } from '../data/index';
 import type { Fazenda } from '../lib/types';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
+import { useImportarCadastroPadrao } from '../components/ImportarCadastroPadrao';
 
 interface Linha {
   fazenda: Fazenda;
@@ -23,6 +24,9 @@ export default function Fazendas() {
   const [linhas, setLinhas] = useState<Linha[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>((loc.state as { msg?: string } | null)?.msg ?? null);
+  /** muda ao fim de uma importação do cadastro padrão: recarrega a lista */
+  const [versao, setVersao] = useState(0);
+  const importacao = useImportarCadastroPadrao(() => setVersao((v) => v + 1));
 
   // limpa a mensagem do histórico para não reaparecer ao recarregar
   useEffect(() => {
@@ -42,7 +46,10 @@ export default function Fazendas() {
           }),
         );
         lista.sort((a, b) => a.fazenda.nome.localeCompare(b.fazenda.nome, 'pt-BR'));
-        if (ativo) setLinhas(lista);
+        if (ativo) {
+          setErro(null);
+          setLinhas(lista);
+        }
       } catch (e) {
         if (ativo) {
           setErro(`Não foi possível carregar as fazendas: ${mensagemDeErro(e)}`);
@@ -53,7 +60,7 @@ export default function Fazendas() {
     return () => {
       ativo = false;
     };
-  }, []);
+  }, [versao]);
 
   return (
     <div className="pagina">
@@ -62,9 +69,12 @@ export default function Fazendas() {
           <h1>Fazendas</h1>
           <p className="subtitulo">Shapes dos talhões usados nos mapas de chuva.</p>
         </div>
-        <Link to="/fazendas/nova" className="botao botao-primario">
-          + Cadastrar fazenda
-        </Link>
+        <div className="linha">
+          {importacao.botao}
+          <Link to="/fazendas/nova" className="botao botao-primario">
+            + Cadastrar fazenda
+          </Link>
+        </div>
       </div>
 
       {msg && (
@@ -72,6 +82,7 @@ export default function Fazendas() {
           {msg}
         </Aviso>
       )}
+      {importacao.aviso}
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
 
       <div className="cartao">
@@ -81,6 +92,7 @@ export default function Fazendas() {
           !erro && (
             <div className="vazio">
               <p>Nenhuma fazenda cadastrada ainda.</p>
+              <p className="suave">Para as unidades do COA, use “Importar cadastro padrão” com o arquivo cadastro-padrao-mapas.zip.</p>
               <Link to="/fazendas/nova" className="botao botao-primario">
                 Cadastrar a primeira fazenda
               </Link>

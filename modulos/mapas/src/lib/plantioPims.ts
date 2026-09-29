@@ -3,7 +3,7 @@
  * scripts/sincronizar-plantio.mjs) ou montagem a partir das linhas de mapas_plantio_pims (Supabase),
  * e casamento com os talhões/áreas da cultura pelo par (fazenda.unidadePims, código normalizado).
  */
-import { normalizarCodigo } from './codigoTalhao';
+import { nomeComparavel, normalizarCodigo } from './codigoTalhao';
 import type {
   AreaCultura,
   Fazenda,
@@ -19,16 +19,6 @@ import type {
 const URL_PLANTIO = './dados/plantio.json';
 /** Mesma fonte que scripts/sincronizar-plantio.mjs grava no plantio.json. */
 const FONTE_PIMS = 'PIMS via Agrovex';
-
-/** Nome de safra/unidade para comparação: maiúsculas, sem acento, sem espaços nas pontas e repetidos. */
-function chaveNome(s: string | null | undefined): string {
-  return (s ?? '')
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toUpperCase()
-    .trim()
-    .replace(/\s+/g, ' ');
-}
 
 const STATUS: readonly StatusPlantio[] = ['plantado', 'plantando', 'a_plantar'];
 
@@ -137,11 +127,11 @@ export function casarPlantio(
   areas: AreaCultura[],
 ): PlantioCasado | null {
   if (!fazenda.unidadePims) return null;
-  const nomeSafra = chaveNome(safra.nomePims ?? safra.nome);
-  const safraPims = arq.safras.find((s) => chaveNome(s.nome) === nomeSafra);
+  const nomeSafra = nomeComparavel(safra.nomePims ?? safra.nome);
+  const safraPims = arq.safras.find((s) => nomeComparavel(s.nome) === nomeSafra);
   if (!safraPims) return null;
-  const unidade = chaveNome(fazenda.unidadePims);
-  const unidadePims = safraPims.unidades.find((u) => chaveNome(u.unidade) === unidade);
+  const unidade = nomeComparavel(fazenda.unidadePims);
+  const unidadePims = safraPims.unidades.find((u) => nomeComparavel(u.unidade) === unidade);
   if (!unidadePims) return null;
 
   const porCodigo = new Map<string, PlantioPimsTalhao>();

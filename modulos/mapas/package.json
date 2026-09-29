@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit -p .",
     "paletas": "node scripts/gerar-paletas.mjs",
     "seed": "node scripts/gerar-seed.mjs",
+    "pacote-seed": "node scripts/pacote-seed.mjs",
     "plantio": "node scripts/sincronizar-plantio.mjs",
     "validar-grass": "vitest run tests/validacao-grass.test.ts"
   },
@@ -21,6 +22,7 @@
     "@supabase/supabase-js": "^2.117.2",
     "@tmcw/togeojson": "^7.1.2",
     "@turf/area": "^7.4.0",
+    "fflate": "^0.8.3",
     "idb": "^8.0.3",
     "leaflet": "^1.9.4",
     "polylabel": "^2.1.0",

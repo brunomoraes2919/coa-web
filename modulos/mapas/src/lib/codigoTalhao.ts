@@ -16,6 +16,17 @@ function semAcento(s: string): string {
   return s.normalize('NFD').replace(/\p{Diacritic}/gu, '');
 }
 
+/**
+ * Nome para comparação (unidade/safra do PIMS, fazenda do COA WEB): sem acento, maiúsculas, espaços
+ * simples e sem espaços nas pontas (`Três Flechas` ↔ `Tres Flechas` → `TRES FLECHAS`). null → ''.
+ */
+export function nomeComparavel(s: string | null | undefined): string {
+  return semAcento(s ?? '')
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 function tresDigitos(numero: string): string {
   return numero.replace(/^0+(?=\d)/, '').padStart(3, '0');
 }

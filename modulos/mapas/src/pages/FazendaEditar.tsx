@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { repo } from '../data/index';
-import type { Fazenda, Talhao } from '../lib/types';
+import type { Fazenda, FazendaCoa, Talhao } from '../lib/types';
 import { normalizarCodigo } from '../lib/codigoTalhao';
 import MapaLeaflet from '../components/MapaLeaflet';
 import CamposPims from '../components/CamposPims';
+import CampoFazendaCoa from '../components/CampoFazendaCoa';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
 import Modal from '../components/Modal';
@@ -27,6 +28,10 @@ export default function FazendaEditar() {
   const [campoSetor, setCampoSetor] = useState<string | null>(null);
   const [campoCodigo, setCampoCodigo] = useState<string | null>(null);
   const [unidadePims, setUnidadePims] = useState<string | null>(null);
+  const [coaFazendaId, setCoaFazendaId] = useState<number | null>(null);
+  /** fazendas do COA WEB para o vínculo (modo local: vazia → campo escondido) */
+  const [fazendasCoa, setFazendasCoa] = useState<FazendaCoa[]>([]);
+  const [erroCoa, setErroCoa] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [confirmarExclusao, setConfirmarExclusao] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
@@ -37,9 +42,17 @@ export default function FazendaEditar() {
     (async () => {
       try {
         const r = repo();
+        // a lista do COA WEB é só para o vínculo: se falhar, a tela abre assim mesmo (com aviso)
+        const coa = r.listarFazendasCoa().then(
+          (lista) => ({ lista, erro: null }),
+          (e: unknown) => ({ lista: [] as FazendaCoa[], erro: mensagemDeErro(e) }),
+        );
         const f = (await r.listarFazendas()).find((x) => x.id === id) ?? null;
         const ts = f ? await r.obterTalhoes(id) : [];
+        const { lista, erro: falhaCoa } = await coa;
         if (!ativo) return;
+        setFazendasCoa(lista);
+        setErroCoa(falhaCoa && `Não foi possível listar as fazendas do COA WEB (o vínculo não pode ser alterado agora): ${falhaCoa}`);
         setFazenda(f);
         setTalhoes(ts);
         setNomesSalvos(new Map(ts.map((t) => [t.id, t.nome])));
@@ -49,6 +62,7 @@ export default function FazendaEditar() {
           setCampoSetor(f.campoSetor);
           setCampoCodigo(f.campoCodigo);
           setUnidadePims(f.unidadePims);
+          setCoaFazendaId(f.coaFazendaId ?? null);
         }
       } catch (e) {
         if (ativo) setErro(`Não foi possível carregar a fazenda: ${mensagemDeErro(e)}`);
@@ -104,7 +118,7 @@ export default function FazendaEditar() {
     setSucesso(null);
     setSalvando(true);
     try {
-      const atualizada: Fazenda = { ...fazenda, nome: n, campoNome, campoSetor, campoCodigo, unidadePims: unidadePims?.trim() || null };
+      const atualizada: Fazenda = { ...fazenda, nome: n, campoNome, campoSetor, campoCodigo, unidadePims: unidadePims?.trim() || null, coaFazendaId };
       await repo().atualizarFazenda(atualizada, editados);
       // atualizarFazenda só grava nome/setor dos talhões: o código vai por upsert (mesma geometria, plantios preservados)
       const antes = new Map(talhoes.map((t) => [t.id, t.codigo]));
@@ -156,7 +170,8 @@ export default function FazendaEditar() {
     campoNome !== fazenda.campoNome ||
     campoSetor !== fazenda.campoSetor ||
     campoCodigo !== fazenda.campoCodigo ||
-    (unidadePims?.trim() || null) !== fazenda.unidadePims;
+    (unidadePims?.trim() || null) !== fazenda.unidadePims ||
+    coaFazendaId !== (fazenda.coaFazendaId ?? null);
 
   return (
     <div className="pagina">
@@ -198,6 +213,12 @@ export default function FazendaEditar() {
               <span>Nome da fazenda</span>
               <input type="text" value={nome} onChange={(e) => setNome(e.target.value)} />
             </label>
+            <CampoFazendaCoa fazendas={fazendasCoa} valor={coaFazendaId} onValor={setCoaFazendaId} />
+            {erroCoa && (
+              <Aviso tipo="alerta" onFechar={() => setErroCoa(null)}>
+                {erroCoa}
+              </Aviso>
+            )}
             <label className="campo">
               <span>Coluna com o nome do talhão (rótulo)</span>
               <select value={campoNome} onChange={(e) => setCampoNome(e.target.value)}>

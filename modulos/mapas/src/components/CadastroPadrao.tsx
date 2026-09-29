@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { repo } from '../data/index';
 import { carregarSeed } from '../lib/seed';
 import Aviso, { mensagemDeErro, type TipoAviso } from './Aviso';
+import { resumoCadastroPadrao } from './ImportarCadastroPadrao';
 import Modal from './Modal';
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 /**
  * Configurações → "Recarregar cadastro padrão" (local) / "Importar cadastro padrão" (Supabase): as sete
  * unidades do COA, a safra SOJA 26/27 e as áreas de soja. Faz upsert: não apaga dados nem plantios.
+ * Lê de public/dados/seed/ (só no desenvolvimento); no COA WEB o admin importa o zip em Fazendas.
  */
 export default function CadastroPadrao({ modo, acessoDados }: Props) {
   const [confirmar, setConfirmar] = useState(false);
@@ -24,8 +26,8 @@ export default function CadastroPadrao({ modo, acessoDados }: Props) {
     setRodando(true);
     setMsg(null);
     try {
-      const r = await carregarSeed(repo());
-      setMsg({ tipo: 'sucesso', texto: `Cadastro padrão carregado: ${r.fazendas} unidades, ${r.talhoes} talhões e ${r.areas} áreas da cultura.` });
+      const r = repo();
+      setMsg(resumoCadastroPadrao(await carregarSeed(r), r.modo));
     } catch (e) {
       setMsg({ tipo: 'erro', texto: `Não foi possível carregar o cadastro padrão: ${mensagemDeErro(e)}` });
     } finally {

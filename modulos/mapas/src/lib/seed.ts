@@ -1,17 +1,21 @@
 /**
- * Cadastro padrão do COA (public/dados/seed/, gerado por scripts/gerar-seed.mjs): as unidades com os
- * talhões (limite base), a safra SOJA 26/27 e as áreas da cultura. Os ids são derivados de chaves
- * estáveis (`seed:fazenda:<UNIDADE>`, `seed:talhao:<UNIDADE>:<CÓDIGO>`, `seed:safra:<NOME PIMS>`,
+ * Cadastro padrão do COA (seed.json + GeoJSONs, gerados por scripts/gerar-seed.mjs): as unidades com os
+ * talhões (limite base), a safra SOJA 26/27 e as áreas da cultura. Lido pela rede (public/dados/seed/,
+ * desenvolvimento) ou de um zip escolhido pelo admin (leitores em seedLeitores.ts). Os ids são derivados
+ * de chaves estáveis (`seed:fazenda:<UNIDADE>`, `seed:talhao:<UNIDADE>:<CÓDIGO>`, `seed:safra:<NOME PIMS>`,
  * `seed:area:<NOME PIMS>:<UNIDADE>:<CÓDIGO>`; sem código → `#<índice da feição>`), então recarregar
- * o seed faz upsert em vez de duplicar.
+ * o seed faz upsert em vez de duplicar. Cada unidade é ligada à fazenda do COA WEB de mesmo nome.
  */
 import turfArea from '@turf/area';
 import type { Feature, FeatureCollection } from 'geojson';
 import type { Repositorio } from '../data/repo';
-import { normalizarCodigo } from './codigoTalhao';
-import type { AreaCultura, Fazenda, Geometry, Safra, Talhao } from './types';
+import { nomeComparavel, normalizarCodigo } from './codigoTalhao';
+import { leitorHttp } from './seedLeitores';
+import type { AreaCultura, Fazenda, FazendaCoa, Geometry, LeitorSeed, ResultadoSeed, Safra, Talhao } from './types';
 
-const PASTA = './dados/seed/';
+export { nomeComparavel } from './codigoTalhao';
+export { leitorDeZip, leitorHttp, PASTA_SEED, TEMPO_LIMITE_SEED_MS } from './seedLeitores';
+export type { LeitorSeed, ResultadoSeed } from './types';
 
 interface SeedFazenda {
   nome: string;
@@ -19,7 +23,7 @@ interface SeedFazenda {
   campoNome: string;
   campoCodigo: string | null;
   campoSetor: string | null;
-  /** relativo a dados/seed/ */
+  /** relativo à pasta do seed */
   arquivoBase: string;
 }
 
@@ -33,7 +37,7 @@ interface SeedSafra {
   areasCultura: { unidadePims: string; arquivo: string }[];
 }
 
-/** public/dados/seed/seed.json */
+/** seed.json */
 interface SeedArquivo {
   versao: 1;
   geradoEm: string;
@@ -58,50 +62,13 @@ export function idDeterministico(chave: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variante}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
-/** Nome para comparação: maiúsculas, sem acento, espaços simples. */
-function chave(s: string | null | undefined): string {
-  return (s ?? '')
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toUpperCase()
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-/** Tempo máximo para baixar cada arquivo do cadastro padrão (o maior tem ~8 MB). */
-export const TEMPO_LIMITE_SEED_MS = 60_000;
-
-/**
- * Baixa e lê um JSON do cadastro padrão. Desiste depois de `timeoutMs` (cabeçalho + corpo), cancelando
- * o fetch, para a tela não ficar presa se o servidor ou a rede travarem.
- */
-async function lerJson<T>(fetchImpl: typeof fetch, arquivo: string, timeoutMs: number): Promise<T> {
-  const controle = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const esgotou = new Promise<never>((_, rejeitar) => {
-    timer = setTimeout(() => {
-      controle.abort();
-      rejeitar(
-        new Error(
-          `Tempo esgotado ao ler o cadastro padrão (${arquivo}) depois de ${Math.round(timeoutMs / 1000)} s. Verifique a internet e tente de novo.`,
-        ),
-      );
-    }, timeoutMs);
-  });
-  const ler = async (): Promise<T> => {
-    let resp: Response;
-    try {
-      resp = await fetchImpl(PASTA + arquivo, { signal: controle.signal });
-    } catch (e) {
-      throw new Error(`Não foi possível ler o cadastro padrão (${arquivo}): ${(e as Error).message}`);
-    }
-    if (!resp.ok) throw new Error(`Não foi possível ler o cadastro padrão (${arquivo}): HTTP ${resp.status}`);
-    return (await resp.json()) as T;
-  };
+/** Lê e interpreta um JSON do cadastro padrão (ignora o BOM de arquivos salvos no Windows). */
+async function lerJson<T>(ler: LeitorSeed, caminho: string): Promise<T> {
+  const texto = await ler(caminho);
   try {
-    return await Promise.race([ler(), esgotou]);
-  } finally {
-    clearTimeout(timer);
+    return JSON.parse(texto.replace(/^﻿/, '')) as T;
+  } catch {
+    throw new Error(`O arquivo ${caminho} do cadastro padrão não é um JSON válido.`);
   }
 }
 
@@ -129,7 +96,7 @@ function geradorDeIds(prefixo: string): (codigo: string, indice: number) => stri
 }
 
 function talhoesDoSeed(sf: SeedFazenda, fazendaId: string, fc: FeatureCollection): Talhao[] {
-  const unidade = chave(sf.unidadePims);
+  const unidade = nomeComparavel(sf.unidadePims);
   const idPara = geradorDeIds(`seed:talhao:${unidade}`);
   return feicoesValidas(fc).map(({ f, indice }) => {
     const props = f.properties ?? {};
@@ -155,25 +122,48 @@ function colunasDe(fc: FeatureCollection): string[] {
 }
 
 /**
+ * Fazendas do COA WEB por nome comparável. Nome repetido (ambíguo) fica de fora: o vínculo define quem
+ * vê a fazenda, então é melhor deixar sem vínculo (o admin escolhe à mão) do que ligar à fazenda errada.
+ */
+function coaPorNome(lista: FazendaCoa[]): Map<string, number> {
+  const ids = new Map<string, number[]>();
+  for (const f of lista) {
+    const k = nomeComparavel(f.nome);
+    if (k) ids.set(k, [...(ids.get(k) ?? []), f.id]);
+  }
+  return new Map([...ids].filter(([, v]) => v.length === 1).map(([k, v]) => [k, v[0]]));
+}
+
+interface FazendaGravada {
+  id: string;
+  talhoes: number;
+  /** nome que ficou gravado (o do usuário, se ele renomeou) */
+  nome: string;
+  coaFazendaId: number | null;
+}
+
+/**
  * Grava a fazenda do seed. Existente (mesma unidade PIMS ou, sem unidade, mesmo nome): mantém id e
  * nome. Se ela já tem talhões próprios (nenhum com id do seed), mantém esses talhões e só vincula a
  * unidade PIMS; senão, faz upsert dos talhões do seed preservando nome/setor que o usuário editou.
- * Nunca apaga talhões nem plantios. Retorna o id da fazenda e quantos talhões foram gravados.
+ * Vínculo com o COA WEB: o que a fazenda já tem prevalece (ajuste manual); sem vínculo, usa `coaId`.
+ * Nunca apaga talhões nem plantios.
  */
-async function gravarFazenda(repo: Repositorio, sf: SeedFazenda, fc: FeatureCollection, existentes: Fazenda[]): Promise<{ id: string; talhoes: number }> {
-  const unidade = chave(sf.unidadePims);
+async function gravarFazenda(repo: Repositorio, sf: SeedFazenda, fc: FeatureCollection, existentes: Fazenda[], coaId: number | null): Promise<FazendaGravada> {
+  const unidade = nomeComparavel(sf.unidadePims);
   const existente =
-    existentes.find((f) => chave(f.unidadePims) === unidade) ??
-    existentes.find((f) => !f.unidadePims && (chave(f.nome) === chave(sf.nome) || chave(f.nome) === unidade));
+    existentes.find((f) => nomeComparavel(f.unidadePims) === unidade) ??
+    existentes.find((f) => !f.unidadePims && (nomeComparavel(f.nome) === nomeComparavel(sf.nome) || nomeComparavel(f.nome) === unidade));
   const id = existente?.id ?? idDeterministico(`seed:fazenda:${unidade}`);
+  const coaFazendaId = existente?.coaFazendaId ?? coaId;
   const doSeed = talhoesDoSeed(sf, id, fc);
   const atuais = existente ? await repo.obterTalhoes(id) : [];
   const idsSeed = new Set(doSeed.map((t) => t.id));
   const talhoesDoUsuario = atuais.length > 0 && !atuais.some((t) => idsSeed.has(t.id));
 
   if (existente && talhoesDoUsuario) {
-    await repo.atualizarFazenda({ ...existente, unidadePims: existente.unidadePims ?? sf.unidadePims }, []);
-    return { id, talhoes: 0 };
+    await repo.atualizarFazenda({ ...existente, unidadePims: existente.unidadePims ?? sf.unidadePims, coaFazendaId }, []);
+    return { id, talhoes: 0, nome: existente.nome, coaFazendaId };
   }
   const fazenda: Fazenda = {
     id,
@@ -184,8 +174,7 @@ async function gravarFazenda(repo: Repositorio, sf: SeedFazenda, fc: FeatureColl
     criadoEm: existente?.criadoEm ?? new Date().toISOString(),
     unidadePims: sf.unidadePims,
     campoCodigo: sf.campoCodigo,
-    // mantém o vínculo com a fazenda do COA WEB que a fazenda já tinha
-    coaFazendaId: existente?.coaFazendaId ?? null,
+    coaFazendaId,
   };
   await repo.atualizarFazenda(fazenda, []);
   const porId = new Map(atuais.map((t) => [t.id, t]));
@@ -194,14 +183,15 @@ async function gravarFazenda(repo: Repositorio, sf: SeedFazenda, fc: FeatureColl
     return atual ? { ...t, nome: atual.nome, setor: atual.setor } : t;
   });
   await repo.upsertTalhoes(id, talhoes);
-  return { id, talhoes: talhoes.length };
+  return { id, talhoes: talhoes.length, nome: fazenda.nome, coaFazendaId };
 }
 
 /** Safra existente com o mesmo nome no PIMS (ou, sem nomePims, com o mesmo nome) é reaproveitada. */
 async function gravarSafra(repo: Repositorio, ss: SeedSafra, existentes: Safra[]): Promise<Safra> {
   const nomePims = ss.nomePims ?? ss.nome;
-  const k = chave(nomePims);
-  const existente = existentes.find((s) => chave(s.nomePims) === k) ?? existentes.find((s) => !s.nomePims && chave(s.nome) === k);
+  const k = nomeComparavel(nomePims);
+  const existente =
+    existentes.find((s) => nomeComparavel(s.nomePims) === k) ?? existentes.find((s) => !s.nomePims && nomeComparavel(s.nome) === k);
   const safra: Safra = existente
     ? { ...existente, nomePims: existente.nomePims ?? nomePims }
     : { id: idDeterministico(`seed:safra:${nomePims}`), nome: ss.nome, cultura: ss.cultura, anoSafra: ss.anoSafra, inicio: ss.inicio, fim: ss.fim, nomePims };
@@ -210,52 +200,68 @@ async function gravarSafra(repo: Repositorio, ss: SeedSafra, existentes: Safra[]
 }
 
 function areasDoSeed(nomePims: string, unidadePims: string, safraId: string, fazendaId: string, fc: FeatureCollection): AreaCultura[] {
-  const idPara = geradorDeIds(`seed:area:${nomePims}:${chave(unidadePims)}`);
+  const idPara = geradorDeIds(`seed:area:${nomePims}:${nomeComparavel(unidadePims)}`);
   return feicoesValidas(fc).map(({ f, indice }) => {
     const codigo = normalizarCodigo(texto(f.properties?.codigo));
     return { id: idPara(codigo, indice), safraId, fazendaId, codigo, areaHa: turfArea(f.geometry) / 10000, geom: f.geometry };
   });
 }
 
+export interface OpcoesSeed {
+  /** andamento para a tela (ex.: "Gravando Dourado (1 de 7)…") */
+  aoAvancar?: (texto: string) => void;
+}
+
 /**
  * Carrega (ou recarrega) o cadastro padrão sem apagar dados do usuário: upsert das fazendas pela
  * unidade PIMS (mantém o nome renomeado), upsert dos talhões pelo id determinístico (mantém os
  * plantios), upsert da safra pelo nome no PIMS e substituição das áreas da cultura por safra × fazenda.
- * Unidades das áreas da cultura sem fazenda no seed são ignoradas. Lança Error se faltar arquivo ou se
- * um arquivo não chegar em `timeoutMs` (padrão 60 s).
+ * Liga cada unidade à fazenda do COA WEB (`repo.listarFazendasCoa()`) pelo nome comparável, sem trocar
+ * um vínculo que a fazenda já tenha; modo local (lista vazia) → tudo sem vínculo. Unidades das áreas
+ * da cultura sem fazenda no seed são ignoradas. Lança Error (em português) se faltar arquivo, se um
+ * arquivo não for JSON ou se não der para listar as fazendas do COA WEB — nesses casos antes de gravar.
  */
-export async function carregarSeed(
-  repo: Repositorio,
-  fetchImpl: typeof fetch = (u, i) => fetch(u, i),
-  { timeoutMs = TEMPO_LIMITE_SEED_MS }: { timeoutMs?: number } = {},
-): Promise<{ fazendas: number; talhoes: number; areas: number }> {
-  const seed = await lerJson<SeedArquivo>(fetchImpl, 'seed.json', timeoutMs);
-  const bases = await Promise.all(seed.fazendas.map((f) => lerJson<FeatureCollection>(fetchImpl, f.arquivoBase, timeoutMs)));
+export async function carregarSeed(repo: Repositorio, ler: LeitorSeed = leitorHttp(), { aoAvancar }: OpcoesSeed = {}): Promise<ResultadoSeed> {
+  aoAvancar?.('Lendo os arquivos do cadastro padrão…');
+  const seed = await lerJson<SeedArquivo>(ler, 'seed.json');
+  if (!Array.isArray(seed?.fazendas) || !Array.isArray(seed?.safras)) {
+    throw new Error('Cadastro padrão inválido: o seed.json não tem a lista de fazendas e de safras.');
+  }
+  const bases = await Promise.all(seed.fazendas.map((f) => lerJson<FeatureCollection>(ler, f.arquivoBase)));
+  const coa = coaPorNome(await repo.listarFazendasCoa());
 
   const fazendasExistentes = await repo.listarFazendas();
   const idPorUnidade = new Map<string, string>();
   let talhoes = 0;
+  let ligadas = 0;
+  const semVinculo: string[] = [];
   for (let i = 0; i < seed.fazendas.length; i++) {
-    const r = await gravarFazenda(repo, seed.fazendas[i], bases[i], fazendasExistentes);
-    idPorUnidade.set(chave(seed.fazendas[i].unidadePims), r.id);
+    const sf = seed.fazendas[i];
+    aoAvancar?.(`Gravando ${sf.nome} (${i + 1} de ${seed.fazendas.length})…`);
+    const coaId = coa.get(nomeComparavel(sf.nome)) ?? coa.get(nomeComparavel(sf.unidadePims)) ?? null;
+    const r = await gravarFazenda(repo, sf, bases[i], fazendasExistentes, coaId);
+    idPorUnidade.set(nomeComparavel(sf.unidadePims), r.id);
     talhoes += r.talhoes;
+    if (r.coaFazendaId !== null) ligadas++;
+    else semVinculo.push(r.nome);
   }
 
   const safrasExistentes = await repo.listarSafras();
   let areas = 0;
   for (const ss of seed.safras) {
+    aoAvancar?.(`Gravando as áreas da cultura da ${ss.nome}…`);
     const safra = await gravarSafra(repo, ss, safrasExistentes);
     const nomePims = ss.nomePims ?? ss.nome;
-    const comFazenda = ss.areasCultura.filter((a) => idPorUnidade.has(chave(a.unidadePims)));
-    const colecoes = await Promise.all(comFazenda.map((a) => lerJson<FeatureCollection>(fetchImpl, a.arquivo, timeoutMs)));
+    const comFazenda = ss.areasCultura.filter((a) => idPorUnidade.has(nomeComparavel(a.unidadePims)));
+    const colecoes = await Promise.all(comFazenda.map((a) => lerJson<FeatureCollection>(ler, a.arquivo)));
     for (let i = 0; i < comFazenda.length; i++) {
-      const fazendaId = idPorUnidade.get(chave(comFazenda[i].unidadePims))!;
+      const fazendaId = idPorUnidade.get(nomeComparavel(comFazenda[i].unidadePims))!;
       const lista = areasDoSeed(nomePims, comFazenda[i].unidadePims, safra.id, fazendaId, colecoes[i]);
       await repo.salvarAreasCultura(safra.id, fazendaId, lista);
       areas += lista.length;
     }
   }
-  return { fazendas: seed.fazendas.length, talhoes, areas };
+  return { fazendas: seed.fazendas.length, talhoes, areas, ligadas, semVinculo };
 }
 
 /** true se já existe alguma fazenda vinculada a uma unidade do PIMS (seed carregado ou cadastro feito). */
