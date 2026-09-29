@@ -439,21 +439,28 @@ describe('gravarSupabase', () => {
     expect(chamadas).toHaveLength(1);
   });
 
-  it('erro no upsert traz status e corpo, nunca a chave', async () => {
-    const corpoErro = () => new Response(`negado: apikey ${JWT} inválida`, { status: 401 });
-    const { impl: implA } = fetchFalsoSupabase([corpoErro]);
-    await expect(gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: implA }))
-      .rejects.toThrow(/HTTP 401/);
+  it('erro no upsert traz status, código e mensagem do PostgREST — nunca a chave nem os detalhes da linha', async () => {
+    const texto = () => new Response(`negado: apikey ${JWT} inválida`, { status: 401 });
+    const { impl: implA } = fetchFalsoSupabase([texto]);
+    const erroA = await gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: implA }).catch((e: Error) => e);
+    expect(String(erroA)).toMatch(/HTTP 401/);
+    expect(String(erroA)).not.toContain(JWT);
+    expect(String(erroA)).not.toContain('negado'); // corpo que não é JSON não entra no erro
 
-    const { impl: implB } = fetchFalsoSupabase([corpoErro]);
-    try {
-      await gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: implB });
-      expect.unreachable();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      expect(msg).not.toContain(JWT);
-      expect(msg).toContain('negado');
-    }
+    const json = () =>
+      new Response(
+        JSON.stringify({ code: '23502', message: `null value in column "talhoes" (${JWT})`, details: 'Failing row contains (SOJA 26/27, SIRIEMA, ...)' }),
+        { status: 400 },
+      );
+    const { impl: implB } = fetchFalsoSupabase([json]);
+    const erroB = await gravarSupabase(ARQUIVO, { url: 'https://proj.supabase.co', chave: JWT, fetch: implB }).catch((e: Error) => e);
+    const msg = String(erroB);
+    expect(msg).toMatch(/HTTP 400/);
+    expect(msg).toContain('23502');
+    expect(msg).toContain('null value in column');
+    expect(msg).not.toContain(JWT);
+    expect(msg).not.toContain('SIRIEMA');
+    expect(msg).not.toContain('Failing row');
   });
 
   it('erro na limpeza (depois de um upsert ok) também não vaza a chave', async () => {

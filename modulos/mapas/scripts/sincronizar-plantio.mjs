@@ -280,9 +280,21 @@ function semChave(texto, chave) {
   return chave ? texto.split(chave).join('[REDACTED]') : texto;
 }
 
+/**
+ * Erro do PostgREST sem dados: só o código e a mensagem (o campo "details" pode trazer a linha recusada,
+ * com nomes de fazenda e talhões, e o log do GitHub Actions é público). Corpo que não é JSON → só o status.
+ */
 async function erroSupabase(resp, chave, acao) {
   const texto = await resp.text().catch(() => '');
-  throw new Error(`Supabase recusou ${acao} (HTTP ${resp.status}): ${semChave(texto, chave).slice(0, 300)}`);
+  let resumo = '';
+  try {
+    const corpo = JSON.parse(texto);
+    resumo = [corpo?.code, corpo?.message].filter((v) => typeof v === 'string' && v).join(' ');
+  } catch {
+    resumo = '';
+  }
+  resumo = semChave(resumo, chave).slice(0, 200);
+  throw new Error(`Supabase recusou ${acao} (HTTP ${resp.status})${resumo ? `: ${resumo}` : ''}`);
 }
 
 /**
@@ -360,12 +372,12 @@ async function main() {
   });
   const supabaseUrl = process.env.SUPABASE_URL?.trim();
   const supabaseChave = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  const noSupabase = Boolean(supabaseUrl && supabaseChave);
+  const gravaNoSupabase = Boolean(supabaseUrl && supabaseChave);
   const log = () => {
-    const opcoes = { supabase: noSupabase, githubActions: Boolean(process.env.GITHUB_ACTIONS) };
+    const opcoes = { supabase: gravaNoSupabase, githubActions: Boolean(process.env.GITHUB_ACTIONS) };
     for (const l of linhasDeLog(dados, opcoes)) console.log(l);
   };
-  if (noSupabase) {
+  if (gravaNoSupabase) {
     await gravarSupabase(dados, { url: supabaseUrl, chave: supabaseChave, fetch });
     log();
     return;
