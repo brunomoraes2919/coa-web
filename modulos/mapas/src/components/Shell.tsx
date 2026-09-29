@@ -1,10 +1,16 @@
 import type { ReactNode } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
+import { usePerfil } from './usePerfil';
 
 interface Props {
   modo: 'local' | 'supabase';
+  /** build do COA WEB (Supabase fixo): link "← COA WEB" e sem Configurações */
+  fixo: boolean;
+  /** dentro do iframe do COA WEB: sem cabeçalho nem navegação (o menu é o do COA WEB) */
+  embed: boolean;
   /** e-mail do usuário logado (modo Supabase) */
   email: string | null;
+  /** sem ele (modo fixo: a sessão é do COA WEB), não há botão "Sair" */
   onSair?: () => void;
 }
 
@@ -13,6 +19,10 @@ interface ItemNav {
   texto: string;
   icone: ReactNode;
   ativo(caminho: string): boolean;
+  /** cadastro: só para admin */
+  admin?: true;
+  /** tela de configuração: não existe no modo fixo */
+  config?: true;
 }
 
 const svg = (conteudo: ReactNode) => (
@@ -58,6 +68,7 @@ const ITENS: ItemNav[] = [
       </>,
     ),
     ativo: (c) => c.startsWith('/fazendas'),
+    admin: true,
   },
   {
     para: '/safras',
@@ -70,6 +81,7 @@ const ITENS: ItemNav[] = [
       </>,
     ),
     ativo: (c) => c.startsWith('/safras'),
+    admin: true,
   },
   {
     para: '/config',
@@ -88,6 +100,7 @@ const ITENS: ItemNav[] = [
       </>,
     ),
     ativo: (c) => c.startsWith('/config'),
+    config: true,
   },
 ];
 
@@ -99,8 +112,22 @@ const ICONE_SAIR = svg(
   </>,
 );
 
-export default function Shell({ modo, email, onSair }: Props) {
+export default function Shell({ modo, fixo, embed, email, onSair }: Props) {
   const { pathname } = useLocation();
+  const perfil = usePerfil();
+
+  if (embed) {
+    return (
+      <div className="app app-embed">
+        <main className="conteudo">
+          <Outlet />
+        </main>
+      </div>
+    );
+  }
+
+  // enquanto o perfil carrega, os cadastros ficam escondidos (evita mostrar e sumir)
+  const itens = ITENS.filter((i) => !(i.admin && perfil !== 'admin') && !(i.config && fixo));
 
   return (
     <div className="app">
@@ -108,8 +135,13 @@ export default function Shell({ modo, email, onSair }: Props) {
         <Link to="/mapas" className="lateral-logo" title="Mapa de Chuva COA">
           <img src="./logo-coa.png" alt="COA — Centro de Operações Agrícolas" />
         </Link>
+        {fixo && (
+          <a href="../index.html" className="lateral-voltar" title="Voltar ao COA WEB">
+            ← COA WEB
+          </a>
+        )}
         <nav className="lateral-nav" aria-label="Navegação principal">
-          {ITENS.map((item) => {
+          {itens.map((item) => {
             const ativo = item.ativo(pathname);
             return (
               <Link

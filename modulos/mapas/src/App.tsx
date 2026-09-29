@@ -1,15 +1,17 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { HashRouter, Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import type { Session } from '@supabase/supabase-js';
-import { lerConfig } from './data/config';
+import { lerConfig, modoFixo } from './data/config';
 import { onAuthChange, sair, sessaoAtual } from './data/auth';
 import Shell from './components/Shell';
 import Carregando from './components/Carregando';
 import Aviso, { mensagemDeErro, type TipoAviso } from './components/Aviso';
+import { PerfilContexto, useCarregarPerfil, usePerfil } from './components/usePerfil';
 import { repo } from './data';
+import { avisarRota, emEmbed } from './lib/embed';
 import { carregarSeed, seedJaCarregado } from './lib/seed';
 import Configuracoes from './pages/Configuracoes';
-import Login from './pages/Login';
+import Login, { EntrePeloCoa } from './pages/Login';
 
 // Telas carregadas sob demanda (o mapa Leaflet, o leitor de shapes e o editor ficam fora do pacote inicial)
 const Mapas = lazy(() => import('./pages/Mapas'));
@@ -92,18 +94,40 @@ function RequerSessao({ permitido, carregando }: { permitido: boolean; carregand
   return <Outlet />;
 }
 
+/** Aviso mostrado em Mapas quando o colaborador tenta abrir um cadastro. */
+const AVISO_SOMENTE_ADMIN = 'Somente administradores podem abrir os cadastros de fazendas e safras.';
+
+/** Cadastros (fazendas, safras): só admin; os demais voltam para os mapas com um aviso (o RLS garante o resto). */
+function SomenteAdmin() {
+  const perfil = usePerfil();
+  if (perfil === undefined) return <Carregando texto="Verificando o perfil…" />;
+  if (perfil !== 'admin') return <Navigate to="/mapas" replace state={{ aviso: AVISO_SOMENTE_ADMIN }} />;
+  return <Outlet />;
+}
+
+/** Em embed, avisa o COA WEB de cada troca de rota (título do topo e botão destacado no menu). */
+function AvisarRota() {
+  const { pathname } = useLocation();
+  useEffect(() => avisarRota(pathname), [pathname]);
+  return null;
+}
+
 export default function App() {
   const [modo] = useState(() => lerConfig().modo);
+  /** build do COA WEB: Supabase fixo, sem login nem configuração próprios */
+  const [fixo] = useState(() => modoFixo());
+  /** dentro do iframe do COA WEB (?embed=1) */
+  const [embed] = useState(() => emEmbed());
   const [sessao, setSessao] = useState<Session | null>(null);
   const [carregando, setCarregando] = useState(modo === 'supabase');
   const [erroSessao, setErroSessao] = useState<string | null>(null);
-  const [preparandoSeed, setPreparandoSeed] = useState(modo === 'local');
+  const [preparandoSeed, setPreparandoSeed] = useState(modo === 'local' && !fixo);
   const [avisoSeed, setAvisoSeed] = useState<AvisoSeed>(null);
   /** muda quando o cadastro padrão termina de carregar: remonta a tela aberta para ela reler os dados */
   const [versaoDados, setVersaoDados] = useState(0);
 
   useEffect(() => {
-    if (modo !== 'local') return;
+    if (modo !== 'local' || fixo) return;
     let ativo = true;
     garantirSeedInicial().then((a) => {
       if (!ativo) return;
@@ -114,7 +138,7 @@ export default function App() {
     return () => {
       ativo = false;
     };
-  }, [modo]);
+  }, [modo, fixo]);
 
   useEffect(() => {
     if (modo !== 'supabase') return;
@@ -155,32 +179,45 @@ export default function App() {
   }, []);
 
   const permitido = modo === 'local' || sessao !== null;
+  const perfil = useCarregarPerfil(modo, sessao?.user.id ?? null, carregando);
 
   return (
-    <HashRouter>
-      <FaixaSeed preparando={preparandoSeed} aviso={avisoSeed} onFechar={() => setAvisoSeed(null)} />
-      <Routes key={versaoDados}>
-        <Route
-          path="/login"
-          element={<Login modo={modo} logado={sessao !== null} erroInicial={erroSessao} onEntrou={aoEntrar} />}
-        />
-        <Route element={<Shell modo={modo} email={sessao?.user.email ?? null} onSair={aoSair} />}>
-          <Route path="/config" element={<Configuracoes acessoDados={permitido} />} />
-          <Route element={<RequerSessao permitido={permitido} carregando={carregando} />}>
-            <Route path="/" element={<Navigate to="/mapas" replace />} />
-            <Route path="/mapas" element={<Tela><Mapas /></Tela>} />
-            <Route path="/mapas/novo" element={<Tela><NovoMapa key="novo" /></Tela>} />
-            <Route path="/mapas/:id" element={<Tela><NovoMapa key="salvo" /></Tela>} />
-            <Route path="/fazendas" element={<Tela><Fazendas /></Tela>} />
-            <Route path="/fazendas/nova" element={<Tela><FazendaNova /></Tela>} />
-            <Route path="/fazendas/:id" element={<Tela><FazendaEditar /></Tela>} />
-            <Route path="/safras" element={<Tela><Safras /></Tela>} />
-            <Route path="/safras/:safraId/plantio/:fazendaId" element={<Tela><Plantio /></Tela>} />
-            <Route path="/safras/:safraId/areas/:fazendaId" element={<Tela><AreasCultura /></Tela>} />
-            <Route path="*" element={<Navigate to="/mapas" replace />} />
+    <PerfilContexto.Provider value={perfil}>
+      <HashRouter>
+        <AvisarRota />
+        <FaixaSeed preparando={preparandoSeed} aviso={avisoSeed} onFechar={() => setAvisoSeed(null)} />
+        <Routes key={versaoDados}>
+          <Route
+            path="/login"
+            element={
+              fixo ? (
+                <EntrePeloCoa logado={sessao !== null} carregando={carregando} />
+              ) : (
+                <Login modo={modo} logado={sessao !== null} erroInicial={erroSessao} onEntrou={aoEntrar} />
+              )
+            }
+          />
+          {/* no modo fixo a sessão é do COA WEB: sem "Sair" */}
+          <Route element={<Shell modo={modo} fixo={fixo} embed={embed} email={sessao?.user.email ?? null} onSair={fixo ? undefined : aoSair} />}>
+            <Route path="/config" element={fixo ? <Navigate to="/mapas" replace /> : <Configuracoes acessoDados={permitido} />} />
+            <Route element={<RequerSessao permitido={permitido} carregando={carregando} />}>
+              <Route path="/" element={<Navigate to="/mapas" replace />} />
+              <Route path="/mapas" element={<Tela><Mapas /></Tela>} />
+              <Route path="/mapas/novo" element={<Tela><NovoMapa key="novo" /></Tela>} />
+              <Route path="/mapas/:id" element={<Tela><NovoMapa key="salvo" /></Tela>} />
+              <Route element={<SomenteAdmin />}>
+                <Route path="/fazendas" element={<Tela><Fazendas /></Tela>} />
+                <Route path="/fazendas/nova" element={<Tela><FazendaNova /></Tela>} />
+                <Route path="/fazendas/:id" element={<Tela><FazendaEditar /></Tela>} />
+                <Route path="/safras" element={<Tela><Safras /></Tela>} />
+                <Route path="/safras/:safraId/plantio/:fazendaId" element={<Tela><Plantio /></Tela>} />
+                <Route path="/safras/:safraId/areas/:fazendaId" element={<Tela><AreasCultura /></Tela>} />
+              </Route>
+              <Route path="*" element={<Navigate to="/mapas" replace />} />
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </HashRouter>
+        </Routes>
+      </HashRouter>
+    </PerfilContexto.Provider>
   );
 }

@@ -29,14 +29,24 @@ function lerConfigArmazenada(): ConfigArmazenada {
 }
 
 /**
- * Config efetiva: valores salvos em localStorage sobrepõem as variáveis de ambiente
- * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY. O modo só é 'supabase' se URL e chave
- * estiverem preenchidas e o modo salvo não tiver sido explicitamente forçado para 'local'.
+ * Build publicado no COA WEB (`.env.coa-web`: VITE_MODO_FIXO=supabase): modo Supabase fixo, com a
+ * URL e a chave anon do build; sem login próprio nem tela de configuração.
+ */
+export function modoFixo(): boolean {
+  return import.meta.env.VITE_MODO_FIXO === 'supabase';
+}
+
+/**
+ * Config efetiva. No modo fixo, só as variáveis do build (o localStorage é ignorado). Fora dele, os
+ * valores salvos em localStorage sobrepõem as variáveis de ambiente VITE_SUPABASE_URL /
+ * VITE_SUPABASE_ANON_KEY, e o modo só é 'supabase' se URL e chave estiverem preenchidas e o modo
+ * salvo não tiver sido explicitamente forçado para 'local'.
  */
 export function lerConfig(): AppConfig {
-  const armazenada = lerConfigArmazenada();
   const envUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined) ?? '';
   const envKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? '';
+  if (modoFixo()) return { modo: 'supabase', supabaseUrl: envUrl.trim(), supabaseKey: envKey.trim() };
+  const armazenada = lerConfigArmazenada();
   const supabaseUrl = (armazenada.supabaseUrl ?? envUrl).trim();
   const supabaseKey = (armazenada.supabaseKey ?? envKey).trim();
   const configuradoParaSupabase = supabaseUrl !== '' && supabaseKey !== '';

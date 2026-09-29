@@ -44,7 +44,7 @@ Registro das decisões que o assistente tomou por delegação do usuário, extra
 
 ## Pendências deixadas de propósito (revisões finais)
 
-- Modo Supabase: rodar `supabase/migrations/0002_plantio_pims.sql` antes de usar esta versão (o app avisa).
+- Modo Supabase: rodar `supabase/coa-web/0001_mapas.sql` no Supabase do COA WEB antes de usar esta versão (o app avisa).
 - Tela de Safras carrega geometrias completas; trocar por listagem leve se ficar lenta no Supabase.
 - Centróide da área da cultura = média dos vértices; áreas côncavas podem ser ligadas ao talhão vizinho (usar ponto interno se aparecer).
 - Ao concluir o cadastro padrão na primeira abertura, as telas são recarregadas (edições não salvas se perdem).

@@ -5,6 +5,7 @@ dados-teste/
 .env
 .env.*
 !.env.example
+!.env.coa-web
 coverage/
 .vite/
 .superpowers/

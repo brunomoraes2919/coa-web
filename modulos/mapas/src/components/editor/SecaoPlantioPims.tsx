@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { usePerfil } from '../usePerfil';
 import { resumoContagem } from '../../lib/situacaoPlantio';
 import type { PlantioPimsTalhao, StatusPlantio } from '../../lib/types';
 
@@ -19,18 +20,27 @@ interface Props {
 
 /** Resumo do plantio da safra no editor: "X plantados · Y plantando · Z a plantar (PIMS dd/MM HH:mm)". */
 export default function SecaoPlantioPims(p: Props) {
-  const link = <Link to={`/safras/${p.safraId}/plantio/${p.fazendaId}`}>{p.geradoEm ? 'ver plantio' : 'marcar plantio'}</Link>;
+  // os links abrem os cadastros da safra: só para admin
+  const admin = usePerfil() === 'admin';
+  const link = admin && (
+    <>
+      {' · '}
+      <Link to={`/safras/${p.safraId}/plantio/${p.fazendaId}`}>{p.geradoEm ? 'ver plantio' : 'marcar plantio'}</Link>
+    </>
+  );
   if (!p.geradoEm && !p.usaAreas) {
     return (
       <p className="suave">
-        {p.contagem.plantado} de {p.totalTalhoes} talhões plantados na {p.nomeSafra} · {link}
+        {p.contagem.plantado} de {p.totalTalhoes} talhões plantados na {p.nomeSafra}
+        {link}
       </p>
     );
   }
   return (
     <div className="pilha" style={{ gap: 4 }}>
       <p className="suave" style={{ margin: 0 }}>
-        <strong>{resumoContagem(p.contagem, p.geradoEm)}</strong> · {link}
+        <strong>{resumoContagem(p.contagem, p.geradoEm)}</strong>
+        {link}
       </p>
       <small className="suave">
         {p.usaAreas
@@ -42,7 +52,12 @@ export default function SecaoPlantioPims(p: Props) {
         <small className="suave" style={{ color: '#8A5A00' }}>
           {p.semArea.length} talhão(ões) plantado(s)/plantando no PIMS sem área da cultura (não aparecem pintados):{' '}
           {p.semArea.slice(0, 8).map((t) => t.codigoPims).join(', ')}
-          {p.semArea.length > 8 ? '…' : ''}. <Link to={`/safras/${p.safraId}/areas/${p.fazendaId}`}>Áreas da cultura</Link>
+          {p.semArea.length > 8 ? '…' : ''}.{admin && (
+            <>
+              {' '}
+              <Link to={`/safras/${p.safraId}/areas/${p.fazendaId}`}>Áreas da cultura</Link>
+            </>
+          )}
         </small>
       )}
       {p.semPoligono.length > 0 && (

@@ -55,6 +55,24 @@ export interface FazendaCoa {
   nome: string;
 }
 
+/** Fazenda escolhida no topo do menu do COA WEB (#sb-fazenda); id null = nenhuma/todas. */
+export interface FazendaCoaSelecionada {
+  id: number | null;
+  nome: string | null;
+}
+
+/** COA WEB → módulo (postMessage, mesma origem): a fazenda do topo do menu mudou. */
+export interface MensagemCoaFazenda extends FazendaCoaSelecionada {
+  tipo: 'coa-fazenda';
+}
+
+/** Módulo → COA WEB (postMessage, mesma origem): rota aberta no módulo e o título do topo. */
+export interface MensagemMapasRota {
+  tipo: 'mapas-rota';
+  rota: string;
+  titulo: string;
+}
+
 export interface Talhao {
   id: string;
   fazendaId: string;

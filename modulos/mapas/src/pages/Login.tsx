@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { entrar } from '../data/auth';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
+import Carregando from '../components/Carregando';
 
 interface Props {
   modo: 'local' | 'supabase';
@@ -18,6 +19,31 @@ function traduzir(e: unknown): string {
   if (/email not confirmed/i.test(msg)) return 'E-mail ainda não confirmado. Verifique a sua caixa de entrada.';
   if (/rate limit|too many/i.test(msg)) return 'Muitas tentativas. Aguarde alguns minutos e tente de novo.';
   return msg;
+}
+
+/**
+ * Build do COA WEB (modo fixo): o login é o do COA WEB. Sem sessão, só o caminho de volta para ele
+ * (target _top: dentro do iframe, abre o COA WEB na janela inteira).
+ */
+export function EntrePeloCoa({ logado, carregando }: { logado: boolean; carregando: boolean }) {
+  const loc = useLocation();
+  const destino = (loc.state as { de?: string } | null)?.de ?? '/mapas';
+  if (carregando) return <Carregando texto="Verificando a sessão…" />;
+  if (logado) return <Navigate to={destino === '/login' ? '/mapas' : destino} replace />;
+  return (
+    <div className="login-fundo">
+      <div className="login-cartao">
+        <img src="./logo-coa.png" alt="COA — Centro de Operações Agrícolas" />
+        <h1>Entre pelo COA WEB</h1>
+        <p className="suave" style={{ textAlign: 'center' }}>
+          O Mapa de Chuva usa o login do COA WEB. Entre por lá e abra a categoria Mapas.
+        </p>
+        <a className="botao botao-primario" href="../index.html" target="_top">
+          Ir para o COA WEB
+        </a>
+      </div>
+    </div>
+  );
 }
 
 export default function Login({ modo, logado, erroInicial, onEntrou }: Props) {

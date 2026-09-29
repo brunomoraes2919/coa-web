@@ -17,6 +17,32 @@ a partir do CSV exportado da ZEUS, sem precisar do QGIS.
 - Histórico dos mapas gerados (cópia em JPEG de 150 dpi, que pode ser reaberta, atualizada ou salva como novo
   mapa; para o PNG, reabra o mapa e baixe no dpi desejado).
 
+## Módulo MAPAS no COA WEB
+
+Este código fica em `modulos/mapas/` do repositório do COA WEB e é a subcategoria **Mapa de Chuva** da
+categoria **MAPAS**. O COA WEB mostra o módulo num `iframe` da mesma origem
+(`mapas/index.html?embed=1#/<rota>`), com o login, os perfis e o Supabase do COA WEB.
+
+- **Desenvolvimento**: em `modulos/mapas`, `npm install` e `npm run dev` (modo local, dados no navegador,
+  como antes). Para ver o modo embutido, abra `http://localhost:5173/?embed=1#/mapas/novo`.
+- **Publicar**: `npm run publicar` roda os testes e o `tsc`, gera o build com `.env.coa-web` (modo
+  Supabase fixo, com a URL e a chave anon do COA WEB) direto em `mapas/`, na raiz do repositório, e
+  confere a saída com `scripts/verificar-publicacao.mjs` (tem `index.html`, não leva `public/dados/` e
+  nenhum arquivo cita `service_role`). Depois, a pasta `mapas/` vai para o commit junto com o código.
+- **Modo fixo** (`VITE_MODO_FIXO=supabase`, só no build publicado): ignora a configuração salva no
+  navegador, não tem tela de Configurações (`/config` volta para os mapas) nem login próprio (sem sessão,
+  a tela manda entrar pelo COA WEB) e não mostra "Sair" (a sessão é do COA WEB). Aberto fora do iframe
+  (`mapas/` direto), mostra o menu do módulo com o link "← COA WEB".
+- **Modo embutido** (`?embed=1`): sem cabeçalho nem menu próprios (o menu é o do COA WEB), com o fundo e
+  o espaçamento do COA WEB. As mensagens `postMessage` só valem entre janelas da mesma origem: o COA WEB
+  envia a fazenda do topo do menu (`{ tipo: 'coa-fazenda', id, nome }`) e o **Novo mapa** pré-seleciona
+  a fazenda de mapa ligada a ela enquanto o editor está limpo (sem CSV e sem fazenda escolhida à mão); o
+  módulo avisa a rota aberta (`{ tipo: 'mapas-rota', rota, titulo }`) para o COA WEB destacar o botão e
+  trocar o título. Quem renova o token da sessão é o COA WEB.
+- **Perfis** (`perfis.perfil` do COA WEB): o colaborador não vê os cadastros (Fazendas e Safras; se abrir
+  o endereço de um deles, volta para os mapas com o aviso "Somente administradores…") nem os links para
+  eles dentro do editor. Quem garante o acesso é o RLS do banco.
+
 ## Como testar agora (no seu computador)
 
 Instale antes o **Node.js** (versão LTS, em [nodejs.org](https://nodejs.org/pt)): o `iniciar.bat` usa o

@@ -1,4 +1,5 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
+import { emEmbed } from '../lib/embed';
 import { lerConfig } from './config';
 
 /** Singleton do client Supabase; recriado se a config (URL/chave/modo) mudar. */
@@ -15,7 +16,11 @@ export function clienteSupabase(): SupabaseClient | null {
   }
   const assinatura = `${config.supabaseUrl}::${config.supabaseKey}`;
   if (!clienteCache || assinaturaCache !== assinatura) {
-    clienteCache = createClient(config.supabaseUrl, config.supabaseKey);
+    // Dentro do COA WEB (mesma origem e mesma chave de sessão no localStorage), quem renova o token
+    // é o COA WEB; o supabase-js coordena as duas janelas por navigator.locks. Sem storageKey próprio.
+    clienteCache = emEmbed()
+      ? createClient(config.supabaseUrl, config.supabaseKey, { auth: { autoRefreshToken: false } })
+      : createClient(config.supabaseUrl, config.supabaseKey);
     assinaturaCache = assinatura;
   }
   return clienteCache;

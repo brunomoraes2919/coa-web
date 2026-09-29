@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { repo } from '../data';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
 import Modal from '../components/Modal';
+import { usePerfil } from '../components/usePerfil';
 import '../components/editor/editor.css';
 import { baixarDeUrl, nomeArquivoMapa } from '../lib/exportar';
 import { fmtPeriodo, parseIsoData } from '../lib/format';
@@ -23,6 +24,10 @@ const dataCurta = (iso: string) => {
 
 /** Histórico de mapas gerados. */
 export default function Mapas() {
+  const location = useLocation();
+  const admin = usePerfil() === 'admin';
+  /** vindo de um cadastro que o perfil não abre (ex.: "Somente administradores…") */
+  const [avisoAcesso, setAvisoAcesso] = useState<string | null>((location.state as { aviso?: string } | null)?.aviso ?? null);
   const [itens, setItens] = useState<Item[] | null>(null);
   const [fazendas, setFazendas] = useState<Fazenda[]>([]);
   const [safras, setSafras] = useState<Safra[]>([]);
@@ -122,6 +127,11 @@ export default function Mapas() {
           Novo mapa
         </Link>
       </div>
+      {avisoAcesso && (
+        <Aviso tipo="alerta" onFechar={() => setAvisoAcesso(null)}>
+          {avisoAcesso}
+        </Aviso>
+      )}
       {erro && (
         <Aviso tipo="erro" onFechar={() => setErro(null)}>
           {erro}
@@ -132,10 +142,16 @@ export default function Mapas() {
       ) : itens.length === 0 ? (
         <div className="cartao vazio">
           <p>Nenhum mapa gerado ainda.</p>
-          <p className="suave">
-            Comece cadastrando uma <Link to="/fazendas/nova">fazenda</Link>, depois crie um <Link to="/mapas/novo">novo mapa</Link> com o CSV da
-            ZEUS.
-          </p>
+          {admin ? (
+            <p className="suave">
+              Comece cadastrando uma <Link to="/fazendas/nova">fazenda</Link>, depois crie um <Link to="/mapas/novo">novo mapa</Link> com o CSV
+              da ZEUS.
+            </p>
+          ) : (
+            <p className="suave">
+              Crie um <Link to="/mapas/novo">novo mapa</Link> com o CSV da ZEUS.
+            </p>
+          )}
         </div>
       ) : (
         <>

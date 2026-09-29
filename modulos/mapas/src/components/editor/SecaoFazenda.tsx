@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import Aviso from '../Aviso';
 import Carregando from '../Carregando';
+import { usePerfil } from '../usePerfil';
 import type { Fazenda, PlantioPimsTalhao, Safra, StatusPlantio } from '../../lib/types';
 import SecaoPlantioPims from './SecaoPlantioPims';
 
@@ -33,6 +34,7 @@ interface Props {
 export default function SecaoFazenda(p: Props) {
   const fazenda = p.fazendas.find((f) => f.id === p.fazendaId) ?? null;
   const safra = p.safras.find((s) => s.id === p.safraId) ?? null;
+  const admin = usePerfil() === 'admin';
 
   const alternarSetor = (s: string, ativo: boolean) => {
     const atual = p.setores ?? p.setoresDisponiveis;
@@ -45,7 +47,13 @@ export default function SecaoFazenda(p: Props) {
       <h2>1. Fazenda e safra</h2>
       {p.fazendas.length === 0 ? (
         <Aviso tipo="info">
-          Nenhuma fazenda cadastrada. <Link to="/fazendas/nova">Cadastre a primeira fazenda</Link>.
+          {admin ? (
+            <>
+              Nenhuma fazenda cadastrada. <Link to="/fazendas/nova">Cadastre a primeira fazenda</Link>.
+            </>
+          ) : (
+            'Nenhuma fazenda de mapa liberada para você. Peça a um administrador do COA WEB.'
+          )}
         </Aviso>
       ) : (
         <label className="campo">

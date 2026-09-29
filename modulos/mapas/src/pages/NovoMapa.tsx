@@ -11,6 +11,7 @@ import SecaoCsv, { type CsvInfo } from '../components/editor/SecaoCsv';
 import { SecaoAparencia, SecaoAvancado } from '../components/editor/SecaoAparencia';
 import { useCadastros, useInterpolacao, useLogo } from '../components/editor/hooks';
 import { useMapaPlantio, useTalhoesEPlantio } from '../components/editor/usePlantioMapa';
+import { usePreSelecaoCoa } from '../components/editor/usePreSelecaoCoa';
 import '../components/editor/editor.css';
 import { aparenciaDoMapaSalvo, avisosPeriodoSafra, avisosPicsDistantes, layoutPadrao, textosAutomaticos } from '../lib/editor';
 import { editarTexto } from '../lib/editorRegras';
@@ -160,6 +161,8 @@ export default function NovoMapa() {
     setSetores(null);
     setAparencia((a) => ({ ...a, extent: null }));
   };
+  // novo mapa sem CSV: segue a fazenda do topo do COA WEB até o usuário escolher uma à mão
+  const escolheuFazenda = usePreSelecaoCoa(fazendas, fazendaId, !id && !csv, trocarFazenda);
   const trocarSetores = (novos: string[] | null) => {
     setSetores(novos);
     setAparencia((a) => ({ ...a, extent: null }));
@@ -325,7 +328,10 @@ export default function NovoMapa() {
             safras={safras}
             fazendaId={fazendaId}
             safraId={safraId}
-            onFazenda={trocarFazenda}
+            onFazenda={(idF) => {
+              escolheuFazenda();
+              trocarFazenda(idF);
+            }}
             onSafra={setSafraId}
             carregando={carregando}
             totalTalhoes={talhoes.length}
