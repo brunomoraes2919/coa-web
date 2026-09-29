@@ -144,41 +144,41 @@ repositório (que é público) nem no site: ficam no Supabase, atrás do login.
 ## Plantio automático do PIMS
 
 O site é estático e o Agrovex (que dá acesso ao PIMS) não aceita chamadas do navegador nem pode ter o
-token exposto. Por isso uma rotina do GitHub Actions, na raiz do coa-web, consulta o PIMS e grava o
-resultado direto no Supabase (sem commit no repositório):
+token exposto. Por isso uma rotina fora do site consulta o PIMS e grava o resultado direto no Supabase:
 
 ```
-GitHub Actions (1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) ──▶ upsert em mapas_plantio_pims (Supabase)
+VM do Google Cloud (systemd, 1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) ──▶ upsert em mapas_plantio_pims (Supabase)
 ```
 
-1. **Secrets** (no coa-web, **Settings → Secrets and variables → Actions**):
-   - `AGROVEX_TOKEN`: o token do Agrovex. Nunca vai para o código nem para o site; sem ele a rotina só
-     avisa e termina.
-   - `SUPABASE_SERVICE_ROLE_KEY`: a chave de serviço (`service_role`) do Supabase do COA WEB — **não** é
-     a chave anon. Em **supabase.com → o projeto do COA WEB → Project Settings → API**, seção
-     "Project API keys": copie a chave marcada `service_role` (rótulo pode aparecer como "secret"
-     também, formato novo `sb_secret_…`). Nunca use essa chave no app nem a exponha no site: ela ignora
-     o RLS.
-   - `SUPABASE_URL` **não** é secret: já vai fixo no workflow (é a mesma URL pública usada no
-     `index.html`).
-2. **Workflow** `.github/workflows/plantio-pims.yml` (raiz do repositório): roda a cada hora
-   (`17 * * * *`) e também sob demanda (**Actions → Sincronizar plantio PIMS → Run workflow**). Falha com
-   mensagem clara se algum dos dois secrets não estiver configurado. Não roda `npm ci` nem `setup-node` (o
-   script não tem dependências e usa o Node do `ubuntu-latest`), roda uma rodada por vez (`concurrency`) e
-   não faz commit — só grava no Supabase. Como os logs do Actions são públicos, o log só traz totais
-   (linhas safra × unidade, talhões, `geradoEm`), sem nomes de fazenda; o resumo por unidade aparece só ao
-   rodar no seu computador gravando o `plantio.json`.
-3. **No seu computador**: sem `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` no ambiente, `AGROVEX_TOKEN=...
-   npm run plantio` (no PowerShell: `$env:AGROVEX_TOKEN='...'; npm run plantio`) grava
-   `public/dados/plantio.json` como antes (uso local/desenvolvimento). As safras consultadas ficam em
-   `scripts/plantio.config.json` (padrão: as do ano-safra atual e do seguinte, sem as administrativas).
-4. **Modo Supabase**: o app lê o plantio da tabela `mapas_plantio_pims` (criada por
-   `supabase/coa-web/0001_mapas.sql`; veja acima), e não do `plantio.json`. A rotina faz upsert (uma
-   linha por safra × unidade) e, depois, apaga as linhas que sumiram do PIMS (que não foram atualizadas
-   nesta rodada).
-5. **Rotina parada**: o GitHub **desativa os workflows agendados depois de 60 dias sem atividade no
-   repositório** (vale para repositórios públicos; confira na aba Actions). Se o plantio parar de
-   atualizar, abra **Actions → Sincronizar plantio PIMS** e clique em **Enable workflow**.
+**Por que não no GitHub Actions:** o Cloudflare do Agrovex barra os servidores do GitHub com uma página de
+verificação (HTTP 403); a VM do Google Cloud passa (teste: `curl -s -o /dev/null -w "%{http_code}\n" -X POST
+-A "mapa-chuva-coa/1.0" -H "Content-Type: application/json" https://mcp.agrovex.com.br/mcp -d '{}'` → `401`
+= passa; `403` = barrado). O workflow `.github/workflows/plantio-pims.yml` continua no repositório só
+com execução manual; se um dia o Agrovex liberar a rota `/mcp`, basta religar o `schedule` dele.
+
+**Como está instalado na VM** (usuário da VM, pasta `~/plantio-pims`; arquivos de referência em
+`scripts/servidor/`):
+
+1. `~/plantio-pims/atualizar-e-rodar.sh` (= `scripts/servidor/atualizar-e-rodar.sh`): a cada rodada baixa
+   do `main` a versão atual de `sincronizar-plantio.mjs` e `plantio.config.json` (então mudanças no
+   script chegam sozinhas) e roda com o Node da VM (≥ 18; o script não tem dependências).
+2. `~/.plantio-pims.env` (permissão 600, só o usuário lê): `AGROVEX_TOKEN`, `SUPABASE_URL` e
+   `SUPABASE_SERVICE_ROLE_KEY` (a chave `service_role` do Supabase do COA WEB — ignora o RLS; nunca vai
+   para o código nem para o site). Para trocar uma chave sem mostrá-la na tela:
+   `read -rsp "Cole a chave: " V; echo; sed -i '/^AGROVEX_TOKEN=/d' ~/.plantio-pims.env; echo "AGROVEX_TOKEN=$V" >> ~/.plantio-pims.env; unset V`.
+3. `/etc/systemd/system/plantio-pims.service` + `plantio-pims.timer` (= `scripts/servidor/`, trocando
+   `USUARIO`): roda a cada hora no minuto 17 e volta sozinho depois de reiniciar a VM
+   (`sudo systemctl enable --now plantio-pims.timer`). A imagem mínima do Ubuntu não tem `cron`.
+4. Conferir: `systemctl list-timers plantio-pims.timer` (próxima rodada), `tail ~/plantio-pims/rotina.log`
+   (histórico: só totais — linhas safra × unidade, talhões, `geradoEm`), rodar agora:
+   `sudo systemctl start plantio-pims.service`.
+
+A rotina faz upsert (uma linha por safra × unidade) e depois apaga as linhas que sumiram do PIMS; se o PIMS
+não devolver nenhum talhão, não mexe no Supabase. **No seu computador**, sem `SUPABASE_URL` /
+`SUPABASE_SERVICE_ROLE_KEY` no ambiente, `AGROVEX_TOKEN=... npm run plantio` (no PowerShell:
+`$env:AGROVEX_TOKEN='...'; npm run plantio`) grava `public/dados/plantio.json` (uso local/desenvolvimento).
+As safras consultadas ficam em `scripts/plantio.config.json` (padrão: as do ano-safra atual e do seguinte,
+sem as administrativas).
 
 Regra da situação (por talhão × safra): **plantado** = plantio encerrado no PIMS ou área apontada ≥ 99% da
 prevista; **plantando** = área apontada entre 0 e 99%; **a plantar** = sem apontamento.

@@ -1,0 +1,10 @@
+# /etc/systemd/system/plantio-pims.service  (troque USUARIO pelo usuário da VM)
+[Unit]
+Description=Plantio do PIMS para o Supabase (modulo MAPAS do COA WEB)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=USUARIO
+ExecStart=/bin/bash -c '/home/USUARIO/plantio-pims/atualizar-e-rodar.sh >> /home/USUARIO/plantio-pims/rotina.log 2>&1'

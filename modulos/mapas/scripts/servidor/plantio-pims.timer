@@ -1,0 +1,10 @@
+# /etc/systemd/system/plantio-pims.timer
+[Unit]
+Description=Roda o plantio do PIMS a cada hora (minuto 17)
+
+[Timer]
+OnCalendar=*-*-* *:17:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
