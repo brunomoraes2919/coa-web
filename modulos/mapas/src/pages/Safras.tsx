@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { repo } from '../data/index';
 import type { Fazenda, Safra } from '../lib/types';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
+import AtualizarPlantio from '../components/AtualizarPlantio';
 import Carregando from '../components/Carregando';
 import Modal from '../components/Modal';
 import CartaoSafra from '../components/safras/CartaoSafra';
@@ -141,6 +142,7 @@ export default function Safras() {
 
   return (
     <div className="pagina">
+      <AtualizarPlantio />
       <div className="pagina-cabecalho">
         <div>
           <h1>Safras</h1>

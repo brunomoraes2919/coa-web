@@ -1,3 +1,4 @@
+import type { SituacaoPedidoPlantio } from '../lib/pedidoPlantio';
 import type { AreaCultura, Fazenda, FazendaCoa, MapaSalvo, PerfilUsuario, Plantio, PlantioPimsArquivo, Safra, Talhao } from '../lib/types';
 
 /** Contrato do repositório (implementado por localRepo.ts e supabaseRepo.ts). */
@@ -33,6 +34,15 @@ export interface Repositorio {
    * Supabase: as linhas visíveis de mapas_plantio_pims montadas no mesmo formato (sem linhas → null).
    */
   lerPlantioPims(): Promise<PlantioPimsArquivo | null>;
+  /** Se o botão "Atualizar plantio" funciona aqui: só no Supabase (o servidor do COA WEB atende os pedidos). */
+  podeAtualizarPlantio: boolean;
+  /**
+   * Pede ao servidor para atualizar o plantio do PIMS agora (antes da rotina de 1 h): grava um pedido em
+   * mapas_plantio_pedidos e devolve o id dele. Local: lança erro (só funciona no COA WEB).
+   */
+  pedirAtualizacaoPlantio(): Promise<number>;
+  /** Situação do pedido (atendido? resultado 'ok' ou 'erro: ...'); não encontrado → null. Local: null. */
+  situacaoPedidoPlantio(id: number): Promise<SituacaoPedidoPlantio | null>;
 
   listarFazendas(): Promise<Fazenda[]>;
   obterTalhoes(fazendaId: string): Promise<Talhao[]>;

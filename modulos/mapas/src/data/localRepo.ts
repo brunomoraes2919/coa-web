@@ -143,6 +143,17 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
       return carregarPlantioPims();
     },
 
+    // quem atende os pedidos é o servidor do COA WEB (Supabase)
+    podeAtualizarPlantio: false,
+
+    async pedirAtualizacaoPlantio() {
+      throw new Error('Atualizar o plantio só funciona no COA WEB.');
+    },
+
+    async situacaoPedidoPlantio() {
+      return null;
+    },
+
     async listarFazendas() {
       const db = await dbPromise;
       const fazendas = (await db.getAll('fazendas')).map(completarFazenda);

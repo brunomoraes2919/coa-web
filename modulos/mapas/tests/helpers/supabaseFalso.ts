@@ -1,7 +1,8 @@
 /**
  * Cliente Supabase falso, em memória e sem rede, para testar o supabaseRepo. Imita o que importa do
  * PostgREST: cada resposta de select traz no máximo `maxLinhas` linhas (1000 no Supabase), com
- * .range/.order/.eq/.in, count exato, upsert pela chave primária, delete e update; o Storage; e a
+ * .range/.order/.eq/.in, count exato, upsert pela chave primária, insert (com id gerado e os valores
+ * padrão das colunas, como no banco), .single/.maybeSingle, delete e update; o Storage; e a
  * sessão (auth.getSession). Tabela desconhecida responde com o erro do PostgREST (PGRST205), então
  * um nome de tabela errado no repositório aparece nos testes. Registra os nomes usados em from(nome)
  * e storage.from(nome).
@@ -14,10 +15,10 @@ type Erro = { message: string; code?: string } | null;
 export interface Requisicao {
   /** tabela, ou "storage:<bucket>" nas operações do Storage */
   tabela: string;
-  op: 'select' | 'upsert' | 'delete' | 'update' | 'upload' | 'remove';
+  op: 'select' | 'insert' | 'upsert' | 'delete' | 'update' | 'upload' | 'remove';
   /** tamanho de cada lista .in(...) */
   listasIn: number[];
-  /** linhas enviadas (upsert) */
+  /** linhas enviadas (insert/upsert) */
   linhas: number;
   /** arquivos (upload/remove) */
   paths?: string[];
@@ -39,8 +40,20 @@ const CHAVES: Record<string, string[]> = {
   mapas_areas_cultura: ['id'],
   mapas_chuva: ['id'],
   mapas_plantio_pims: ['safra', 'unidade'],
+  mapas_plantio_pedidos: ['id'],
   fazendas: ['id'],
   perfis: ['id'],
+};
+
+/** Colunas preenchidas pelo banco num insert que não as informa (id "generated always as identity" e defaults). */
+const PADROES: Record<string, (b: BancoFalso) => Linha> = {
+  mapas_plantio_pedidos: (b) => ({
+    id: b.tabelas.mapas_plantio_pedidos.reduce((max, l) => Math.max(max, Number(l.id)), 0) + 1,
+    pedido_em: new Date().toISOString(),
+    pedido_por: b.sessao?.user.id ?? null,
+    atendido_em: null,
+    resultado: null,
+  }),
 };
 
 export class BancoFalso {
@@ -109,14 +122,17 @@ export class BancoFalso {
 }
 
 class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: number | null }> {
-  private op: 'select' | 'upsert' | 'delete' | 'update' = 'select';
+  private op: 'select' | 'insert' | 'upsert' | 'delete' | 'update' = 'select';
   private colunas = '*';
   private comContagem = false;
   private filtros: ((l: Linha) => boolean)[] = [];
   private listasIn: number[] = [];
   private ordem: { col: string; asc: boolean }[] = [];
   private faixa: [number, number] | null = null;
-  private umSo = false;
+  /** maybeSingle: 0 ou 1 linha; single: exatamente 1 (senão erro PGRST116, como no PostgREST) */
+  private umSo: 'talvez' | 'exato' | null = null;
+  /** .select(...) depois de insert: devolve as linhas inseridas */
+  private devolver = false;
   private payload: Linha[] = [];
   private mudancas: Linha = {};
 
@@ -127,7 +143,13 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
 
   select(colunas = '*', opcoes?: { count?: 'exact' }) {
     this.colunas = colunas;
+    this.devolver = true;
     this.comContagem = opcoes?.count === 'exact';
+    return this;
+  }
+  insert(linhas: Linha | Linha[]) {
+    this.op = 'insert';
+    this.payload = Array.isArray(linhas) ? linhas : [linhas];
     return this;
   }
   upsert(linhas: Linha | Linha[]) {
@@ -163,7 +185,11 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
     return this;
   }
   maybeSingle() {
-    this.umSo = true;
+    this.umSo = 'talvez';
+    return this;
+  }
+  single() {
+    this.umSo = 'exato';
     return this;
   }
 
@@ -184,6 +210,24 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
     const msg = this.banco.falhar?.(req);
     if (msg) return { data: null, error: { message: msg }, count: null };
     const passa = (l: Linha) => this.filtros.every((f) => f(l));
+    const projetar = (l: Linha): Linha => {
+      if (this.colunas.trim() === '*') return { ...l };
+      return Object.fromEntries(this.colunas.split(',').map((c) => [c.trim(), l[c.trim()]]));
+    };
+    const responder = (linhas: Linha[], count: number | null) => {
+      const data = linhas.map(projetar);
+      if (this.umSo === 'exato' && data.length !== 1) {
+        return { data: null, error: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' }, count: null };
+      }
+      if (this.umSo) return { data: data[0] ?? null, error: null, count: null };
+      return { data, error: null, count };
+    };
+
+    if (this.op === 'insert') {
+      const novas = this.payload.map((l) => ({ ...(PADROES[this.tabela]?.(this.banco) ?? {}), ...l }));
+      tabela.push(...novas);
+      return this.devolver ? responder(novas, null) : { data: null, error: null, count: null };
+    }
 
     if (this.op === 'upsert') {
       const chave = CHAVES[this.tabela];
@@ -219,12 +263,6 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
     }
     if (this.faixa) linhas = linhas.slice(this.faixa[0], this.faixa[1] + 1);
     linhas = linhas.slice(0, this.banco.maxLinhas); // limite do servidor (max-rows)
-    const projetar = (l: Linha): Linha => {
-      if (this.colunas.trim() === '*') return { ...l };
-      return Object.fromEntries(this.colunas.split(',').map((c) => [c.trim(), l[c.trim()]]));
-    };
-    const data = linhas.map(projetar);
-    if (this.umSo) return { data: data[0] ?? null, error: null, count: null };
-    return { data, error: null, count: this.comContagem ? total : null };
+    return responder(linhas, this.comContagem ? total : null);
   }
 }

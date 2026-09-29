@@ -70,6 +70,9 @@ p { margin: 0 0 0.6rem; }
 .pagina { max-width: 1320px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
 .pagina-cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .pagina-cabecalho .subtitulo { color: var(--texto-suave); margin: 4px 0 0; font-size: 0.92rem; }
+/* "Atualizar plantio" no topo (Novo mapa e Safras): linha pequena à direita, quase colada no cabeçalho */
+.atualizar-plantio { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; margin-bottom: -10px; }
+.atualizar-plantio .suave { font-size: 0.82rem; }
 .voltar { font-size: 0.88rem; text-decoration: none; color: var(--texto-suave); }
 .voltar:hover { color: var(--verde); }
 

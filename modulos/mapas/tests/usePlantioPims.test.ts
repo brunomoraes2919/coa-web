@@ -6,11 +6,14 @@ vi.mock('../src/data', () => ({ repo: () => ({ lerPlantioPims: lerDoRepo }) }));
 
 const arq: PlantioPimsArquivo = { versao: 1, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS via Agrovex', safras: [] };
 
+const novo: PlantioPimsArquivo = { ...arq, geradoEm: '2026-09-28T12:01:00.000Z' };
+
 /** Módulo novo a cada teste (o cache é do módulo). */
-async function carregar() {
+async function modulo() {
   vi.resetModules();
-  return (await import('../src/components/usePlantioPims')).lerPlantioPims;
+  return import('../src/components/usePlantioPims');
 }
+const carregar = async () => (await modulo()).lerPlantioPims;
 
 beforeEach(() => {
   lerDoRepo.mockReset();
@@ -46,5 +49,71 @@ describe('lerPlantioPims (compartilhado entre as telas)', () => {
     expect(await lerPlantioPims()).toEqual(arq);
     expect(lerDoRepo).toHaveBeenCalledTimes(2);
     aviso.mockRestore();
+  });
+});
+
+describe('recarregarPlantioPims (botão "Atualizar plantio")', () => {
+  it('ignora o cache de 5 min, relê e as leituras seguintes usam o valor novo', async () => {
+    const { lerPlantioPims, recarregarPlantioPims } = await modulo();
+    lerDoRepo.mockResolvedValueOnce(arq).mockResolvedValueOnce(novo);
+
+    expect(await lerPlantioPims()).toEqual(arq);
+    expect(await recarregarPlantioPims()).toEqual(novo);
+    expect(await lerPlantioPims()).toEqual(novo);
+    expect(lerDoRepo).toHaveBeenCalledTimes(2);
+  });
+
+  it('avisa todos os inscritos (cada usePlantioPims montado) com o valor novo; quem saiu não é avisado', async () => {
+    const { ouvirPlantioPims, recarregarPlantioPims } = await modulo();
+    lerDoRepo.mockResolvedValue(novo);
+    const a = vi.fn();
+    const b = vi.fn();
+    const c = vi.fn();
+    ouvirPlantioPims(a);
+    ouvirPlantioPims(b);
+    const sair = ouvirPlantioPims(c);
+    sair();
+
+    await recarregarPlantioPims();
+
+    expect(a).toHaveBeenCalledExactlyOnceWith(novo);
+    expect(b).toHaveBeenCalledExactlyOnceWith(novo);
+    expect(c).not.toHaveBeenCalled();
+  });
+
+  it('sem plantio no banco: avisa null', async () => {
+    const { ouvirPlantioPims, recarregarPlantioPims } = await modulo();
+    lerDoRepo.mockResolvedValue(null);
+    const a = vi.fn();
+    ouvirPlantioPims(a);
+    expect(await recarregarPlantioPims()).toBeNull();
+    expect(a).toHaveBeenCalledExactlyOnceWith(null);
+  });
+
+  it('falha na releitura: rejeita, não avisa ninguém (as telas ficam com o plantio que tinham) e a próxima leitura tenta de novo', async () => {
+    const { lerPlantioPims, ouvirPlantioPims, recarregarPlantioPims } = await modulo();
+    const aviso = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    lerDoRepo.mockResolvedValueOnce(arq).mockRejectedValueOnce(new Error('Failed to fetch')).mockResolvedValueOnce(novo);
+    await lerPlantioPims();
+    const a = vi.fn();
+    ouvirPlantioPims(a);
+
+    await expect(recarregarPlantioPims()).rejects.toThrow('Failed to fetch');
+    expect(a).not.toHaveBeenCalled();
+    expect(await lerPlantioPims()).toEqual(novo);
+    expect(lerDoRepo).toHaveBeenCalledTimes(3);
+    aviso.mockRestore();
+  });
+
+  it('uma leitura em andamento de antes da releitura não sobrescreve o valor novo no cache', async () => {
+    const { lerPlantioPims, recarregarPlantioPims } = await modulo();
+    let soltarAntiga: (a: PlantioPimsArquivo) => void = () => undefined;
+    lerDoRepo.mockReturnValueOnce(new Promise((r) => (soltarAntiga = r))).mockResolvedValueOnce(novo);
+
+    const antiga = lerPlantioPims();
+    expect(await recarregarPlantioPims()).toEqual(novo);
+    soltarAntiga(arq);
+    expect(await antiga).toEqual(arq);
+    expect(await lerPlantioPims()).toEqual(novo);
   });
 });

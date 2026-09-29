@@ -21,6 +21,8 @@ export const TABELAS = {
   areasCultura: 'mapas_areas_cultura',
   mapas: 'mapas_chuva',
   plantioPims: 'mapas_plantio_pims',
+  /** pedidos do botão "Atualizar plantio" (supabase/coa-web/0002_pedidos_plantio.sql) */
+  pedidosPlantio: 'mapas_plantio_pedidos',
 } as const;
 
 /** Bucket privado com a imagem e a miniatura dos mapas salvos. */

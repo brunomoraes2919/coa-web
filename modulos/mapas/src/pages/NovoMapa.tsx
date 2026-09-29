@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { repo } from '../data';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
+import AtualizarPlantio from '../components/AtualizarPlantio';
 import Carregando from '../components/Carregando';
 import PreviaLayout from '../components/editor/PreviaLayout';
 import TabelaTalhoes from '../components/editor/TabelaTalhoes';
@@ -254,6 +255,7 @@ export default function NovoMapa() {
 
   return (
     <div className="pagina pagina-editor">
+      <AtualizarPlantio />
       <div className="pagina-cabecalho">
         <div>
           <h1>{id ? 'Editar mapa' : 'Novo mapa de chuva'}</h1>

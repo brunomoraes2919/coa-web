@@ -18,6 +18,7 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
       areasCultura: 'mapas_areas_cultura',
       mapas: 'mapas_chuva',
       plantioPims: 'mapas_plantio_pims',
+      pedidosPlantio: 'mapas_plantio_pedidos',
     });
   });
 
@@ -44,6 +45,7 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
     await repo.obterMapa(salvo.id);
     await repo.urlArquivo(salvo.pngPath!);
     await repo.lerPlantioPims();
+    await repo.situacaoPedidoPlantio(await repo.pedirAtualizacaoPlantio());
     await repo.importarBackup(await repo.exportarBackup());
     await repo.excluirMapa(salvo);
     await repo.excluirSafra(s.id);

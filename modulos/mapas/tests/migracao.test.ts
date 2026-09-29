@@ -13,7 +13,11 @@ import {
 } from '../src/data/supabaseLinhas';
 import { area, fazenda, mapa, plantio, safra, talhao } from './helpers/dominio';
 
-const sql = readFileSync('supabase/coa-web/0001_mapas.sql', 'utf8').replace(/--.*$/gm, '');
+/** Os scripts do módulo, na ordem em que rodam (0002: pedidos do botão "Atualizar plantio"). */
+const SCRIPTS = ['supabase/coa-web/0001_mapas.sql', 'supabase/coa-web/0002_pedidos_plantio.sql'];
+const sql = SCRIPTS.map((s) => readFileSync(s, 'utf8'))
+  .join('\n')
+  .replace(/--.*$/gm, '');
 
 /** Colunas de cada "create table if not exists public.<nome> ( ... );" do script. */
 function colunasDasTabelas(): Map<string, Set<string>> {
@@ -28,7 +32,7 @@ function colunasDasTabelas(): Map<string, Set<string>> {
   return tabelas;
 }
 
-describe('supabase/coa-web/0001_mapas.sql × repositório', () => {
+describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql × repositório', () => {
   const tabelas = colunasDasTabelas();
 
   it('cria exatamente as tabelas de TABELAS', () => {
@@ -51,12 +55,14 @@ describe('supabase/coa-web/0001_mapas.sql × repositório', () => {
     for (const [tabela, linha] of linhas) {
       for (const coluna of Object.keys(linha)) expect(tabelas.get(tabela)?.has(coluna), `${tabela}.${coluna}`).toBe(true);
     }
+    // pedidos: o repositório insere uma linha vazia e lê estas colunas
+    for (const coluna of ['id', 'atendido_em', 'resultado']) expect(tabelas.get(TABELAS.pedidosPlantio)?.has(coluna), coluna).toBe(true);
   });
 
   it.each(Object.values(TABELAS))('tabela %s: RLS ligado, nada para anon, acesso explícito para authenticated', (t) => {
     expect(sql).toMatch(new RegExp(`alter table public\\.${t}\\s+enable row level security;`));
     expect(sql).toMatch(new RegExp(`revoke all on table public\\.${t}\\s+from anon, authenticated;`));
-    const privilegios = t === TABELAS.plantioPims ? 'select' : 'select, insert, update, delete';
+    const privilegios = t === TABELAS.plantioPims ? 'select' : t === TABELAS.pedidosPlantio ? 'select, insert' : 'select, insert, update, delete';
     expect(sql).toMatch(new RegExp(`grant ${privilegios}\\s+on table public\\.${t}\\s+to authenticated;`));
   });
 

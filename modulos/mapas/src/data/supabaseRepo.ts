@@ -28,6 +28,7 @@ import {
   type SafraRow,
   type TalhaoRow,
 } from './supabaseLinhas';
+import { pedidosPlantioSupabase } from './supabasePedidos';
 
 export { reviverPics, serializarPics } from './supabaseLinhas';
 
@@ -169,6 +170,8 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
       );
       return montarPlantioPims(linhas.map(rowParaLinhaPlantioPims));
     },
+
+    ...pedidosPlantioSupabase(client),
 
     async listarFazendas() {
       const linhas = await lerTodas<FazendaRow>('Não foi possível listar as fazendas', (de, ate) =>

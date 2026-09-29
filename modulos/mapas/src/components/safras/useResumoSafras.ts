@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { repo } from '../../data';
 import type { Fazenda, Safra, Talhao } from '../../lib/types';
 import { mensagemDeErro } from '../Aviso';
-import { lerPlantioPims } from '../usePlantioPims';
+import { lerPlantioPims, ouvirPlantioPims } from '../usePlantioPims';
 import { resumoAreas, resumoPlantioFazenda, type ResumoAreas, type ResumoPlantioFazenda } from './safrasResumo';
 
 export interface LinhaResumo {
@@ -21,12 +21,15 @@ export interface ResumosSafras {
 /**
  * Plantio (PIMS + manual) e áreas da cultura de cada safra × fazenda para a tela Safras. Os talhões de
  * cada fazenda ficam em cache enquanto a tela está aberta; ao salvar/excluir uma safra o resumo é
- * refeito sem voltar ao estado "carregando".
+ * refeito sem voltar ao estado "carregando" — e também quando o botão "Atualizar plantio" relê o plantio.
  */
 export function useResumoSafras(safras: Safra[] | null, fazendas: Fazenda[]): ResumosSafras {
   const [linhas, setLinhas] = useState<Map<string, LinhaResumo> | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const talhoesCache = useRef(new Map<string, Promise<Talhao[]>>());
+  /** muda a cada releitura do plantio do PIMS (recarregarPlantioPims) */
+  const [recarga, setRecarga] = useState(0);
+  useEffect(() => ouvirPlantioPims(() => setRecarga((n) => n + 1)), []);
 
   useEffect(() => {
     if (safras === null) return;
@@ -75,7 +78,7 @@ export function useResumoSafras(safras: Safra[] | null, fazendas: Fazenda[]): Re
     return () => {
       ativo = false;
     };
-  }, [safras, fazendas]);
+  }, [safras, fazendas, recarga]);
 
   return { linhas, erro };
 }
