@@ -49,6 +49,13 @@ describe('carregarSeed: ligação com as fazendas do COA WEB', () => {
     expect(await vinculos(repo)).toEqual({ 'Três Flechas': 7, Globo: 3, SM3: null });
   });
 
+  it('ignora o prefixo "Fazenda" do nome no COA WEB (Fazenda Globo ↔ Globo)', async () => {
+    const repo = comCoa(repoNovo(), [{ id: 2, nome: 'Fazenda Globo' }, { id: 6, nome: 'Faz. Três Flechas' }, { id: 5, nome: 'SM3' }]);
+    const r = await carregarSeed(repo, ler());
+    expect(r).toMatchObject({ fazendas: 3, ligadas: 3, semVinculo: [] });
+    expect(await vinculos(repo)).toEqual({ 'Três Flechas': 6, Globo: 2, SM3: 5 });
+  });
+
   it('modo local (lista vazia): tudo sem vínculo, sem erro', async () => {
     const repo = repoNovo();
     const r = await carregarSeed(repo, ler());

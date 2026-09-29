@@ -45,8 +45,8 @@ categoria **MAPAS**. O COA WEB mostra o módulo num `iframe` da mesma origem
 - **Cadastro padrão no COA WEB**: a publicação não leva `public/dados/`. Em `modulos/mapas`,
   `npm run pacote-seed` gera `cadastro-padrao-mapas.zip` (seed.json + GeoJSONs; dados da Locks, nunca vai
   para o git nem para a publicação); o admin usa **Fazendas → Importar cadastro padrão** e escolhe o zip.
-  Cada unidade é ligada à fazenda do COA WEB de mesmo nome (sem acento e sem diferença de maiúsculas:
-  `Três Flechas` ↔ `Tres Flechas`); o aviso final lista as que ficaram sem vínculo (só administradores as
+  Cada unidade é ligada à fazenda do COA WEB de mesmo nome (sem acento, sem diferença de maiúsculas e sem o
+  prefixo "Fazenda": `Três Flechas` ↔ `Tres Flechas`, `Globo` ↔ `Fazenda Globo`); o aviso final lista as que ficaram sem vínculo (só administradores as
   veem). Na tela da fazenda, o campo **Fazenda no COA WEB** ajusta o vínculo à mão; importar de novo não
   troca um vínculo escolhido, mas religa pelo nome uma fazenda deixada em "Sem vínculo" (desligue de novo se
   for o caso).

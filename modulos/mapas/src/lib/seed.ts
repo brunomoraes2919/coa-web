@@ -125,10 +125,15 @@ function colunasDe(fc: FeatureCollection): string[] {
  * Fazendas do COA WEB por nome comparável. Nome repetido (ambíguo) fica de fora: o vínculo define quem
  * vê a fazenda, então é melhor deixar sem vínculo (o admin escolhe à mão) do que ligar à fazenda errada.
  */
+/** Nome para ligar à fazenda do COA WEB: comparável e sem o prefixo "Fazenda"/"Faz." ("Fazenda Globo" ↔ "Globo"). */
+function chaveCoa(nome: string | null | undefined): string {
+  return nomeComparavel(nome).replace(/^FAZ(?:ENDA)?\.?\s+/, '');
+}
+
 function coaPorNome(lista: FazendaCoa[]): Map<string, number> {
   const ids = new Map<string, number[]>();
   for (const f of lista) {
-    const k = nomeComparavel(f.nome);
+    const k = chaveCoa(f.nome);
     if (k) ids.set(k, [...(ids.get(k) ?? []), f.id]);
   }
   return new Map([...ids].filter(([, v]) => v.length === 1).map(([k, v]) => [k, v[0]]));
@@ -240,7 +245,7 @@ export async function carregarSeed(repo: Repositorio, ler: LeitorSeed = leitorHt
   for (let i = 0; i < seed.fazendas.length; i++) {
     const sf = seed.fazendas[i];
     aoAvancar?.(`Gravando ${sf.nome} (${i + 1} de ${seed.fazendas.length})…`);
-    const coaId = coa.get(nomeComparavel(sf.nome)) ?? coa.get(nomeComparavel(sf.unidadePims)) ?? null;
+    const coaId = coa.get(chaveCoa(sf.nome)) ?? coa.get(chaveCoa(sf.unidadePims)) ?? null;
     const r = await gravarFazenda(repo, sf, bases[i], fazendasExistentes, coaId);
     idPorUnidade.set(nomeComparavel(sf.unidadePims), r.id);
     talhoes += r.talhoes;
