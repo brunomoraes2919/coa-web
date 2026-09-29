@@ -165,11 +165,20 @@ com execução manual; se um dia o Agrovex liberar a rota `/mcp`, basta religar 
 2. `~/.plantio-pims.env` (permissão 600, só o usuário lê): `AGROVEX_TOKEN`, `SUPABASE_URL` e
    `SUPABASE_SERVICE_ROLE_KEY` (a chave `service_role` do Supabase do COA WEB — ignora o RLS; nunca vai
    para o código nem para o site). Para trocar uma chave sem mostrá-la na tela:
-   `read -rsp "Cole a chave: " V; echo; sed -i '/^AGROVEX_TOKEN=/d' ~/.plantio-pims.env; echo "AGROVEX_TOKEN=$V" >> ~/.plantio-pims.env; unset V`.
+   `read -rsp "Cole a chave: " V; echo; V=$(printf %s "$V" | tr -d "[:space:]"); if [ ${#V} -gt 40 ]; then sed -i "/^AGROVEX_TOKEN=/d" ~/.plantio-pims.env; echo "AGROVEX_TOKEN=$V" >> ~/.plantio-pims.env; echo "gravada: ${#V}"; else echo "NAO gravada"; fi; unset V`
+   (troque `AGROVEX_TOKEN` pelo nome da chave; o teste de tamanho evita gravar uma chave vazia se o Enter
+   for apertado sem colar nada — o token do Agrovex tem 64 caracteres, a `service_role` ~219).
 3. `/etc/systemd/system/plantio-pims.service` + `plantio-pims.timer` (= `scripts/servidor/`, trocando
    `USUARIO`): roda a cada hora no minuto 17 e volta sozinho depois de reiniciar a VM
    (`sudo systemctl enable --now plantio-pims.timer`). A imagem mínima do Ubuntu não tem `cron`.
-4. Conferir: `systemctl list-timers plantio-pims.timer` (próxima rodada), `tail ~/plantio-pims/rotina.log`
+4. **Botão "Atualizar plantio"** (topo do Novo mapa e de Safras): grava um pedido em
+   `mapas_plantio_pedidos` (`supabase/coa-web/0002_pedidos_plantio.sql`); na VM,
+   `plantio-pims-pedidos.timer` roda `~/plantio-pims/atender-pedidos.sh` (= `scripts/servidor/`) a cada
+   ~30 s: sem pedido, não faz nada; com pedido, roda a rotina do PIMS na hora, grava e marca o pedido
+   (`atendido_em`, `resultado` = `ok` ou o erro). Leva uns 15–45 s. Os dois agendamentos usam a mesma trava
+   (`~/plantio-pims/.trava`), então nunca rodam ao mesmo tempo; a rotina horária também baixa a versão nova
+   de `atender-pedidos.mjs`. Pedidos atendidos há mais de 30 dias são apagados.
+5. Conferir: `systemctl list-timers plantio-pims.timer` (próxima rodada), `tail ~/plantio-pims/rotina.log`
    (histórico: só totais — linhas safra × unidade, talhões, `geradoEm`), rodar agora:
    `sudo systemctl start plantio-pims.service`.
 
