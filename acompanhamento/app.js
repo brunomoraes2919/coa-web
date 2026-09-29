@@ -481,18 +481,18 @@
     var dados = dadosMapa(mp, opcoes.faz ? u : null), porNome = {};
     dados.forEach(function (d) { porNome[d.name] = d; });
     comp.quadros.forEach(function (q, i) {
-      var fh = comp.quadros.length > 1 ? alturaUtil * q.fr : H, topo = q.titulo ? 22 : 0;
+      var fh = comp.quadros.length > 1 ? alturaUtil * q.fr : H, topo = q.titulo ? Math.round((opcoes.fonteTitulo || 12) * 1.8) : 0;
       var a = (q.bbox[2] - q.bbox[0]) / Math.max(1, q.bbox[3] - q.bbox[1]);
       var nome = registrar(u + '|' + mp.rotulo + '|' + (comp.quadros.length > 1 ? 'q' + i : 'todo'), q.fs);
       var lat = (Math.atan(Math.exp(((q.bbox[1] + q.bbox[3]) / 2) / 6378137)) * 2 - Math.PI / 2);
-      if (q.titulo) graphic.push({ type: 'text', left: 4, top: y + 2, style: { text: q.titulo, fontSize: 12, fontWeight: 600, fill: COR.suave } });
+      if (q.titulo) graphic.push({ type: 'text', left: 4, top: y + 2, style: { text: q.titulo, fontSize: opcoes.fonteTitulo || 12, fontWeight: 600, fill: COR.suave } });
       series.push({
-        type: 'map', map: nome, roam: !opcoes.estatico, selectedMode: false, aspectScale: Math.cos(lat),
+        type: 'map', map: nome, roam: !opcoes.estatico && !opcoes.semZoom, selectedMode: false, aspectScale: Math.cos(lat),
         layoutCenter: [W / 2, y + topo + (fh - topo) / 2], layoutSize: tamanhoQueCabe(a, W, fh - topo),
         scaleLimit: { min: 0.8, max: 14 },
         itemStyle: { borderColor: '#FFFFFF', borderWidth: opcoes.estatico ? 0.4 : 0.8 },
         emphasis: { label: { show: !opcoes.estatico, color: '#000', fontWeight: 700 }, itemStyle: { borderColor: COR.escuro, borderWidth: 1.4 } },
-        label: { show: !opcoes.estatico, fontSize: opcoes.grande ? 11 : 9, color: COR.texto, formatter: function (p) { return p.data ? p.data.talhao : ''; } },
+        label: { show: !opcoes.estatico || !!opcoes.rotulos, fontSize: opcoes.fonte || (opcoes.grande ? 11 : 9), color: COR.texto, formatter: function (p) { return p.data ? p.data.talhao : ''; } },
         labelLayout: { hideOverlap: true },
         data: q.fs.map(function (f) { return porNome[f.properties.name]; }),
         cursor: opcoes.aoClicar ? 'pointer' : 'default'
@@ -516,7 +516,9 @@
   }
   function chip(tipo, texto) { return '<span class="chip ' + tipo + '">' + esc(texto) + '</span>'; }
 
-  function renderKpis(m) {
+  function renderKpis(m) { $('kpis').innerHTML = htmlKpis(m); }
+
+  function htmlKpis(m) {
     var pl = m.o === 'PLANTIO', feito = pl ? 'plantada' : 'colhida';
     var rot = rotulosClasse(m.o), total = m.talhoes.length || 1;
     var ritmoSub = m.metaHoje !== null && m.media7
@@ -529,7 +531,7 @@
       ? (m.termino && m.restante > 0 ? (function () { var d = dif(m.termino, m.previsao); return d <= 0 ? chip('bom', d === 0 ? 'no prazo' : Math.abs(d) + ' dias antes') : chip(d <= 3 ? 'atencao' : 'ruim', d + ' dias após o planejado'); })() + ' ' : '') + (m.restante > 0 ? 'em ' + fmtN(m.diasPrev + 1) + ' dias' : 'concluído')
       : 'sem ritmo para projetar';
     var barra = '<span class="barra-empilhada">' + [3, 2, 1, 0].map(function (k) { var c = m.porClasse[k]; return c.n ? '<span style="width:' + (c.n / total * 100) + '%;background:' + COR.s[k] + '" title="' + rot[k] + ': ' + c.n + '"></span>' : ''; }).join('') + '</span>';
-    $('kpis').innerHTML = [
+    return [
       kpi('Área ' + feito, fmtN(m.exec), 'ha', chip('neutro', fmtPct(m.pct, 1)) + ' de ' + fmtN(m.areaTotal) + ' ha'),
       kpi(pl ? 'A plantar' : 'A colher', fmtN(m.restante), 'ha', m.porClasse[0].n + ' talhões não iniciados'),
       kpi('Ritmo · 7 dias', m.media7 ? fmtN(m.media7) : '—', m.media7 ? 'ha/dia' : '', ritmoSub),
@@ -584,24 +586,30 @@
     var el = $('g-meta');
     legenda('leg-meta', [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Meta diária', cor: COR.dourado, tipo: 'tracejada' }]);
     if (!m.serie.length) return vazio(el, 'Ainda não há apontamentos de ' + m.o.toLowerCase() + ' nesta safra.');
-    var temMeta = m.serie.some(function (x) { return x.meta !== null; });
+    chart(el).setOption(opcoesMeta(m, 1), true);
+  }
+
+  /** Gráfico "realizado x meta por dia"; `k` multiplica fontes e traços (TV e imagem exportada). */
+  function opcoesMeta(m, k, ultimosDias) {
+    var serie = ultimosDias ? m.serie.slice(-ultimosDias) : m.serie;
+    var temMeta = serie.some(function (x) { return x.meta !== null; });
     var series = [{
-      name: 'Realizado', type: 'bar', data: m.serie.map(function (x) { return Math.round(x.a); }), barMaxWidth: 26, barCategoryGap: '28%',
-      itemStyle: { color: COR.teal, borderRadius: [3, 3, 0, 0] },
-      label: { show: m.serie.length <= 45, position: 'top', fontSize: 10.5, color: COR.suave, formatter: function (p) { return p.value ? fmtN(p.value) : ''; } },
+      name: 'Realizado', type: 'bar', data: serie.map(function (x) { return Math.round(x.a); }), barMaxWidth: 26 * k, barCategoryGap: '28%',
+      itemStyle: { color: COR.teal, borderRadius: [3 * k, 3 * k, 0, 0] },
+      label: { show: serie.length <= 45, position: 'top', fontSize: 10.5 * k, color: COR.suave, formatter: function (p) { return p.value ? fmtN(p.value) : ''; } },
       labelLayout: { hideOverlap: true }
     }];
-    if (temMeta) series.push({ name: 'Meta', type: 'line', step: 'middle', data: m.serie.map(function (x) { return x.meta; }), symbol: 'none', lineStyle: { color: COR.dourado, width: 2, type: [6, 4] }, z: 5 });
-    chart(el).setOption(opt({
-      grid: { left: 4, right: 8, top: 20, bottom: 4, containLabel: true },
+    if (temMeta) series.push({ name: 'Meta', type: 'line', step: 'middle', data: serie.map(function (x) { return x.meta; }), symbol: 'none', lineStyle: { color: COR.dourado, width: 2 * k, type: [6 * k, 4 * k] }, z: 5 });
+    return opt({
+      grid: { left: 4 * k, right: 8 * k, top: 20 * k, bottom: 4 * k, containLabel: true },
       tooltip: tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.05)' } }, formatter: function (ps) {
-        var x = m.serie[ps[0].dataIndex];
+        var x = serie[ps[0].dataIndex];
         return '<b>' + x.d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) + '</b><br>Realizado: <b>' + fmtN(x.a) + ' ha</b>' + (x.meta !== null ? '<br>Meta: ' + fmtN(x.meta) + ' ha' : '');
       } }),
-      xAxis: Object.assign({}, eixoX, { type: 'category', data: m.serie.map(function (x) { return x.d.getDate() === 1 || x === m.serie[0] ? fmtData(x.d, true) : String(x.d.getDate()); }), axisLabel: { color: COR.suave, fontSize: 11, hideOverlap: true } }),
-      yAxis: Object.assign({}, eixoY, { type: 'value' }),
+      xAxis: Object.assign({}, eixoX, { type: 'category', data: serie.map(function (x) { return x.d.getDate() === 1 || x === serie[0] ? fmtData(x.d, true) : String(x.d.getDate()); }), axisLabel: { color: COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: COR.linha, width: k } } }),
+      yAxis: Object.assign({}, eixoY, { type: 'value', axisLabel: { color: COR.fraco, fontSize: 11 * k, formatter: function (v) { return fmtN(v); } }, splitLine: { lineStyle: { color: COR.grade, width: k } } }),
       series: series
-    }), true);
+    });
   }
 
   function renderAcumulado(m) {
@@ -973,6 +981,453 @@
   }
 
   // ===========================================================================
+  // Modo TV: tela única, sem rolagem, girando entre Todas e cada fazenda.
+  // Tudo em "em" a partir de uma fonte proporcional à tela (serve de 720p a 4K,
+  // ultrawide e TV na vertical). URL: ?tv=1&tempo=20&fazendas=SM3,GLOBO&todas=0
+  // ===========================================================================
+  var PARAMS = new URLSearchParams(location.search);
+  var tv = { ativo: false, lista: [], i: 0, tempo: 20, timer: null, relogio: null, pausado: false, wake: null, ocioso: null };
+
+  function tvEscala() { return parseFloat(getComputedStyle($('tv')).fontSize) / 14; }
+
+  function tvMontarLista() {
+    var us = unidadesDaSafra(estado.s);
+    var pedidas = (PARAMS.get('fazendas') || '').split(',').map(function (x) { return x.trim().toUpperCase(); }).filter(Boolean);
+    if (pedidas.length) us = us.filter(function (u) { return pedidas.indexOf(u) >= 0; });
+    tv.lista = (PARAMS.get('todas') !== '0' && us.length > 1 ? [TODAS] : []).concat(us);
+  }
+
+  async function telaCheia() {
+    try { if (!document.fullscreenElement && document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen(); } catch (e) { /* sem gesto do usuário */ }
+    $('tv-cheia').hidden = !!document.fullscreenElement;
+  }
+  async function manterTelaLigada() {
+    try { if (navigator.wakeLock && !tv.wake) { tv.wake = await navigator.wakeLock.request('screen'); tv.wake.addEventListener('release', function () { tv.wake = null; }); } } catch (e) { /* sem permissão */ }
+  }
+
+  function entrarTv() {
+    if (!DADOS) return;
+    fecharAmpliado(true);
+    tv.ativo = true; tv.pausado = false;
+    tv.tempo = Math.max(8, Number(PARAMS.get('tempo')) || 20);
+    document.documentElement.classList.add('modo-tv');
+    $('tv').hidden = false;
+    tvMontarLista();
+    tv.i = Math.max(0, tv.lista.indexOf(estado.u));
+    telaCheia();
+    manterTelaLigada();
+    tvRelogio();
+    clearInterval(tv.relogio); tv.relogio = setInterval(tvRelogio, 15000);
+    tvMostrar();
+  }
+
+  function sairTv() {
+    tv.ativo = false;
+    clearTimeout(tv.timer); clearInterval(tv.relogio);
+    document.documentElement.classList.remove('modo-tv');
+    $('tv').hidden = true;
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
+    if (tv.wake) { tv.wake.release().catch(function () {}); tv.wake = null; }
+    Object.keys(charts).forEach(function (c) { if (c.indexOf('tv-') === 0) descartar(c); });
+    if (PARAMS.get('tv') === '1') history.replaceState(null, '', location.pathname + (EMBED ? '?embed=1' : '') + location.hash);
+    render();
+  }
+
+  function tvRelogio() {
+    var d = new Date();
+    set('tv-hora', d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    set('tv-data', d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' }));
+  }
+
+  function tvAgendar() {
+    clearTimeout(tv.timer);
+    var barra = $('tv-tempo');
+    barra.style.transition = 'none'; barra.style.width = '0%';
+    $('tv-pausa').textContent = tv.pausado ? 'Continuar' : 'Pausar';
+    if (tv.pausado || tv.lista.length < 2) return;
+    requestAnimationFrame(function () { requestAnimationFrame(function () { barra.style.transition = 'width ' + tv.tempo + 's linear'; barra.style.width = '100%'; }); });
+    tv.timer = setTimeout(function () { tv.i = (tv.i + 1) % tv.lista.length; tvMostrar(); }, tv.tempo * 1000);
+  }
+
+  function tvMostrar() { tvDesenhar(); tvAgendar(); }
+
+  function tvDesenhar() {
+    if (!tv.ativo || !DADOS) return;
+    if (!tv.lista.length) tvMontarLista();
+    tv.i = tv.lista.length ? tv.i % tv.lista.length : 0;
+    var u = tv.lista[tv.i] || TODAS;
+    var us = u === TODAS ? unidadesDaSafra(estado.s) : [u];
+    var m = calcula(us, estado.s, estado.o), pl = m.o === 'PLANTIO', k = tvEscala();
+    set('tv-eyebrow', (pl ? 'Plantio' : 'Colheita') + ' · ' + nomeSafra(estado.s));
+    set('tv-fazenda', u === TODAS ? 'Todas as fazendas' : titulo(u));
+    set('tv-pct', fmtPct(m.pct, 1));
+    set('tv-pct-rot', (pl ? 'plantado' : 'colhido') + ' · ' + fmtN(m.exec) + ' de ' + fmtN(m.areaTotal) + ' ha');
+    $('tv-barra-pct').style.width = (m.pct * 100).toFixed(1) + '%';
+    var g = DADOS.geradoEm ? new Date(DADOS.geradoEm) : null;
+    set('tv-atualizado', g ? 'PIMS · ' + g.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+    $('tv-maquina').src = !pl && ({ SOJA: 1, MILHO: 1, SORGO: 1, MILHETO: 1 })[cultura(m.s)] ? 'assets/maquina.png' : 'assets/trator_8r.svg';
+    $('tv-kpis').innerHTML = htmlKpis(m);
+    $('tv-paginas').innerHTML = tv.lista.map(function (x, i) {
+      return '<button class="' + (i === tv.i ? 'ativo' : '') + '" data-i="' + i + '">' + esc(x === TODAS ? 'Todas' : titulo(x)) + '</button>';
+    }).join('');
+
+    var corpo = $('tv-corpo'), elMapa = $('tv-mapa');
+    Object.keys(charts).forEach(function (c) { if (c.indexOf('tv-') === 0) descartar(c); });
+    elMapa.innerHTML = '';
+    var comp = null;
+    if (u !== TODAS && MAPAS) { var mp = escolherMapa(u, m.talhoes, m.s); if (mp) { comp = compor(mp.features); comp.mp = mp; } }
+    var formaTv = u === TODAS ? 'todas' : 'paisagem';
+    if (comp) {
+      // na TV, o arranjo é o que desenha o mapa maior nesta tela (faixa larga ou coluna)
+      var bb = mp.features.map(bboxFeature).filter(Boolean).reduce(uniao);
+      var asp = (bb[2] - bb[0]) / Math.max(1, bb[3] - bb[1]);
+      var cw = corpo.clientWidth || innerWidth, ch = corpo.clientHeight || innerHeight * 0.8;
+      var cabe = function (w, h) { var lw = Math.min(w, h * asp); return lw * lw / asp; };
+      formaTv = cabe(cw, ch * 0.58) >= cabe(cw * 0.45, ch) ? 'paisagem' : 'retrato';
+      // quadros empilhados só numa coluna; numa faixa larga, um quadro só
+      if (formaTv === 'paisagem' && comp.quadros.length > 1) comp = { orientacao: 'paisagem', mp: mp, quadros: [{ fs: mp.features, bbox: bb, fr: 1, titulo: null }] };
+    }
+    corpo.className = 'tv-corpo ' + formaTv;
+    set('tv-mapa-titulo', u === TODAS ? 'Fazendas' : 'Mapa de evolução');
+    legenda('tv-legenda', [3, 2, 1, 0].map(function (c) { return { nome: rotulosClasse(m.o)[c], cor: COR.s[c] }; }));
+    $('tv-legenda').hidden = u === TODAS;
+    requestAnimationFrame(function () {
+      if (!tv.ativo) return;
+      if (u === TODAS) tvFazendas(m);
+      else if (comp) desenharMapaFazenda(elMapa, u, m, comp, { semZoom: true, rotulos: true, fonte: 8.5 * k, fonteTitulo: 11 * k });
+      else vazio(elMapa, MAPAS ? 'Sem limites de talhões para esta fazenda.' : 'Carregando os limites dos talhões…');
+      var eg = $('tv-grafico');
+      if (m.serie.length) chart(eg).setOption(opcoesMeta(m, k, 21), true);
+      else vazio(eg, 'Ainda não há apontamentos nesta safra.');
+    });
+  }
+
+  function tvFazendas(m) {
+    var el = $('tv-mapa');
+    var cards = m.unidades.map(function (u) { return { u: u, x: calcula([u], m.s, m.o) }; });
+    el.innerHTML = '<div class="tv-fazendas">' + cards.map(function (c) {
+      var x = c.x;
+      return '<div class="tv-fazenda"><div class="tv-fazenda-cab"><span>' + esc(titulo(c.u)) + '</span><b>' + fmtPct(x.pct) + '</b></div>' +
+        '<div class="barra"><span style="width:' + (x.pct * 100).toFixed(1) + '%"></span></div>' +
+        '<div class="tv-mini" id="tv-mini-' + c.u.replace(/\W/g, '') + '"></div>' +
+        '<div class="tv-fazenda-rod"><span>' + fmtN(x.exec) + ' / ' + fmtN(x.areaTotal) + ' ha</span><span>' + (x.media7 ? fmtN(x.media7) + ' ha/dia' : 'sem ritmo') + '</span></div></div>';
+    }).join('') + '</div>';
+    // cartões em 1 ou 2 linhas, conforme o espaço (cartões estreitos e altos ficam ruins na TV)
+    var linhasTv = cards.length > 4 && el.clientHeight > el.clientWidth * 0.35 ? 2 : 1;
+    el.firstChild.style.gridTemplateColumns = 'repeat(' + Math.ceil(cards.length / linhasTv) + ', minmax(0, 1fr))';
+    if (!MAPAS) return;
+    requestAnimationFrame(function () {
+      cards.forEach(function (c) {
+        var box = $('tv-mini-' + c.u.replace(/\W/g, '')), mp = escolherMapa(c.u, c.x.talhoes, m.s);
+        if (!box || !mp) return;
+        var comp = compor(mp.features); comp.mp = mp; comp.quadros.forEach(function (q) { q.titulo = null; });
+        desenharMapaFazenda(box, c.u, c.x, comp, { estatico: true, faz: true });
+      });
+    });
+  }
+
+  function tvMostrarControles() {
+    var t = $('tv');
+    t.classList.add('mostrar');
+    clearTimeout(tv.ocioso);
+    tv.ocioso = setTimeout(function () { t.classList.remove('mostrar'); }, 3000);
+  }
+
+  function abrirTv() {
+    // dentro do COA WEB (iframe), a TV abre numa aba própria: tela cheia e link para favoritar na TV
+    if (EMBED) { window.open('index.html?tv=1' + location.hash, '_blank', 'noopener'); return; }
+    entrarTv();
+  }
+
+  // ===========================================================================
+  // Exportar PNG: imagem pronta para o WhatsApp (quadrada, paisagem ou celular),
+  // desenhada num canvas no tamanho final, com letras grandes.
+  // ===========================================================================
+  var FORMATOS = {
+    quadrado: { w: 1440, h: 1440 },
+    paisagem: { w: 1920, h: 1080 },
+    vertical: { w: 1080, h: 1920 }
+  };
+  var exp = { formato: FORMATOS[ls('formatoPng')] ? ls('formatoPng') : 'quadrado', blob: null, url: null, arquivo: '', gerando: 0 };
+  var FAMILIA = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
+  function carregarImagem(src) {
+    return new Promise(function (ok, falha) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = falha; i.src = src; });
+  }
+  /** Desenha um gráfico ECharts fora da tela, no tamanho pedido, e devolve a imagem. */
+  function imagemGrafico(w, h, desenhar) {
+    var el = document.createElement('div');
+    el.id = 'exp-' + Math.random().toString(36).slice(2);
+    el.style.cssText = 'position:fixed;left:-30000px;top:0;width:' + Math.round(w) + 'px;height:' + Math.round(h) + 'px;';
+    document.body.appendChild(el);
+    try {
+      var g = desenhar(el);
+      if (!g) return Promise.resolve(null);
+      var zr = g.getZr();
+      if (zr.refreshImmediately) zr.refreshImmediately();
+      return carregarImagem(g.getDataURL({ type: 'png', pixelRatio: 1, backgroundColor: '#FFFFFF' }));
+    } finally { descartar(el.id); el.remove(); }
+  }
+  function rr(c, x, y, w, h, r) {
+    c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  }
+  function fonteCv(px, peso) { return (peso || 400) + ' ' + Math.round(px) + 'px ' + FAMILIA; }
+  /** Escreve cabendo em maxW (reduz a fonte se precisar). Devolve a largura usada. */
+  function escrever(c, t, x, y, px, peso, cor, maxW, alinhar) {
+    var p = px; c.font = fonteCv(p, peso);
+    while (maxW && p > 8 && c.measureText(t).width > maxW) { p -= 1; c.font = fonteCv(p, peso); }
+    c.fillStyle = cor; c.textAlign = alinhar || 'left'; c.textBaseline = 'alphabetic';
+    c.fillText(t, x, y);
+    return c.measureText(t).width;
+  }
+
+  /**
+   * Retângulos da imagem. Como no painel, a forma da fazenda decide: fazenda alta (retrato) ganha o
+   * mapa numa coluna; fazenda larga (paisagem) ganha o mapa numa faixa larga.
+   */
+  function layoutExport(fmt, forma) {
+    var W = fmt.w, H = fmt.h, k = Math.min(W, H) / 1080, M = 52 * k, g = 26 * k;
+    var L = { W: W, H: H, k: k, M: M, g: g, cab: { h: 250 * k }, rod: { y: H - 78 * k, h: 78 * k } };
+    var y0 = L.cab.h + g, y1 = L.rod.y - g * 0.6, larg = W - 2 * M, alt = y1 - y0;
+    if (W > H * 1.3) {                          // imagem paisagem
+      if (forma === 'paisagem') {               // mapa largo em cima; indicadores e gráfico embaixo
+        L.mapa = { x: M, y: y0, w: larg, h: alt * 0.56 };
+        var yb = L.mapa.y + L.mapa.h + g, hb = y1 - yb, colK = (larg - g) * 0.55;
+        L.kpis = { x: M, y: yb, w: colK, h: hb, cols: 3 };
+        L.graf = { x: M + colK + g, y: yb, w: larg - colK - g, h: hb };
+      } else {                                  // mapa em coluna à direita
+        var colE = (larg - g) * 0.47;
+        L.kpis = { x: M, y: y0, w: colE, h: alt * 0.48, cols: 3 };
+        L.graf = { x: M, y: L.kpis.y + L.kpis.h + g, w: colE, h: y1 - (L.kpis.y + L.kpis.h + g) };
+        L.mapa = { x: M + colE + g, y: y0, w: larg - colE - g, h: alt };
+      }
+    } else if (H > W * 1.3) {                   // imagem de celular: tudo empilhado
+      L.kpis = { x: M, y: y0, w: larg, h: 470 * k, cols: 2 };
+      var resto = y1 - (L.kpis.y + L.kpis.h + g) - g;
+      L.mapa = { x: M, y: L.kpis.y + L.kpis.h + g, w: larg, h: resto * 0.64 };
+      L.graf = { x: M, y: L.mapa.y + L.mapa.h + g, w: larg, h: resto * 0.36 };
+    } else if (forma === 'retrato') {           // quadrada, fazenda alta: indicadores à esquerda, mapa à direita
+      var colQ = (larg - g) * 0.46;
+      L.kpis = { x: M, y: y0, w: colQ, h: alt, cols: 2 };
+      L.mapa = { x: M + colQ + g, y: y0, w: larg - colQ - g, h: alt };
+      L.graf = null;
+    } else {                                    // quadrada, fazenda larga ou todas: indicadores em cima, mapa embaixo
+      L.kpis = { x: M, y: y0, w: larg, h: 300 * k, cols: 3 };
+      L.mapa = { x: M, y: L.kpis.y + L.kpis.h + g, w: larg, h: y1 - (L.kpis.y + L.kpis.h + g) };
+      L.graf = null;
+    }
+    return L;
+  }
+
+  /** Os 6 indicadores do painel em texto simples (para a imagem). */
+  function kpisTexto(m) {
+    var pl = m.o === 'PLANTIO', bom = '#1E7B4F', atencao = '#B7791F', ruim = '#B3261E', suave = COR.suave;
+    var ritmo = { sub: m.media ? 'média geral ' + fmtN(m.media) + ' ha/dia' : 'sem apontamentos', cor: suave };
+    if (m.metaHoje !== null && m.media7) { var r = m.media7 / m.metaHoje - 1; ritmo = { sub: (r >= 0 ? '+' : '') + fmtPct(r) + ' da meta (' + fmtN(m.metaHoje) + ')', cor: r >= 0 ? bom : r > -0.1 ? atencao : ruim }; }
+    var nec = { sub: m.termino ? (m.necessario ? 'para terminar em ' + fmtData(m.termino, true) : 'operação concluída') : 'sem data de término', cor: suave };
+    if (m.necessario && m.media7) nec.cor = m.necessario <= m.media7 ? bom : m.necessario <= m.media7 * 1.1 ? atencao : ruim;
+    var prev = { sub: m.previsao ? (m.restante > 0 ? 'em ' + fmtN(m.diasPrev + 1) + ' dias' : 'concluído') : 'sem ritmo para projetar', cor: suave };
+    if (m.previsao && m.termino && m.restante > 0) { var d = dif(m.termino, m.previsao); prev = { sub: d <= 0 ? (d === 0 ? 'no prazo' : Math.abs(d) + ' dias antes do planejado') : d + ' dias após o planejado', cor: d <= 0 ? bom : d <= 3 ? atencao : ruim }; }
+    return [
+      { rot: 'Área ' + (pl ? 'plantada' : 'colhida'), val: fmtN(m.exec), un: 'ha', sub: fmtPct(m.pct, 1) + ' de ' + fmtN(m.areaTotal) + ' ha', cor: suave },
+      { rot: pl ? 'A plantar' : 'A colher', val: fmtN(m.restante), un: 'ha', sub: m.porClasse[0].n + ' talhões não iniciados', cor: suave },
+      { rot: 'Ritmo · 7 dias', val: m.media7 ? fmtN(m.media7) : '—', un: m.media7 ? 'ha/dia' : '', sub: ritmo.sub, cor: ritmo.cor },
+      { rot: 'Necessário p/ meta', val: m.necessario ? fmtN(m.necessario) : '—', un: m.necessario ? 'ha/dia' : '', sub: nec.sub, cor: nec.cor },
+      { rot: 'Previsão de término', val: m.previsao ? fmtData(m.previsao) : '—', un: '', sub: prev.sub, cor: prev.cor },
+      { rot: 'Talhões ' + (pl ? 'plantados' : 'colhidos'), val: String(m.porClasse[3].n), un: '/ ' + m.talhoes.length, sub: (m.porClasse[1].n + m.porClasse[2].n) + ' em andamento', cor: suave }
+    ];
+  }
+
+  function cartao(c, r, k) {
+    c.save(); c.shadowColor = 'rgba(16,54,50,.08)'; c.shadowBlur = 18 * k; c.shadowOffsetY = 4 * k;
+    rr(c, r.x, r.y, r.w, r.h, 18 * k); c.fillStyle = '#FFFFFF'; c.fill(); c.restore();
+    rr(c, r.x, r.y, r.w, r.h, 18 * k); c.strokeStyle = COR.linha; c.lineWidth = Math.max(1, 1.5 * k); c.stroke();
+  }
+  function larguraLegenda(c, itens, k) {
+    c.font = fonteCv(19 * k, 500);
+    return itens.reduce(function (s, it) { return s + c.measureText(it.nome).width + 48 * k; }, 0);
+  }
+  function legendaCanvas(c, itens, xDir, y, k, tracejada) {
+    var x = xDir; c.font = fonteCv(19 * k, 500);
+    for (var i = itens.length - 1; i >= 0; i--) {
+      var it = itens[i], tw = c.measureText(it.nome).width;
+      x -= tw; c.fillStyle = COR.suave; c.textAlign = 'left'; c.fillText(it.nome, x, y);
+      x -= 26 * k;
+      if (it.linha) { c.strokeStyle = it.cor; c.lineWidth = 3 * k; c.setLineDash([7 * k, 5 * k]); c.beginPath(); c.moveTo(x, y - 7 * k); c.lineTo(x + 20 * k, y - 7 * k); c.stroke(); c.setLineDash([]); }
+      else { rr(c, x + 2 * k, y - 16 * k, 16 * k, 16 * k, 4 * k); c.fillStyle = it.cor; c.fill(); if (it.borda) { c.strokeStyle = '#C9D3CB'; c.lineWidth = 1; c.stroke(); } }
+      x -= 22 * k;
+    }
+  }
+
+  async function gerarPng(formato) {
+    var fmt = FORMATOS[formato], todas = estado.u === TODAS;
+    var us = todas ? unidadesDaSafra(estado.s) : [estado.u];
+    var m = calcula(us, estado.s, estado.o), pl = m.o === 'PLANTIO';
+    var mp = !todas && MAPAS ? escolherMapa(estado.u, m.talhoes, m.s) : null;
+    var comp = mp ? compor(mp.features) : null;
+    if (comp) comp.mp = mp;
+    var L = layoutExport(fmt, todas ? 'todas' : comp ? comp.orientacao : 'paisagem'), k = L.k, M = L.M, W = L.W, H = L.H;
+    // quadros empilhados só cabem bem num espaço mais alto que largo; senão, um quadro só
+    if (comp && comp.quadros.length > 1 && L.mapa.w > L.mapa.h * 1.2) {
+      var bb = mp.features.map(bboxFeature).filter(Boolean).reduce(uniao);
+      comp = { orientacao: comp.orientacao, mp: mp, quadros: [{ fs: mp.features, bbox: bb, fr: 1, titulo: null }] };
+    }
+    var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    var c = cv.getContext('2d');
+    var soja = await carregarImagem('assets/soja_header.svg').catch(function () { return null; });
+    var logo = await carregarImagem('assets/logo_locks.png').catch(function () { return null; });
+
+    // fundo
+    c.fillStyle = '#EEF2EE'; c.fillRect(0, 0, W, H);
+
+    // cabeçalho
+    var gr = c.createLinearGradient(0, 0, W, L.cab.h);
+    gr.addColorStop(0, '#0E4D45'); gr.addColorStop(0.42, '#0C5A50'); gr.addColorStop(1, '#103632');
+    c.fillStyle = gr; c.fillRect(0, 0, W, L.cab.h);
+    if (soja) { var sh = L.cab.h * 1.7, sw = soja.width / soja.height * sh; c.drawImage(soja, W - sw + 40 * k, (L.cab.h - sh) / 2, sw, sh); }
+    var eyebrow = ((pl ? 'PLANTIO' : 'COLHEITA') + ' · ' + nomeSafra(m.s).toUpperCase());
+    if (c.letterSpacing !== undefined) c.letterSpacing = (3 * k) + 'px';
+    escrever(c, eyebrow, M, 70 * k, 24 * k, 700, '#F0B24A', W * 0.55);
+    if (c.letterSpacing !== undefined) c.letterSpacing = '0px';
+    escrever(c, todas ? 'Todas as fazendas' : titulo(estado.u), M, 140 * k, 64 * k, 700, '#FFFFFF', W * 0.58);
+    escrever(c, fmtPct(m.pct, 1), W - M, 132 * k, 100 * k, 700, '#FFFFFF', W * 0.36, 'right');
+    escrever(c, (pl ? 'plantado' : 'colhido') + ' · ' + fmtN(m.exec) + ' de ' + fmtN(m.areaTotal) + ' ha', W - M, 174 * k, 24 * k, 500, '#D7E8E2', W * 0.4, 'right');
+    var partes = [];
+    if (m.ini) partes.push('início ' + fmtData(m.ini, true));
+    if (m.ult) partes.push('último apontamento ' + fmtData(m.ult, true));
+    escrever(c, partes.join('  ·  '), M, 186 * k, 24 * k, 500, '#D7E8E2', W * 0.55);
+    var by = L.cab.h - 38 * k, bw = W - 2 * M, bh = 12 * k;
+    rr(c, M, by, bw, bh, bh / 2); c.fillStyle = 'rgba(255,255,255,.18)'; c.fill();
+    if (m.pct > 0) { var gb = c.createLinearGradient(M, 0, M + bw, 0); gb.addColorStop(0, '#F0B24A'); gb.addColorStop(1, '#DB8A08'); rr(c, M, by, Math.max(bh, bw * m.pct), bh, bh / 2); c.fillStyle = gb; c.fill(); }
+
+    // indicadores
+    var ks = kpisTexto(m), cols = L.kpis.cols, linhas = Math.ceil(ks.length / cols), g = 18 * k;
+    var tw = (L.kpis.w - g * (cols - 1)) / cols, th = (L.kpis.h - g * (linhas - 1)) / linhas;
+    ks.forEach(function (x, i) {
+      var r = { x: L.kpis.x + (i % cols) * (tw + g), y: L.kpis.y + Math.floor(i / cols) * (th + g), w: tw, h: th };
+      cartao(c, r, k);
+      var pad = 22 * k, esc2 = Math.min(1, th / (150 * k));
+      if (c.letterSpacing !== undefined) c.letterSpacing = (1.5 * k) + 'px';
+      escrever(c, x.rot.toUpperCase(), r.x + pad, r.y + pad + 18 * k * esc2, 18 * k * esc2, 600, COR.fraco, tw - 2 * pad);
+      if (c.letterSpacing !== undefined) c.letterSpacing = '0px';
+      var vy = r.y + th / 2 + 20 * k * esc2;
+      c.font = fonteCv(22 * k * esc2, 600);
+      var larguraUn = x.un ? c.measureText(x.un).width + 10 * k : 0;
+      var usado = escrever(c, x.val, r.x + pad, vy, 50 * k * esc2, 700, COR.texto, tw - 2 * pad - larguraUn);
+      if (x.un) escrever(c, x.un, r.x + pad + usado + 8 * k, vy, 22 * k * esc2, 600, COR.suave, 110 * k);
+      escrever(c, x.sub, r.x + pad, r.y + th - pad, 19 * k * esc2, x.cor === COR.suave ? 500 : 650, x.cor, tw - 2 * pad);
+    });
+
+    // mapa (ou quadro das fazendas)
+    var rm = L.mapa; cartao(c, rm, k);
+    escrever(c, todas ? 'Fazendas' : 'Mapa de evolução', rm.x + 24 * k, rm.y + 46 * k, 26 * k, 700, COR.escuro, rm.w * 0.45);
+    var dentro = { x: rm.x + 18 * k, y: rm.y + 66 * k, w: rm.w - 36 * k, h: rm.h - 84 * k };
+    var itensLeg = [3, 2, 1, 0].map(function (i) { return { nome: rotulosClasse(m.o)[i], cor: COR.s[i], borda: i === 0 }; });
+    c.font = fonteCv(26 * k, 700);
+    var legEmBaixo = !todas && c.measureText('Mapa de evolução').width + larguraLegenda(c, itensLeg, k) + 70 * k > rm.w;
+    if (legEmBaixo) { dentro.y += 42 * k; dentro.h -= 42 * k; }
+    if (todas) {
+      var lista = m.unidades.map(function (u) { return { u: u, x: calcula([u], m.s, m.o) }; }).sort(function (a, b) { return b.x.pct - a.x.pct; });
+      // uma ou duas colunas, para a letra ficar grande
+      var colsF = dentro.w > 900 * k && lista.length > 4 ? 2 : 1, linhasF = Math.ceil(lista.length / colsF);
+      var cw = (dentro.w - (colsF - 1) * 36 * k) / colsF, lh = dentro.h / Math.max(1, linhasF);
+      var fs = Math.min(1.15, lh / (112 * k));
+      lista.forEach(function (f, i) {
+        var col = Math.floor(i / linhasF), lin = i % linhasF;
+        var x0 = dentro.x + col * (cw + 36 * k) + 8 * k, y = dentro.y + lin * lh + (lh - 104 * k * fs) / 2, x = f.x, wb = cw - 16 * k;
+        escrever(c, titulo(f.u), x0, y + 32 * k * fs, 28 * k * fs, 700, COR.texto, wb * 0.6);
+        escrever(c, fmtPct(x.pct), x0 + wb, y + 34 * k * fs, 34 * k * fs, 700, COR.teal, 170 * k, 'right');
+        var yb = y + 50 * k * fs;
+        rr(c, x0, yb, wb, 12 * k * fs, 6 * k * fs); c.fillStyle = COR.s[0]; c.fill();
+        if (x.pct > 0) { rr(c, x0, yb, Math.max(12 * k * fs, wb * x.pct), 12 * k * fs, 6 * k * fs); c.fillStyle = COR.teal; c.fill(); }
+        var info = fmtN(x.exec) + ' de ' + fmtN(x.areaTotal) + ' ha  ·  ' + (x.media7 ? fmtN(x.media7) + ' ha/dia' : 'sem ritmo') + (x.previsao ? '  ·  previsão ' + fmtData(x.previsao, true) : '');
+        escrever(c, info, x0, yb + 42 * k * fs, 21 * k * fs, 500, COR.suave, wb);
+      });
+    } else {
+      if (legEmBaixo) {
+        var kl = k * Math.min(1, (rm.w - 48 * k) / larguraLegenda(c, itensLeg, k));
+        legendaCanvas(c, itensLeg, rm.x + 24 * k + larguraLegenda(c, itensLeg, kl), rm.y + 88 * k, kl);
+      }
+      else legendaCanvas(c, itensLeg, rm.x + rm.w - 24 * k, rm.y + 44 * k, k);
+      if (comp) {
+        var img = await imagemGrafico(dentro.w, dentro.h, function (el) {
+          return desenharMapaFazenda(el, estado.u, m, comp, { semZoom: true, rotulos: true, fonte: 12 * k, fonteTitulo: 18 * k });
+        });
+        if (img) c.drawImage(img, dentro.x, dentro.y);
+      } else {
+        escrever(c, 'Limites dos talhões indisponíveis', dentro.x + dentro.w / 2, dentro.y + dentro.h / 2, 24 * k, 500, COR.fraco, dentro.w, 'center');
+      }
+    }
+
+    // gráfico diário
+    if (L.graf) {
+      var rg = L.graf; cartao(c, rg, k);
+      escrever(c, 'Realizado × meta por dia', rg.x + 24 * k, rg.y + 46 * k, 26 * k, 700, COR.escuro, rg.w * 0.55);
+      legendaCanvas(c, [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Meta', cor: COR.dourado, linha: true }], rg.x + rg.w - 24 * k, rg.y + 44 * k, k);
+      var dg = { x: rg.x + 14 * k, y: rg.y + 62 * k, w: rg.w - 28 * k, h: rg.h - 74 * k };
+      if (m.serie.length) {
+        var ig = await imagemGrafico(dg.w, dg.h, function (el) { var ch = echarts.init(el, null, { renderer: 'canvas' }); charts[el.id] = ch; ch.setOption(opcoesMeta(m, 1.7 * k, 21)); return ch; });
+        if (ig) c.drawImage(ig, dg.x, dg.y);
+      } else escrever(c, 'Ainda não há apontamentos nesta safra.', dg.x + dg.w / 2, dg.y + dg.h / 2, 22 * k, 500, COR.fraco, dg.w, 'center');
+    }
+
+    // rodapé
+    var ry = L.rod.y + L.rod.h / 2 + 8 * k, xl = M;
+    if (logo) { var lh2 = 34 * k, lw = logo.width / logo.height * lh2; c.drawImage(logo, M, ry - lh2 + 6 * k, lw, lh2); xl = M + lw + 20 * k; }
+    var gerado = DADOS.geradoEm ? new Date(DADOS.geradoEm) : null;
+    escrever(c, 'Acompanhamento Operacional · COA' + (gerado ? '  ·  PIMS de ' + gerado.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''),
+      xl, ry, 19 * k, 500, COR.suave, W - xl - M - 260 * k);
+    escrever(c, 'gerado em ' + new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }), W - M, ry, 17 * k, 500, COR.fraco, 260 * k, 'right');
+
+    return new Promise(function (ok) { cv.toBlob(ok, 'image/png'); });
+  }
+
+  function nomeArquivo() {
+    var s = function (t) { return String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); };
+    return ['acompanhamento', s(estado.o), s(estado.s), s(estado.u === TODAS ? 'todas' : estado.u), paraIso(hoje())].join('-') + '.png';
+  }
+
+  async function atualizarPrevia() {
+    var n = ++exp.gerando;
+    set('exp-status', 'Gerando a imagem…');
+    $('exp-baixar').disabled = true; $('exp-compartilhar').disabled = true;
+    try {
+      var blob = await gerarPng(exp.formato);
+      if (n !== exp.gerando) return;
+      if (exp.url) URL.revokeObjectURL(exp.url);
+      exp.blob = blob; exp.url = URL.createObjectURL(blob); exp.arquivo = nomeArquivo();
+      $('exp-previa').src = exp.url;
+      var f = FORMATOS[exp.formato];
+      set('exp-status', f.w + ' × ' + f.h + ' px · ' + Math.round(blob.size / 1024) + ' KB');
+      $('exp-baixar').disabled = false; $('exp-compartilhar').disabled = false;
+      var arq = new File([blob], exp.arquivo, { type: 'image/png' });
+      $('exp-compartilhar').hidden = !(navigator.canShare && navigator.canShare({ files: [arq] }));
+    } catch (e) {
+      if (n === exp.gerando) set('exp-status', 'Não foi possível gerar a imagem: ' + (e && e.message ? e.message : e));
+    }
+  }
+
+  function abrirExportar() {
+    if (!DADOS) return;
+    if (estado.vista !== 'painel') { estado.vista = 'painel'; render(); }
+    document.querySelectorAll('#dlg-exportar input[name="fmt"]').forEach(function (r) { r.checked = r.value === exp.formato; });
+    $('dlg-exportar').showModal();
+    atualizarPrevia();
+  }
+  function baixarPng() {
+    if (!exp.blob) return;
+    var a = document.createElement('a'); a.href = exp.url; a.download = exp.arquivo;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  async function compartilharPng() {
+    if (!exp.blob) return;
+    try {
+      await navigator.share({ files: [new File([exp.blob], exp.arquivo, { type: 'image/png' })], title: 'Acompanhamento Operacional' });
+    } catch (e) { if (e && e.name !== 'AbortError') set('exp-status', 'Não foi possível compartilhar: ' + e.message); }
+  }
+
+  // ===========================================================================
   // Navegação e montagem
   // ===========================================================================
   function mostrarAviso(t, erro) {
@@ -1027,6 +1482,7 @@
     try { MAPAS = await fonte.mapas(); } catch (e) { MAPAS = {}; console.warn('Acompanhamento: mapas', e); }
     mapasCarregando = false;
     if (estado.vista === 'painel' && mUltimo) { renderMapa(mUltimo); }
+    if (tv.ativo) tvDesenhar();
   }
 
   async function atualizarAgora() {
@@ -1070,7 +1526,34 @@
     if (!semRedesenhar && mUltimo) renderMapa(mUltimo);
   }
   $('btn-ampliar').addEventListener('click', ampliar);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecharAmpliado(); });
+  document.addEventListener('keydown', function (e) {
+    if (tv.ativo) {
+      if (e.key === 'Escape' && !document.fullscreenElement) sairTv();
+      else if (e.key === 'ArrowRight' && tv.lista.length) { tv.i = (tv.i + 1) % tv.lista.length; tvMostrar(); }
+      else if (e.key === 'ArrowLeft' && tv.lista.length) { tv.i = (tv.i - 1 + tv.lista.length) % tv.lista.length; tvMostrar(); }
+      else if (e.key === ' ') { e.preventDefault(); tv.pausado = !tv.pausado; tvAgendar(); }
+      tvMostrarControles();
+      return;
+    }
+    if (e.key === 'Escape') fecharAmpliado();
+  });
+
+  // exportar e modo TV
+  $('btn-exportar').addEventListener('click', abrirExportar);
+  $('btn-tv').addEventListener('click', abrirTv);
+  document.querySelectorAll('#dlg-exportar input[name="fmt"]').forEach(function (r) {
+    r.addEventListener('change', function () { exp.formato = this.value; ls('formatoPng', this.value); atualizarPrevia(); });
+  });
+  $('exp-baixar').addEventListener('click', baixarPng);
+  $('exp-compartilhar').addEventListener('click', compartilharPng);
+  $('exp-fechar').addEventListener('click', function () { $('dlg-exportar').close(); });
+  $('tv-sair').addEventListener('click', sairTv);
+  $('tv-pausa').addEventListener('click', function () { tv.pausado = !tv.pausado; tvAgendar(); });
+  $('tv-cheia').addEventListener('click', telaCheia);
+  $('tv-paginas').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; tv.i = +b.dataset.i; tvMostrar(); });
+  $('tv').addEventListener('mousemove', tvMostrarControles);
+  document.addEventListener('fullscreenchange', function () { $('tv-cheia').hidden = !!document.fullscreenElement; if (tv.ativo) setTimeout(tvDesenhar, 200); });
+  document.addEventListener('visibilitychange', function () { if (tv.ativo && !document.hidden) manterTelaLigada(); });
 
   ['m-unidade', 'm-safra', 'm-op'].forEach(function (id) {
     $(id).addEventListener('change', function () { var f = formAtual(); estado.u = f.u; estado.s = f.s; estado.o = f.o; desenharTopo(); carregarForm(f.u, f.s, f.o); });
@@ -1109,6 +1592,7 @@
   window.addEventListener('resize', function () {
     clearTimeout(tRes);
     tRes = setTimeout(function () {
+      if (tv.ativo) return tvDesenhar();
       if (estado.vista === 'painel' && mUltimo) renderMapa(mUltimo);
       Object.keys(charts).forEach(function (k) { charts[k].resize(); });
     }, 150);
@@ -1146,9 +1630,11 @@
       aplicarFazendaCoa();
       carregarMapas();
       setInterval(function () {
+        if (tv.ativo) { carregarDados().then(function () { tvMontarLista(); }).catch(function () { /* tenta de novo no próximo ciclo */ }); return; }
         if (estado.vista !== 'painel' || document.hidden) return;
         carregarDados().then(render).catch(function (e) { mostrarAviso(e.message, true); });
       }, RECARREGAR_MIN * 60000);
+      if (PARAMS.get('tv') === '1') entrarTv();
     } catch (e) {
       $('carregando').querySelector('.spinner').hidden = true;
       set('carregando-texto', erroLegivel(e));

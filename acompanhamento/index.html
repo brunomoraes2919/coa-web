@@ -31,6 +31,12 @@
       </div>
       <div class="topo-acoes">
         <span class="atualizado" id="atualizado" title="Última leitura do PIMS">—</span>
+        <button class="botao-acao" id="btn-exportar" title="Gerar uma imagem PNG para enviar no WhatsApp">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Exportar</span>
+        </button>
+        <button class="botao-acao" id="btn-tv" title="Modo TV: tela cheia que troca de fazenda sozinha">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Modo TV</span>
+        </button>
         <button class="botao-icone" id="btn-sync" title="Buscar agora os dados do PIMS" aria-label="Atualizar dados do PIMS">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3.9M4 5v3.5h3.5M4 13a8 8 0 0 0 14.9 3.9M20 19v-3.5h-3.5"/></svg>
         </button>
@@ -184,6 +190,60 @@
     </section>
   </main>
 </div>
+
+<!-- ============================ MODO TV ============================ -->
+<section class="tv" id="tv" hidden aria-label="Modo TV">
+  <header class="tv-barra">
+    <img class="tv-logo" src="assets/logo_locks.png" alt="Locks">
+    <div class="tv-titulo">
+      <span id="tv-eyebrow">Plantio</span>
+      <h1 id="tv-fazenda">Todas as fazendas</h1>
+    </div>
+    <div class="tv-pct"><b id="tv-pct">—</b><span id="tv-pct-rot"></span></div>
+    <img class="tv-maquina" id="tv-maquina" src="assets/trator_8r.svg" alt="">
+    <div class="tv-relogio"><b id="tv-hora">--:--</b><span id="tv-data"></span><span id="tv-atualizado"></span></div>
+    <div class="tv-progresso" aria-hidden="true"><span id="tv-barra-pct"></span></div>
+  </header>
+  <div class="tv-corpo paisagem" id="tv-corpo">
+    <div class="tv-kpis" id="tv-kpis"></div>
+    <div class="tv-cartao tv-mapa-c">
+      <h2><span id="tv-mapa-titulo">Mapa de evolução</span><ul class="legenda" id="tv-legenda"></ul></h2>
+      <div class="tv-g" id="tv-mapa"></div>
+    </div>
+    <div class="tv-cartao tv-grafico-c">
+      <h2><span>Realizado × meta por dia</span><ul class="legenda"><li><i style="background:#0C5A50"></i>Realizado</li><li><i class="tracejada" style="border-color:#DB8A08"></i>Meta</li></ul></h2>
+      <div class="tv-g" id="tv-grafico"></div>
+    </div>
+  </div>
+  <footer class="tv-rodape">
+    <nav class="tv-paginas" id="tv-paginas" aria-label="Fazendas"></nav>
+    <div class="tv-controles">
+      <button id="tv-pausa">Pausar</button>
+      <button id="tv-cheia">Tela cheia</button>
+      <button id="tv-sair">Sair do modo TV</button>
+    </div>
+  </footer>
+  <div class="tv-tempo-trilho" aria-hidden="true"><span id="tv-tempo"></span></div>
+</section>
+
+<!-- ============================ EXPORTAR PNG ============================ -->
+<dialog class="dialogo" id="dlg-exportar" aria-labelledby="exp-titulo">
+  <header class="cartao-cab">
+    <div><h2 id="exp-titulo">Exportar imagem</h2><p class="cartao-sub">PNG pronto para enviar no WhatsApp</p></div>
+    <button type="button" class="botao-icone" id="exp-fechar" aria-label="Fechar">×</button>
+  </header>
+  <div class="formatos" role="radiogroup" aria-label="Formato">
+    <label class="formato"><input type="radio" name="fmt" value="quadrado"><span class="fmt-forma q"></span><b>Quadrado</b><small>1440 × 1440 · aparece inteiro na conversa</small></label>
+    <label class="formato"><input type="radio" name="fmt" value="paisagem"><span class="fmt-forma p"></span><b>Paisagem</b><small>1920 × 1080 · celular deitado ou computador</small></label>
+    <label class="formato"><input type="radio" name="fmt" value="vertical"><span class="fmt-forma v"></span><b>Celular</b><small>1080 × 1920 · ocupa a tela do celular</small></label>
+  </div>
+  <div class="previa"><img id="exp-previa" alt="Prévia da imagem exportada"></div>
+  <p class="dica" id="exp-status"></p>
+  <div class="botoes">
+    <button type="button" class="botao" id="exp-baixar">Baixar PNG</button>
+    <button type="button" class="botao-sutil" id="exp-compartilhar" hidden>Compartilhar</button>
+  </div>
+</dialog>
 
 <div class="carregando" id="carregando"><div class="spinner" aria-hidden="true"></div><p id="carregando-texto">Carregando os dados do PIMS…</p></div>
 <script src="app.js"></script>

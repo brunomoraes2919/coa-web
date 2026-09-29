@@ -6,6 +6,26 @@ cadastro das metas diárias por período e da data estimada de término.
 No COA WEB: categoria **Operacional** → **Painel** e **Metas**. O módulo roda num iframe da mesma
 origem (`acompanhamento/index.html?embed=1`) e usa a sessão do COA WEB.
 
+## Exportar imagem (WhatsApp)
+
+Botão **Exportar** no topo do painel: gera um PNG da fazenda (ou de todas) com o cabeçalho, os 6
+indicadores, o mapa e o gráfico diário, com letras grandes para ler no celular. Formatos:
+**Quadrado** 1440×1440 (padrão; aparece inteiro na conversa), **Paisagem** 1920×1080 e **Celular**
+1080×1920. Como no painel, a forma da fazenda decide o arranjo (mapa em coluna ou em faixa). No
+celular, **Compartilhar** manda a imagem direto para o WhatsApp.
+
+## Modo TV
+
+Botão **Modo TV**: tela única, sem rolagem, em tela cheia, que troca de fazenda sozinha (Todas e
+cada fazenda), com relógio, atualização dos dados a cada 5 min e a tela mantida ligada. Tudo é
+proporcional ao tamanho da tela (TV HD, Full HD, 4K, ultrawide e TV na vertical) e o arranjo é o que
+desenha o mapa maior naquela tela. Teclas: ← → trocam de fazenda, espaço pausa, Esc sai.
+
+Para deixar uma TV fixa: entre no COA WEB no navegador da TV e abra (dá para favoritar)
+`https://coa-web-teal.vercel.app/acompanhamento/index.html?tv=1`. Opções na URL:
+`tempo=30` (segundos por tela), `fazendas=SM3,GLOBO` (só essas), `todas=0` (sem a tela Todas), e o
+final `#painel/TODAS/SOJA%2026%2F27/PLANTIO` escolhe safra e operação.
+
 ## Onde está cada parte
 
 | Parte | Arquivo |

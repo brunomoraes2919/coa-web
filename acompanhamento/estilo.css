@@ -330,3 +330,133 @@ button, input, select { font: inherit; color: inherit; }
 /* dentro do COA WEB (iframe): o COA já tem cabeçalho e marca */
 .embed .marca-logo, .embed .marca-texto .marca-sub { display: none; }
 .embed .marca-texto { border-left: 0; padding-left: 0; }
+
+/* ============================ BOTÕES DO TOPO ============================ */
+.botao-acao {
+  height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border-radius: var(--raio-p);
+  border: 1px solid var(--linha); background: #fff; color: var(--verde-teal); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.botao-acao:hover { background: var(--linha-suave); }
+.botao-acao svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (max-width: 1180px) { .botao-acao span { display: none; } .botao-acao { padding: 0 9px; } }
+
+/* ============================ EXPORTAR ============================ */
+.dialogo {
+  width: min(880px, calc(100vw - 32px)); max-height: calc(100vh - 32px); border: 0; border-radius: 16px; padding: 20px 22px 22px;
+  box-shadow: 0 24px 70px rgba(16, 54, 50, .35); color: var(--texto);
+}
+.dialogo::backdrop { background: rgba(16, 54, 50, .5); }
+.formatos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.formato {
+  position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center;
+  border: 1.5px solid var(--linha); border-radius: 12px; padding: 12px; cursor: pointer; background: #fff;
+}
+.formato:hover { border-color: #BFCBC1; }
+.formato:has(input:checked) { border-color: var(--verde-teal); background: #F1F8F5; box-shadow: 0 0 0 3px rgba(12, 90, 80, .12); }
+.formato input { position: absolute; opacity: 0; pointer-events: none; }
+.formato:has(input:focus-visible) { outline: 2px solid var(--dourado); outline-offset: 2px; }
+.formato b { font-size: 14px; color: var(--verde-escuro); }
+.formato small { grid-column: 2; font-size: 12px; color: var(--texto-suave); line-height: 1.35; }
+.fmt-forma { grid-row: 1 / span 2; border: 2px solid var(--verde-teal); border-radius: 4px; background: #E1EFE7; }
+.fmt-forma.q { width: 30px; height: 30px; }
+.fmt-forma.p { width: 38px; height: 22px; }
+.fmt-forma.v { width: 20px; height: 34px; }
+.previa { margin-top: 14px; background: var(--fundo); border: 1px solid var(--linha); border-radius: 12px; height: min(52vh, 460px); display: grid; place-items: center; padding: 12px; }
+.previa img { max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 6px 18px rgba(16, 54, 50, .18); background: #fff; }
+.previa img:not([src]) { display: none; }
+.dialogo .botoes { margin-top: 10px; }
+@media (max-width: 640px) { .formatos { grid-template-columns: minmax(0, 1fr); } }
+
+/* ============================ MODO TV ============================
+   Uma tela só, sem rolagem. A fonte base acompanha a tela (vmin/vmax) e todo o
+   resto é em "em": o mesmo layout serve para TV HD, Full HD, 4K, ultrawide e vertical. */
+.modo-tv, .modo-tv body { overflow: hidden; background: var(--fundo); }
+.modo-tv .app, .modo-tv .carregando { display: none; }
+.tv {
+  position: fixed; inset: 0; z-index: 90; background: var(--fundo); color: var(--texto);
+  display: flex; flex-direction: column; gap: .8em; padding: 1em 1.3em .9em;
+  font-size: clamp(12px, calc(.86vmin + .5vmax), 64px); overflow: hidden;
+}
+.tv:not(.mostrar) { cursor: none; }
+.tv-barra {
+  position: relative; overflow: hidden; flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 1.4em;
+  padding: .85em 1.3em 1.15em; border-radius: .9em; color: #fff;
+  background: url("assets/soja_header.svg") right -2em center / auto 190% no-repeat, linear-gradient(115deg, #0E4D45 0%, #0C5A50 42%, #103632 100%);
+}
+.tv-logo { height: 2.3em; width: auto; background: #fff; border-radius: .5em; padding: .35em .6em; box-sizing: border-box; }
+.tv-titulo { min-width: 0; }
+.tv-titulo span { display: block; font-size: .78em; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #F0B24A; }
+.tv-titulo h1 { margin: .05em 0 0; font-size: 2.1em; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv-pct { text-align: right; }
+.tv-pct b { display: block; font-size: 2.5em; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tv-pct span { font-size: .8em; color: #D7E8E2; white-space: nowrap; }
+.tv-maquina { height: 3.6em; width: auto; filter: drop-shadow(0 .3em .5em rgba(0, 0, 0, .3)); }
+.tv-relogio { display: flex; flex-direction: column; align-items: flex-end; text-align: right; border-left: 1px solid rgba(255, 255, 255, .2); padding-left: 1.2em; }
+.tv-relogio b { font-size: 1.9em; line-height: 1; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tv-relogio span { font-size: .72em; color: #D7E8E2; white-space: nowrap; }
+.tv-relogio span:first-letter { text-transform: uppercase; }
+.tv-progresso { position: absolute; left: 1.3em; right: 1.3em; bottom: .45em; height: .32em; border-radius: 99em; background: rgba(255, 255, 255, .16); overflow: hidden; }
+.tv-progresso span { display: block; height: 100%; width: 0; border-radius: 99em; background: linear-gradient(90deg, #F0B24A, #DB8A08); transition: width .8s ease; }
+
+.tv-corpo { flex: 1 1 auto; min-height: 0; display: grid; gap: .8em; }
+.tv-kpis { grid-area: kpis; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .7em; min-height: 0; }
+.tv-mapa-c { grid-area: mapa; }
+.tv-grafico-c { grid-area: grafico; }
+/* fazenda larga: mapa em cima; indicadores e gráfico embaixo */
+.tv-corpo.paisagem { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1.45fr) minmax(0, 1fr); grid-template-areas: "mapa mapa" "kpis grafico"; }
+/* fazenda alta: mapa em coluna à direita */
+.tv-corpo.retrato { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "kpis mapa" "grafico mapa"; }
+/* todas: indicadores numa linha, fazendas e gráfico embaixo */
+.tv-corpo.todas { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "kpis kpis" "mapa grafico"; }
+.tv-corpo.todas .tv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+
+.tv .kpi { padding: .7em .9em .75em; border-radius: .7em; gap: .2em; justify-content: center; min-height: 0; }
+.tv .kpi-rotulo { font-size: .68em; }
+.tv .kpi-valor { font-size: 2.1em; }
+.tv .kpi-valor small { font-size: .45em; }
+.tv .kpi-sub { font-size: .72em; gap: .35em; }
+.tv .chip { font-size: 1em; padding: .05em .55em; }
+.tv .barra-empilhada { height: .45em; margin-top: .35em; }
+.tv-cartao { background: #fff; border: 1px solid var(--linha); border-radius: .8em; box-shadow: var(--sombra); padding: .75em 1em .8em; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.tv-cartao h2 { margin: 0 0 .35em; font-size: .95em; font-weight: 650; color: var(--verde-escuro); display: flex; align-items: center; justify-content: space-between; gap: 1em; }
+.tv-cartao .legenda { font-size: .72em; gap: 1em; }
+.tv-cartao .legenda i { width: .95em; height: .95em; }
+.tv-cartao .legenda i.tracejada { width: 1.3em; height: 0; }
+.tv-g { position: relative; flex: 1 1 auto; min-height: 0; }
+.tv-g .vazio { font-size: .8em; }
+
+.tv-fazendas { height: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5em, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: .6em; }
+.tv-fazenda { border: 1px solid var(--linha); border-radius: .6em; padding: .5em .6em; background: #FBFCFB; display: flex; flex-direction: column; gap: .3em; min-height: 0; }
+.tv-fazenda-cab { display: flex; justify-content: space-between; align-items: baseline; gap: .4em; font-size: .85em; }
+.tv-fazenda-cab span { font-weight: 650; color: var(--verde-escuro); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv-fazenda-cab b { font-size: 1.25em; font-variant-numeric: tabular-nums; }
+.tv-fazenda .barra { height: .35em; }
+.tv-mini { flex: 1 1 auto; min-height: 3em; }
+.tv-fazenda-rod { display: flex; justify-content: space-between; gap: .4em; font-size: .66em; color: var(--texto-suave); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.tv-rodape { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 1em; }
+.tv-paginas { display: flex; gap: .4em; flex-wrap: wrap; min-width: 0; }
+.tv-paginas button, .tv-controles button {
+  font-size: .72em; font-weight: 600; border-radius: 99em; padding: .35em .9em; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--linha); background: #fff; color: var(--texto-suave);
+}
+.tv-paginas button.ativo { background: var(--verde-teal); border-color: var(--verde-teal); color: #fff; }
+.tv-controles { display: flex; gap: .4em; opacity: 0; transition: opacity .3s; }
+.tv.mostrar .tv-controles, .tv-controles:focus-within { opacity: 1; }
+.tv-tempo-trilho { position: absolute; left: 0; right: 0; bottom: 0; height: .22em; background: transparent; }
+.tv-tempo-trilho span { display: block; height: 100%; width: 0; background: var(--dourado); opacity: .8; }
+
+/* TV ultrawide (21:9): mapa à esquerda, indicadores e gráfico à direita */
+@media (min-aspect-ratio: 21/10) {
+  .tv-corpo.paisagem, .tv-corpo.retrato { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "mapa kpis" "mapa grafico"; }
+}
+/* TV na vertical (totem): tudo empilhado */
+@media (max-aspect-ratio: 4/5) {
+  .tv { font-size: clamp(12px, calc(1.1vmin + .35vmax), 64px); }
+  .tv-barra { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .tv-maquina, .tv-relogio { display: none; }
+  .tv-corpo.paisagem, .tv-corpo.retrato, .tv-corpo.todas { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1.6fr) minmax(0, 1fr); grid-template-areas: "kpis" "mapa" "grafico"; }
+  .tv-corpo.todas .tv-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* telas baixas (ex.: 1366×768, 1280×720): esconde a máquina para caber o texto */
+@media (max-height: 800px) and (min-aspect-ratio: 4/3) { .tv-maquina { display: none; } }
