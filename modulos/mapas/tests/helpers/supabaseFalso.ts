@@ -192,6 +192,10 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
     this.umSo = 'exato';
     return this;
   }
+  /** o banco falso responde na hora: o sinal de cancelamento não tem efeito */
+  abortSignal(_sinal: AbortSignal) {
+    return this;
+  }
 
   then<A = { data: unknown; error: Erro; count: number | null }, B = never>(
     ok?: ((v: { data: unknown; error: Erro; count: number | null }) => A | PromiseLike<A>) | null,

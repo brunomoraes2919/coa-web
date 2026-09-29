@@ -47,10 +47,16 @@ describe('aguardarPedido (espera o servidor atender o pedido de atualização do
     expect(ler).toHaveBeenCalledTimes(3);
   });
 
-  it('padrão: lê a cada 4 s por até 150 s', async () => {
+  it('intervalo 0 ou negativo não vira laço infinito', async () => {
+    const { esperas, dormir } = relogio();
+    expect(await aguardarPedido(async () => pendente, { intervaloMs: 0, limiteMs: 5, dormir })).toEqual({ tipo: 'tempo' });
+    expect(esperas.length).toBe(5);
+  });
+
+  it('padrão: lê a cada 4 s por até 120 s (os 2 minutos do aviso)', async () => {
     const { esperas, dormir } = relogio();
     expect(await aguardarPedido(async () => pendente, { dormir })).toEqual({ tipo: 'tempo' });
-    expect(esperas.reduce((a, b) => a + b, 0)).toBe(150000);
+    expect(esperas.reduce((a, b) => a + b, 0)).toBe(120000);
     expect(Math.max(...esperas)).toBe(4000);
   });
 
@@ -116,7 +122,7 @@ describe('supabaseRepo: pedidos de atualização do plantio (mapas_plantio_pedid
     const banco = new BancoFalso();
     banco.falhar = (r) => (r.op === 'insert' ? 'new row violates row-level security policy' : null);
     await expect(criarSupabaseRepo(banco.cliente()).pedirAtualizacaoPlantio()).rejects.toThrow(
-      'Não foi possível pedir a atualização do plantio: new row violates row-level security policy',
+      'Sem permissão para pedir a atualização do plantio: é preciso ter pelo menos uma fazenda liberada no COA WEB.',
     );
   });
 
@@ -137,7 +143,7 @@ describe('supabaseRepo: pedidos de atualização do plantio (mapas_plantio_pedid
     const banco = new BancoFalso();
     banco.falhar = () => 'Failed to fetch';
     await expect(criarSupabaseRepo(banco.cliente()).situacaoPedidoPlantio(1)).rejects.toThrow(
-      'Não foi possível acompanhar o pedido de atualização do plantio: Failed to fetch',
+      'Não foi possível acompanhar o pedido de atualização do plantio: o Supabase não respondeu a tempo. Verifique a internet e tente de novo.',
     );
   });
 });

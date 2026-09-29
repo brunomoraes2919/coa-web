@@ -21,7 +21,7 @@ export type FimPedidoPlantio = { tipo: 'ok' } | { tipo: 'erro'; mensagem: string
 export interface OpcoesAguardar {
   /** espera antes de cada leitura (padrão 4 s) */
   intervaloMs?: number;
-  /** tempo total de espera; passou disso sem resposta → { tipo: 'tempo' } (padrão 150 s) */
+  /** tempo total de espera; passou disso sem resposta → { tipo: 'tempo' } (padrão 120 s = "2 minutos" do aviso) */
   limiteMs?: number;
   dormir?: (ms: number) => Promise<void>;
 }
@@ -41,11 +41,11 @@ function mensagemDoResultado(resultado: string | null): string {
  */
 export async function aguardarPedido(
   ler: () => Promise<SituacaoPedidoPlantio | null>,
-  { intervaloMs = 4000, limiteMs = 150000, dormir = dormirDeVerdade }: OpcoesAguardar = {},
+  { intervaloMs = 4000, limiteMs = 120000, dormir = dormirDeVerdade }: OpcoesAguardar = {},
 ): Promise<FimPedidoPlantio> {
   let esperado = 0;
   while (esperado < limiteMs) {
-    const espera = Math.min(intervaloMs, limiteMs - esperado);
+    const espera = Math.min(Math.max(1, intervaloMs), limiteMs - esperado);
     await dormir(espera);
     esperado += espera;
     let s: SituacaoPedidoPlantio | null;
