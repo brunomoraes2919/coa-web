@@ -9,3 +9,6 @@ mapas/dados/
 *.zip
 # rascunhos do desenvolvimento
 .superpowers/
+
+# testes locais do Acompanhamento (simulador do Supabase com dados reais)
+acompanhamento/_teste*

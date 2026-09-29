@@ -448,6 +448,25 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 @media (max-width:480px){
   .app.modo-mapas .page[data-page="mapas"].active{margin:0 -12px -12px;}
 }
+
+/* ---------- categoria OPERACIONAL: Acompanhamento Operacional num iframe (acompanhamento/index.html?embed=1) ---------- */
+.app.modo-acomp{min-height:0;}
+.app.modo-acomp main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
+.app.modo-acomp .topbar{flex:none;margin-bottom:0;}
+.app.modo-acomp .page[data-page="acompanhamento"].active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin:0 -34px -60px;}
+#acomp-frame{display:block;flex:1 1 auto;width:100%;min-height:0;border:0;background:var(--fundo);}
+@media (max-width:900px){
+  .app.modo-acomp{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+  .app.modo-acomp .sidebar{flex:none;}
+  .app.modo-acomp main{flex:1 1 auto;min-height:0;height:auto;}
+  .app.modo-acomp .page[data-page="acompanhamento"].active{margin:0 -18px -18px;}
+}
+@media (max-width:640px){
+  .app.modo-acomp .page[data-page="acompanhamento"].active{margin:0 -14px -14px;}
+}
+@media (max-width:480px){
+  .app.modo-acomp .page[data-page="acompanhamento"].active{margin:0 -12px -12px;}
+}
 </style>
 </head>
 <body>
@@ -485,6 +504,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <button class="categoria-card" id="card-mapas">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4Z"/><path d="M9 4v13.5M15 6.5V20"/></svg>
         <span>Mapas</span>
+      </button>
+      <button class="categoria-card" id="card-acompanhamento">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 20h18"/><path d="M6 16v-4M11 16V8M16 16v-6M21 16V5"/><path d="m4 9 5-4 5 3 6-5"/></svg>
+        <span>Operacional</span>
       </button>
       <button class="categoria-card admin-only" id="card-administracao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
@@ -542,6 +565,13 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <nav class="admin-only">
         <button class="nav-btn admin-only" data-page="mapas" data-rota="/fazendas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 21 9.5 17.5 20h-11L3 9.5Z"/></svg>Fazendas e shapes</button>
         <button class="nav-btn admin-only" data-page="mapas" data-rota="/safras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21v-9"/><path d="M12 12C12 8 9 6 5 6c0 4 3 6 7 6Z"/><path d="M12 12c0-4 3-7 7-7 0 4-3 7-7 7Z"/></svg>Safras e plantio</button>
+      </nav>
+    </div>
+    <div id="nav-acompanhamento" style="display:none">
+      <div class="nav-eyebrow">Acompanhamento Operacional</div>
+      <nav>
+        <button class="nav-btn" data-page="acompanhamento" data-acomp="painel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18"/><path d="M6 16v-4M11 16V8M16 16v-6M21 16V5"/></svg>Painel</button>
+        <button class="nav-btn" data-page="acompanhamento" data-acomp="metas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>Metas</button>
       </nav>
     </div>
     <div class="sidebar-foot">
@@ -859,6 +889,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 
     <!-- ===================== MAPAS (módulo num iframe; o iframe #mapas-frame é criado na primeira entrada) ===================== -->
     <section class="page" data-page="mapas"></section>
+    <section class="page" data-page="acompanhamento"></section>
 
   </main>
 </div>
@@ -918,7 +949,7 @@ const state = {
   usuarios: []
 };
 let sessao = null;
-let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas'
+let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento'
 /* ---- categoria MAPAS: estado do iframe do módulo (ver a seção MAPAS mais abaixo) ---- */
 const MAPAS_ROTA_INICIAL = '/mapas/novo';
 let mapasFrame = null;         // iframe #mapas-frame (criado na primeira entrada; removido ao sair)
@@ -1033,11 +1064,13 @@ const titulos = {
   usuarios:['Usuários','Gestão de acesso — perfis e fazendas permitidas'],
   'importar-mecanizadas':['Importar Boletim','Suba o relatório de atividades mecanizadas extraído do TOTVS PIMS'],
   mapas:['Mapas','Mapa de Chuva'], // o título real vem do módulo (mensagem 'mapas-rota')
+  acompanhamento:['Acompanhamento Operacional','Plantio e colheita com os dados do PIMS'],
 };
 document.querySelectorAll('.nav-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     // botões da categoria MAPAS (data-rota) trocam a rota do módulo no iframe
     if(btn.dataset.rota) irParaMapas(btn.dataset.rota);
+    else if(btn.dataset.acomp) irParaAcomp(btn.dataset.acomp);
     else irPara(btn.dataset.page);
   });
 });
@@ -1047,6 +1080,7 @@ function irPara(pagina){
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.page===pagina));
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.dataset.page===pagina));
   document.getElementById('app-shell').classList.toggle('modo-mapas', pagina==='mapas');
+  document.getElementById('app-shell').classList.toggle('modo-acomp', pagina==='acompanhamento');
   renderTudo();
 }
 function atualizarCabecalhoPagina(){
@@ -2761,6 +2795,79 @@ window.addEventListener('message', ev=>{
 });
 
 /* =====================================================================
+   ACOMPANHAMENTO OPERACIONAL — módulo num iframe da mesma origem
+   (acompanhamento/index.html?embed=1#<vista>; a sessão do Supabase é a mesma do COA WEB)
+   - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'acomp-vista', vista:'painel'|'metas' }
+   - módulo → COA: { tipo:'acomp-rota', vista }
+   Sempre com targetOrigin = location.origin; só aceita mensagens do próprio iframe.
+===================================================================== */
+let acompFrame = null;      // iframe #acomp-frame (criado na primeira entrada; removido ao sair)
+let acompCarregado = false;
+let acompVista = 'painel';
+function destacarBotaoAcomp(){
+  document.querySelectorAll('#nav-acompanhamento .nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.acomp===acompVista));
+}
+function enviarAoAcomp(msg){
+  if(!acompFrame || !acompCarregado || !acompFrame.contentWindow) return;
+  try{ acompFrame.contentWindow.postMessage(msg, location.origin); }
+  catch(e){ console.warn('ACOMPANHAMENTO: não foi possível avisar o módulo', e); }
+}
+function enviarFazendaAcomp(){
+  const f = fazendaCoaParaMapas();
+  enviarAoAcomp({ tipo:'coa-fazenda', id:f.id, nome:f.nome });
+}
+function irParaAcomp(vista){
+  if(vista) acompVista = vista;
+  irPara('acompanhamento');
+  if(!acompFrame){
+    const frame = document.createElement('iframe');
+    frame.id = 'acomp-frame';
+    frame.title = 'Acompanhamento Operacional';
+    frame.addEventListener('load', ()=>{
+      if(frame !== acompFrame) return;
+      acompCarregado = true;
+      enviarFazendaAcomp();
+    });
+    frame.src = 'acompanhamento/index.html?embed=1#' + acompVista;
+    acompFrame = frame;
+    acompCarregado = false;
+    document.querySelector('.page[data-page="acompanhamento"]').appendChild(frame);
+  } else if(vista){
+    enviarAoAcomp({ tipo:'acomp-vista', vista:acompVista });
+  }
+  destacarBotaoAcomp();
+}
+function entrarAcompanhamento(){
+  categoriaAtual = 'acompanhamento';
+  document.getElementById('nav-algodao').style.display = 'none';
+  document.getElementById('nav-mecanizadas').style.display = 'none';
+  document.getElementById('nav-administracao').style.display = 'none';
+  document.getElementById('nav-mapas').style.display = 'none';
+  document.getElementById('nav-acompanhamento').style.display = '';
+  document.getElementById('categoria-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = '';
+  irParaAcomp(null); // 1ª entrada: cria o iframe no painel; depois mantém o módulo onde estava
+  enviarFazendaAcomp();
+}
+function descarregarAcomp(){
+  if(acompFrame){
+    acompFrame.src = 'about:blank';
+    acompFrame.remove();
+  }
+  acompFrame = null;
+  acompCarregado = false;
+  acompVista = 'painel';
+}
+document.getElementById('sb-fazenda').addEventListener('change', enviarFazendaAcomp);
+window.addEventListener('message', ev=>{
+  if(ev.origin !== location.origin) return;
+  if(!acompFrame || ev.source !== acompFrame.contentWindow) return;
+  const d = ev.data;
+  if(!d || typeof d !== 'object' || d.tipo !== 'acomp-rota') return;
+  if(d.vista === 'painel' || d.vista === 'metas'){ acompVista = d.vista; destacarBotaoAcomp(); }
+});
+
+/* =====================================================================
    LOGIN / LOGOUT — Supabase Auth
 ===================================================================== */
 function aplicarPermissoesNav(){
@@ -2858,6 +2965,7 @@ function entrarAlgodao(){
   document.getElementById('nav-mecanizadas').style.display = 'none';
   document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('nav-mapas').style.display = 'none';
+  document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('relatorio');
@@ -2868,6 +2976,7 @@ function entrarMecanizadas(){
   document.getElementById('nav-mecanizadas').style.display = '';
   document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('nav-mapas').style.display = 'none';
+  document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('importar-mecanizadas');
@@ -2879,6 +2988,7 @@ function entrarAdministracao(){
   document.getElementById('nav-mecanizadas').style.display = 'none';
   document.getElementById('nav-administracao').style.display = '';
   document.getElementById('nav-mapas').style.display = 'none';
+  document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('usuarios');
@@ -2889,6 +2999,7 @@ function entrarMapas(){
   document.getElementById('nav-mecanizadas').style.display = 'none';
   document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('nav-mapas').style.display = '';
+  document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaMapas(null); // 1ª entrada: cria o iframe na rota inicial; depois mantém o módulo onde estava
@@ -2898,6 +3009,7 @@ document.getElementById('card-algodao').addEventListener('click', entrarAlgodao)
 document.getElementById('card-mecanizadas').addEventListener('click', entrarMecanizadas);
 document.getElementById('card-administracao').addEventListener('click', entrarAdministracao);
 document.getElementById('card-mapas').addEventListener('click', entrarMapas);
+document.getElementById('card-acompanhamento').addEventListener('click', entrarAcompanhamento);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
 
 async function tentarLogin(){
@@ -2922,6 +3034,7 @@ async function tentarLogin(){
 }
 async function sair(){
   descarregarMapas();
+  descarregarAcomp();
   if(canalRealtime){ sb.removeChannel(canalRealtime); canalRealtime = null; }
   await sb.auth.signOut();
   sessao = null;
@@ -2961,7 +3074,7 @@ function renderTudo(){
   else { mostrarTelaLogin(); }
 })();
 sb.auth.onAuthStateChange((event)=>{
-  if(event === 'SIGNED_OUT'){ descarregarMapas(); mostrarTelaLogin(); }
+  if(event === 'SIGNED_OUT'){ descarregarMapas(); descarregarAcomp(); mostrarTelaLogin(); }
 });
 
 </script>

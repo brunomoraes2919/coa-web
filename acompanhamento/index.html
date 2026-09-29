@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acompanhamento Operacional · COA</title>
+<link rel="icon" href="../mapas/favicon.png">
+<link rel="stylesheet" href="estilo.css">
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============================ TOPO ============================ -->
+  <header class="topo">
+    <div class="topo-linha">
+      <div class="marca">
+        <img src="assets/logo_locks.png" alt="Locks" class="marca-logo">
+        <div class="marca-texto">
+          <span class="marca-titulo">Acompanhamento Operacional</span>
+          <span class="marca-sub" id="marca-sub">Centro de Operações Agrícolas</span>
+        </div>
+      </div>
+      <div class="filtros">
+        <label class="campo-select"><span>Safra</span><select id="sel-safra"></select></label>
+        <label class="campo-select"><span>Operação</span>
+          <select id="sel-op"><option value="PLANTIO">Plantio</option><option value="COLHEITA">Colheita</option></select>
+        </label>
+      </div>
+      <div class="topo-acoes">
+        <span class="atualizado" id="atualizado" title="Última leitura do PIMS">—</span>
+        <button class="botao-icone" id="btn-sync" title="Buscar agora os dados do PIMS" aria-label="Atualizar dados do PIMS">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3.9M4 5v3.5h3.5M4 13a8 8 0 0 0 14.9 3.9M20 19v-3.5h-3.5"/></svg>
+        </button>
+        <nav class="alternador" aria-label="Telas">
+          <button data-vista="painel" aria-pressed="true">Painel</button>
+          <button data-vista="metas" aria-pressed="false">Metas</button>
+        </nav>
+      </div>
+    </div>
+    <nav class="abas" id="abas" role="tablist" aria-label="Fazendas"></nav>
+  </header>
+
+  <div class="aviso" id="aviso" role="status" hidden></div>
+
+  <!-- ============================ PAINEL ============================ -->
+  <main id="painel" class="vista">
+    <section class="destaque" id="destaque">
+      <div class="destaque-texto">
+        <p class="destaque-eyebrow" id="d-eyebrow">Plantio · Soja 26/27</p>
+        <h1 class="destaque-titulo" id="d-titulo">Todas as fazendas</h1>
+        <div class="progresso-grande" aria-hidden="true"><span id="d-barra"></span></div>
+        <p class="destaque-resumo" id="d-resumo">—</p>
+      </div>
+      <img class="destaque-maquina" id="d-maquina" src="assets/trator_8r.svg" alt="">
+    </section>
+
+    <section class="kpis" id="kpis" aria-label="Indicadores"></section>
+
+    <section class="grade" id="grade">
+      <article class="cartao area-mapa" id="c-mapa">
+        <header class="cartao-cab">
+          <div><h2 id="mapa-titulo">Mapa de evolução</h2><p class="cartao-sub" id="mapa-sub"></p></div>
+          <button class="botao-sutil" id="btn-ampliar" aria-pressed="false">Ampliar</button>
+        </header>
+        <div class="mapa-corpo">
+          <div class="grafico" id="g-mapa"></div>
+          <img class="rosa" id="rosa" src="assets/rosa.png" alt="Norte">
+          <ul class="legenda legenda-mapa" id="legenda-mapa"></ul>
+        </div>
+        <p class="rodape-cartao" id="mapa-rodape"></p>
+      </article>
+
+      <article class="cartao area-lateral" id="c-situacao">
+        <header class="cartao-cab"><div><h2>Situação dos talhões</h2><p class="cartao-sub" id="sit-sub"></p></div></header>
+        <div id="situacao"></div>
+        <h3 class="subtitulo">Variedades</h3>
+        <div class="tabela-rolagem" id="variedades"></div>
+      </article>
+
+      <article class="cartao area-meta">
+        <header class="cartao-cab">
+          <div><h2>Realizado x meta por dia</h2><p class="cartao-sub">hectares por dia</p></div>
+          <ul class="legenda" id="leg-meta"></ul>
+        </header>
+        <div class="grafico alto-260" id="g-meta"></div>
+      </article>
+
+      <article class="cartao area-equipes">
+        <header class="cartao-cab"><div><h2>Equipes</h2><p class="cartao-sub">últimos 7 dias de operação de cada equipe</p></div></header>
+        <div id="equipes"></div>
+      </article>
+
+      <article class="cartao area-acum">
+        <header class="cartao-cab">
+          <div><h2>Evolução acumulada</h2><p class="cartao-sub">hectares acumulados</p></div>
+          <ul class="legenda" id="leg-acum"></ul>
+        </header>
+        <div class="grafico alto-240" id="g-acum"></div>
+      </article>
+
+      <article class="cartao area-talhao">
+        <header class="cartao-cab">
+          <div><h2 id="talhao-titulo">Execução por talhão</h2><p class="cartao-sub" id="talhao-sub"></p></div>
+          <ul class="legenda" id="leg-talhao"></ul>
+        </header>
+        <div class="grafico alto-240" id="g-talhao"></div>
+      </article>
+    </section>
+
+    <p class="nota-rodape">
+      Área da operação = área produtiva do talhão no PIMS menos a área de dano; talhão com plantio encerrado conta como 100%.
+      A previsão usa a média dos dias com operação nos últimos 7 dias (sem operação no período, a média geral). Fonte: PIMS via Agrovex.
+    </p>
+  </main>
+
+  <!-- ============================ METAS ============================ -->
+  <main id="metas" class="vista" hidden>
+    <section class="metas-grade">
+      <article class="cartao">
+        <header class="cartao-cab"><div><h2>Cadastro de metas</h2><p class="cartao-sub">meta diária por período e data estimada de término</p></div></header>
+        <form id="form-meta" autocomplete="off" novalidate>
+          <div class="form-linha tres">
+            <label class="campo"><span>Fazenda</span><select id="m-unidade"></select></label>
+            <label class="campo"><span>Safra</span><select id="m-safra"></select></label>
+            <label class="campo"><span>Operação</span>
+              <select id="m-op"><option value="PLANTIO">Plantio</option><option value="COLHEITA">Colheita</option></select>
+            </label>
+          </div>
+          <div class="contexto" id="m-contexto"></div>
+
+          <div class="bloco">
+            <div class="bloco-cab"><h3>Metas diárias por período</h3><button type="button" class="botao-sutil" id="m-add">+ Adicionar período</button></div>
+            <table class="tabela tabela-periodos">
+              <thead><tr><th>Início</th><th>Fim</th><th class="n">Meta (ha/dia)</th><th class="n">Dias</th><th class="n">Área (ha)</th><th><span class="sr">Remover</span></th></tr></thead>
+              <tbody id="m-periodos"></tbody>
+            </table>
+            <p class="resumo-metas" id="m-resumo"></p>
+          </div>
+
+          <div class="bloco">
+            <div class="bloco-cab"><h3>Data estimada de término</h3></div>
+            <div class="linha-termino">
+              <input type="date" id="m-termino" aria-label="Data estimada de término">
+              <button type="button" class="botao-sutil" id="m-sugerir">Calcular pelas metas</button>
+            </div>
+            <p class="dica" id="m-sugestao"></p>
+          </div>
+
+          <div class="form-linha dois">
+            <label class="campo"><span>Responsável</span><input type="text" id="m-autor" maxlength="80" placeholder="Seu nome"></label>
+            <label class="campo"><span>Observação</span><input type="text" id="m-obs" maxlength="500" placeholder="Ex.: meta revisada pela chuva de 20/10"></label>
+          </div>
+
+          <p class="mensagem" id="m-msg" role="alert"></p>
+          <div class="botoes">
+            <button type="submit" class="botao">Salvar metas</button>
+            <button type="button" class="botao-sutil" id="m-ver">Ver no painel</button>
+            <button type="button" class="botao-perigo" id="m-excluir">Excluir</button>
+          </div>
+        </form>
+      </article>
+
+      <div class="metas-coluna">
+        <article class="cartao">
+          <header class="cartao-cab"><div><h2>Metas cadastradas</h2><p class="cartao-sub">clique numa linha para editar</p></div></header>
+          <div class="tabela-rolagem alto-280">
+            <table class="tabela tabela-planos">
+              <thead><tr><th>Fazenda</th><th>Safra</th><th>Operação</th><th class="n">Meta hoje</th><th>Término</th><th>Atualizado</th></tr></thead>
+              <tbody id="lista-planos"></tbody>
+            </table>
+          </div>
+        </article>
+        <article class="cartao">
+          <header class="cartao-cab">
+            <div><h2>Planejado x realizado</h2><p class="cartao-sub">hectares acumulados</p></div>
+            <ul class="legenda" id="leg-previa"></ul>
+          </header>
+          <div class="grafico alto-300" id="g-previa"></div>
+        </article>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="carregando" id="carregando"><div class="spinner" aria-hidden="true"></div><p id="carregando-texto">Carregando os dados do PIMS…</p></div>
+<script src="app.js"></script>
+</body>
+</html>
