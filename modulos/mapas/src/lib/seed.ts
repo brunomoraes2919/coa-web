@@ -66,7 +66,7 @@ export function idDeterministico(chave: string): string {
 async function lerJson<T>(ler: LeitorSeed, caminho: string): Promise<T> {
   const texto = await ler(caminho);
   try {
-    return JSON.parse(texto.replace(/^﻿/, '')) as T;
+    return JSON.parse(texto.replace(/^FEFF/, '')) as T;
   } catch {
     throw new Error(`O arquivo ${caminho} do cadastro padrão não é um JSON válido.`);
   }
@@ -219,7 +219,9 @@ export interface OpcoesSeed {
  * Liga cada unidade à fazenda do COA WEB (`repo.listarFazendasCoa()`) pelo nome comparável, sem trocar
  * um vínculo que a fazenda já tenha; modo local (lista vazia) → tudo sem vínculo. Unidades das áreas
  * da cultura sem fazenda no seed são ignoradas. Lança Error (em português) se faltar arquivo, se um
- * arquivo não for JSON ou se não der para listar as fazendas do COA WEB — nesses casos antes de gravar.
+ * arquivo não for JSON ou se não der para listar as fazendas do COA WEB. O seed.json, os limites base e
+ * a lista do COA WEB são lidos antes de gravar; os arquivos das áreas da cultura, depois das fazendas
+ * (uma falha ali deixa as fazendas gravadas; importar de novo completa).
  */
 export async function carregarSeed(repo: Repositorio, ler: LeitorSeed = leitorHttp(), { aoAvancar }: OpcoesSeed = {}): Promise<ResultadoSeed> {
   aoAvancar?.('Lendo os arquivos do cadastro padrão…');
