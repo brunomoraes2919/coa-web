@@ -262,6 +262,12 @@ describe('sincronizar', () => {
       .rejects.toThrow(/Agrovex recusou o acesso \(HTTP 401\)/);
   });
 
+  it('403 do Cloudflare (error code: 1010) é bloqueio do servidor, não do token', async () => {
+    const impl = async () => new Response('error code: 1010', { status: 403 });
+    await expect(sincronizar({ url: 'u', token: 't', safras: ['SOJA 26/27'], fetchImpl: impl, agora }))
+      .rejects.toThrow(/Cloudflare do Agrovex bloqueou o acesso deste servidor \(erro 1010\)/);
+  });
+
   it('recusa resultado truncado', async () => {
     const { impl } = fetchFalso(() => ({ status: 'success', columns: COLUNAS, rows: LINHAS, row_count: 3, truncated: true }));
     await expect(sincronizar({ url: 'u', token: 't', safras: ['SOJA 26/27'], fetchImpl: impl, agora }))

@@ -22,7 +22,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # sem setup-node: o ubuntu-latest já traz Node >= 20 (fetch nativo) e o script não tem dependências
+      # Node 24 (o mesmo com que a rotina foi validada contra o Agrovex); o script não tem dependências
+      - name: Configurar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Verificar secrets
         env:
           AGROVEX_TOKEN: ${{ secrets.AGROVEX_TOKEN }}

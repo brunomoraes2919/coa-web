@@ -95,6 +95,11 @@ function comparar(a, b) {
 
 async function lerResposta(resp) {
   const texto = await resp.text();
+  // 403 com "error code: NNNN" é o Cloudflare do Agrovex barrando este servidor (não é o token)
+  const cloudflare = resp.status === 403 ? /error code: (\d+)/i.exec(texto) : null;
+  if (cloudflare) {
+    throw new Error(`O Cloudflare do Agrovex bloqueou o acesso deste servidor (erro ${cloudflare[1]}); o token não foi recusado.`);
+  }
   if (resp.status === 401 || resp.status === 403) {
     throw new Error(`Agrovex recusou o acesso (HTTP ${resp.status}): verifique o AGROVEX_TOKEN.`);
   }
