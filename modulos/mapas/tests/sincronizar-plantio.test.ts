@@ -268,6 +268,19 @@ describe('sincronizar', () => {
       .rejects.toThrow(/Cloudflare do Agrovex bloqueou o acesso deste servidor \(erro 1010\)/);
   });
 
+  it('403 do Agrovex mostra o começo da resposta, sem o token', async () => {
+    const impl = async () => new Response('{"error":"Forbidden: token-secreto-123 sem acesso"}', { status: 403 });
+    const erro = await sincronizar({ url: 'u', token: 'token-secreto-123', safras: ['SOJA 26/27'], fetchImpl: impl, agora }).catch((e: Error) => e);
+    expect(String(erro)).toMatch(/Agrovex recusou o acesso \(HTTP 403\).*Forbidden/);
+    expect(String(erro)).not.toContain('token-secreto-123');
+  });
+
+  it('403 com página HTML do Cloudflare é bloqueio do servidor', async () => {
+    const impl = async () => new Response('<!DOCTYPE html><title>Just a moment...</title> cloudflare', { status: 403 });
+    await expect(sincronizar({ url: 'u', token: 't', safras: ['SOJA 26/27'], fetchImpl: impl, agora }))
+      .rejects.toThrow(/Cloudflare do Agrovex barrou este servidor/);
+  });
+
   it('recusa resultado truncado', async () => {
     const { impl } = fetchFalso(() => ({ status: 'success', columns: COLUNAS, rows: LINHAS, row_count: 3, truncated: true }));
     await expect(sincronizar({ url: 'u', token: 't', safras: ['SOJA 26/27'], fetchImpl: impl, agora }))

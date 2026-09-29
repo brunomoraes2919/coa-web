@@ -93,15 +93,20 @@ function comparar(a, b) {
 
 // ---------- cliente MCP (Streamable HTTP) ----------
 
-async function lerResposta(resp) {
+async function lerResposta(resp, token = '') {
   const texto = await resp.text();
   // 403 com "error code: NNNN" é o Cloudflare do Agrovex barrando este servidor (não é o token)
   const cloudflare = resp.status === 403 ? /error code: (\d+)/i.exec(texto) : null;
   if (cloudflare) {
     throw new Error(`O Cloudflare do Agrovex bloqueou o acesso deste servidor (erro ${cloudflare[1]}); o token não foi recusado.`);
   }
+  if (resp.status === 403 && /cloudflare|<html/i.test(texto)) {
+    throw new Error('O Cloudflare do Agrovex barrou este servidor com uma página de verificação (HTTP 403); o token não foi recusado.');
+  }
   if (resp.status === 401 || resp.status === 403) {
-    throw new Error(`Agrovex recusou o acesso (HTTP ${resp.status}): verifique o AGROVEX_TOKEN.`);
+    // o corpo do Agrovex é curto ({"error": ...}) e não traz o token; mesmo assim ele é tirado da mensagem
+    const corpo = token ? texto.split(token).join('[REDACTED]') : texto;
+    throw new Error(`Agrovex recusou o acesso (HTTP ${resp.status}): verifique o AGROVEX_TOKEN. Resposta: ${corpo.replace(/s+/g, ' ').slice(0, 150)}`);
   }
   if (!resp.ok) throw new Error(`Agrovex respondeu HTTP ${resp.status}: ${texto.slice(0, 300)}`);
   const t = texto.trim();
@@ -144,9 +149,9 @@ async function abrirSessao(url, token, fetchImpl) {
     params: { protocolVersion: PROTOCOLO, capabilities: {}, clientInfo: { name: 'mapa-chuva-coa', version: '1.0' } },
   });
   sessao = respIni.headers.get('mcp-session-id');
-  const ini = await lerResposta(respIni);
+  const ini = await lerResposta(respIni, token);
   protocolo = ini?.result?.protocolVersion ?? PROTOCOLO;
-  await lerResposta(await enviar('POST', { jsonrpc: '2.0', method: 'notifications/initialized' }));
+  await lerResposta(await enviar('POST', { jsonrpc: '2.0', method: 'notifications/initialized' }), token);
 
   return {
     /** Executa uma SELECT no PIMS e devolve { columns, rows }. */
@@ -157,7 +162,7 @@ async function abrirSessao(url, token, fetchImpl) {
           name: 'execute_query',
           arguments: { sql, source: 'sqlserver', database: 'PIMSMCPRD', schema: 'dbo', original_question: pergunta, full: true },
         },
-      }));
+      }), token);
       const texto = r?.result?.content?.[0]?.text ?? '';
       if (r?.result?.isError) throw new Error(`Consulta ao PIMS falhou (${rotulo}): ${texto}`);
       let dados;
