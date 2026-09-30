@@ -172,8 +172,9 @@
       ],
       series: [
         // chuva: mancha azul ao fundo (eixo da direita)
-        { name: 'Chuva (mm)', type: 'line', yAxisIndex: 1, data: mm, step: 'middle', symbol: 'none', silent: true, z: 1,
-          lineStyle: { color: 'rgba(42,120,214,.55)', width: 1.2 * k }, areaStyle: { color: 'rgba(42,120,214,.20)' } },
+        { name: 'Chuva (mm)', type: 'line', yAxisIndex: 1, data: mm, symbol: 'none', silent: true, z: 1, smooth: 0.25,
+          lineStyle: { color: 'rgba(42,120,214,.85)', width: 2 * k },
+          areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(42,120,214,.30)' }, { offset: 1, color: 'rgba(42,120,214,.06)' }] } } },
         { name: N.nomeSafra(x.nome), type: 'bar', yAxisIndex: 0, data: ha, barCategoryGap: '18%', z: 3,
           itemStyle: { color: x.cor, borderRadius: [2 * k, 2 * k, 0, 0] },
           // área do dia em cada barra, na vertical
