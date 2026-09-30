@@ -403,7 +403,7 @@ button, input, select { font: inherit; color: inherit; }
   padding: .85em 1.3em 1.15em 1.5em; border-radius: .9em;
 }
 .tv-barra.faixa-marca::after { width: .25em; }
-.tv-logo { height: 2.3em; width: auto; background: #fff; border-radius: .5em; padding: .35em .6em; box-sizing: border-box; }
+.tv-logo { height: 2.6em; width: auto; padding-right: 1.3em; border-right: 1px solid rgba(255, 255, 255, .2); }
 .tv-titulo { min-width: 0; }
 .tv-titulo span { display: block; font-size: .78em; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #F0B24A; }
 .tv-titulo h1 { margin: .05em 0 0; font-size: 2.1em; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
