@@ -541,19 +541,31 @@
     ].join('');
   }
 
+  /** Foto da máquina da operação: colheitadeira na colheita de grãos; trator 8R no plantio. */
+  function fotoMaquina(m) {
+    var colheitadeira = m.o !== 'PLANTIO' && ({ SOJA: 1, MILHO: 1, SORGO: 1, MILHETO: 1 })[cultura(m.s)];
+    return colheitadeira ? { src: 'assets/maquina.png', alt: 'Colheitadeira de grãos' } : { src: 'assets/trator_8r.png', alt: 'Trator 8R com plantadeira' };
+  }
+  /** Mostra a foto só depois que ela carrega (sem foto, a faixa fica limpa). */
+  function mostrarMaquina(img, m) {
+    var f = fotoMaquina(m);
+    if (img.dataset.src === f.src) return;
+    img.dataset.src = f.src; img.alt = f.alt; img.hidden = true;
+    img.onload = function () { img.hidden = false; };
+    img.onerror = function () { img.hidden = true; };
+    img.src = f.src;
+  }
+
   function renderDestaque(m) {
-    var pl = m.o === 'PLANTIO', c = cultura(m.s);
+    var pl = m.o === 'PLANTIO';
     set('d-eyebrow', (pl ? 'Plantio' : 'Colheita') + ' · ' + nomeSafra(m.s));
     set('d-titulo', estado.u === TODAS ? 'Todas as fazendas' : titulo(estado.u));
+    set('d-pct', fmtPct(m.pct, 1));
+    set('d-pct-rot', (pl ? 'plantado' : 'colhido') + ' · ' + fmtN(m.exec) + ' de ' + fmtN(m.areaTotal) + ' ha');
     $('d-barra').style.width = (m.pct * 100).toFixed(1) + '%';
-    var partes = ['<b>' + fmtPct(m.pct, 1) + '</b> ' + (pl ? 'plantado' : 'colhido'), fmtN(m.exec) + ' de ' + fmtN(m.areaTotal) + ' ha'];
-    if (m.ini) partes.push('início em ' + fmtData(m.ini, true));
-    if (m.ult) partes.push('último apontamento em ' + fmtData(m.ult, true));
-    if (m.termino) partes.push('término planejado em ' + fmtData(m.termino, true));
-    $('d-resumo').innerHTML = partes.join(' <span aria-hidden="true">·</span> ');
-    var colheitadeira = !pl && ({ SOJA: 1, MILHO: 1, SORGO: 1, MILHETO: 1 })[c];
-    $('d-maquina').src = colheitadeira ? 'assets/maquina.png' : 'assets/trator_8r.svg';
-    $('d-maquina').alt = colheitadeira ? 'Colheitadeira de grãos' : 'Trator 8R com plantadeira';
+    var datas = [['Início', m.ini], ['Último apontamento', m.ult], ['Término planejado', m.termino], ['Previsão de término', m.previsao]];
+    $('d-datas').innerHTML = datas.map(function (d) { return '<li><span>' + d[0] + '</span><b>' + (d[1] ? fmtData(d[1]) : '—') + '</b></li>'; }).join('');
+    mostrarMaquina($('d-maquina'), m);
   }
 
   function renderSituacao(m) {
@@ -1065,7 +1077,7 @@
     $('tv-barra-pct').style.width = (m.pct * 100).toFixed(1) + '%';
     var g = DADOS.geradoEm ? new Date(DADOS.geradoEm) : null;
     set('tv-atualizado', g ? 'PIMS · ' + g.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
-    $('tv-maquina').src = !pl && ({ SOJA: 1, MILHO: 1, SORGO: 1, MILHETO: 1 })[cultura(m.s)] ? 'assets/maquina.png' : 'assets/trator_8r.svg';
+    mostrarMaquina($('tv-maquina'), m);
     $('tv-kpis').innerHTML = htmlKpis(m);
     $('tv-paginas').innerHTML = tv.lista.map(function (x, i) {
       return '<button class="' + (i === tv.i ? 'ativo' : '') + '" data-i="' + i + '">' + esc(x === TODAS ? 'Todas' : titulo(x)) + '</button>';
@@ -1140,22 +1152,27 @@
   }
 
   // ===========================================================================
-  // Exportar PNG: imagem pronta para o WhatsApp (quadrada, paisagem ou celular),
-  // desenhada num canvas no tamanho final, com letras grandes.
+  // Exportar PNG: a mesma página do relatório Power BI (barra lateral, indicadores,
+  // medidor, rosca, equipes, variedades, meta × realizado, mapa e barras por talhão).
+  //  - paisagem: a página 1920 × 1080 do Power BI, gravada em 2400 × 1350
+  //  - vertical: os mesmos blocos empilhados para ler no celular (1080 de largura)
+  // As medidas abaixo são da página base; o canvas é escalado por `escala`.
   // ===========================================================================
   var FORMATOS = {
-    quadrado: { w: 1440, h: 1440 },
-    paisagem: { w: 1920, h: 1080 },
-    vertical: { w: 1080, h: 1920 }
+    paisagem: { base: 1920, escala: 1.25 },
+    vertical: { base: 1080, escala: 1.25 }
   };
-  var exp = { formato: FORMATOS[ls('formatoPng')] ? ls('formatoPng') : 'quadrado', blob: null, url: null, arquivo: '', gerando: 0 };
-  var FAMILIA = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+  var exp = { formato: FORMATOS[ls('formatoPng')] ? ls('formatoPng') : 'paisagem', blob: null, url: null, arquivo: '', gerando: 0, tam: null };
+  var FAMILIA = '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif';
+  var COR_BARRA = '#0F4B45';
+  var TXT_PREVISAO = 'A previsão de término usa o rendimento médio dos últimos 7 dias como base ou, se não houver operação nesse período, o rendimento médio geral.';
 
   function carregarImagem(src) {
     return new Promise(function (ok, falha) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = falha; i.src = src; });
   }
-  /** Desenha um gráfico ECharts fora da tela, no tamanho pedido, e devolve a imagem. */
-  function imagemGrafico(w, h, desenhar) {
+  function talvezImagem(src) { return carregarImagem(src).catch(function () { return null; }); }
+  /** Desenha um gráfico ECharts fora da tela, no tamanho pedido (página base), e devolve a imagem na resolução final. */
+  function imagemGrafico(w, h, desenhar, pr) {
     var el = document.createElement('div');
     el.id = 'exp-' + Math.random().toString(36).slice(2);
     el.style.cssText = 'position:fixed;left:-30000px;top:0;width:' + Math.round(w) + 'px;height:' + Math.round(h) + 'px;';
@@ -1165,221 +1182,500 @@
       if (!g) return Promise.resolve(null);
       var zr = g.getZr();
       if (zr.refreshImmediately) zr.refreshImmediately();
-      return carregarImagem(g.getDataURL({ type: 'png', pixelRatio: 1, backgroundColor: '#FFFFFF' }));
+      return carregarImagem(g.getDataURL({ type: 'png', pixelRatio: pr || 1, backgroundColor: '#FFFFFF' }));
     } finally { descartar(el.id); el.remove(); }
+  }
+  function grafico(w, h, opcoes, pr) {
+    return imagemGrafico(w, h, function (el) { var ch = echarts.init(el, null, { renderer: 'canvas' }); charts[el.id] = ch; ch.setOption(opcoes); return ch; }, pr);
   }
   function rr(c, x, y, w, h, r) {
     c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
     c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
   }
-  function fonteCv(px, peso) { return (peso || 400) + ' ' + Math.round(px) + 'px ' + FAMILIA; }
+  function fonteCv(px, peso) { return (peso || 400) + ' ' + (Math.round(px * 10) / 10) + 'px ' + FAMILIA; }
   /** Escreve cabendo em maxW (reduz a fonte se precisar). Devolve a largura usada. */
   function escrever(c, t, x, y, px, peso, cor, maxW, alinhar) {
-    var p = px; c.font = fonteCv(p, peso);
-    while (maxW && p > 8 && c.measureText(t).width > maxW) { p -= 1; c.font = fonteCv(p, peso); }
+    var p = px; t = String(t); c.font = fonteCv(p, peso);
+    while (maxW && p > 7 && c.measureText(t).width > maxW) { p -= 0.5; c.font = fonteCv(p, peso); }
     c.fillStyle = cor; c.textAlign = alinhar || 'left'; c.textBaseline = 'alphabetic';
     c.fillText(t, x, y);
     return c.measureText(t).width;
   }
+  function quebrar(c, t, maxW) {
+    var saida = [], linha = '';
+    String(t).split(/\s+/).forEach(function (p) {
+      var n = linha ? linha + ' ' + p : p;
+      if (linha && c.measureText(n).width > maxW) { saida.push(linha); linha = p; } else linha = n;
+    });
+    if (linha) saida.push(linha);
+    return saida;
+  }
+  /** Parágrafo com quebra de linha; devolve a linha de base da última linha. */
+  function paragrafo(c, t, x, y, maxW, px, peso, cor, alinhar, entre) {
+    c.font = fonteCv(px, peso); c.fillStyle = cor; c.textAlign = alinhar || 'left'; c.textBaseline = 'alphabetic';
+    var linhas = quebrar(c, t, maxW), a = entre || px * 1.32;
+    linhas.forEach(function (l, i) { c.fillText(l, x, y + i * a); });
+    return y + (linhas.length - 1) * a;
+  }
 
-  /**
-   * Retângulos da imagem. Como no painel, a forma da fazenda decide: fazenda alta (retrato) ganha o
-   * mapa numa coluna; fazenda larga (paisagem) ganha o mapa numa faixa larga.
-   */
-  function layoutExport(fmt, forma) {
-    var W = fmt.w, H = fmt.h, k = Math.min(W, H) / 1080, M = 52 * k, g = 26 * k;
-    var L = { W: W, H: H, k: k, M: M, g: g, cab: { h: 250 * k }, rod: { y: H - 78 * k, h: 78 * k } };
-    var y0 = L.cab.h + g, y1 = L.rod.y - g * 0.6, larg = W - 2 * M, alt = y1 - y0;
-    if (W > H * 1.3) {                          // imagem paisagem
-      if (forma === 'paisagem') {               // mapa largo em cima; indicadores e gráfico embaixo
-        L.mapa = { x: M, y: y0, w: larg, h: alt * 0.56 };
-        var yb = L.mapa.y + L.mapa.h + g, hb = y1 - yb, colK = (larg - g) * 0.55;
-        L.kpis = { x: M, y: yb, w: colK, h: hb, cols: 3 };
-        L.graf = { x: M + colK + g, y: yb, w: larg - colK - g, h: hb };
-      } else {                                  // mapa em coluna à direita
-        var colE = (larg - g) * 0.47;
-        L.kpis = { x: M, y: y0, w: colE, h: alt * 0.48, cols: 3 };
-        L.graf = { x: M, y: L.kpis.y + L.kpis.h + g, w: colE, h: y1 - (L.kpis.y + L.kpis.h + g) };
-        L.mapa = { x: M + colE + g, y: y0, w: larg - colE - g, h: alt };
-      }
-    } else if (H > W * 1.3) {                   // imagem de celular: tudo empilhado
-      L.kpis = { x: M, y: y0, w: larg, h: 470 * k, cols: 2 };
-      var resto = y1 - (L.kpis.y + L.kpis.h + g) - g;
-      L.mapa = { x: M, y: L.kpis.y + L.kpis.h + g, w: larg, h: resto * 0.64 };
-      L.graf = { x: M, y: L.mapa.y + L.mapa.h + g, w: larg, h: resto * 0.36 };
-    } else if (forma === 'retrato') {           // quadrada, fazenda alta: indicadores à esquerda, mapa à direita
-      var colQ = (larg - g) * 0.46;
-      L.kpis = { x: M, y: y0, w: colQ, h: alt, cols: 2 };
-      L.mapa = { x: M + colQ + g, y: y0, w: larg - colQ - g, h: alt };
-      L.graf = null;
-    } else {                                    // quadrada, fazenda larga ou todas: indicadores em cima, mapa embaixo
-      L.kpis = { x: M, y: y0, w: larg, h: 300 * k, cols: 3 };
-      L.mapa = { x: M, y: L.kpis.y + L.kpis.h + g, w: larg, h: y1 - (L.kpis.y + L.kpis.h + g) };
-      L.graf = null;
+  // ---- blocos da página (mesmos do relatório) ----
+  function caixa(c, r, raio) {
+    c.save(); c.shadowColor = 'rgba(16,54,50,.10)'; c.shadowBlur = 10; c.shadowOffsetY = 2;
+    rr(c, r.x, r.y, r.w, r.h, raio || 10); c.fillStyle = '#FFFFFF'; c.fill(); c.restore();
+  }
+  function cartaoNumero(c, r, titulo, valor) {
+    caixa(c, r);
+    var yt = paragrafo(c, titulo, r.x + r.w / 2, r.y + 30, r.w - 18, 15, 500, COR.texto, 'center');
+    escrever(c, valor, r.x + r.w / 2, Math.max(yt + 52, r.y + r.h * 0.74), 32, 600, COR.texto, r.w - 18, 'center');
+  }
+  /** Título + valor grande em cima; título + valor menor embaixo (como "Área de plantio / Área cadastrada"). */
+  function cartaoPar(c, r, a, b, grande) {
+    caixa(c, r);
+    var cx = r.x + r.w / 2, h2 = r.h / 2;
+    escrever(c, a[0], cx, r.y + 28, 14.5, 500, COR.texto, r.w - 14, 'center');
+    escrever(c, a[1], cx, r.y + h2 - 6, grande ? 29 : 25, grande ? 700 : 600, COR.texto, r.w - 14, 'center');
+    escrever(c, b[0], cx, r.y + h2 + 24, grande ? 12.5 : 14.5, 500, COR.texto, r.w - 14, 'center');
+    escrever(c, b[1], cx, r.y + r.h - 12, grande ? 21 : 25, 600, COR.texto, r.w - 14, 'center');
+  }
+  /** Valor principal à esquerda e dois valores empilhados à direita (como "Produt. em sacas | Talhões abertos / finalizados"). */
+  function cartaoGrupo(c, r, principal, a, b) {
+    caixa(c, r);
+    var we = r.w * 0.44, cx = r.x + we / 2;
+    paragrafo(c, principal[0], cx, r.y + 30, we - 12, 14.5, 500, COR.texto, 'center');
+    escrever(c, principal[1], cx, r.y + r.h * 0.74, 30, 600, COR.texto, we - 12, 'center');
+    var cx2 = r.x + we + (r.w - we) / 2, wd = r.w - we - 10;
+    c.strokeStyle = COR.linha; c.lineWidth = 1; c.beginPath(); c.moveTo(r.x + we, r.y + 16); c.lineTo(r.x + we, r.y + r.h - 16); c.stroke();
+    escrever(c, a[0], cx2, r.y + 26, 13.5, 500, COR.texto, wd, 'center');
+    escrever(c, a[1], cx2, r.y + 54, 22, 600, COR.texto, wd, 'center');
+    escrever(c, b[0], cx2, r.y + 82, 13.5, 500, COR.texto, wd, 'center');
+    escrever(c, b[1], cx2, r.y + 109, 22, 600, COR.texto, wd, 'center');
+  }
+  function cartaoMedidor(c, r, titulo, v, max) {
+    caixa(c, r);
+    var cx = r.x + r.w / 2;
+    escrever(c, titulo, cx, r.y + 28, 15, 500, COR.texto, r.w - 16, 'center');
+    var cy = r.y + r.h - 20, R = Math.min(r.w * 0.36, r.h - 52), esp = R * 0.32, f = max > 0 ? Math.max(0, Math.min(1, v / max)) : 0;
+    c.lineCap = 'butt'; c.lineWidth = esp;
+    c.strokeStyle = '#E3E8E4'; c.beginPath(); c.arc(cx, cy, R - esp / 2, Math.PI, 2 * Math.PI); c.stroke();
+    if (f > 0) { c.strokeStyle = COR.teal; c.beginPath(); c.arc(cx, cy, R - esp / 2, Math.PI, Math.PI * (1 + f)); c.stroke(); }
+    escrever(c, fmtN(v), cx, cy - 2, 19, 600, COR.texto, (R - esp) * 1.9, 'center');
+    escrever(c, '0', cx - R - 8, cy, 12, 500, COR.suave, 40, 'right');
+    escrever(c, fmtN(max), cx + R + 8, cy, 12, 500, COR.suave, r.x + r.w - (cx + R + 8) - 4, 'left');
+  }
+  function cartaoRosca(c, r, m) {
+    caixa(c, r);
+    escrever(c, 'Percentual realizado', r.x + 16, r.y + 28, 14.5, 600, COR.texto, r.w * 0.6);
+    [[COR.dourado, 'À realizar'], [COR.teal, 'Realizado']].forEach(function (l, i) {
+      var y = r.y + 54 + i * 22;
+      c.fillStyle = l[0]; c.beginPath(); c.arc(r.x + 22, y - 4, 5, 0, 2 * Math.PI); c.fill();
+      escrever(c, l[1], r.x + 32, y, 12.5, 500, COR.suave, 110);
+    });
+    var R = Math.min(r.h * 0.38, r.w * 0.2), cx = r.x + r.w - R - 26, cy = r.y + r.h / 2 + 8, esp = R * 0.36, f = Math.max(0, Math.min(1, m.pct));
+    c.lineWidth = esp; c.lineCap = 'butt';
+    c.strokeStyle = COR.dourado; c.beginPath(); c.arc(cx, cy, R - esp / 2, 0, 2 * Math.PI); c.stroke();
+    if (f > 0) { c.strokeStyle = COR.teal; c.beginPath(); c.arc(cx, cy, R - esp / 2, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * f); c.stroke(); }
+    escrever(c, fmtPct(m.pct), cx - R - 16, r.y + r.h - 22, 24, 700, COR.texto, 110, 'right');
+  }
+  function equipesUltimos7(m) {
+    if (!m.ult) return [];
+    var lim = +m.ult - 7 * DIA;
+    return m.equipes.map(function (e) {
+      return { nome: e.nome, v: Object.keys(e.porDia).reduce(function (s, d) { return +iso(d) > lim ? s + e.porDia[d] : s; }, 0) };
+    }).filter(function (e) { return e.v > 0; }).sort(function (a, b) { return b.v - a.v; });
+  }
+  function opcoesColunas(nomes, valores, fonte, w) {
+    var larg = (w || 200) / Math.max(1, nomes.length), girar = larg < fonte * 5.2;
+    return opt({
+      grid: { left: 2, right: 2, top: 24, bottom: 2, containLabel: true },
+      xAxis: { type: 'category', data: nomes, axisLine: { lineStyle: { color: COR.linha } }, axisTick: { show: false }, axisLabel: { color: COR.texto, fontSize: fonte, interval: 0, hideOverlap: false, rotate: girar ? 40 : 0, overflow: 'truncate', width: girar ? 76 : larg - 6 } },
+      yAxis: { type: 'value', show: false },
+      series: [{ type: 'bar', data: valores, barMaxWidth: 46, barCategoryGap: '30%', itemStyle: { color: COR_BARRA },
+        label: { show: true, position: 'top', fontSize: fonte, color: COR.texto, formatter: function (p) { return fmtN(p.value); } } }]
+    });
+  }
+  async function cartaoColunas(c, r, titulo, lista, pr) {
+    caixa(c, r);
+    paragrafo(c, titulo, r.x + 14, r.y + 26, r.w - 28, 14, 500, COR.texto);
+    var topo = c.measureText(titulo).width > r.w - 28 ? 50 : 34;
+    if (!lista.length) { escrever(c, 'Sem apontamentos', r.x + r.w / 2, r.y + r.h / 2 + 10, 13, 500, COR.fraco, r.w - 20, 'center'); return; }
+    var l = lista.slice(0, Math.max(1, Math.floor((r.w - 16) / 38)));
+    var img = await grafico(r.w - 16, r.h - topo - 8, opcoesColunas(l.map(function (e) { return e.nome; }), l.map(function (e) { return Math.round(e.v); }), l.length > 4 ? 10.5 : 12, r.w - 16), pr);
+    if (img) c.drawImage(img, r.x + 8, r.y + topo, r.w - 16, r.h - topo - 8);
+  }
+  function cartaoVariedades(c, r, m) {
+    caixa(c, r);
+    var pl = m.o === 'PLANTIO', x0 = r.x + 14, x1 = r.x + r.w - 14, cQ = x1 - 60;
+    escrever(c, 'Variedades', x0, r.y + 28, 15, 600, COR.escuro, r.w * 0.5);
+    escrever(c, pl ? 'Plantado (ha)' : 'Colhido (ha)', cQ, r.y + 28, 13, 600, COR.escuro, 110, 'right');
+    escrever(c, '%', x1, r.y + 28, 13, 600, COR.escuro, 50, 'right');
+    c.fillStyle = COR.linha; c.fillRect(x0, r.y + 38, x1 - x0, 1);
+    var l = m.variedades.filter(function (v) { return v.prev > 0; }), lh = 23, cabe = Math.max(1, Math.floor((r.h - 50) / lh));
+    if (!l.length) { escrever(c, 'Sem variedades cadastradas', r.x + r.w / 2, r.y + r.h / 2 + 10, 13, 500, COR.fraco, r.w - 20, 'center'); return; }
+    var mostrar = l.length > cabe ? l.slice(0, cabe - 1) : l;
+    mostrar.forEach(function (v, i) {
+      var y = r.y + 44 + i * lh;
+      if (i % 2 === 0) { c.fillStyle = '#F3F6F3'; c.fillRect(x0, y, x1 - x0, lh); }
+      escrever(c, v.v, x0 + 6, y + 16, 12.5, 500, COR.texto, cQ - x0 - 90);
+      escrever(c, fmtN(v.exec, 2), cQ, y + 16, 12.5, 500, COR.texto, 100, 'right');
+      escrever(c, fmtPct(v.exec / v.prev), x1 - 4, y + 16, 12.5, 500, COR.texto, 50, 'right');
+    });
+    if (mostrar.length < l.length) escrever(c, '+ ' + (l.length - mostrar.length) + ' variedades', x0 + 6, r.y + 44 + mostrar.length * lh + 16, 12, 500, COR.fraco, r.w - 30);
+  }
+  function metaReferencia(m) {
+    if (m.metaHoje !== null) return m.metaHoje;
+    for (var i = m.serie.length - 1; i >= 0; i--) if (m.serie[i].meta !== null) return m.serie[i].meta;
+    return null;
+  }
+  async function cartaoMeta(c, r, m, pr) {
+    caixa(c, r);
+    escrever(c, 'Meta x Realizado - ha por dia', r.x + 16, r.y + 28, 15, 600, COR.texto, r.w * 0.5);
+    [[COR.teal, 'Área executada dia'], [COR.dourado, 'Meta diária']].reduce(function (x, l) {
+      c.fillStyle = l[0]; c.beginPath(); c.arc(x + 5, r.y + 46, 5, 0, 2 * Math.PI); c.fill();
+      return x + 16 + escrever(c, l[1], x + 14, r.y + 50, 12.5, 500, COR.suave, 160) + 10;
+    }, r.x + 16);
+    var mr = metaReferencia(m);
+    [['Meta diária (ha)', mr !== null ? fmtN(mr) : '—'], ['Média real ha/dia', m.media ? fmtN(m.media) : '—']].forEach(function (p, i) {
+      var cx = r.x + r.w - 72 - (1 - i) * 150;
+      escrever(c, p[0], cx, r.y + 28, 14, 500, COR.texto, 145, 'center');
+      escrever(c, p[1], cx, r.y + 52, 16, 600, COR.texto, 145, 'center');
+    });
+    var a = { x: r.x + 8, y: r.y + 62, w: r.w - 16, h: r.h - 70 };
+    if (!m.serie.length) { escrever(c, 'Ainda não há apontamentos nesta safra.', a.x + a.w / 2, a.y + a.h / 2, 14, 500, COR.fraco, a.w, 'center'); return; }
+    var dias = Math.max(14, Math.floor(a.w / 13));
+    var o = opcoesMeta(m, 1, m.serie.length > dias ? dias : null);
+    o.series[0].itemStyle.color = COR.teal;
+    if (o.series[1]) o.series[1].lineStyle = { color: '#F2C200', width: 2.5 };
+    var img = await grafico(a.w, a.h, o, pr);
+    if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
+  }
+  function legendaHorizontal(c, itens, cx, y, px) {
+    c.font = fonteCv(px, 500);
+    var larg = itens.reduce(function (s, it) { return s + px + 8 + c.measureText(it.nome).width + 18; }, -18), x = cx - larg / 2;
+    itens.forEach(function (it) {
+      rr(c, x, y - px + 1, px, px, 3); c.fillStyle = it.cor; c.fill();
+      if (it.borda) { c.strokeStyle = '#C9D3CB'; c.lineWidth = 1; c.stroke(); }
+      x += px + 8;
+      x += escrever(c, it.nome, x, y, px, 500, COR.suave) + 18;
+    });
+  }
+  async function cartaoMapa(c, r, m, u, comp, imgs, pr) {
+    caixa(c, r);
+    var pl = m.o === 'PLANTIO';
+    escrever(c, 'Mapa de evolução de ' + (pl ? 'plantio' : 'colheita'), r.x + r.w / 2, r.y + 30, 16, 600, COR.texto, r.w - 140, 'center');
+    if (imgs.rosa) { var rs = 58; c.drawImage(imgs.rosa, r.x + r.w - rs - 14, r.y + 12, rs, rs * imgs.rosa.height / imgs.rosa.width); }
+    var rot = rotulosClasse(m.o);
+    legendaHorizontal(c, [3, 2, 1, 0].map(function (k) { return { nome: rot[k], cor: COR.s[k], borda: k === 0 }; }), r.x + r.w / 2, r.y + r.h - 16, 13);
+    var a = { x: r.x + 10, y: r.y + 46, w: r.w - 20, h: r.h - 46 - 34 };
+    if (!comp) { escrever(c, 'Limites dos talhões indisponíveis', a.x + a.w / 2, a.y + a.h / 2, 15, 500, COR.fraco, a.w, 'center'); return; }
+    var img = await imagemGrafico(a.w, a.h, function (el) {
+      return desenharMapaFazenda(el, u, m, comp, { semZoom: true, rotulos: true, fonte: 9, fonteTitulo: 13 });
+    }, pr);
+    if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
+  }
+  /** "Todas": no lugar do mapa, a lista das fazendas com a barra de progresso. */
+  function cartaoListaFazendas(c, r, m) {
+    caixa(c, r);
+    escrever(c, 'Evolução por fazenda', r.x + r.w / 2, r.y + 30, 16, 600, COR.texto, r.w - 40, 'center');
+    var lista = m.unidades.map(function (u) { return { u: u, x: calcula([u], m.s, m.o) }; }).sort(function (a, b) { return b.x.pct - a.x.pct; });
+    var y0 = r.y + 50, lh = (r.h - 60) / Math.max(1, lista.length), fs = Math.min(1, lh / 70), wb = r.w - 40;
+    lista.forEach(function (f, i) {
+      var x0 = r.x + 20, y = y0 + i * lh + (lh - 58 * fs) / 2, x = f.x;
+      escrever(c, titulo(f.u), x0, y + 18 * fs, 16 * fs, 600, COR.texto, wb * 0.6);
+      escrever(c, fmtPct(x.pct, 1), x0 + wb, y + 18 * fs, 17 * fs, 700, COR.teal, 120, 'right');
+      var yb = y + 26 * fs;
+      rr(c, x0, yb, wb, 9 * fs, 4.5 * fs); c.fillStyle = COR.s[0]; c.fill();
+      if (x.pct > 0) { rr(c, x0, yb, Math.max(9 * fs, wb * x.pct), 9 * fs, 4.5 * fs); c.fillStyle = COR_FAZENDA[f.u] || COR.teal; c.fill(); }
+      escrever(c, fmtN(x.exec) + ' de ' + fmtN(x.areaTotal) + ' ha  ·  ' + (x.media7 ? fmtN(x.media7) + ' ha/dia' : 'sem ritmo') + (x.previsao ? '  ·  previsão ' + fmtData(x.previsao) : ''), x0, yb + 28 * fs, 12.5 * fs, 500, COR.suave, wb);
+    });
+  }
+  function opcoesTalhoes(lista, w, fonte) {
+    var larg = w / Math.max(1, lista.length);
+    return opt({
+      grid: { left: 2, right: 2, top: 30, bottom: 2, containLabel: true },
+      xAxis: { type: 'category', data: lista.map(function (t) { return t.nome; }), axisLine: { lineStyle: { color: COR.linha } }, axisTick: { show: false },
+        axisLabel: { color: COR.texto, fontSize: fonte, interval: 0, rotate: larg < fonte * 3 ? 90 : 0, hideOverlap: false } },
+      yAxis: { type: 'value', show: false, min: 0, max: 100 },
+      series: [{
+        type: 'bar', barCategoryGap: '22%',
+        data: lista.map(function (t) { return { value: t.barra, real: t.valor, sufixo: t.sufixo, itemStyle: { color: t.cor, borderRadius: [2, 2, 0, 0] } }; }),
+        label: { show: true, position: 'top', distance: 4, rotate: larg < fonte * 2.4 ? 90 : 0, align: larg < fonte * 2.4 ? 'left' : 'center', verticalAlign: 'middle',
+          fontSize: fonte * 0.95, color: COR.texto, formatter: function (p) { return p.data.real === null ? '' : fmtN(p.data.real) + (p.data.sufixo || ''); } }
+      }]
+    });
+  }
+  async function cartaoBarras(c, r, titulo, legenda, lista, pr) {
+    caixa(c, r);
+    var topo = 8;
+    if (titulo) { escrever(c, titulo, r.x + 16, r.y + 26, 15, 600, COR.texto, r.w * 0.5); topo = 32; }
+    if (legenda) {
+      c.font = fonteCv(13, 500);
+      var x = r.x + r.w - 16 - legenda.reduce(function (s, it) { return s + 21 + c.measureText(it.nome).width + 16; }, -16);
+      legenda.forEach(function (it) { rr(c, x, r.y + 14, 13, 13, 3); c.fillStyle = it.cor; c.fill(); x += 21; x += escrever(c, it.nome, x, r.y + 26, 13, 500, COR.suave) + 16; });
+    }
+    if (!lista.length) { escrever(c, 'Sem talhões', r.x + r.w / 2, r.y + r.h / 2, 14, 500, COR.fraco, r.w, 'center'); return; }
+    var w = r.w - 16, h = r.h - topo - 6;
+    var img = await grafico(w, h, opcoesTalhoes(lista, w, Math.max(9, Math.min(12, w / lista.length / 2.4))), pr);
+    if (img) c.drawImage(img, r.x + 8, r.y + topo, w, h);
+  }
+  /** Talhões em ordem decrescente do % realizado (como o relatório, que ordena pelo valor). */
+  function listaTalhoes(m) {
+    return m.talhoes.slice().sort(function (a, b) { return b.perc - a.perc || (a.t < b.t ? -1 : 1); }).map(function (t) {
+      var v = Math.round(t.perc * 100);
+      return { nome: t.t, valor: v > 0 ? v : null, barra: Math.max(1.5, v), cor: t.k === 0 ? '#C9D1CB' : COR.s[t.k] };
+    });
+  }
+  function listaFazendas(m) {
+    return m.unidades.map(function (u) { var x = calcula([u], m.s, m.o); return { nome: titulo(u), valor: Math.round(x.pct * 100), sufixo: '%', barra: Math.max(1.5, x.pct * 100), cor: COR_FAZENDA[u] || COR.teal }; })
+      .sort(function (a, b) { return b.valor - a.valor; });
+  }
+  function legendaTalhoes(m) {
+    var rot = rotulosClasse(m.o);
+    return [3, 2, 1, 0].map(function (k) { return { nome: rot[k], cor: k === 0 ? '#C9D1CB' : COR.s[k] }; });
+  }
+
+  // ---- cabeçalho e barra lateral ----
+  function faixaMarca(c, W, h, imgs) {
+    var gr = c.createLinearGradient(0, 0, W, h * 0.35);
+    gr.addColorStop(0, '#0B8C7F'); gr.addColorStop(0.34, '#0B6E62'); gr.addColorStop(0.68, '#094C44'); gr.addColorStop(1, '#06312C');
+    c.fillStyle = gr; c.fillRect(0, 0, W, h);
+    if (imgs.soja) {
+      // pés de soja em traço fino só à direita, esmaecendo para a esquerda (igual à faixa do painel)
+      var sh = h * 1.35, sw = imgs.soja.width / imgs.soja.height * sh, ww = Math.min(W * 0.66, sw);
+      var off = document.createElement('canvas'); off.width = Math.round(ww * 2); off.height = Math.round(h * 2);
+      var o = off.getContext('2d'); o.scale(2, 2);
+      o.drawImage(imgs.soja, ww - sw, (h - sh) / 2, sw, sh);
+      o.globalCompositeOperation = 'destination-in';
+      var mg = o.createLinearGradient(0, 0, ww, 0); mg.addColorStop(0, 'rgba(0,0,0,0)'); mg.addColorStop(0.55, 'rgba(0,0,0,1)');
+      o.fillStyle = mg; o.fillRect(0, 0, ww, h);
+      c.save(); c.globalAlpha = 0.13; c.drawImage(off, W - ww, 0, ww, h); c.restore();
+    }
+  }
+  function cabecalho(c, L, m, imgs) {
+    faixaMarca(c, L.W, L.cabH, imgs);
+    var pl = m.o === 'PLANTIO', x = L.tituloX, maxW = L.W - x - 280;
+    escrever(c, 'ACOMPANHAMENTO OPERACIONAL ' + (pl ? 'PLANTIO' : 'COLHEITA'), x, 72, L.W > 1500 ? 38 : 30, 700, '#FFFFFF', maxW);
+    var g = DADOS.geradoEm ? new Date(DADOS.geradoEm) : null;
+    escrever(c, 'Atualizado em: ' + (g ? g.toLocaleString('pt-BR').replace(',', '') : '—'), x, 110, 20, 400, '#E3F1EC', maxW);
+    if (imgs.coa) { var lh = L.W > 1500 ? 60 : 48, lw = imgs.coa.width / imgs.coa.height * lh; c.save(); c.globalAlpha = 0.6; c.drawImage(imgs.coa, L.W - 36 - lw, 30, lw, lh); c.restore(); }
+  }
+  function linhaDourada(c, x, y, w) { c.fillStyle = COR.dourado; c.fillRect(x, y, w, 3); }
+  function desenharLogoLocks(c, img, cx, y, maxW, maxH) {
+    if (!img) return;
+    var s = Math.min(maxW / img.width, maxH / img.height);
+    c.drawImage(img, cx - img.width * s / 2, y, img.width * s, img.height * s);
+  }
+  function desenharFoto(c, img, cx, y, maxW, maxH) {
+    if (!img) return 0;
+    var s = Math.min(maxW / img.width, maxH / img.height), w = img.width * s, h = img.height * s;
+    c.drawImage(img, cx - w / 2, y + (maxH - h) / 2, w, h);
+    return maxH;
+  }
+  function dataRotulo(c, x, y, rotulo, valor, w, alinhar) {
+    escrever(c, rotulo, x, y, 17, 500, COR.teal, w, alinhar);
+    escrever(c, valor, x, y + 28, 21, 600, COR.texto, w, alinhar);
+  }
+  function blocoObservacao(c, r, m) {
+    rr(c, r.x, r.y, r.w, r.h, 10); c.strokeStyle = COR.linha; c.lineWidth = 1.2; c.stroke();
+    c.strokeStyle = COR.fraco; c.lineWidth = 1.4; c.beginPath(); c.arc(r.x + 20, r.y + 22, 7, 0, 2 * Math.PI); c.stroke();
+    escrever(c, 'i', r.x + 20, r.y + 26.5, 11, 700, COR.fraco, 10, 'center');
+    escrever(c, 'Observação', r.x + 34, r.y + 27, 14, 600, COR.suave, r.w - 44);
+    var t = m.o === 'PLANTIO'
+      ? 'A área executada soma os apontamentos de plantio sem replantio, limitados à área de cada talhão (área produtiva − área de dano).'
+      : 'A área executada soma os apontamentos de colheita, limitados à área de cada talhão (área produtiva − área de dano).';
+    paragrafo(c, t, r.x + 12, r.y + 52, r.w - 24, 12.5, 400, COR.fraco, 'left', 17);
+  }
+  function lateral(c, r, m, u, imgs) {
+    c.save(); c.shadowColor = 'rgba(16,54,50,.10)'; c.shadowBlur = 12;
+    rr(c, r.x, r.y, r.w, r.h + 30, 18); c.fillStyle = '#FFFFFF'; c.fill(); c.restore();
+    var cx = r.x + r.w / 2, x = r.x + 22, w = r.w - 40, y = r.y + 40;
+    desenharLogoLocks(c, imgs.locks, cx, y, r.w - 44, 64); y += 92;
+    linhaDourada(c, r.x + 14, y, r.w - 28); y += 14;
+    y += desenharFoto(c, imgs.maquina, cx, y, r.w - 20, 120) + 18;
+    if (!imgs.maquina) y += 8;
+    escrever(c, 'Unidade:', cx, y + 16, 17, 400, COR.teal, w, 'center');
+    escrever(c, u === TODAS ? 'Todas' : titulo(u), cx, y + 54, 32, 700, COR.escuro, w, 'center'); y += 90;
+    c.fillStyle = '#1C1C1C'; c.fillRect(x, y - 14, 16, 16);
+    escrever(c, nomeSafra(m.s).toUpperCase(), x + 26, y, 19, 500, COR.texto, w - 26); y += 52;
+    [['Início da operação', m.ini], ['Último dia de operação', m.ult], ['Data final planejada', m.termino]].forEach(function (d) {
+      dataRotulo(c, x, y, d[0], d[1] ? fmtData(d[1]) : '—', w); y += 78;
+    });
+    var box = { x: r.x + 8, y: y - 26, w: r.w - 16, h: 190 };
+    rr(c, box.x, box.y, box.w, box.h, 10); c.strokeStyle = COR.linha; c.lineWidth = 1.2; c.stroke();
+    dataRotulo(c, x, y + 6, 'Previsão de término', m.previsao ? fmtData(m.previsao) : '—', w);
+    paragrafo(c, TXT_PREVISAO, box.x + 12, y + 66, box.w - 24, 12.5, 400, COR.fraco, 'left', 17);
+    blocoObservacao(c, { x: r.x + 8, y: r.y + r.h - 206, w: r.w - 16, h: 150 }, m);
+    escrever(c, 'Fonte: PIMS', r.x + 22, r.y + r.h - 22, 13, 500, COR.suave, w);
+    c.save(); c.translate(r.x - 12, r.y + r.h - 18); c.rotate(-Math.PI / 2);
+    escrever(c, 'Desenvolvido por Centro de Operações Agrícolas', 0, 0, 11.5, 400, '#5FB8AE', 420);
+    c.restore();
+  }
+
+  // ---- indicadores do topo ----
+  function indicadoresPbi(m) {
+    var pl = m.o === 'PLANTIO', op = pl ? 'plantio' : 'colheita';
+    var semeada = pl ? null : calcula(m.unidades, m.s, 'PLANTIO').exec;
+    var n = function (v, c) { return v === null || v === undefined ? '—' : fmtN(v, c); };
+    return {
+      area: [['Área de ' + op + ' (ha)', fmtN(m.areaTotal)], pl ? ['Área cadastrada (ha)', fmtN(m.areaCad, 2)] : ['Área semeada (ha)', semeada ? fmtN(semeada, 2) : '—']],
+      exec: [['Área executada (ha)', fmtN(m.exec, 2)], ['Área à executar (ha)', fmtN(m.restante, 2)]],
+      dec: ['Dias decorridos', n(m.diasDec)],
+      plan: ['Dias restantes planejados', m.diasPlan === null ? '—' : fmtN(Math.max(0, m.diasPlan))],
+      prev: ['Dias restantes previsto', n(m.diasPrev)],
+      talh: [['Talhões ' + (pl ? 'plantados' : 'colhidos'), m.porClasse[3].n + ' / ' + m.talhoes.length], ['Talhões abertos', String(m.porClasse[1].n + m.porClasse[2].n)], ['Não iniciados', String(m.porClasse[0].n)]],
+      ritmo: [['Ritmo 7 dias (ha/dia)', m.media7 ? fmtN(m.media7) : '—'], ['Necessário p/ meta', m.necessario ? fmtN(m.necessario) + ' ha/dia' : '—'], ['Média geral', m.media ? fmtN(m.media) + ' ha/dia' : '—']],
+      rep: pl ? ['% Replantio', m.exec ? fmtPct(m.replantio / m.exec, 1) : '—'] : ['% Dano', m.areaCad ? fmtPct(m.dano / m.areaCad, 1) : '—']
+    };
+  }
+  function desenharIndicadores(c, K, m) {
+    var d = indicadoresPbi(m);
+    cartaoPar(c, K.area, d.area[0], d.area[1], true);
+    cartaoPar(c, K.exec, d.exec[0], d.exec[1]);
+    cartaoNumero(c, K.dec, d.dec[0], d.dec[1]);
+    cartaoNumero(c, K.plan, d.plan[0], d.plan[1]);
+    cartaoNumero(c, K.prev, d.prev[0], d.prev[1]);
+    cartaoMedidor(c, K.gauge, 'Evolução do realizado (ha)', m.exec, m.areaTotal);
+    cartaoGrupo(c, K.talh, d.talh[0], d.talh[1], d.talh[2]);
+    cartaoGrupo(c, K.ritmo, d.ritmo[0], d.ritmo[1], d.ritmo[2]);
+    cartaoNumero(c, K.rep, d.rep[0], d.rep[1]);
+  }
+  function cartaoDanoReplantio(c, r, m) {
+    caixa(c, r);
+    [['Área de dano (ha)', fmtN(m.dano, 2)], ['Replantio (ha)', fmtN(m.replantio, 2)]].forEach(function (p, i) {
+      var cx = r.x + r.w / 4 + i * r.w / 2;
+      escrever(c, p[0], cx, r.y + 26, 14.5, 500, COR.texto, r.w / 2 - 10, 'center');
+      escrever(c, p[1], cx, r.y + r.h - 14, 23, 600, COR.texto, r.w / 2 - 10, 'center');
+    });
+  }
+
+  // ---- arranjos ----
+  function aspectoFazenda(comp) {
+    if (!comp) return 1.5;
+    var bb = comp.mp.features.map(bboxFeature).filter(Boolean).reduce(uniao);
+    return (bb[2] - bb[0]) / Math.max(1, bb[3] - bb[1]);
+  }
+  /** Página 1920 × 1080 do relatório. Fazenda alta: o mapa ocupa duas faixas (como na página de Guapirama do Power BI). */
+  function layoutPaisagem(todas, comp) {
+    var y1 = 129, h1 = 121, K = {
+      area: { x: 266, y: y1, w: 155, h: h1 }, exec: { x: 431, y: y1, w: 151, h: h1 }, dec: { x: 592, y: y1, w: 120, h: h1 },
+      plan: { x: 722, y: y1, w: 112, h: h1 }, prev: { x: 844, y: y1, w: 113, h: h1 }, gauge: { x: 967, y: y1, w: 234, h: h1 },
+      talh: { x: 1211, y: y1, w: 284, h: h1 }, ritmo: { x: 1505, y: y1, w: 285, h: h1 }, rep: { x: 1800, y: y1, w: 103, h: h1 }
+    };
+    var L = { W: 1920, H: 1080, cabH: 205, tituloX: 285, lateral: { x: 25, y: 23, w: 239, h: 1057 }, kpis: K,
+      dano: { x: 267, y: 260, w: 270, h: 66 }, donut: { x: 267, y: 336, w: 270, h: 130 } };
+    var a = aspectoFazenda(comp), cabe = function (w, h) { var lw = Math.min(w, h * a); return lw * lw / a; };
+    L.alto = !todas && !!comp && cabe(586, 552) > cabe(636, 382) * 1.25;
+    if (L.alto) {
+      Object.assign(L, { eq7: { x: 547, y: 260, w: 200, h: 206 }, eqT: { x: 757, y: 260, w: 160, h: 206 }, vari: { x: 927, y: 260, w: 360, h: 206 },
+        mapa: { x: 1297, y: 260, w: 606, h: 640 }, meta: { x: 267, y: 476, w: 1020, h: 244 },
+        tal: [{ x: 267, y: 730, w: 1020, h: 170 }, { x: 267, y: 910, w: 1636, h: 158 }] });
+    } else {
+      Object.assign(L, { eq7: { x: 547, y: 260, w: 230, h: 206 }, eqT: { x: 787, y: 260, w: 160, h: 206 }, vari: { x: 957, y: 260, w: 280, h: 206 },
+        mapa: { x: 1247, y: 260, w: 656, h: 460 }, meta: { x: 267, y: 476, w: 970, h: 244 },
+        tal: todas ? [{ x: 267, y: 730, w: 1636, h: 338 }] : [{ x: 267, y: 730, w: 1636, h: 170 }, { x: 267, y: 910, w: 1636, h: 158 }] });
     }
     return L;
   }
-
-  /** Os 6 indicadores do painel em texto simples (para a imagem). */
-  function kpisTexto(m) {
-    var pl = m.o === 'PLANTIO', bom = '#1E7B4F', atencao = '#B7791F', ruim = '#B3261E', suave = COR.suave;
-    var ritmo = { sub: m.media ? 'média geral ' + fmtN(m.media) + ' ha/dia' : 'sem apontamentos', cor: suave };
-    if (m.metaHoje !== null && m.media7) { var r = m.media7 / m.metaHoje - 1; ritmo = { sub: (r >= 0 ? '+' : '') + fmtPct(r) + ' da meta (' + fmtN(m.metaHoje) + ')', cor: r >= 0 ? bom : r > -0.1 ? atencao : ruim }; }
-    var nec = { sub: m.termino ? (m.necessario ? 'para terminar em ' + fmtData(m.termino, true) : 'operação concluída') : 'sem data de término', cor: suave };
-    if (m.necessario && m.media7) nec.cor = m.necessario <= m.media7 ? bom : m.necessario <= m.media7 * 1.1 ? atencao : ruim;
-    var prev = { sub: m.previsao ? (m.restante > 0 ? 'em ' + fmtN(m.diasPrev + 1) + ' dias' : 'concluído') : 'sem ritmo para projetar', cor: suave };
-    if (m.previsao && m.termino && m.restante > 0) { var d = dif(m.termino, m.previsao); prev = { sub: d <= 0 ? (d === 0 ? 'no prazo' : Math.abs(d) + ' dias antes do planejado') : d + ' dias após o planejado', cor: d <= 0 ? bom : d <= 3 ? atencao : ruim }; }
-    return [
-      { rot: 'Área ' + (pl ? 'plantada' : 'colhida'), val: fmtN(m.exec), un: 'ha', sub: fmtPct(m.pct, 1) + ' de ' + fmtN(m.areaTotal) + ' ha', cor: suave },
-      { rot: pl ? 'A plantar' : 'A colher', val: fmtN(m.restante), un: 'ha', sub: m.porClasse[0].n + ' talhões não iniciados', cor: suave },
-      { rot: 'Ritmo · 7 dias', val: m.media7 ? fmtN(m.media7) : '—', un: m.media7 ? 'ha/dia' : '', sub: ritmo.sub, cor: ritmo.cor },
-      { rot: 'Necessário p/ meta', val: m.necessario ? fmtN(m.necessario) : '—', un: m.necessario ? 'ha/dia' : '', sub: nec.sub, cor: nec.cor },
-      { rot: 'Previsão de término', val: m.previsao ? fmtData(m.previsao) : '—', un: '', sub: prev.sub, cor: prev.cor },
-      { rot: 'Talhões ' + (pl ? 'plantados' : 'colhidos'), val: String(m.porClasse[3].n), un: '/ ' + m.talhoes.length, sub: (m.porClasse[1].n + m.porClasse[2].n) + ' em andamento', cor: suave }
-    ];
-  }
-
-  function cartao(c, r, k) {
-    c.save(); c.shadowColor = 'rgba(16,54,50,.08)'; c.shadowBlur = 18 * k; c.shadowOffsetY = 4 * k;
-    rr(c, r.x, r.y, r.w, r.h, 18 * k); c.fillStyle = '#FFFFFF'; c.fill(); c.restore();
-    rr(c, r.x, r.y, r.w, r.h, 18 * k); c.strokeStyle = COR.linha; c.lineWidth = Math.max(1, 1.5 * k); c.stroke();
-  }
-  function larguraLegenda(c, itens, k) {
-    c.font = fonteCv(19 * k, 500);
-    return itens.reduce(function (s, it) { return s + c.measureText(it.nome).width + 48 * k; }, 0);
-  }
-  function legendaCanvas(c, itens, xDir, y, k, tracejada) {
-    var x = xDir; c.font = fonteCv(19 * k, 500);
-    for (var i = itens.length - 1; i >= 0; i--) {
-      var it = itens[i], tw = c.measureText(it.nome).width;
-      x -= tw; c.fillStyle = COR.suave; c.textAlign = 'left'; c.fillText(it.nome, x, y);
-      x -= 26 * k;
-      if (it.linha) { c.strokeStyle = it.cor; c.lineWidth = 3 * k; c.setLineDash([7 * k, 5 * k]); c.beginPath(); c.moveTo(x, y - 7 * k); c.lineTo(x + 20 * k, y - 7 * k); c.stroke(); c.setLineDash([]); }
-      else { rr(c, x + 2 * k, y - 16 * k, 16 * k, 16 * k, 4 * k); c.fillStyle = it.cor; c.fill(); if (it.borda) { c.strokeStyle = '#C9D3CB'; c.lineWidth = 1; c.stroke(); } }
-      x -= 22 * k;
+  /** Os mesmos blocos empilhados, 1080 de largura (a altura acompanha o conteúdo). */
+  function layoutVertical(m, todas, comp) {
+    var W = 1080, M = 28, g = 14, lw = W - 2 * M, y;
+    var L = { W: W, cabH: 190, tituloX: M, vertical: true };
+    L.id = { x: M, y: 146, w: lw, h: 330 };
+    y = L.id.y + L.id.h + g;
+    var cw = (lw - 2 * g) / 3, ch = 128;
+    var cel = function (i, j) { return { x: M + j * (cw + g), y: y + i * (ch + g), w: cw, h: ch }; };
+    L.kpis = { area: cel(0, 0), exec: cel(0, 1), gauge: cel(0, 2), dec: cel(1, 0), plan: cel(1, 1), prev: cel(1, 2), talh: cel(2, 0), ritmo: cel(2, 1), rep: cel(2, 2) };
+    y += 3 * (ch + g);
+    var hw = (lw - g) / 2;
+    L.dano = { x: M, y: y, w: hw, h: 76 };
+    L.donut = { x: M, y: y + 76 + g, w: hw, h: 150 };
+    L.eq7 = { x: M + hw + g, y: y, w: (hw - g) * 0.55, h: 240 };
+    L.eqT = { x: L.eq7.x + L.eq7.w + g, y: y, w: hw - g - L.eq7.w, h: 240 };
+    y += 240 + g;
+    var nv = Math.min(12, Math.max(1, m.variedades.filter(function (v) { return v.prev > 0; }).length));
+    L.vari = { x: M, y: y, w: lw, h: 60 + nv * 23 }; y += L.vari.h + g;
+    L.meta = { x: M, y: y, w: lw, h: 320 }; y += 320 + g;
+    var hm = todas ? 70 + m.unidades.length * 76 : Math.max(460, Math.min(980, (lw - 20) / aspectoFazenda(comp) + 100));
+    L.mapa = { x: M, y: y, w: lw, h: hm }; y += hm + g;
+    L.tal = [];
+    if (todas) { L.tal.push({ x: M, y: y, w: lw, h: 300 }); y += 300 + g; }
+    else {
+      var nl = Math.max(1, Math.min(5, Math.ceil(m.talhoes.length / 45)));
+      for (var i = 0; i < nl; i++) { L.tal.push({ x: M, y: y, w: lw, h: i ? 170 : 196 }); y += (i ? 170 : 196) + g; }
     }
+    L.nota = { x: M, y: y, w: lw, h: 122 }; y += 122 + M;
+    L.H = y;
+    return L;
+  }
+  function identidadeVertical(c, r, m, u, imgs) {
+    caixa(c, r, 14);
+    var wl = 300, cx = r.x + wl / 2;
+    desenharLogoLocks(c, imgs.locks, cx, r.y + 28, wl - 60, 60);
+    linhaDourada(c, r.x + 30, r.y + 106, wl - 60);
+    desenharFoto(c, imgs.maquina, cx, r.y + 124, wl - 30, 150);
+    c.fillStyle = COR.linha; c.fillRect(r.x + wl, r.y + 24, 1, r.h - 48);
+    var x = r.x + wl + 30, w = r.w - wl - 50;
+    escrever(c, 'Unidade:', x, r.y + 44, 17, 400, COR.teal, w);
+    escrever(c, u === TODAS ? 'Todas as fazendas' : titulo(u), x, r.y + 88, 36, 700, COR.escuro, w * 0.62);
+    c.fillStyle = '#1C1C1C'; c.fillRect(x + w * 0.66, r.y + 72, 16, 16);
+    escrever(c, nomeSafra(m.s).toUpperCase(), x + w * 0.66 + 26, r.y + 87, 19, 500, COR.texto, w * 0.34 - 26);
+    var cw = w / 2;
+    [['Início da operação', m.ini], ['Último dia de operação', m.ult], ['Data final planejada', m.termino], ['Previsão de término', m.previsao]].forEach(function (d, i) {
+      dataRotulo(c, x + (i % 2) * cw, r.y + 150 + Math.floor(i / 2) * 84, d[0], d[1] ? fmtData(d[1]) : '—', cw - 16);
+    });
+    paragrafo(c, TXT_PREVISAO, x, r.y + r.h - 34, w, 12.5, 400, COR.fraco, 'left', 17);
+  }
+  function notaVertical(c, r, m) {
+    caixa(c, r, 12);
+    blocoObservacao(c, { x: r.x + 8, y: r.y + 8, w: r.w - 16, h: r.h - 44 }, m);
+    escrever(c, 'Fonte: PIMS  ·  Desenvolvido por Centro de Operações Agrícolas', r.x + 16, r.y + r.h - 14, 13, 500, COR.suave, r.w - 32);
   }
 
   async function gerarPng(formato) {
-    var fmt = FORMATOS[formato], todas = estado.u === TODAS;
-    var us = todas ? unidadesDaSafra(estado.s) : [estado.u];
-    var m = calcula(us, estado.s, estado.o), pl = m.o === 'PLANTIO';
-    var mp = !todas && MAPAS ? escolherMapa(estado.u, m.talhoes, m.s) : null;
+    var F = FORMATOS[formato], todas = estado.u === TODAS, u = estado.u;
+    var us = todas ? unidadesDaSafra(estado.s) : [u];
+    var m = calcula(us, estado.s, estado.o);
+    var mp = !todas && MAPAS ? escolherMapa(u, m.talhoes, m.s) : null;
     var comp = mp ? compor(mp.features) : null;
     if (comp) comp.mp = mp;
-    var L = layoutExport(fmt, todas ? 'todas' : comp ? comp.orientacao : 'paisagem'), k = L.k, M = L.M, W = L.W, H = L.H;
-    // quadros empilhados só cabem bem num espaço mais alto que largo; senão, um quadro só
-    if (comp && comp.quadros.length > 1 && L.mapa.w > L.mapa.h * 1.2) {
-      var bb = mp.features.map(bboxFeature).filter(Boolean).reduce(uniao);
-      comp = { orientacao: comp.orientacao, mp: mp, quadros: [{ fs: mp.features, bbox: bb, fr: 1, titulo: null }] };
+    var L = formato === 'vertical' ? layoutVertical(m, todas, comp) : layoutPaisagem(todas, comp);
+    // quadros empilhados só cabem num espaço mais alto que largo; senão, um quadro só
+    if (comp && comp.quadros.length > 1 && L.mapa.w > L.mapa.h * 1.1) {
+      comp = { orientacao: comp.orientacao, mp: mp, quadros: [{ fs: mp.features, bbox: mp.features.map(bboxFeature).filter(Boolean).reduce(uniao), fr: 1, titulo: null }] };
     }
-    var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-    var c = cv.getContext('2d');
-    var soja = await carregarImagem('assets/soja_header.svg').catch(function () { return null; });
-    var logo = await carregarImagem('assets/logo_locks.png').catch(function () { return null; });
+    var S = F.escala, cv = document.createElement('canvas');
+    cv.width = Math.round(L.W * S); cv.height = Math.round(L.H * S);
+    var c = cv.getContext('2d'); c.scale(S, S);
+    var res = await Promise.all([talvezImagem('assets/soja_header.svg'), talvezImagem('assets/logo_locks.png'), talvezImagem('assets/logo_coa_branco.png'), talvezImagem('assets/rosa.png'), talvezImagem(fotoMaquina(m).src)]);
+    var imgs = { soja: res[0], locks: res[1], coa: res[2], rosa: res[3], maquina: res[4] };
 
-    // fundo
-    c.fillStyle = '#EEF2EE'; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#F1F2F1'; c.fillRect(0, 0, L.W, L.H);
+    cabecalho(c, L, m, imgs);
+    if (L.vertical) identidadeVertical(c, L.id, m, u, imgs);
+    else lateral(c, L.lateral, m, u, imgs);
+    desenharIndicadores(c, L.kpis, m);
+    cartaoDanoReplantio(c, L.dano, m);
+    cartaoRosca(c, L.donut, m);
+    await cartaoColunas(c, L.eq7, 'Área por equipe (ha) - Últimos 7 dias', equipesUltimos7(m), S);
+    await cartaoColunas(c, L.eqT, 'Área total por equipe (ha)', m.equipes.filter(function (e) { return e.total > 0; }).map(function (e) { return { nome: e.nome, v: e.total }; }), S);
+    cartaoVariedades(c, L.vari, m);
+    await cartaoMeta(c, L.meta, m, S);
+    if (todas) cartaoListaFazendas(c, L.mapa, m);
+    else await cartaoMapa(c, L.mapa, m, u, comp, imgs, S);
 
-    // cabeçalho
-    var gr = c.createLinearGradient(0, 0, W, L.cab.h);
-    gr.addColorStop(0, '#0E4D45'); gr.addColorStop(0.42, '#0C5A50'); gr.addColorStop(1, '#103632');
-    c.fillStyle = gr; c.fillRect(0, 0, W, L.cab.h);
-    if (soja) { var sh = L.cab.h * 1.7, sw = soja.width / soja.height * sh; c.drawImage(soja, W - sw + 40 * k, (L.cab.h - sh) / 2, sw, sh); }
-    var eyebrow = ((pl ? 'PLANTIO' : 'COLHEITA') + ' · ' + nomeSafra(m.s).toUpperCase());
-    if (c.letterSpacing !== undefined) c.letterSpacing = (3 * k) + 'px';
-    escrever(c, eyebrow, M, 70 * k, 24 * k, 700, '#F0B24A', W * 0.55);
-    if (c.letterSpacing !== undefined) c.letterSpacing = '0px';
-    escrever(c, todas ? 'Todas as fazendas' : titulo(estado.u), M, 140 * k, 64 * k, 700, '#FFFFFF', W * 0.58);
-    escrever(c, fmtPct(m.pct, 1), W - M, 132 * k, 100 * k, 700, '#FFFFFF', W * 0.36, 'right');
-    escrever(c, (pl ? 'plantado' : 'colhido') + ' · ' + fmtN(m.exec) + ' de ' + fmtN(m.areaTotal) + ' ha', W - M, 174 * k, 24 * k, 500, '#D7E8E2', W * 0.4, 'right');
-    var partes = [];
-    if (m.ini) partes.push('início ' + fmtData(m.ini, true));
-    if (m.ult) partes.push('último apontamento ' + fmtData(m.ult, true));
-    escrever(c, partes.join('  ·  '), M, 186 * k, 24 * k, 500, '#D7E8E2', W * 0.55);
-    var by = L.cab.h - 38 * k, bw = W - 2 * M, bh = 12 * k;
-    rr(c, M, by, bw, bh, bh / 2); c.fillStyle = 'rgba(255,255,255,.18)'; c.fill();
-    if (m.pct > 0) { var gb = c.createLinearGradient(M, 0, M + bw, 0); gb.addColorStop(0, '#F0B24A'); gb.addColorStop(1, '#DB8A08'); rr(c, M, by, Math.max(bh, bw * m.pct), bh, bh / 2); c.fillStyle = gb; c.fill(); }
-
-    // indicadores
-    var ks = kpisTexto(m), cols = L.kpis.cols, linhas = Math.ceil(ks.length / cols), g = 18 * k;
-    var tw = (L.kpis.w - g * (cols - 1)) / cols, th = (L.kpis.h - g * (linhas - 1)) / linhas;
-    ks.forEach(function (x, i) {
-      var r = { x: L.kpis.x + (i % cols) * (tw + g), y: L.kpis.y + Math.floor(i / cols) * (th + g), w: tw, h: th };
-      cartao(c, r, k);
-      var pad = 22 * k, esc2 = Math.min(1, th / (150 * k));
-      if (c.letterSpacing !== undefined) c.letterSpacing = (1.5 * k) + 'px';
-      escrever(c, x.rot.toUpperCase(), r.x + pad, r.y + pad + 18 * k * esc2, 18 * k * esc2, 600, COR.fraco, tw - 2 * pad);
-      if (c.letterSpacing !== undefined) c.letterSpacing = '0px';
-      var vy = r.y + th / 2 + 20 * k * esc2;
-      c.font = fonteCv(22 * k * esc2, 600);
-      var larguraUn = x.un ? c.measureText(x.un).width + 10 * k : 0;
-      var usado = escrever(c, x.val, r.x + pad, vy, 50 * k * esc2, 700, COR.texto, tw - 2 * pad - larguraUn);
-      if (x.un) escrever(c, x.un, r.x + pad + usado + 8 * k, vy, 22 * k * esc2, 600, COR.suave, 110 * k);
-      escrever(c, x.sub, r.x + pad, r.y + th - pad, 19 * k * esc2, x.cor === COR.suave ? 500 : 650, x.cor, tw - 2 * pad);
-    });
-
-    // mapa (ou quadro das fazendas)
-    var rm = L.mapa; cartao(c, rm, k);
-    escrever(c, todas ? 'Fazendas' : 'Mapa de evolução', rm.x + 24 * k, rm.y + 46 * k, 26 * k, 700, COR.escuro, rm.w * 0.45);
-    var dentro = { x: rm.x + 18 * k, y: rm.y + 66 * k, w: rm.w - 36 * k, h: rm.h - 84 * k };
-    var itensLeg = [3, 2, 1, 0].map(function (i) { return { nome: rotulosClasse(m.o)[i], cor: COR.s[i], borda: i === 0 }; });
-    c.font = fonteCv(26 * k, 700);
-    var legEmBaixo = !todas && c.measureText('Mapa de evolução').width + larguraLegenda(c, itensLeg, k) + 70 * k > rm.w;
-    if (legEmBaixo) { dentro.y += 42 * k; dentro.h -= 42 * k; }
-    if (todas) {
-      var lista = m.unidades.map(function (u) { return { u: u, x: calcula([u], m.s, m.o) }; }).sort(function (a, b) { return b.x.pct - a.x.pct; });
-      // uma ou duas colunas, para a letra ficar grande
-      var colsF = dentro.w > 900 * k && lista.length > 4 ? 2 : 1, linhasF = Math.ceil(lista.length / colsF);
-      var cw = (dentro.w - (colsF - 1) * 36 * k) / colsF, lh = dentro.h / Math.max(1, linhasF);
-      var fs = Math.min(1.15, lh / (112 * k));
-      lista.forEach(function (f, i) {
-        var col = Math.floor(i / linhasF), lin = i % linhasF;
-        var x0 = dentro.x + col * (cw + 36 * k) + 8 * k, y = dentro.y + lin * lh + (lh - 104 * k * fs) / 2, x = f.x, wb = cw - 16 * k;
-        escrever(c, titulo(f.u), x0, y + 32 * k * fs, 28 * k * fs, 700, COR.texto, wb * 0.6);
-        escrever(c, fmtPct(x.pct), x0 + wb, y + 34 * k * fs, 34 * k * fs, 700, COR.teal, 170 * k, 'right');
-        var yb = y + 50 * k * fs;
-        rr(c, x0, yb, wb, 12 * k * fs, 6 * k * fs); c.fillStyle = COR.s[0]; c.fill();
-        if (x.pct > 0) { rr(c, x0, yb, Math.max(12 * k * fs, wb * x.pct), 12 * k * fs, 6 * k * fs); c.fillStyle = COR.teal; c.fill(); }
-        var info = fmtN(x.exec) + ' de ' + fmtN(x.areaTotal) + ' ha  ·  ' + (x.media7 ? fmtN(x.media7) + ' ha/dia' : 'sem ritmo') + (x.previsao ? '  ·  previsão ' + fmtData(x.previsao, true) : '');
-        escrever(c, info, x0, yb + 42 * k * fs, 21 * k * fs, 500, COR.suave, wb);
-      });
-    } else {
-      if (legEmBaixo) {
-        var kl = k * Math.min(1, (rm.w - 48 * k) / larguraLegenda(c, itensLeg, k));
-        legendaCanvas(c, itensLeg, rm.x + 24 * k + larguraLegenda(c, itensLeg, kl), rm.y + 88 * k, kl);
-      }
-      else legendaCanvas(c, itensLeg, rm.x + rm.w - 24 * k, rm.y + 44 * k, k);
-      if (comp) {
-        var img = await imagemGrafico(dentro.w, dentro.h, function (el) {
-          return desenharMapaFazenda(el, estado.u, m, comp, { semZoom: true, rotulos: true, fonte: 12 * k, fonteTitulo: 18 * k });
-        });
-        if (img) c.drawImage(img, dentro.x, dentro.y);
-      } else {
-        escrever(c, 'Limites dos talhões indisponíveis', dentro.x + dentro.w / 2, dentro.y + dentro.h / 2, 24 * k, 500, COR.fraco, dentro.w, 'center');
+    var pl = m.o === 'PLANTIO', tituloBarras = todas ? '% realizado por fazenda' : '% ' + (pl ? 'plantado' : 'colhido') + ' por talhão';
+    if (todas) await cartaoBarras(c, L.tal[0], tituloBarras, null, listaFazendas(m), S);
+    else {
+      // divide os talhões entre as faixas na proporção da largura de cada uma
+      var lista = listaTalhoes(m), totalW = soma(L.tal, function (r) { return r.w; }), ini = 0;
+      for (var i = 0; i < L.tal.length; i++) {
+        var fim = i === L.tal.length - 1 ? lista.length : ini + Math.round(lista.length * L.tal[i].w / totalW);
+        await cartaoBarras(c, L.tal[i], i ? null : tituloBarras, i ? null : legendaTalhoes(m), lista.slice(ini, fim), S);
+        ini = fim;
       }
     }
+    if (L.vertical) notaVertical(c, L.nota, m);
 
-    // gráfico diário
-    if (L.graf) {
-      var rg = L.graf; cartao(c, rg, k);
-      escrever(c, 'Realizado × meta por dia', rg.x + 24 * k, rg.y + 46 * k, 26 * k, 700, COR.escuro, rg.w * 0.55);
-      legendaCanvas(c, [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Meta', cor: COR.dourado, linha: true }], rg.x + rg.w - 24 * k, rg.y + 44 * k, k);
-      var dg = { x: rg.x + 14 * k, y: rg.y + 62 * k, w: rg.w - 28 * k, h: rg.h - 74 * k };
-      if (m.serie.length) {
-        var ig = await imagemGrafico(dg.w, dg.h, function (el) { var ch = echarts.init(el, null, { renderer: 'canvas' }); charts[el.id] = ch; ch.setOption(opcoesMeta(m, 1.7 * k, 21)); return ch; });
-        if (ig) c.drawImage(ig, dg.x, dg.y);
-      } else escrever(c, 'Ainda não há apontamentos nesta safra.', dg.x + dg.w / 2, dg.y + dg.h / 2, 22 * k, 500, COR.fraco, dg.w, 'center');
-    }
-
-    // rodapé
-    var ry = L.rod.y + L.rod.h / 2 + 8 * k, xl = M;
-    if (logo) { var lh2 = 34 * k, lw = logo.width / logo.height * lh2; c.drawImage(logo, M, ry - lh2 + 6 * k, lw, lh2); xl = M + lw + 20 * k; }
-    var gerado = DADOS.geradoEm ? new Date(DADOS.geradoEm) : null;
-    escrever(c, 'Acompanhamento Operacional · COA' + (gerado ? '  ·  PIMS de ' + gerado.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''),
-      xl, ry, 19 * k, 500, COR.suave, W - xl - M - 260 * k);
-    escrever(c, 'gerado em ' + new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }), W - M, ry, 17 * k, 500, COR.fraco, 260 * k, 'right');
-
+    exp.tam = { w: cv.width, h: cv.height };
     return new Promise(function (ok) { cv.toBlob(ok, 'image/png'); });
   }
 
@@ -1398,8 +1694,7 @@
       if (exp.url) URL.revokeObjectURL(exp.url);
       exp.blob = blob; exp.url = URL.createObjectURL(blob); exp.arquivo = nomeArquivo();
       $('exp-previa').src = exp.url;
-      var f = FORMATOS[exp.formato];
-      set('exp-status', f.w + ' × ' + f.h + ' px · ' + Math.round(blob.size / 1024) + ' KB');
+      set('exp-status', exp.tam.w + ' × ' + exp.tam.h + ' px · ' + Math.round(blob.size / 1024) + ' KB' + (exp.formato === 'paisagem' ? ' · no WhatsApp, envie em HD para manter a nitidez' : ''));
       $('exp-baixar').disabled = false; $('exp-compartilhar').disabled = false;
       var arq = new File([blob], exp.arquivo, { type: 'image/png' });
       $('exp-compartilhar').hidden = !(navigator.canShare && navigator.canShare({ files: [arq] }));

@@ -8,11 +8,20 @@ origem (`acompanhamento/index.html?embed=1`) e usa a sessão do COA WEB.
 
 ## Exportar imagem (WhatsApp)
 
-Botão **Exportar** no topo do painel: gera um PNG da fazenda (ou de todas) com o cabeçalho, os 6
-indicadores, o mapa e o gráfico diário, com letras grandes para ler no celular. Formatos:
-**Quadrado** 1440×1440 (padrão; aparece inteiro na conversa), **Paisagem** 1920×1080 e **Celular**
-1080×1920. Como no painel, a forma da fazenda decide o arranjo (mapa em coluna ou em faixa). No
-celular, **Compartilhar** manda a imagem direto para o WhatsApp.
+Botão **Exportar** no topo do painel: gera um PNG com as mesmas informações da página do relatório
+Power BI: barra lateral (unidade, safra, início, último dia, data final planejada, previsão de
+término e observação), indicadores (área, executada/à executar, dias decorridos, dias restantes
+planejados e previstos, medidor de evolução, talhões, ritmo, % replantio), dano/replantio, rosca do
+percentual realizado, área por equipe (últimos 7 dias e total), variedades, meta × realizado por dia,
+mapa de evolução com rosa dos ventos e as barras de % por talhão. Formatos:
+**Relatório** (a página 1920×1080 do Power BI, gravada em 2400×1350; no WhatsApp, envie em HD) e
+**Celular** (os mesmos blocos empilhados, 1350 de largura, para rolar no celular). Fazenda alta ganha
+o mapa em duas faixas, como a página de Guapirama do Power BI. Em "Todas", o mapa vira a lista das
+fazendas e as barras mostram o % de cada fazenda. No celular, **Compartilhar** manda a imagem direto
+para o WhatsApp.
+
+A foto da máquina (barra lateral, faixa do painel e Modo TV) é `assets/maquina.png` na colheita de
+grãos e `assets/trator_8r.png` no plantio; sem o arquivo, a faixa fica sem foto.
 
 ## Modo TV
 

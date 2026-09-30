@@ -53,14 +53,18 @@
 
   <!-- ============================ PAINEL ============================ -->
   <main id="painel" class="vista">
-    <section class="destaque" id="destaque">
+    <section class="destaque faixa-marca" id="destaque">
       <div class="destaque-texto">
         <p class="destaque-eyebrow" id="d-eyebrow">Plantio · Soja 26/27</p>
         <h1 class="destaque-titulo" id="d-titulo">Todas as fazendas</h1>
-        <div class="progresso-grande" aria-hidden="true"><span id="d-barra"></span></div>
-        <p class="destaque-resumo" id="d-resumo">—</p>
+        <ul class="destaque-datas" id="d-datas"></ul>
       </div>
-      <img class="destaque-maquina" id="d-maquina" src="assets/trator_8r.svg" alt="">
+      <div class="destaque-numero">
+        <b id="d-pct">—</b>
+        <span id="d-pct-rot"></span>
+        <div class="progresso-grande" aria-hidden="true"><span id="d-barra"></span></div>
+      </div>
+      <img class="destaque-maquina" id="d-maquina" alt="" hidden>
     </section>
 
     <section class="kpis" id="kpis" aria-label="Indicadores"></section>
@@ -193,14 +197,14 @@
 
 <!-- ============================ MODO TV ============================ -->
 <section class="tv" id="tv" hidden aria-label="Modo TV">
-  <header class="tv-barra">
+  <header class="tv-barra faixa-marca">
     <img class="tv-logo" src="assets/logo_locks.png" alt="Locks">
     <div class="tv-titulo">
       <span id="tv-eyebrow">Plantio</span>
       <h1 id="tv-fazenda">Todas as fazendas</h1>
     </div>
     <div class="tv-pct"><b id="tv-pct">—</b><span id="tv-pct-rot"></span></div>
-    <img class="tv-maquina" id="tv-maquina" src="assets/trator_8r.svg" alt="">
+    <img class="tv-maquina" id="tv-maquina" alt="" hidden>
     <div class="tv-relogio"><b id="tv-hora">--:--</b><span id="tv-data"></span><span id="tv-atualizado"></span></div>
     <div class="tv-progresso" aria-hidden="true"><span id="tv-barra-pct"></span></div>
   </header>
@@ -232,10 +236,9 @@
     <div><h2 id="exp-titulo">Exportar imagem</h2><p class="cartao-sub">PNG pronto para enviar no WhatsApp</p></div>
     <button type="button" class="botao-icone" id="exp-fechar" aria-label="Fechar">×</button>
   </header>
-  <div class="formatos" role="radiogroup" aria-label="Formato">
-    <label class="formato"><input type="radio" name="fmt" value="quadrado"><span class="fmt-forma q"></span><b>Quadrado</b><small>1440 × 1440 · aparece inteiro na conversa</small></label>
-    <label class="formato"><input type="radio" name="fmt" value="paisagem"><span class="fmt-forma p"></span><b>Paisagem</b><small>1920 × 1080 · celular deitado ou computador</small></label>
-    <label class="formato"><input type="radio" name="fmt" value="vertical"><span class="fmt-forma v"></span><b>Celular</b><small>1080 × 1920 · ocupa a tela do celular</small></label>
+  <div class="formatos dois" role="radiogroup" aria-label="Formato">
+    <label class="formato"><input type="radio" name="fmt" value="paisagem"><span class="fmt-forma p"></span><b>Relatório</b><small>Página do Power BI, 2400 × 1350 · celular deitado ou computador</small></label>
+    <label class="formato"><input type="radio" name="fmt" value="vertical"><span class="fmt-forma v"></span><b>Celular</b><small>Os mesmos blocos um embaixo do outro, para rolar no celular</small></label>
   </div>
   <div class="previa"><img id="exp-previa" alt="Prévia da imagem exportada"></div>
   <p class="dica" id="exp-status"></p>
