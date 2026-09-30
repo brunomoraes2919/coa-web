@@ -9,8 +9,8 @@
   'use strict';
 
   // cores fixas por posição da safra (validadas: scripts/validate_palette.js da skill dataviz)
-  // atual = verde da marca (destaque); 1, 2 e 3 anos antes = laranja, violeta, magenta
-  var COR_SAFRA = ['#0C5A50', '#eb6834', '#4a3aa7', '#e87ba4'];
+  // atual = verde da marca (destaque); 1, 2 e 3 anos antes = laranja, vinho, dourado (nenhum azul: o azul é da chuva)
+  var COR_SAFRA = ['#0C5A50', '#eb6834', '#a8327a', '#eda100'];
   var COR_CHUVA = '#2a78d6';
     var CHUVA_MIN = 1;          // mm: dia com chuva (contagem de dias no resumo)
   var MARGEM_DIAS = 4;        // dias antes do 1º início e depois do último fim, no eixo comum
@@ -173,7 +173,7 @@
       series: [
         // chuva: mancha azul translúcida por cima das barras (eixo da direita), para ver a chuva nos dias de operação
         { name: 'Chuva (mm)', type: 'line', yAxisIndex: 1, data: mm, symbol: 'none', silent: true, z: 5, smooth: 0.25,
-          lineStyle: { color: 'rgba(42,120,214,.85)', width: 2 * k },
+          lineStyle: { color: 'rgba(42,120,214,.7)', width: 1.1 * k },
           areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(42,120,214,.28)' }, { offset: 1, color: 'rgba(42,120,214,.08)' }] } } },
         { name: N.nomeSafra(x.nome), type: 'bar', yAxisIndex: 0, data: ha, barCategoryGap: '18%', z: 3,
           itemStyle: { color: x.cor, borderRadius: [2 * k, 2 * k, 0, 0] },
@@ -306,7 +306,7 @@
       N.escrever(c, N.nomeSafra(x.nome), b.x + 18, b.y + 38, 20, 700, N.COR.texto, w * 0.6);
       N.escrever(c, x.anos === 0 ? 'atual' : x.anos + (x.anos === 1 ? ' ano antes' : ' anos antes'), b.x + b.w - 18, b.y + 36, 13, 600, x.anos === 0 ? x.cor : N.COR.fraco, w * 0.35, 'right');
       if (!x.ini) { N.escrever(c, 'Sem apontamentos', b.x + 18, b.y + 76, 15, 500, N.COR.fraco, w - 36); return; }
-      N.escrever(c, dataCurta(x.ini) + ' → ' + (x.fim ? dataCurta(x.fim) : 'em andamento'), b.x + 18, b.y + 70, 17, 600, x.cor === '#e87ba4' ? '#B0487A' : x.cor, w - 36);
+      N.escrever(c, dataCurta(x.ini) + ' → ' + (x.fim ? dataCurta(x.fim) : 'em andamento'), b.x + 18, b.y + 70, 17, 600, x.cor === '#eda100' ? '#9A6A00' : x.cor, w - 36);
       itensResumo(x, rel.o).slice(2).forEach(function (it, j) {
         var col = j % 2, lin = Math.floor(j / 2), cx = b.x + 18 + col * (w - 36) / 2, cy = b.y + 102 + lin * 40;
         N.escrever(c, it[0], cx, cy, 12, 500, N.COR.fraco, (w - 36) / 2 - 8);
