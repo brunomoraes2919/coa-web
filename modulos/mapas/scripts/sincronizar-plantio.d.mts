@@ -108,11 +108,21 @@ export interface LinhaHistScript {
   apontamentos: ApontamentoHistScript[];
 }
 
+/** Chuva diária de uma fazenda (ZEUS): safra 'CHUVA', `a` = mm do dia. */
+export interface LinhaChuvaScript {
+  safra: 'CHUVA';
+  unidade: string;
+  gerado_em: string;
+  talhoes: [];
+  apontamentos: { op: 'CHUVA'; d: string; a: number }[];
+}
+
 export interface AcompanhamentoScript {
   geradoEm: string;
   safras: string[];
   anteriores?: string[];
-  linhas: (LinhaAcompScript | LinhaHistScript)[];
+  chuva?: number;
+  linhas: (LinhaAcompScript | LinhaHistScript | LinhaChuvaScript)[];
 }
 
 type Resultado = { columns: string[]; rows: unknown[][] };
@@ -125,7 +135,11 @@ export function linhasAcompanhamento(
   geradoEm: string,
 ): LinhaAcompScript[];
 export function culturaDaSafra(nome: string): string;
-export function safrasAnteriores(atuais: string[], todas: string[]): string[];
+export function safrasAnteriores(atuais: string[], todas: string[], anos?: number): string[];
+export function unidadeDaFazendaZeus(nome: string): string;
+export function inicioChuva(agora?: Date, anos?: number): string;
+export function montarSqlChuva(desde: string): string;
+export function linhasChuva(r: Resultado, geradoEm: string, unidades: string[]): LinhaChuvaScript[];
 export function montarSqlHistorico(safras: string[]): string;
 export function linhasHistorico(r: Resultado, geradoEm: string, atuais?: string[]): LinhaHistScript[];
 export function sincronizarAcompanhamento(opcoes: {

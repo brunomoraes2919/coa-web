@@ -13,6 +13,11 @@ const USER_AGENT = 'mapa-chuva-coa/1.0'; // o Cloudflare do Agrovex bloqueia use
 const PROTOCOLO = '2025-06-18';
 const TEMPO_LIMITE_MS = 120_000;
 const SQL_SAFRAS = 'SELECT DE_PER_SAFRA FROM PIMSMCPRD.dbo.PERIODOSAFRA';
+/** Bases do Agrovex usadas aqui: PIMS (SQL Server) e ZEUS (clima, PostgreSQL). */
+const FONTES = {
+  pims: { nome: 'PIMS', source: 'sqlserver', database: 'PIMSMCPRD', schema: 'dbo' },
+  zeus: { nome: 'ZEUS', source: 'zeus', database: 'LKS_DATABASE_ZEUS', schema: 'DATABASE' },
+};
 
 // ---------- regras puras ----------
 
@@ -154,28 +159,29 @@ async function abrirSessao(url, token, fetchImpl) {
   await lerResposta(await enviar('POST', { jsonrpc: '2.0', method: 'notifications/initialized' }), token);
 
   return {
-    /** Executa uma SELECT no PIMS e devolve { columns, rows }. */
-    async consultar(sql, pergunta, rotulo) {
+    /** Executa uma SELECT no PIMS (ou na ZEUS, com fonte = FONTES.zeus) e devolve { columns, rows }. */
+    async consultar(sql, pergunta, rotulo, fonte = FONTES.pims) {
       const r = await lerResposta(await enviar('POST', {
         jsonrpc: '2.0', id: ++id, method: 'tools/call',
         params: {
           name: 'execute_query',
-          arguments: { sql, source: 'sqlserver', database: 'PIMSMCPRD', schema: 'dbo', original_question: pergunta, full: true },
+          arguments: { sql, source: fonte.source, database: fonte.database, schema: fonte.schema, original_question: pergunta, full: true },
         },
       }), token);
       const texto = r?.result?.content?.[0]?.text ?? '';
-      if (r?.result?.isError) throw new Error(`Consulta ao PIMS falhou (${rotulo}): ${texto}`);
+      const nome = fonte.nome;
+      if (r?.result?.isError) throw new Error(`Consulta ao ${nome} falhou (${rotulo}): ${texto}`);
       let dados;
       try {
         dados = JSON.parse(texto);
       } catch {
-        throw new Error(`Consulta ao PIMS falhou (${rotulo}): resposta inesperada: ${String(texto).slice(0, 300)}`);
+        throw new Error(`Consulta ao ${nome} falhou (${rotulo}): resposta inesperada: ${String(texto).slice(0, 300)}`);
       }
       if (dados?.status !== 'success') {
         const msg = dados?.message ?? dados?.error ?? dados?.detail ?? JSON.stringify(dados);
-        throw new Error(`Consulta ao PIMS falhou (${rotulo}): ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`);
+        throw new Error(`Consulta ao ${nome} falhou (${rotulo}): ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`);
       }
-      if (dados.truncated) throw new Error(`Consulta ao PIMS falhou (${rotulo}): resultado truncado (${dados.row_count} linhas).`);
+      if (dados.truncated) throw new Error(`Consulta ao ${nome} falhou (${rotulo}): resultado truncado (${dados.row_count} linhas).`);
       return { columns: dados.columns ?? [], rows: dados.rows ?? [] };
     },
     async fechar() {
@@ -484,8 +490,11 @@ function anoDaSafra(nome) {
   return m ? Number(m[1]) : null;
 }
 
-/** Nomes das duas safras anteriores (mesma cultura, 1 e 2 anos antes) de cada safra, entre os nomes do PIMS. */
-export function safrasAnteriores(atuais, todas) {
+/**
+ * Nomes das safras anteriores (mesma cultura, 1 a `anos` anos antes) de cada safra, entre os nomes do
+ * PIMS. O painel usa as 2 últimas; a aba "Safras" usa as 3.
+ */
+export function safrasAnteriores(atuais, todas, anos = 3) {
   const saida = new Set();
   for (const a of atuais) {
     const c = culturaDaSafra(a);
@@ -493,7 +502,7 @@ export function safrasAnteriores(atuais, todas) {
     if (ano === null) continue;
     for (const n of todas) {
       const an = anoDaSafra(n);
-      if (an !== null && (ano - an === 1 || ano - an === 2) && culturaDaSafra(n) === c) saida.add(String(n).trim());
+      if (an !== null && ano - an >= 1 && ano - an <= anos && culturaDaSafra(n) === c) saida.add(String(n).trim());
     }
   }
   return [...saida].sort(comparar);
@@ -547,6 +556,53 @@ export function linhasHistorico(res, geradoEm, atuais = []) {
   return [...linhas.values()].sort((a, b) => comparar(a.safra, b.safra) || comparar(a.unidade, b.unidade));
 }
 
+// ---------- chuva por fazenda (ZEUS) ----------
+
+/** Fazenda da ZEUS → unidade do PIMS ('Faz. Três Flechas' → 'TRES FLECHAS', 'Faz_SM3' → 'SM3'). */
+export function unidadeDaFazendaZeus(nome) {
+  return chaveNome(nome).replace(/^(FAZENDA|FAZ)(?=[\s._-])[\s._-]*/, '').replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Primeiro dia da janela da chuva: 1º de agosto, `anos` anos-safra antes do atual. */
+export function inicioChuva(agora = new Date(), anos = 3) {
+  const ano = agora.getFullYear() - (agora.getMonth() >= 8 ? 0 : 1) - anos;
+  return `${ano}-08-01`;
+}
+
+/**
+ * Chuva diária (mm) por fazenda na ZEUS: soma o dia de cada pluviômetro e tira a média entre os
+ * pluviômetros da fazenda (a média direta das leituras pesa quem lê mais vezes). Só dias com chuva.
+ */
+export function montarSqlChuva(desde) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  return `WITH pa AS (SELECT DISTINCT ON (picid) picid, farm FROM "DATABASE".stg_zeus_picarea ORDER BY picid, farm),
+por_pic AS (
+  SELECT c.picid, c.data::date AS dia, sum(c.pluviometria) AS mm
+  FROM "DATABASE".stg_climatemonitoring2 c
+  WHERE c.data >= DATE '${d}' AND c.pluviometria IS NOT NULL
+  GROUP BY 1, 2)
+SELECT pa.farm AS fazenda, to_char(p.dia, 'YYYY-MM-DD') AS data, round(avg(p.mm)::numeric, 1) AS mm
+FROM por_pic p JOIN pa ON pa.picid = p.picid
+GROUP BY pa.farm, p.dia
+HAVING avg(p.mm) >= 0.2
+ORDER BY 1, 2`;
+}
+
+/** Linhas de acomp_pims da chuva: safra 'CHUVA', uma por unidade conhecida, um apontamento por dia. */
+export function linhasChuva(res, geradoEm, unidades) {
+  const ok = new Set(unidades);
+  const linhas = new Map();
+  for (const r of objetosDe(res)) {
+    const u = unidadeDaFazendaZeus(r.fazenda);
+    const d = txt(r.data);
+    const mm = num(r.mm);
+    if (!ok.has(u) || !d || !(mm > 0)) continue;
+    if (!linhas.has(u)) linhas.set(u, { safra: 'CHUVA', unidade: u, gerado_em: geradoEm, talhoes: [], apontamentos: [] });
+    linhas.get(u).apontamentos.push({ op: 'CHUVA', d, a: mm });
+  }
+  return [...linhas.values()].sort((a, b) => comparar(a.unidade, b.unidade));
+}
+
 /** Consulta o PIMS pelo Agrovex e devolve { geradoEm, safras, linhas } do acompanhamento (não grava nada). */
 export async function sincronizarAcompanhamento({ url, token, safras, excluirPrefixos = [], fetchImpl = fetch, agora = new Date() }) {
   const cliente = await abrirSessao(url, token, fetchImpl);
@@ -569,7 +625,20 @@ export async function sincronizarAcompanhamento({ url, token, safras, excluirPre
       const hist = await cliente.consultar(montarSqlHistorico(anteriores), 'hectares por dia das safras anteriores (comparativo)', 'safras anteriores');
       linhas.push(...linhasHistorico(hist, geradoEm, nomes));
     }
-    return { geradoEm, safras: nomes, anteriores, linhas };
+    // chuva por fazenda (ZEUS): se falhar, o acompanhamento segue sem as gotas
+    let chuva = 0;
+    const unidades = [...new Set(linhas.filter((l) => l.talhoes.length).map((l) => l.unidade))];
+    if (unidades.length) {
+      try {
+        const res = await cliente.consultar(montarSqlChuva(inicioChuva(agora)), 'chuva diária por fazenda (acompanhamento operacional)', 'chuva', FONTES.zeus);
+        const lc = linhasChuva(res, geradoEm, unidades);
+        chuva = lc.length;
+        linhas.push(...lc);
+      } catch (e) {
+        console.warn(`Acompanhamento: chuva da ZEUS indisponível (${e instanceof Error ? e.message : e}); segue sem a chuva.`);
+      }
+    }
+    return { geradoEm, safras: nomes, anteriores, chuva, linhas };
   } finally {
     await cliente.fechar();
   }
@@ -609,11 +678,12 @@ export async function gravarAcompanhamentoSupabase(dados, { url, chave, fetch: f
 /** Linha de log do acompanhamento: só totais (os logs podem ser públicos). */
 export function logAcompanhamento(dados, situacao) {
   const atuais = dados.linhas.filter((l) => l.talhoes.length);
-  const hist = dados.linhas.length - atuais.length;
+  const chuva = dados.linhas.filter((l) => l.safra === 'CHUVA').length;
+  const hist = dados.linhas.length - atuais.length - chuva;
   const n = (op) => atuais.reduce((s, l) => s + l.apontamentos.filter((a) => a.op === op).length, 0);
   const talhoes = atuais.reduce((s, l) => s + l.talhoes.length, 0);
   return `Acompanhamento: ${situacao}; ${atuais.length} linhas (safra × unidade), ${talhoes} talhões, ${n('PLANTIO')} apontamentos de plantio, ${n('COLHEITA')} de colheita` +
-    (hist ? `; ${hist} linhas de safras anteriores (comparativo).` : '.');
+    (hist ? `; ${hist} linhas de safras anteriores (comparativo)` : '') + (chuva ? `; chuva de ${chuva} fazendas` : '') + '.';
 }
 
 /**

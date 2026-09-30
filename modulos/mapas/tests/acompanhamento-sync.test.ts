@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   culturaDaSafra,
   gravarAcompanhamentoSupabase,
+  inicioChuva,
   limparVariedade,
+  linhasChuva,
+  montarSqlChuva,
+  unidadeDaFazendaZeus,
   linhasAcompanhamento,
   linhasHistorico,
   montarSqlHistorico,
@@ -57,6 +61,15 @@ const HIST = {
     ['SM3', 'SOJA 26/27', 'PLANTIO', '2026-09-24', 3],
   ],
 };
+const CHUVA = {
+  columns: ['fazenda', 'data', 'mm'],
+  rows: [
+    ['Faz_SM3', '2025-10-02', 12.4],
+    ['Faz_SM3', '2025-10-03', 0],
+    ['SIRIEMA', '2025-10-02', 3],
+    ['Semi Confinamento', '2025-10-02', 8],
+  ],
+};
 
 describe('acompanhamento: regras puras', () => {
   it('limpa o nome da variedade como o Power BI', () => {
@@ -109,11 +122,14 @@ describe('acompanhamento: regras puras', () => {
     expect(culturaDaSafra('MILHETO  25/26')).toBe('MILHETO');
   });
 
-  it('acha as duas safras anteriores da mesma cultura', () => {
+  it('acha as safras anteriores (até 3 anos) da mesma cultura', () => {
     const todas = SAFRAS.rows.map((r) => r[0]);
     expect(safrasAnteriores(['SOJA 26/27'], todas)).toEqual(['SOJA 24/25', 'SOJA 25/26']);
-    expect(safrasAnteriores(['MILHO 2ª SAFRA 26/27'], todas)).toEqual(['MILHO 2º SAFRA 25/26']);
+    expect(safrasAnteriores(['MILHO 2ª SAFRA 26/27'], todas)).toEqual(['MILHO 2º SAFRA 25/26', 'MILHO SAFRINHA 23/24']);
     expect(safrasAnteriores(['MILHO 2ª SAFRA 25/26'], todas)).toEqual(['MILHO SAFRINHA 23/24']);
+    // até 3 anos antes (a aba "Safras"); com anos = 2, só as duas últimas
+    expect(safrasAnteriores(['SOJA 27/28'], todas)).toEqual(['SOJA 24/25', 'SOJA 25/26', 'SOJA 26/27']);
+    expect(safrasAnteriores(['SOJA 27/28'], todas, 2)).toEqual(['SOJA 25/26', 'SOJA 26/27']);
   });
 
   it('comparativo: um total por dia, sem talhões, sem a safra atual e sem dia zerado', () => {
@@ -126,6 +142,28 @@ describe('acompanhamento: regras puras', () => {
     expect(sm3.apontamentos).toEqual([
       { op: 'PLANTIO', d: '2025-09-23', a: 80 },
       { op: 'PLANTIO', d: '2025-09-24', a: 210.5 },
+    ]);
+  });
+
+  it('chuva: nome da fazenda da ZEUS vira a unidade do PIMS', () => {
+    expect(unidadeDaFazendaZeus('Faz. Três Flechas')).toBe('TRES FLECHAS');
+    expect(unidadeDaFazendaZeus('Faz_SM3')).toBe('SM3');
+    expect(unidadeDaFazendaZeus('Fazenda Dourado')).toBe('DOURADO');
+    expect(unidadeDaFazendaZeus('SIRIEMA')).toBe('SIRIEMA');
+    expect(unidadeDaFazendaZeus('Faz. Globo')).toBe('GLOBO');
+  });
+
+  it('chuva: janela desde agosto de 3 anos-safra antes, SQL por pluviômetro e linhas só das unidades conhecidas', () => {
+    expect(inicioChuva(new Date('2026-09-30T12:00:00Z'))).toBe('2023-08-01');
+    expect(inicioChuva(new Date('2027-03-10T12:00:00Z'))).toBe('2023-08-01');
+    const sql = montarSqlChuva("2023-08-01'; drop");
+    expect(sql).toContain("DATE '2023-08-01'");
+    expect(sql).not.toContain('drop');
+    expect(sql).toContain('avg(p.mm)');
+    const linhas = linhasChuva(CHUVA, 'g', ['SM3', 'SIRIEMA']);
+    expect(linhas).toEqual([
+      { safra: 'CHUVA', unidade: 'SIRIEMA', gerado_em: 'g', talhoes: [], apontamentos: [{ op: 'CHUVA', d: '2025-10-02', a: 3 }] },
+      { safra: 'CHUVA', unidade: 'SM3', gerado_em: 'g', talhoes: [], apontamentos: [{ op: 'CHUVA', d: '2025-10-02', a: 12.4 }] },
     ]);
   });
 
@@ -156,6 +194,7 @@ function agrovexFalso(opcoes: { http?: number } = {}) {
     // a consulta do plantio dos mapas (montarSql) também passa por aqui no teste do atenderPedidos
     const r = sql.includes('area_prevista')
       ? PLANTIO_MAPAS
+      : sql.includes('stg_climatemonitoring2') ? CHUVA
       : sql.includes('UNION ALL') ? HIST
       : sql.includes('APPLANTIO') ? PLANTIO : sql.includes('APATIVPROD') ? COLHEITA
       : sql.includes('JOIN') ? TALHOES : SAFRAS;
@@ -174,14 +213,16 @@ describe('sincronizarAcompanhamento', () => {
       url: 'https://agrovex.test/mcp', token: 'tk', safras: ['SOJA 26/27', 'MILHO 2ª SAFRA 26/27'],
       fetchImpl: impl, agora: new Date('2026-09-29T12:00:00Z'),
     });
-    // lista de safras, talhões, plantio, colheita e o total por dia das safras anteriores
-    expect(sqls).toHaveLength(5);
-    expect(sqls[4]).toContain("'MILHO 2º SAFRA 25/26','SOJA 24/25','SOJA 25/26'");
+    // lista de safras, talhões, plantio, colheita, o total por dia das safras anteriores e a chuva (ZEUS)
+    expect(sqls).toHaveLength(6);
+    expect(sqls[5]).toContain('stg_climatemonitoring2');
+    expect(sqls[4]).toContain("'MILHO 2º SAFRA 25/26','MILHO SAFRINHA 23/24','SOJA 24/25','SOJA 25/26'");
     expect(dados.geradoEm).toBe('2026-09-29T12:00:00.000Z');
     expect(dados.safras).toEqual(['SOJA 26/27', 'MILHO 2ª SAFRA 26/27']);
-    expect(dados.anteriores).toEqual(['MILHO 2º SAFRA 25/26', 'SOJA 24/25', 'SOJA 25/26']);
+    expect(dados.anteriores).toEqual(['MILHO 2º SAFRA 25/26', 'MILHO SAFRINHA 23/24', 'SOJA 24/25', 'SOJA 25/26']);
     expect(dados.linhas.filter((l) => l.talhoes.length)).toHaveLength(3);
-    expect(dados.linhas.filter((l) => !l.talhoes.length).map((l) => l.safra)).toEqual(['SOJA 24/25', 'SOJA 25/26']);
+    expect(dados.linhas.filter((l) => !l.talhoes.length).map((l) => l.safra)).toEqual(['SOJA 24/25', 'SOJA 25/26', 'CHUVA', 'CHUVA']);
+    expect(dados.chuva).toBe(2);
     expect(dados.linhas.every((l) => l.gerado_em === dados.geradoEm)).toBe(true);
   });
 });

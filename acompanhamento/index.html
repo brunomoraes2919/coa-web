@@ -43,6 +43,7 @@
         <nav class="alternador" aria-label="Telas">
           <button data-vista="painel" aria-pressed="true">Painel</button>
           <button data-vista="metas" aria-pressed="false">Metas</button>
+          <button data-vista="safras" aria-pressed="false">Safras</button>
         </nav>
       </div>
     </div>
@@ -193,7 +194,54 @@
       </div>
     </section>
   </main>
+
+  <!-- ============================ SAFRAS (comparativo por fazenda) ============================ -->
+<main id="safras" class="vista app-safras" hidden>
+  <section class="rel-cab faixa-marca" id="rel-cab">
+    <div class="rel-cab-texto">
+      <p class="destaque-eyebrow" id="rel-eyebrow">Comparativo de safras</p>
+      <h1 class="destaque-titulo" id="rel-titulo">—</h1>
+      <p class="rel-cab-sub" id="rel-sub"></p>
+    </div>
+    <button class="botao rel-botao" id="rel-exportar" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PNG ou PDF
+    </button>
+  </section>
+  <p class="vazio-grande" id="rel-vazio" hidden></p>
+  <div id="rel-conteudo">
+    <section class="rel-cards" id="rel-cards" aria-label="Resumo das safras"></section>
+    <p class="rel-legenda-chuva" id="rel-legenda-chuva"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.5C12 1.5 4.5 10.2 4.5 15a7.5 7.5 0 0 0 15 0C19.5 10.2 12 1.5 12 1.5Z"/></svg>
+      Gota = chuva do dia na fazenda (mm, média dos pluviômetros), só dias com 1 mm ou mais. Os gráficos usam o mesmo trecho do calendário: leia de cima para baixo.</p>
+    <section class="rel-graficos" id="rel-graficos"></section>
+    <article class="cartao rel-comp-c">
+      <header class="cartao-cab">
+        <div><h2>Comparativo acumulado pela data do ano</h2><p class="cartao-sub">quanto cada safra já tinha plantado em cada data</p></div>
+        <div class="rel-comp-acoes">
+          <ul class="legenda" id="rel-leg"></ul>
+          <div class="alternador pequeno" id="rel-modo" role="group" aria-label="Unidade do comparativo">
+            <button data-modo="ha" aria-pressed="true">ha</button><button data-modo="pct" aria-pressed="false">% da área</button>
+          </div>
+        </div>
+      </header>
+      <div class="grafico" id="rel-comp"></div>
+    </article>
+  </div>
+</main>
 </div>
+
+<dialog class="dialogo" id="dlg-rel" aria-labelledby="rel-exp-titulo">
+  <header class="cartao-cab">
+    <div><h2 id="rel-exp-titulo">Exportar o comparativo de safras</h2><p class="cartao-sub">Relatório completo da fazenda</p></div>
+    <button type="button" class="botao-icone" id="rel-exp-fechar" aria-label="Fechar">×</button>
+  </header>
+  <div class="formatos dois" role="radiogroup" aria-label="Formato">
+    <label class="formato"><input type="radio" name="rel-fmt" value="png"><span class="fmt-forma v"></span><b>PNG</b><small>Uma imagem só, com tudo, para WhatsApp ou e-mail</small></label>
+    <label class="formato"><input type="radio" name="rel-fmt" value="pdf"><span class="fmt-forma p"></span><b>PDF</b><small>A4 deitado: resumo e comparativo, depois 2 gráficos por página</small></label>
+  </div>
+  <div class="previa"><img id="rel-exp-previa" alt="Prévia do relatório"></div>
+  <p class="dica" id="rel-exp-status"></p>
+  <div class="botoes"><button type="button" class="botao" id="rel-exp-baixar">Baixar</button></div>
+</dialog>
 
 <!-- ============================ MODO TV ============================ -->
 <section class="tv" id="tv" hidden aria-label="Modo TV">
@@ -257,6 +305,7 @@
 </dialog>
 
 <div class="carregando" id="carregando"><div class="spinner" aria-hidden="true"></div><p id="carregando-texto">Carregando os dados do PIMS…</p></div>
+<script src="safras.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -390,6 +390,45 @@ button, input, select { font: inherit; color: inherit; }
 .dialogo .botoes { margin-top: 10px; }
 @media (max-width: 640px) { .formatos { grid-template-columns: minmax(0, 1fr); } }
 
+/* ============================ SAFRAS (comparativo por fazenda) ============================ */
+.vista-safras .abas button[data-u="TODAS"] { display: none; }
+.app-safras { padding-bottom: 12px; }
+.rel-cab { margin-top: 20px; padding: 24px 32px 24px 34px; border-radius: 16px; display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 130px; }
+.rel-cab-sub { margin: 0; font-size: 14px; color: #D7E8E2; }
+.rel-botao { background: #fff; color: var(--verde-escuro); border: 0; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.rel-botao:hover { background: #F0F6F3; }
+.rel-botao svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.vazio-grande { margin: 28px 0; padding: 28px; text-align: center; color: var(--texto-suave); background: var(--cartao); border: 1px dashed var(--linha); border-radius: var(--raio); }
+.rel-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin-top: 16px; }
+.rel-card { position: relative; overflow: hidden; background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio); box-shadow: var(--sombra); padding: 18px 18px 14px; }
+.rel-card::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 5px; background: var(--cor); }
+.rel-card header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.rel-card-safra { font-size: 17px; font-weight: 700; color: var(--texto); }
+.rel-selo { font-size: 11.5px; font-weight: 700; color: #fff; background: var(--cor); border-radius: 999px; padding: 2px 9px; }
+.rel-selo.neutro { background: var(--linha-suave); color: var(--texto-suave); font-weight: 600; }
+.rel-card-periodo { margin: 8px 0 10px; font-size: 20px; font-weight: 700; color: var(--texto); font-variant-numeric: tabular-nums; }
+.rel-card dl { margin: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+.rel-card dt { font-size: 11.5px; color: var(--texto-fraco); }
+.rel-card dd { margin: 1px 0 0; font-size: 14px; font-weight: 650; color: var(--texto); font-variant-numeric: tabular-nums; }
+.rel-card-vazio { margin: 12px 0 4px; color: var(--texto-fraco); font-size: 13px; }
+.rel-legenda-chuva { display: flex; align-items: center; gap: 8px; margin: 14px 2px 0; font-size: 12.5px; color: var(--texto-suave); }
+.rel-legenda-chuva svg { width: 16px; height: 16px; fill: #2a78d6; flex: none; }
+.rel-graficos { display: grid; gap: 14px; margin-top: 12px; }
+.rel-safra { padding: 16px 18px 8px; }
+.rel-safra-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 22px; }
+.rel-safra-cab h2 { margin: 0; font-size: 16px; font-weight: 700; color: var(--texto); display: flex; align-items: center; gap: 8px; }
+.rel-safra-cab h2 i { width: 12px; height: 12px; border-radius: 3px; background: var(--cor); display: inline-block; }
+.rel-safra-cab h2 small { font-size: 12px; font-weight: 600; color: var(--texto-fraco); }
+.rel-resumo { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; }
+.rel-resumo span { color: var(--texto-fraco); margin-right: 4px; }
+.rel-resumo b { color: var(--texto); font-weight: 650; font-variant-numeric: tabular-nums; }
+.rel-g { height: 300px; }
+.rel-comp-c { margin-top: 14px; }
+.rel-comp-acoes { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
+#rel-comp { height: 420px; }
+.alternador.pequeno button { font-size: 12.5px; padding: 5px 10px; }
+@media (max-width: 760px) { .rel-cab { flex-direction: column; align-items: flex-start; } .rel-g { height: 260px; } #rel-comp { height: 340px; } }
+
 /* ============================ MODO TV ============================
    Uma tela só, sem rolagem. A fonte base acompanha a tela (vmin/vmax) e todo o
    resto é em "em": o mesmo layout serve para TV HD, Full HD, 4K, ultrawide e vertical. */

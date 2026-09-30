@@ -6,6 +6,20 @@ cadastro das metas diárias por período e da data estimada de término.
 No COA WEB: categoria **Operacional** → **Painel** e **Metas**. O módulo roda num iframe da mesma
 origem (`acompanhamento/index.html?embed=1`) e usa a sessão do COA WEB.
 
+## Safras (comparativo por fazenda)
+
+Aba **Safras** (COA WEB → Operacional → Safras): relatório de uma fazenda (sem "Todas") com a safra
+atual e as 3 anteriores da mesma cultura. Cartões de resumo (início, fim, duração, área, média,
+pico, chuva), um gráfico de hectares por dia por safra com uma **gota** acima de cada dia com chuva
+(≥ 1 mm, com os milímetros) e o resuminho no título, todos no mesmo trecho do calendário (as safras
+anteriores são deslocadas para o ano da atual), e o comparativo acumulado pela data do ano (ha ou %
+da área). **Exportar** gera um PNG único ou um PDF A4 deitado (jsPDF do cdnjs, carregado só ao
+exportar). Código em `acompanhamento/safras.js`.
+
+Chuva: a rotina da VM lê a ZEUS (`stg_climatemonitoring2` + `stg_zeus_picarea`), soma o dia de cada
+pluviômetro e tira a média entre os pluviômetros da fazenda, desde agosto de 3 anos-safra antes; grava
+em `acomp_pims` com safra `CHUVA` (uma linha por unidade). Se a ZEUS falhar, o resto segue sem chuva.
+
 ## Exportar imagem (WhatsApp)
 
 Botão **Exportar** no topo do painel: gera um PNG com as mesmas informações da página do relatório
