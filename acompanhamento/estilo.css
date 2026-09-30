@@ -425,7 +425,7 @@ button, input, select { font: inherit; color: inherit; }
 .rel-g { height: 320px; }
 .rel-comp-c { margin-top: 14px; }
 .rel-comp-acoes { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: flex-end; }
-#rel-comp { height: 420px; }
+#rel-comp { height: 500px; }
 .alternador.pequeno button { font-size: 12.5px; padding: 5px 10px; }
 @media (max-width: 760px) { .rel-cab { flex-direction: column; align-items: flex-start; } .rel-g { height: 260px; } #rel-comp { height: 340px; } }
 
