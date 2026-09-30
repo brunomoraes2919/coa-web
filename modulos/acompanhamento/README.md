@@ -28,6 +28,13 @@ Variedades: "A DEFINIR" (variedade ainda não informada no PIMS) não entra na l
 inteira, sem rolagem; na imagem, com muitas variedades o cartão cresce (o gráfico diário encolhe) e,
 se ainda faltar espaço, vira duas colunas.
 
+Comparativo com as safras anteriores: a rotina da VM grava em `acomp_pims`, como linhas sem talhão,
+o total por dia das duas safras anteriores da mesma cultura (nomes casados por `culturaDaSafra`:
+"SAFRINHA" = "2ª SAFRA", "1º" = "1ª", "MILHO SILAGEM" = "SILAGEM"). A página não as lista como safra;
+usa-as em linhas claras nos gráficos "Realizado × meta por dia" (mesmos dias do ano) e "Evolução
+acumulada" (acumulado da safra anterior até o mesmo dia do ano), no painel, no Modo TV e na imagem,
+e no "Resumo do período" da imagem.
+
 O fundo das faixas (painel, Modo TV e imagem) é a ilustração da cultura da safra em `assets/fundo_*.webp`
 (soja, milho/silagem, sorgo/milheto, algodão).
 

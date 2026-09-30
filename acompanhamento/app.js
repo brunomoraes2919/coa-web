@@ -332,7 +332,12 @@
     m.comparativos = safrasAnteriores(s).map(function (c) {
       var pd = {}, tem = false;
       (DADOS.historico || []).forEach(function (h) { if (h.s === c.nome && h.op === o && U[h.u]) { pd[h.d] = (pd[h.d] || 0) + h.a; tem = true; } });
-      return tem ? { nome: c.nome, anos: c.anos, porDia: pd } : null;
+      if (!tem) return null;
+      var dias = Object.keys(pd).sort(), acc = [], tot = 0;
+      dias.forEach(function (x) { tot += pd[x]; acc.push(tot); });
+      return { nome: c.nome, anos: c.anos, porDia: pd,
+        /** total da safra anterior do início dela até a data d (inclusive) */
+        acumAte: function (d) { var k = paraIso(d), i = -1; for (var j = 0; j < dias.length && dias[j] <= k; j++) i = j; return i < 0 ? 0 : acc[i]; } };
     }).filter(Boolean);
     m.serie = [];
     if (m.ini) for (var t = +m.ini; t <= +m.ult; t += DIA) {
@@ -777,10 +782,23 @@
     });
   }
 
+  function itensLegendaAcum(m) {
+    return [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Planejado pelas metas', cor: COR.dourado, tipo: 'tracejada' }, { nome: 'Projeção pelo ritmo', cor: '#9AA79F', tipo: 'tracejada' }]
+      .concat((m.comparativos || []).map(function (c, i) { return { nome: nomeSafra(c.nome), cor: COR_COMPARATIVO[i] || COR_COMPARATIVO[1], tipo: 'linha' }; }));
+  }
   function renderAcumulado(m) {
     var el = $('g-acum');
-    legenda('leg-acum', [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Planejado pelas metas', cor: COR.dourado, tipo: 'tracejada' }, { nome: 'Projeção pelo ritmo', cor: '#9AA79F', tipo: 'tracejada' }]);
+    legenda('leg-acum', itensLegendaAcum(m));
     if (!m.serie.length) return vazio(el, 'Ainda não há apontamentos nesta safra.');
+    chart(el).setOption(opcoesAcumulado(m, 1), true);
+  }
+
+  /**
+   * Gráfico "evolução acumulada" (painel, TV e imagem): realizado, planejado pelas metas, projeção pelo
+   * ritmo e, em linhas claras, o acumulado das safras anteriores até o mesmo dia do ano.
+   */
+  function opcoesAcumulado(m, k) {
+    k = k || 1;
     var fim = m.ult;
     if (m.previsao && m.previsao > fim) fim = m.previsao;
     if (m.termino && m.termino > fim) fim = m.termino;
@@ -789,8 +807,8 @@
     var temMeta = m.planos.length > 0;
     for (var t = +m.ini; t <= +fim; t += DIA) {
       var d = new Date(t); d = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      var k = paraIso(d);
-      ar += m.porDia[k] || 0;
+      var dia = paraIso(d);
+      ar += m.porDia[dia] || 0;
       ap += m.metaDia(d) || 0;
       cats.push(d);
       real.push(d <= m.ult ? Math.round(Math.min(ar, m.areaTotal)) : null);
@@ -803,22 +821,28 @@
       for (var j = i0; j < cats.length; j++) proj[j] = Math.round(Math.min(m.areaTotal, m.exec + (j - i0) * m.ritmo));
       proj[i0] = Math.round(m.exec);
     }
-    chart(el).setOption(opt({
-      grid: { left: 4, right: 12, top: 22, bottom: 4, containLabel: true },
+    // safras anteriores: o acumulado delas até o mesmo dia do ano (linhas claras, só para comparar)
+    var comps = (m.comparativos || []).map(function (c, i) {
+      return { name: nomeSafra(c.nome), type: 'line', symbol: 'none', silent: true, z: 1, emphasis: { disabled: true },
+        lineStyle: { color: COR_COMPARATIVO[i] || COR_COMPARATIVO[1], width: 1.8 * k },
+        data: cats.map(function (d) { return Math.round(c.acumAte(anosAntes(d, c.anos))); }) };
+    });
+    return opt({
+      grid: { left: 4 * k, right: 12 * k, top: 22 * k, bottom: 4 * k, containLabel: true },
       tooltip: tt({ trigger: 'axis', formatter: function (ps) {
         var s = '<b>' + cats[ps[0].dataIndex].toLocaleDateString('pt-BR') + '</b>';
         ps.forEach(function (p) { if (p.value !== null && p.value !== undefined) s += '<br>' + p.marker + p.seriesName + ': <b>' + fmtN(p.value) + ' ha</b>'; });
         return s;
       } }),
-      xAxis: Object.assign({}, eixoX, { type: 'category', boundaryGap: false, data: cats.map(function (d) { return fmtData(d, true); }), axisLabel: { color: COR.suave, fontSize: 11, hideOverlap: true } }),
-      yAxis: Object.assign({}, eixoY, { type: 'value', max: function (v) { return Math.max(v.max, m.areaTotal) * 1.04; } }),
+      xAxis: Object.assign({}, eixoX, { type: 'category', boundaryGap: false, data: cats.map(function (d) { return fmtData(d, true); }), axisLabel: { color: COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: COR.linha, width: k } } }),
+      yAxis: Object.assign({}, eixoY, { type: 'value', max: function (v) { return Math.max(v.max, m.areaTotal) * 1.04; }, axisLabel: { color: COR.fraco, fontSize: 11 * k, formatter: function (v) { return fmtN(v); } }, splitLine: { lineStyle: { color: COR.grade, width: k } } }),
       series: [
-        { name: 'Realizado', type: 'line', data: real, symbol: 'none', lineStyle: { color: COR.teal, width: 2.5 }, areaStyle: { color: 'rgba(12,90,80,.09)' },
-          markLine: { silent: true, symbol: 'none', data: [{ yAxis: m.areaTotal }], lineStyle: { color: '#B9C4BC', type: 'solid', width: 1 }, label: { formatter: 'Área total ' + fmtN(m.areaTotal) + ' ha', position: 'insideStartTop', color: COR.suave, fontSize: 11 } } },
-        { name: 'Planejado', type: 'line', data: plan, symbol: 'none', lineStyle: { color: COR.dourado, width: 2, type: [6, 4] } },
-        { name: 'Projeção', type: 'line', data: proj, symbol: 'none', lineStyle: { color: '#9AA79F', width: 2, type: [2, 4] } }
-      ]
-    }), true);
+        { name: 'Realizado', type: 'line', data: real, symbol: 'none', z: 3, lineStyle: { color: COR.teal, width: 2.5 * k }, areaStyle: { color: 'rgba(12,90,80,.09)' },
+          markLine: { silent: true, symbol: 'none', data: [{ yAxis: m.areaTotal }], lineStyle: { color: '#B9C4BC', type: 'solid', width: k }, label: { formatter: 'Área total ' + fmtN(m.areaTotal) + ' ha', position: 'insideStartTop', color: COR.suave, fontSize: 11 * k } } },
+        { name: 'Planejado', type: 'line', data: plan, symbol: 'none', z: 3, lineStyle: { color: COR.dourado, width: 2 * k, type: [6 * k, 4 * k] } },
+        { name: 'Projeção', type: 'line', data: proj, symbol: 'none', z: 3, lineStyle: { color: '#9AA79F', width: 2 * k, type: [2 * k, 4 * k] } }
+      ].concat(comps)
+    });
   }
 
   function renderTalhoes(m) {
@@ -1263,9 +1287,15 @@
       else if (comp) desenharMapaFazenda(elMapa, u, m, comp, { semZoom: true, rotulos: true, fonte: 8.5 * k, fonteTitulo: 11 * k });
       else vazio(elMapa, MAPAS ? 'Sem limites de talhões para esta fazenda.' : 'Carregando os limites dos talhões…');
       legenda('tv-leg-meta', itensLegendaMeta(m));
-    var eg = $('tv-grafico');
-      if (m.serie.length) chart(eg).setOption(opcoesMeta(m, k, 21), true);
-      else vazio(eg, 'Ainda não há apontamentos nesta safra.');
+      legenda('tv-leg-acum', itensLegendaAcum(m));
+      // os dois gráficos lado a lado num cartão largo; um sobre o outro num cartão alto
+      var caixaG = document.querySelector('.tv-graficos');
+      caixaG.className = 'tv-graficos ' + (caixaG.clientWidth > caixaG.clientHeight * 1.7 ? 'lado' : 'pilha');
+      var eg = $('tv-grafico'), ea = $('tv-acum');
+      if (m.serie.length) {
+        chart(eg).setOption(opcoesMeta(m, k, 21), true);
+        chart(ea).setOption(opcoesAcumulado(m, k), true);
+      } else { vazio(eg, 'Ainda não há apontamentos nesta safra.'); vazio(ea, 'Ainda não há apontamentos nesta safra.'); }
     });
   }
 
@@ -1489,23 +1519,43 @@
     for (var i = m.serie.length - 1; i >= 0; i--) if (m.serie[i].meta !== null) return m.serie[i].meta;
     return null;
   }
+  /** Legenda de cartão: [cor, texto, tipo] com tipo 'linha' (traço), 'tracejada' ou bolinha. */
+  function legendaCartao(c, itens, x0, y) {
+    itens.reduce(function (x, l) {
+      c.fillStyle = l[0]; c.strokeStyle = l[0]; c.lineWidth = 2.5;
+      if (l[2] === 'linha' || l[2] === 'tracejada') {
+        c.setLineDash(l[2] === 'tracejada' ? [4, 3] : []); c.beginPath(); c.moveTo(x, y - 4); c.lineTo(x + 13, y - 4); c.stroke(); c.setLineDash([]);
+      } else { c.beginPath(); c.arc(x + 5, y - 4, 5, 0, 2 * Math.PI); c.fill(); }
+      return x + 16 + escrever(c, l[1], x + (l[2] ? 17 : 14), y, 12.5, 500, COR.suave, 170) + 12;
+    }, x0);
+  }
+  async function cartaoAcumulado(c, r, m, pr) {
+    caixa(c, r);
+    escrever(c, 'Evolução acumulada (ha)', r.x + 16, r.y + 28, 15, 600, COR.texto, r.w - 32);
+    var itens = [[COR.teal, 'Realizado']];
+    if (m.planos.length) itens.push([COR.dourado, 'Planejado', 'tracejada']);
+    if (m.ritmo && m.restante > 0) itens.push(['#9AA79F', 'Projeção', 'tracejada']);
+    (m.comparativos || []).forEach(function (cp, i) { itens.push([COR_COMPARATIVO[i] || COR_COMPARATIVO[1], nomeSafra(cp.nome), 'linha']); });
+    var legY = r.y + 50;
+    legendaCartao(c, itens, r.x + 16, legY);
+    var a = { x: r.x + 8, y: legY + 12, w: r.w - 16, h: r.y + r.h - legY - 20 };
+    if (!m.serie.length) { escrever(c, 'Ainda não há apontamentos nesta safra.', a.x + a.w / 2, a.y + a.h / 2, 14, 500, COR.fraco, a.w, 'center'); return; }
+    var img = await grafico(a.w, a.h, opcoesAcumulado(m, 0.95), pr);
+    if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
+  }
   async function cartaoMeta(c, r, m, pr) {
     caixa(c, r);
     escrever(c, 'Meta x Realizado - ha por dia', r.x + 16, r.y + 28, 15, 600, COR.texto, r.w * 0.5);
-    var itensMeta = [[COR.teal, 'Área executada dia'], [COR.dourado, 'Meta diária']].concat((m.comparativos || []).map(function (cp, i) { return [COR_COMPARATIVO[i] || COR_COMPARATIVO[1], nomeSafra(cp.nome), true]; }));
-    itensMeta.reduce(function (x, l) {
-      c.fillStyle = l[0]; c.strokeStyle = l[0];
-      if (l[2]) { c.lineWidth = 2.5; c.beginPath(); c.moveTo(x, r.y + 46); c.lineTo(x + 12, r.y + 46); c.stroke(); }
-      else { c.beginPath(); c.arc(x + 5, r.y + 46, 5, 0, 2 * Math.PI); c.fill(); }
-      return x + 16 + escrever(c, l[1], x + (l[2] ? 16 : 14), r.y + 50, 12.5, 500, COR.suave, 160) + 12;
-    }, r.x + 16);
+    var itensMeta = [[COR.teal, 'Área executada dia'], [COR.dourado, 'Meta diária']].concat((m.comparativos || []).map(function (cp, i) { return [COR_COMPARATIVO[i] || COR_COMPARATIVO[1], nomeSafra(cp.nome), 'linha']; }));
+    var legY = r.w < 820 ? r.y + 76 : r.y + 50;
+    legendaCartao(c, itensMeta, r.x + 16, legY);
     var mr = metaReferencia(m);
     [['Meta diária (ha)', mr !== null ? fmtN(mr) : '—'], ['Média real ha/dia', m.media ? fmtN(m.media) : '—']].forEach(function (p, i) {
       var cx = r.x + r.w - 72 - (1 - i) * 150;
       escrever(c, p[0], cx, r.y + 28, 14, 500, COR.texto, 145, 'center');
       escrever(c, p[1], cx, r.y + 52, 16, 600, COR.texto, 145, 'center');
     });
-    var a = { x: r.x + 8, y: r.y + 62, w: r.w - 16, h: r.h - 70 };
+    var a = { x: r.x + 8, y: legY + 12, w: r.w - 16, h: r.y + r.h - legY - 20 };
     if (!m.serie.length) { escrever(c, 'Ainda não há apontamentos nesta safra.', a.x + a.w / 2, a.y + a.h / 2, 14, 500, COR.fraco, a.w, 'center'); return; }
     var dias = Math.max(14, Math.floor(a.w / 13));
     var o = opcoesMeta(m, 1, m.serie.length > dias ? dias : null);
@@ -1654,9 +1704,9 @@
       var r = m.media7 / m.metaHoje - 1;
       itens.push(['Ritmo 7 dias × meta', fmtN(m.media7) + ' × ' + fmtN(m.metaHoje) + ' ha/dia', r >= 0 ? '#1E7B4F' : r > -0.1 ? '#B7791F' : '#B3261E']);
     } else if (m.media7) itens.push(['Ritmo dos últimos 7 dias', fmtN(m.media7) + ' ha/dia', null]);
-    var feito = soma(m.serie, function (x) { return x.a; });
-    (m.comparativos || []).forEach(function (cp, i) {
-      var antes = soma(m.serie, function (x) { return x.comp ? x.comp[i] : 0; });
+    var feito = m.apontado;
+    (m.comparativos || []).forEach(function (cp) {
+      var antes = m.ult ? cp.acumAte(anosAntes(m.ult, cp.anos)) : 0;
       var dif = antes > 0 ? feito / antes - 1 : null;
       itens.push([nomeSafra(cp.nome) + ' até ' + (m.ult ? fmtData(anosAntes(m.ult, cp.anos), true) : '—'),
         fmtN(antes) + ' ha' + (dif === null ? '' : dif >= 2 ? ' (atual ' + fmtN(dif + 1, dif < 9 ? 1 : 0) + '× maior)' : ' (atual ' + (dif >= 0 ? '+' : '') + fmtPct(dif) + ')'), dif === null ? null : dif >= 0 ? '#1E7B4F' : '#B3261E']);
@@ -1792,6 +1842,10 @@
       L.donut.h += extra; L.meta.y += extra; L.meta.h -= extra;
     }
     if (52 + (nVar || 0) * 17 > L.vari.h) { L.vari.w += L.vari.x - L.eqT.x; L.vari.x = L.eqT.x; L.eqT = null; }
+    // a faixa do gráfico diário também leva a evolução acumulada (com o comparativo das safras anteriores)
+    var wDia = (L.meta.w - G) * 0.57;
+    L.acum = { x: L.meta.x + wDia + G, y: L.meta.y, w: L.meta.w - wDia - G, h: L.meta.h };
+    L.meta.w = wDia;
     return L;
   }
   /** Os mesmos blocos empilhados, 1080 de largura (a altura acompanha o conteúdo). */
@@ -1813,6 +1867,7 @@
     var nv = Math.max(1, variedadesVisiveis(m).length);
     L.vari = { x: M, y: y, w: lw, h: 60 + Math.ceil(nv / (nv > 10 ? 2 : 1)) * 23 }; y += L.vari.h + g;
     L.meta = { x: M, y: y, w: lw, h: 320 }; y += 320 + g;
+    L.acum = { x: M, y: y, w: lw, h: 300 }; y += 300 + g;
     var hm = todas ? 70 + m.unidades.length * 76 : Math.max(460, Math.min(980, (lw - 20) / aspectoFazenda(comp) + 100));
     L.mapa = { x: M, y: y, w: lw, h: hm }; y += hm + g;
     L.tal = [];
@@ -1878,6 +1933,7 @@
     if (L.eqT) await cartaoColunas(c, L.eqT, 'Área total por equipe (ha)', m.equipes.filter(function (e) { return e.total > 0; }).map(function (e) { return { nome: e.nome, v: e.total }; }), S);
     cartaoVariedades(c, L.vari, m);
     await cartaoMeta(c, L.meta, m, S);
+    await cartaoAcumulado(c, L.acum, m, S);
     if (todas) cartaoListaFazendas(c, L.mapa, m);
     else await cartaoMapa(c, L.mapa, m, u, comp, imgs, S);
 
