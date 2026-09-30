@@ -541,10 +541,13 @@
     ].join('');
   }
 
-  /** Foto da máquina da operação: colheitadeira na colheita de grãos; trator 8R no plantio. */
+  /** Foto da máquina da operação: trator 8R no plantio; na colheita, a máquina da cultura. */
   function fotoMaquina(m) {
-    var colheitadeira = m.o !== 'PLANTIO' && ({ SOJA: 1, MILHO: 1, SORGO: 1, MILHETO: 1 })[cultura(m.s)];
-    return colheitadeira ? { src: 'assets/maquina.png', alt: 'Colheitadeira de grãos' } : { src: 'assets/trator_8r.png', alt: 'Trator 8R com plantadeira' };
+    if (m.o === 'PLANTIO') return { src: 'assets/trator_8r.webp', alt: 'Trator John Deere 8R' };
+    var c = cultura(m.s).normalize('NFD').replace(/[̀-ͯ]/g, '');
+    if (c === 'MILHO') return { src: 'assets/colheitadeira_milho.webp', alt: 'Colheitadeira com plataforma de milho' };
+    if (c === 'ALGODAO') return { src: 'assets/colhedora_algodao.webp', alt: 'Colhedora de algodão' };
+    return { src: 'assets/colheitadeira_soja.webp', alt: 'Colheitadeira com plataforma draper' };
   }
   /** Mostra a foto só depois que ela carrega (sem foto, a faixa fica limpa). */
   function mostrarMaquina(img, m) {

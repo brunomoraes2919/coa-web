@@ -20,8 +20,9 @@ o mapa em duas faixas, como a página de Guapirama do Power BI. Em "Todas", o ma
 fazendas e as barras mostram o % de cada fazenda. No celular, **Compartilhar** manda a imagem direto
 para o WhatsApp.
 
-A foto da máquina (barra lateral, faixa do painel e Modo TV) é `assets/maquina.png` na colheita de
-grãos e `assets/trator_8r.png` no plantio; sem o arquivo, a faixa fica sem foto.
+A foto da máquina (barra lateral, faixa do painel e Modo TV) sai de `assets/`: `trator_8r.webp` no
+plantio; na colheita, `colheitadeira_milho.webp` (milho), `colhedora_algodao.webp` (algodão) e
+`colheitadeira_soja.webp` (soja e demais grãos). Sem o arquivo, a faixa fica sem foto.
 
 ## Modo TV
 
