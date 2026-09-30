@@ -762,7 +762,7 @@
     var series = [{
       name: 'Realizado', type: 'bar', data: serie.map(function (x) { return Math.round(x.a); }), barMaxWidth: 26 * k, barCategoryGap: '28%',
       itemStyle: { color: COR.teal, borderRadius: [3 * k, 3 * k, 0, 0] },
-      label: { show: serie.length <= 45, position: 'top', fontSize: 10.5 * k, color: COR.suave, textBorderColor: '#FFFFFF', textBorderWidth: 2.5 * k, formatter: function (p) { return p.value ? fmtN(p.value) : ''; } },
+      label: { show: serie.length <= 45, position: 'top', fontSize: 10.5 * k, color: COR.suave, textBorderColor: '#FFFFFF', textBorderWidth: 4.5 * k, formatter: function (p) { return p.value ? fmtN(p.value) : ''; } },
       labelLayout: { hideOverlap: true }
     }];
     if (temMeta) series.push({ name: 'Meta', type: 'line', step: 'middle', silent: true, data: serie.map(function (x) { return x.meta; }), symbol: 'none', lineStyle: { color: COR.dourado, width: 2 * k, type: [6 * k, 4 * k] }, z: 5 });

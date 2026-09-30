@@ -15,7 +15,7 @@
   var TXT_EIXO = '#3E4B44';      // rótulos de eixo (mais escuros que o cinza padrão, para ler no PDF)
   var TXT_CHUVA = '#1c5cab';     // rótulos do eixo da chuva
   /** Contorno branco em volta do texto (destaca números e palavras sobre barras, linhas e a mancha da chuva). */
-  function halo(k) { return { textBorderColor: '#FFFFFF', textBorderWidth: 3 * k }; }
+  function halo(k) { return { textBorderColor: '#FFFFFF', textBorderWidth: 5 * k }; }
     var CHUVA_MIN = 1;          // mm: dia com chuva (contagem de dias no resumo)
   var MARGEM_DIAS = 2;        // dias antes do 1º início e depois do último fim (da safra que terminou mais tarde), no eixo comum
   var MAX_DIAS = 200;
@@ -167,6 +167,17 @@
     ];
   }
 
+  /** Índice do meio do maior trecho seguido de dias sem coluna (onde o rótulo da média não cobre nada). */
+  function vazioMaior(ha) {
+    var melhor = [0, -1], ini = null;
+    ha.forEach(function (v, i) {
+      if (v) { ini = null; return; }
+      if (ini === null) ini = i;
+      if (i - ini > melhor[1] - melhor[0]) melhor = [ini, i];
+    });
+    return melhor[1] < 0 ? Math.floor(ha.length / 2) : Math.round((melhor[0] + melhor[1]) / 2);
+  }
+
   /** Eixo da chuva com 8 a 10 marcas num passo redondo (5, 10, 15, 20, 25 ou 50 mm). */
   function escalaMm(maxMm) {
     var topo = maxMm * 1.25, passo = [5, 10, 15, 20, 25, 50].filter(function (p) { return topo / p <= 10; })[0] || 50;
@@ -217,10 +228,13 @@
           itemStyle: { color: x.cor, borderRadius: [2 * k, 2 * k, 0, 0] },
           // área do dia em cada barra, na vertical
           label: { show: espaco >= 7, position: 'top', rotate: 90, align: 'left', verticalAlign: 'middle', distance: 4 * k,
-            fontSize: fonteRotulo, fontWeight: 600, color: N.COR.texto, textBorderColor: '#fff', textBorderWidth: 3 * k,
+            fontSize: fonteRotulo, fontWeight: 700, color: N.COR.texto, textBorderColor: '#fff', textBorderWidth: 5 * k,
             formatter: function (p) { return p.value ? N.fmtN(p.value) : ''; } },
+          // rótulo da média no maior trecho sem colunas (não fica em cima das barras)
+          markPoint: x.media ? { silent: true, symbol: 'circle', symbolSize: 0.1, data: [{ coord: [vazioMaior(ha), Math.round(x.media)],
+            label: Object.assign({ show: true, position: 'top', distance: 3 * k, formatter: 'média ' + N.fmtN(x.media) + ' ha/dia', color: N.COR.texto, fontSize: 10.5 * k, fontWeight: 600 }, halo(k)) }] } : undefined,
           markLine: x.ini ? { silent: true, symbol: 'none', lineStyle: { color: N.COR.fraco, type: [4 * k, 4 * k], width: k },
-            label: Object.assign({ position: 'insideEndTop', color: N.COR.texto, fontSize: 10.5 * k, fontWeight: 600 }, halo(k)), data: marcas.concat(x.media ? [{ yAxis: Math.round(x.media), label: { position: 'insideEndTop', formatter: 'média ' + N.fmtN(x.media) + ' ha/dia' }, lineStyle: { color: x.cor, type: [6 * k, 4 * k], width: 1.2 * k } }] : []) } : undefined }
+            label: Object.assign({ position: 'insideEndTop', color: N.COR.texto, fontSize: 10.5 * k, fontWeight: 600 }, halo(k)), data: marcas.concat(x.media ? [{ yAxis: Math.round(x.media), label: { show: false }, lineStyle: { color: x.cor, type: [6 * k, 4 * k], width: 1.2 * k } }] : []) } : undefined }
       ]
     });
   }
@@ -244,7 +258,7 @@
         lineStyle: { color: x.cor, width: (atual ? 3.2 : 2) * k }, itemStyle: { color: x.cor },
         areaStyle: atual ? { color: 'rgba(12,90,80,.07)' } : undefined,
         // rótulo no fim só da safra atual (os finais das anteriores ficam próximos e se sobrepõem; estão nos cartões)
-        endLabel: { show: atual, color: N.COR.texto, fontSize: 11.5 * k, fontWeight: 700, distance: 6 * k, textBorderColor: '#fff', textBorderWidth: 3 * k,
+        endLabel: { show: atual, color: N.COR.texto, fontSize: 11.5 * k, fontWeight: 700, distance: 6 * k, textBorderColor: '#fff', textBorderWidth: 5 * k,
           formatter: function (p) { return N.nomeSafra(x.nome) + '  ' + (modoComp === 'pct' ? N.fmtN(p.value) + '%' : N.fmtN(p.value) + ' ha'); } },
         labelLayout: { moveOverlap: 'shiftY' },
         emphasis: { focus: 'series' } };
