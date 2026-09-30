@@ -137,6 +137,12 @@
       axisLine: { lineStyle: { color: N.COR.linha, width: k } } });
   }
 
+  /** Eixo da chuva com 8 a 10 marcas num passo redondo (5, 10, 15, 20, 25 ou 50 mm). */
+  function escalaMm(maxMm) {
+    var topo = maxMm * 1.25, passo = [5, 10, 15, 20, 25, 50].filter(function (p) { return topo / p <= 10; })[0] || 50;
+    return { passo: passo, max: Math.ceil(topo / passo) * passo };
+  }
+
   /**
    * Hectares por dia (barras com o valor na vertical) e, ao fundo, a chuva do dia como uma mancha azul
    * no eixo da direita (mm).
@@ -166,7 +172,7 @@
       yAxis: [
         Object.assign({}, N.eixoY, { type: 'value', max: Math.ceil(maxHa * 1.3),
           axisLabel: { color: N.COR.fraco, fontSize: 11 * k, formatter: function (v) { return v > maxHa * 1.05 ? '' : N.fmtN(v); } }, splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
-        { type: 'value', show: rel.temChuva, position: 'right', min: 0, max: Math.ceil(maxMm * 1.25 / 20) * 20, interval: Math.ceil(maxMm * 1.25 / 20) * 5, splitLine: { show: false },
+        { type: 'value', show: rel.temChuva, position: 'right', min: 0, max: escalaMm(maxMm).max, interval: escalaMm(maxMm).passo, splitLine: { show: false },
           axisLine: { show: false }, axisTick: { show: false },
           axisLabel: { color: COR_CHUVA, fontSize: 10.5 * k, formatter: function (v) { return v ? v + ' mm' : ''; } } }
       ],
