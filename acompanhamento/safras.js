@@ -164,17 +164,17 @@
       } }),
       xAxis: eixoDatas(cats, k, true),
       yAxis: [
-        Object.assign({}, N.eixoY, { type: 'value', max: Math.ceil(maxHa * 1.22),
+        Object.assign({}, N.eixoY, { type: 'value', max: Math.ceil(maxHa * 1.3),
           axisLabel: { color: N.COR.fraco, fontSize: 11 * k, formatter: function (v) { return v > maxHa * 1.05 ? '' : N.fmtN(v); } }, splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
         { type: 'value', show: rel.temChuva, position: 'right', min: 0, max: Math.ceil(maxMm * 1.25 / 20) * 20, interval: Math.ceil(maxMm * 1.25 / 20) * 5, splitLine: { show: false },
           axisLine: { show: false }, axisTick: { show: false },
           axisLabel: { color: COR_CHUVA, fontSize: 10.5 * k, formatter: function (v) { return v ? v + ' mm' : ''; } } }
       ],
       series: [
-        // chuva: mancha azul ao fundo (eixo da direita)
-        { name: 'Chuva (mm)', type: 'line', yAxisIndex: 1, data: mm, symbol: 'none', silent: true, z: 1, smooth: 0.25,
+        // chuva: mancha azul translúcida por cima das barras (eixo da direita), para ver a chuva nos dias de operação
+        { name: 'Chuva (mm)', type: 'line', yAxisIndex: 1, data: mm, symbol: 'none', silent: true, z: 5, smooth: 0.25,
           lineStyle: { color: 'rgba(42,120,214,.85)', width: 2 * k },
-          areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(42,120,214,.30)' }, { offset: 1, color: 'rgba(42,120,214,.06)' }] } } },
+          areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(42,120,214,.28)' }, { offset: 1, color: 'rgba(42,120,214,.08)' }] } } },
         { name: N.nomeSafra(x.nome), type: 'bar', yAxisIndex: 0, data: ha, barCategoryGap: '18%', z: 3,
           itemStyle: { color: x.cor, borderRadius: [2 * k, 2 * k, 0, 0] },
           // área do dia em cada barra, na vertical
