@@ -12,8 +12,12 @@
   // atual = verde da marca (destaque); 1, 2 e 3 anos antes = laranja, vinho, dourado (nenhum azul: o azul é da chuva)
   var COR_SAFRA = ['#0C5A50', '#eb6834', '#a8327a', '#eda100'];
   var COR_CHUVA = '#2a78d6';
+  var TXT_EIXO = '#3E4B44';      // rótulos de eixo (mais escuros que o cinza padrão, para ler no PDF)
+  var TXT_CHUVA = '#1c5cab';     // rótulos do eixo da chuva
+  /** Contorno branco em volta do texto (destaca números e palavras sobre barras, linhas e a mancha da chuva). */
+  function halo(k) { return { textBorderColor: '#FFFFFF', textBorderWidth: 3 * k }; }
     var CHUVA_MIN = 1;          // mm: dia com chuva (contagem de dias no resumo)
-  var MARGEM_DIAS = 4;        // dias antes do 1º início e depois do último fim, no eixo comum
+  var MARGEM_DIAS = 2;        // dias antes do 1º início e depois do último fim (da safra que terminou mais tarde), no eixo comum
   var MAX_DIAS = 200;
 
   var N = null;               // núcleo (helpers e dados do app.js)
@@ -53,9 +57,10 @@
     } else {
       (D.historico || []).forEach(function (h) { if (h.u === u && h.s === x.nome && h.op === o) pd[h.d] = (pd[h.d] || 0) + h.a; });
     }
-    var dias = Object.keys(pd).filter(function (k) { return pd[k] > 0; }).sort();
+    // dias com pelo menos 1 ha: um acerto de 0,3 ha semanas depois não estica o fim da safra (e o eixo)
+    var dias = Object.keys(pd).filter(function (k) { return pd[k] >= 1; }).sort();
     var r = { nome: x.nome, anos: x.anos, cor: COR_SAFRA[x.anos] || COR_SAFRA[3], porDia: pd, dias: dias, total: 0 };
-    dias.forEach(function (k) { r.total += pd[k]; });
+    Object.keys(pd).forEach(function (k) { r.total += pd[k]; });
     if (!dias.length) return r;
     r.ini = N.iso(dias[0]);
     r.ult = N.iso(dias[dias.length - 1]);
@@ -133,7 +138,7 @@
     var passo = passoDatas(cats.length), mostra = function (i) { return i % passo === 0; };
     return Object.assign({}, N.eixoX, { type: 'category', boundaryGap: boundaryGap, data: cats.map(dataCurta),
       axisTick: { show: true, interval: mostra, lineStyle: { color: N.COR.linha, width: k } },
-      axisLabel: { color: N.COR.suave, fontSize: 11 * k, interval: mostra, hideOverlap: false },
+      axisLabel: Object.assign({ color: TXT_EIXO, fontSize: 11 * k, interval: mostra, hideOverlap: false }, halo(k)),
       axisLine: { lineStyle: { color: N.COR.linha, width: k } } });
   }
 
@@ -154,11 +159,11 @@
     return [
       Object.assign({}, N.eixoX, { type: 'category', boundaryGap: true, data: datas.map(function (d) { return String(d.getDate()); }),
         axisTick: { show: false }, axisLine: { lineStyle: { color: N.COR.linha, width: k } },
-        axisLabel: { color: N.COR.suave, fontSize: fonte, interval: pulo, hideOverlap: false, margin: 6 * k } }),
+        axisLabel: Object.assign({ color: TXT_EIXO, fontSize: fonte, interval: pulo, hideOverlap: false, margin: 6 * k }, halo(k)) }),
       { type: 'category', boundaryGap: true, position: 'bottom', offset: 16 * k, data: datas.map(function (d) { return MESES_LONGOS[d.getMonth()] + ' ' + d.getFullYear(); }),
         axisLine: { show: false },
         axisTick: { show: true, interval: function (i) { return viraMes(i); }, length: 16 * k, inside: false, lineStyle: { color: N.COR.linha, type: [2 * k, 2 * k], width: k } },
-        axisLabel: { color: N.COR.suave, fontSize: 11 * k, interval: function (i) { return !!meio[i]; }, hideOverlap: false, margin: 4 * k } }
+        axisLabel: Object.assign({ color: N.COR.texto, fontSize: 11.5 * k, fontWeight: 600, interval: function (i) { return !!meio[i]; }, hideOverlap: false, margin: 4 * k }, halo(k)) }
     ];
   }
 
@@ -179,13 +184,14 @@
     var datasReais = cats.map(function (d) { return N.anosAntes(d, x.anos); });
     datasReais.forEach(function (d, i) { idxDe[N.paraIso(d)] = i; });
     var ha = datasReais.map(function (d) { var v = x.porDia[N.paraIso(d)]; return v ? Math.round(v) : null; });
-    var mm = datasReais.map(function (d) { var v = rel.chuvaU[N.paraIso(d)]; return v ? Math.round(v * 10) / 10 : 0; });
+    var hojeIso = N.paraIso(N.hoje()); // sem chuva no futuro (a linha para em hoje)
+    var mm = datasReais.map(function (d) { var k = N.paraIso(d), v = rel.chuvaU[k]; return k > hojeIso ? null : v ? Math.round(v * 10) / 10 : 0; });
     var maxHa = rel.maxHa, maxMm = rel.maxMm;
     var marcas = [];
     if (x.ini) marcas.push({ xAxis: idxDe[N.paraIso(x.ini)], label: { formatter: 'Início ' + dataCurta(x.ini) } });
     if (x.fim) marcas.push({ xAxis: idxDe[N.paraIso(x.fim)], label: { formatter: 'Fim ' + dataCurta(x.fim) } });
     // o rótulo vertical fica menor quando as barras são muitas
-    var fonteRotulo = Math.max(8, Math.min(10.5, espaco * 0.7)) * k;
+    var fonteRotulo = Math.max(9, Math.min(11, espaco * 0.75)) * k;
     return N.opt({
       grid: { left: 48 * k, right: rel.temChuva ? 46 * k : 16 * k, top: 14 * k, bottom: 46 * k },
       tooltip: N.tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.06)' } }, formatter: function (ps) {
@@ -197,10 +203,10 @@
       xAxis: eixosDias(datasReais, k, espaco),
       yAxis: [
         Object.assign({}, N.eixoY, { type: 'value', max: Math.ceil(maxHa * 1.3),
-          axisLabel: { color: N.COR.fraco, fontSize: 11 * k, formatter: function (v) { return v > maxHa * 1.05 ? '' : N.fmtN(v); } }, splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
+          axisLabel: Object.assign({ color: TXT_EIXO, fontSize: 11 * k, formatter: function (v) { return v > maxHa * 1.05 ? '' : N.fmtN(v); } }, halo(k)), splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
         { type: 'value', show: rel.temChuva, position: 'right', min: 0, max: escalaMm(maxMm).max, interval: escalaMm(maxMm).passo, splitLine: { show: false },
           axisLine: { show: false }, axisTick: { show: false },
-          axisLabel: { color: COR_CHUVA, fontSize: 10.5 * k, formatter: function (v) { return v ? v + ' mm' : ''; } } }
+          axisLabel: Object.assign({ color: TXT_CHUVA, fontSize: 10.5 * k, formatter: function (v) { return v ? v + ' mm' : ''; } }, halo(k)) }
       ],
       series: [
         // chuva: mancha azul translúcida por cima das barras (eixo da direita), para ver a chuva nos dias de operação
@@ -211,10 +217,10 @@
           itemStyle: { color: x.cor, borderRadius: [2 * k, 2 * k, 0, 0] },
           // área do dia em cada barra, na vertical
           label: { show: espaco >= 7, position: 'top', rotate: 90, align: 'left', verticalAlign: 'middle', distance: 4 * k,
-            fontSize: fonteRotulo, color: N.COR.texto, textBorderColor: '#fff', textBorderWidth: 2 * k,
+            fontSize: fonteRotulo, fontWeight: 600, color: N.COR.texto, textBorderColor: '#fff', textBorderWidth: 3 * k,
             formatter: function (p) { return p.value ? N.fmtN(p.value) : ''; } },
           markLine: x.ini ? { silent: true, symbol: 'none', lineStyle: { color: N.COR.fraco, type: [4 * k, 4 * k], width: k },
-            label: { position: 'insideEndTop', color: N.COR.suave, fontSize: 10.5 * k }, data: marcas.concat(x.media ? [{ yAxis: Math.round(x.media), label: { position: 'insideEndTop', formatter: 'média ' + N.fmtN(x.media) + ' ha/dia' }, lineStyle: { color: x.cor, type: [6 * k, 4 * k], width: 1.2 * k } }] : []) } : undefined }
+            label: Object.assign({ position: 'insideEndTop', color: N.COR.texto, fontSize: 10.5 * k, fontWeight: 600 }, halo(k)), data: marcas.concat(x.media ? [{ yAxis: Math.round(x.media), label: { position: 'insideEndTop', formatter: 'média ' + N.fmtN(x.media) + ' ha/dia' }, lineStyle: { color: x.cor, type: [6 * k, 4 * k], width: 1.2 * k } }] : []) } : undefined }
       ]
     });
   }
@@ -238,7 +244,7 @@
         lineStyle: { color: x.cor, width: (atual ? 3.2 : 2) * k }, itemStyle: { color: x.cor },
         areaStyle: atual ? { color: 'rgba(12,90,80,.07)' } : undefined,
         // rótulo no fim só da safra atual (os finais das anteriores ficam próximos e se sobrepõem; estão nos cartões)
-        endLabel: { show: atual, color: N.COR.texto, fontSize: 11 * k, fontWeight: atual ? 700 : 500, distance: 6 * k,
+        endLabel: { show: atual, color: N.COR.texto, fontSize: 11.5 * k, fontWeight: 700, distance: 6 * k, textBorderColor: '#fff', textBorderWidth: 3 * k,
           formatter: function (p) { return N.nomeSafra(x.nome) + '  ' + (modoComp === 'pct' ? N.fmtN(p.value) + '%' : N.fmtN(p.value) + ' ha'); } },
         labelLayout: { moveOverlap: 'shiftY' },
         emphasis: { focus: 'series' } };
@@ -252,10 +258,10 @@
       } }),
       xAxis: eixoDatas(cats, k, false),
       yAxis: Object.assign({}, N.eixoY, { type: 'value', max: modoComp === 'pct' ? 100 : null,
-        axisLabel: { color: N.COR.fraco, fontSize: 11 * k, formatter: function (v) { return modoComp === 'pct' ? v + '%' : N.fmtN(v); } }, splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
+        axisLabel: Object.assign({ color: TXT_EIXO, fontSize: 11 * k, formatter: function (v) { return modoComp === 'pct' ? v + '%' : N.fmtN(v); } }, halo(k)), splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
       series: series.concat([{ type: 'line', data: [], silent: true,
         markLine: { silent: true, symbol: 'none', lineStyle: { color: N.COR.fraco, type: [3 * k, 3 * k], width: k },
-          label: { formatter: 'hoje', color: N.COR.suave, fontSize: 10.5 * k }, data: cats.some(function (d) { return N.paraIso(d) === hoje; }) ? [{ xAxis: dataCurta(N.hoje()) }] : [] } }])
+          label: Object.assign({ formatter: 'hoje', color: N.COR.texto, fontSize: 10.5 * k, fontWeight: 600 }, halo(k)), data: cats.some(function (d) { return N.paraIso(d) === hoje; }) ? [{ xAxis: dataCurta(N.hoje()) }] : [] } }])
     });
   }
 
@@ -312,7 +318,8 @@
   // ------------------------------------------------------------------
   // Exportar (PNG único ou PDF A4 deitado)
   // ------------------------------------------------------------------
-  var LARG = 1600, ESC = 1.25;
+  // LARG = largura base; ESC = pixels por unidade (nitidez ao dar zoom); KEXP = aumento das letras dos gráficos
+  var LARG = 1600, ESC = 1.5, KEXP = 1.2;
 
   function cabecalho(c, W, h, rel, imgs, compacto) {
     N.faixaMarca(c, W, h, imgs);
@@ -341,7 +348,7 @@
       N.escrever(c, dataCurta(x.ini) + ' → ' + (x.fim ? dataCurta(x.fim) : 'em andamento'), b.x + 18, b.y + 70, 17, 600, x.cor === '#eda100' ? '#9A6A00' : x.cor, w - 36);
       itensResumo(x, rel.o).slice(2).forEach(function (it, j) {
         var col = j % 2, lin = Math.floor(j / 2), cx = b.x + 18 + col * (w - 36) / 2, cy = b.y + 102 + lin * 40;
-        N.escrever(c, it[0], cx, cy, 12, 500, N.COR.fraco, (w - 36) / 2 - 8);
+        N.escrever(c, it[0], cx, cy, 12.5, 500, N.COR.suave, (w - 36) / 2 - 8);
         N.escrever(c, it[1], cx, cy + 18, 15, 650, N.COR.texto, (w - 36) / 2 - 8);
       });
     });
@@ -352,15 +359,22 @@
     N.escrever(c, N.nomeSafra(x.nome) + (x.anos === 0 ? '  (safra atual)' : ''), r.x + 38, r.y + 32, 18, 700, N.COR.texto, 360);
     // resuminho numa linha à direita do título
     var itens = x.ini ? itensResumo(x, rel.o) : [];
-    var xx = r.x + 420;
+    var xx = r.x + 400;
     itens.forEach(function (it) {
-      var larg = N.escrever(c, it[0] + ' ', xx, r.y + 32, 13, 500, N.COR.fraco, 200);
+      var larg = N.escrever(c, it[0] + ' ', xx, r.y + 32, 13.5, 500, N.COR.suave, 200);
       xx += larg;
-      xx += N.escrever(c, it[1], xx, r.y + 32, 13, 700, N.COR.texto, 260) + 18;
+      xx += N.escrever(c, it[1], xx, r.y + 32, 13.5, 700, N.COR.texto, 260) + 18;
     });
-    var a = { x: r.x + 8, y: r.y + 46, w: r.w - 16, h: r.h - 52 };
-    if (!x.ini) { N.escrever(c, 'Sem apontamentos nesta safra.', a.x + a.w / 2, a.y + a.h / 2, 15, 500, N.COR.fraco, a.w, 'center'); return; }
-    var img = await N.grafico(a.w, a.h, opcoesSafra(rel, x, 1, a.w), ESC);
+    // legenda do gráfico (dentro do cartão, fundo branco)
+    if (x.ini) {
+      var leg = [[x.cor, 'Área plantada no dia (ha)']];
+      if (x.media) leg.push([x.cor, 'Média da safra', 'tracejada']);
+      N.legendaCartao(c, leg, r.x + 20, r.y + 58);
+      if (rel.temChuva) legendaChuva(c, r.x + 470, r.y + 58);
+    }
+    var a = { x: r.x + 8, y: r.y + 66, w: r.w - 16, h: r.h - 72 };
+    if (!x.ini) { N.escrever(c, 'Sem apontamentos nesta safra.', a.x + a.w / 2, a.y + a.h / 2, 15, 500, N.COR.suave, a.w, 'center'); return; }
+    var img = await N.grafico(a.w, a.h, opcoesSafra(rel, x, KEXP, a.w), ESC);
     if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
   }
   async function cartaoComparativo(c, r, rel) {
@@ -369,14 +383,14 @@
     var itens = rel.safras.filter(function (x) { return x.ini; }).map(function (x) { return [x.cor, N.nomeSafra(x.nome), 'linha']; });
     N.legendaCartao(c, itens, r.x + 20, r.y + 60);
     var a = { x: r.x + 8, y: r.y + 72, w: r.w - 16, h: r.h - 80 };
-    var img = await N.grafico(a.w, a.h, opcoesComparativo(rel, 1), ESC);
+    var img = await N.grafico(a.w, a.h, opcoesComparativo(rel, KEXP), ESC);
     if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
   }
   function legendaChuva(c, x, y, cor) {
     // mancha azul (a mesma do gráfico)
     N.rr(c, x, y - 13, 18, 13, 2); c.fillStyle = 'rgba(42,120,214,.35)'; c.fill();
     c.strokeStyle = 'rgba(42,120,214,.8)'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(x, y - 13); c.lineTo(x + 18, y - 13); c.stroke();
-    N.escrever(c, 'Chuva do dia (mm, eixo da direita)', x + 26, y, 13, 500, cor || N.COR.suave, 420);
+    N.escrever(c, 'Chuva do dia (mm, eixo da direita)', x + 26, y, 12.5, 500, cor || N.COR.suave, 420);
   }
   async function imagens() {
     var r = await Promise.all([N.talvezImagem(N.fundoCultura(R.s)), N.talvezImagem('assets/logo_coa_branco.png')]);
@@ -391,11 +405,10 @@
   /** Relatório inteiro numa imagem só (1600 de largura base). */
   async function gerarPng() {
     var rel = R, imgs = await imagens(), W = LARG, M = 32, g = 16;
-    var hCab = 170, hCards = 236, hSafra = 330, hComp = 470;
+    var hCab = 170, hCards = 236, hSafra = 380, hComp = 490;
     var H = hCab + g + hCards + g + rel.safras.length * (hSafra + g) + hComp + g + 60;
     var t = novoCanvas(W, H), c = t.c, y = hCab + g;
     cabecalho(c, W, hCab, rel, imgs, false);
-    if (rel.temChuva) legendaChuva(c, W - 470, 150, '#D7E8E2');
     cartoes(c, { x: M, y: y, w: W - 2 * M, h: hCards }, rel); y += hCards + g;
     for (var i = 0; i < rel.safras.length; i++) { await cartaoSafra(c, { x: M, y: y, w: W - 2 * M, h: hSafra }, rel, rel.safras[i]); y += hSafra + g; }
     await cartaoComparativo(c, { x: M, y: y, w: W - 2 * M, h: hComp }, rel); y += hComp + g;
@@ -405,7 +418,11 @@
 
   /** PDF A4 deitado: página 1 = cartões + comparativo; depois 2 gráficos de safra por página. */
   async function gerarPdf() {
-    var jsPDF = await carregarJsPdf(), rel = R, imgs = await imagens();
+    var jsPDF = await carregarJsPdf(), rel = R, imgs = await imagens(), escAntes = ESC;
+    ESC = 2.6; // ~4200 px por página A4
+    try { return await montarPdf(jsPDF, rel, imgs); } finally { ESC = escAntes; }
+  }
+  async function montarPdf(jsPDF, rel, imgs) {
     var W = LARG, H = Math.round(LARG * 210 / 297), M = 32, g = 16, hCab = 110;
     var paginas = [];
     // página 1
@@ -419,7 +436,6 @@
     for (var i = 0; i < rel.safras.length; i += 2) {
       var q = novoCanvas(W, H), cq = q.c, yy = hCab + g, hS = (H - hCab - 2 * g - 56 - g) / 2;
       cabecalho(cq, W, hCab, rel, imgs, true);
-      if (rel.temChuva) legendaChuva(cq, W - 470, hCab - 14, '#D7E8E2');
       for (var j = i; j < Math.min(i + 2, rel.safras.length); j++) { await cartaoSafra(cq, { x: M, y: yy, w: W - 2 * M, h: hS }, rel, rel.safras[j]); yy += hS + g; }
       rodape(cq, W, H - 20);
       paginas.push(q.cv);
@@ -427,7 +443,7 @@
     var pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
     paginas.forEach(function (cv, k) {
       if (k) pdf.addPage('a4', 'landscape');
-      pdf.addImage(cv.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
+      pdf.addImage(cv.toDataURL('image/png'), 'PNG', 0, 0, 297, 210, undefined, 'FAST');
     });
     pdf.setProperties({ title: 'Comparativo de safras - ' + N.titulo(rel.u), creator: 'COA WEB · Acompanhamento Operacional' });
     return pdf.output('blob');
