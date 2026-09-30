@@ -1320,7 +1320,7 @@
   var exp = { formato: FORMATOS[ls('formatoPng')] ? ls('formatoPng') : 'paisagem', blob: null, url: null, arquivo: '', gerando: 0, tam: null };
   var FAMILIA = '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif';
   var COR_BARRA = '#0F4B45';
-  var TXT_PREVISAO = 'A previsão de término usa o rendimento médio dos últimos 7 dias como base ou, se não houver operação nesse período, o rendimento médio geral.';
+  var TXT_PREVISAO = 'Pelo ritmo médio dos últimos 7 dias (sem operação no período, pela média geral).';
 
   function carregarImagem(src) {
     return new Promise(function (ok, falha) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = falha; i.src = src; });
@@ -1382,7 +1382,8 @@
   function cartaoNumero(c, r, titulo, valor) {
     caixa(c, r);
     var yt = paragrafo(c, titulo, r.x + r.w / 2, r.y + 30, r.w - 18, 15, 500, COR.texto, 'center');
-    escrever(c, valor, r.x + r.w / 2, Math.max(yt + 52, r.y + r.h * 0.74), 32, 600, COR.texto, r.w - 18, 'center');
+    // valor sempre na base do cartão (o título pode ter 1 a 3 linhas)
+    escrever(c, valor, r.x + r.w / 2, Math.max(yt + 36, r.y + r.h - 16), 30, 600, COR.texto, r.w - 18, 'center');
   }
   /** Título + valor grande em cima; título + valor menor embaixo (como "Área de plantio / Área cadastrada"). */
   function cartaoPar(c, r, a, b, grande) {
@@ -1527,7 +1528,6 @@
     caixa(c, r);
     var pl = m.o === 'PLANTIO';
     escrever(c, 'Mapa de evolução de ' + (pl ? 'plantio' : 'colheita'), r.x + r.w / 2, r.y + 30, 16, 600, COR.texto, r.w - 140, 'center');
-    if (imgs.rosa) { var rs = 58; c.drawImage(imgs.rosa, r.x + r.w - rs - 14, r.y + 12, rs, rs * imgs.rosa.height / imgs.rosa.width); }
     var rot = rotulosClasse(m.o);
     legendaHorizontal(c, [3, 2, 1, 0].map(function (k) { return { nome: rot[k], cor: COR.s[k], borda: k === 0 }; }), r.x + r.w / 2, r.y + r.h - 16, 13);
     var a = { x: r.x + 10, y: r.y + 46, w: r.w - 20, h: r.h - 46 - 34 };
@@ -1536,6 +1536,13 @@
       return desenharMapaFazenda(el, u, m, comp, { semZoom: true, rotulos: true, fonte: 9, fonteTitulo: 13 });
     }, pr);
     if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
+    // rosa dos ventos depois do mapa (por cima), inteira dentro do quadro, sobre um fundo branco
+    if (imgs.rosa) {
+      var rw = 46, rh = rw * imgs.rosa.height / imgs.rosa.width, rx = a.x + a.w - rw - 10, ry = a.y + 8;
+      c.save(); c.shadowColor = 'rgba(16,54,50,.12)'; c.shadowBlur = 6;
+      rr(c, rx - 6, ry - 6, rw + 12, rh + 12, 8); c.fillStyle = 'rgba(255,255,255,.9)'; c.fill(); c.restore();
+      c.drawImage(imgs.rosa, rx, ry, rw, rh);
+    }
   }
   /** "Todas": no lugar do mapa, a lista das fazendas com a barra de progresso. */
   function cartaoListaFazendas(c, r, m) {
@@ -1639,15 +1646,41 @@
     escrever(c, rotulo, x, y, 17, 500, COR.teal, w, alinhar);
     escrever(c, valor, x, y + 28, 21, 600, COR.texto, w, alinhar);
   }
+  /** Itens do "Resumo do período": situação, ritmo × meta e o comparativo com as safras anteriores. */
+  function itensResumo(m) {
+    var pl = m.o === 'PLANTIO', itens = [];
+    itens.push(['Situação', m.restante > 0 ? fmtPct(m.pct, 1) + ' · faltam ' + fmtN(m.restante) + ' ha' : 'Operação concluída', null]);
+    if (m.media7 && m.metaHoje) {
+      var r = m.media7 / m.metaHoje - 1;
+      itens.push(['Ritmo 7 dias × meta', fmtN(m.media7) + ' × ' + fmtN(m.metaHoje) + ' ha/dia', r >= 0 ? '#1E7B4F' : r > -0.1 ? '#B7791F' : '#B3261E']);
+    } else if (m.media7) itens.push(['Ritmo dos últimos 7 dias', fmtN(m.media7) + ' ha/dia', null]);
+    var feito = soma(m.serie, function (x) { return x.a; });
+    (m.comparativos || []).forEach(function (cp, i) {
+      var antes = soma(m.serie, function (x) { return x.comp ? x.comp[i] : 0; });
+      var dif = antes > 0 ? feito / antes - 1 : null;
+      itens.push([nomeSafra(cp.nome) + ' até ' + (m.ult ? fmtData(anosAntes(m.ult, cp.anos), true) : '—'),
+        fmtN(antes) + ' ha' + (dif === null ? '' : dif >= 2 ? ' (atual ' + fmtN(dif + 1, dif < 9 ? 1 : 0) + '× maior)' : ' (atual ' + (dif >= 0 ? '+' : '') + fmtPct(dif) + ')'), dif === null ? null : dif >= 0 ? '#1E7B4F' : '#B3261E']);
+    });
+    if (itens.length < 4 && m.equipes.length) itens.push(['Equipes em operação', equipesUltimos7(m).length + ' nos últimos 7 dias', null]);
+    return itens.slice(0, 4);
+  }
   function blocoObservacao(c, r, m) {
     rr(c, r.x, r.y, r.w, r.h, 10); c.strokeStyle = COR.linha; c.lineWidth = 1.2; c.stroke();
-    c.strokeStyle = COR.fraco; c.lineWidth = 1.4; c.beginPath(); c.arc(r.x + 20, r.y + 22, 7, 0, 2 * Math.PI); c.stroke();
-    escrever(c, 'i', r.x + 20, r.y + 26.5, 11, 700, COR.fraco, 10, 'center');
-    escrever(c, 'Observação', r.x + 34, r.y + 27, 14, 600, COR.suave, r.w - 44);
-    var t = m.o === 'PLANTIO'
-      ? 'A área executada soma os apontamentos de plantio sem replantio, limitados à área de cada talhão (área produtiva − área de dano).'
-      : 'A área executada soma os apontamentos de colheita, limitados à área de cada talhão (área produtiva − área de dano).';
-    paragrafo(c, t, r.x + 12, r.y + 52, r.w - 24, 12.5, 400, COR.fraco, 'left', 17);
+    escrever(c, 'Resumo do período', r.x + 14, r.y + 26, 14.5, 700, COR.escuro, r.w - 28);
+    var itens = itensResumo(m), col = r.w > 500 ? 2 : 1, cw = (r.w - 28) / col, porCol = Math.max(1, Math.ceil(itens.length / col));
+    var passo = Math.min(40, (r.h - 44) / porCol);
+    itens.forEach(function (it, i) {
+      var x = r.x + 14 + Math.floor(i / porCol) * cw, y = r.y + 50 + (i % porCol) * passo;
+      escrever(c, it[0], x, y, 11.5, 500, COR.fraco, cw - 10);
+      escrever(c, it[1], x, y + 17, 14, 650, it[2] || COR.texto, cw - 10);
+    });
+  }
+  /** Safra num selo discreto (no lugar do quadrado preto do relatório original). */
+  function seloSafra(c, texto, x, y, alinhar, maxW) {
+    c.font = fonteCv(15, 600);
+    var w = Math.min(maxW || 999, c.measureText(texto).width + 26), x0 = alinhar === 'center' ? x - w / 2 : x;
+    rr(c, x0, y - 20, w, 28, 14); c.fillStyle = '#E4F0EB'; c.fill();
+    escrever(c, texto, x0 + w / 2, y - 1, 15, 600, COR.teal, w - 16, 'center');
   }
   function lateral(c, r, m, u, imgs) {
     c.save(); c.shadowColor = 'rgba(16,54,50,.10)'; c.shadowBlur = 12;
@@ -1658,17 +1691,17 @@
     y += desenharFoto(c, imgs.maquina, cx, y, r.w - 20, 120) + 18;
     if (!imgs.maquina) y += 8;
     escrever(c, 'Unidade:', cx, y + 16, 17, 400, COR.teal, w, 'center');
-    escrever(c, u === TODAS ? 'Todas' : titulo(u), cx, y + 54, 32, 700, COR.escuro, w, 'center'); y += 90;
-    c.fillStyle = '#1C1C1C'; c.fillRect(x, y - 14, 16, 16);
-    escrever(c, nomeSafra(m.s).toUpperCase(), x + 26, y, 19, 500, COR.texto, w - 26); y += 52;
+    escrever(c, u === TODAS ? 'Todas' : titulo(u), cx, y + 54, 32, 700, COR.escuro, w, 'center'); y += 76;
+    seloSafra(c, nomeSafra(m.s), cx, y + 14, 'center', w); y += 64;
     [['Início da operação', m.ini], ['Último dia de operação', m.ult], ['Data final planejada', m.termino]].forEach(function (d) {
-      dataRotulo(c, x, y, d[0], d[1] ? fmtData(d[1]) : '—', w); y += 78;
+      dataRotulo(c, x, y, d[0], d[1] ? fmtData(d[1]) : '—', w); y += 74;
     });
-    var box = { x: r.x + 8, y: y - 26, w: r.w - 16, h: 190 };
+    var box = { x: r.x + 8, y: y - 26, w: r.w - 16, h: 138 };
     rr(c, box.x, box.y, box.w, box.h, 10); c.strokeStyle = COR.linha; c.lineWidth = 1.2; c.stroke();
     dataRotulo(c, x, y + 6, 'Previsão de término', m.previsao ? fmtData(m.previsao) : '—', w);
-    paragrafo(c, TXT_PREVISAO, box.x + 12, y + 66, box.w - 24, 12.5, 400, COR.fraco, 'left', 17);
-    blocoObservacao(c, { x: r.x + 8, y: r.y + r.h - 206, w: r.w - 16, h: 150 }, m);
+    paragrafo(c, TXT_PREVISAO, box.x + 12, y + 62, box.w - 24, 12, 400, COR.fraco, 'left', 16);
+    var yObs = box.y + box.h + 10;
+    blocoObservacao(c, { x: r.x + 8, y: yObs, w: r.w - 16, h: r.y + r.h - 44 - yObs }, m);
     escrever(c, 'Fonte: PIMS', r.x + 22, r.y + r.h - 22, 13, 500, COR.suave, w);
     c.save(); c.translate(r.x - 12, r.y + r.h - 18); c.rotate(-Math.PI / 2);
     escrever(c, 'Desenvolvido por Centro de Operações Agrícolas', 0, 0, 11.5, 400, '#5FB8AE', 420);
@@ -1718,26 +1751,41 @@
     var bb = comp.mp.features.map(bboxFeature).filter(Boolean).reduce(uniao);
     return (bb[2] - bb[0]) / Math.max(1, bb[3] - bb[1]);
   }
-  /** Página 1920 × 1080 do relatório. Fazenda alta: o mapa ocupa duas faixas (como na página de Guapirama do Power BI). */
+  /**
+   * Página 1920 × 1080 do relatório, com o mesmo espaço (G) entre todos os cartões e a barra lateral.
+   * As larguras relativas seguem o Power BI. Fazenda alta: o mapa ocupa duas faixas (como a página
+   * de Guapirama do Power BI).
+   */
   function layoutPaisagem(todas, comp, nVar) {
-    var y1 = 129, h1 = 121, K = {
-      area: { x: 266, y: y1, w: 155, h: h1 }, exec: { x: 431, y: y1, w: 151, h: h1 }, dec: { x: 592, y: y1, w: 120, h: h1 },
-      plan: { x: 722, y: y1, w: 112, h: h1 }, prev: { x: 844, y: y1, w: 113, h: h1 }, gauge: { x: 967, y: y1, w: 234, h: h1 },
-      talh: { x: 1211, y: y1, w: 284, h: h1 }, ritmo: { x: 1505, y: y1, w: 285, h: h1 }, rep: { x: 1800, y: y1, w: 103, h: h1 }
-    };
-    var L = { W: 1920, H: 1080, cabH: 205, tituloX: 285, lateral: { x: 25, y: 23, w: 239, h: 1057 }, kpis: K,
-      dano: { x: 267, y: 260, w: 270, h: 66 }, donut: { x: 267, y: 336, w: 270, h: 130 } };
+    var G = 10, LAT = { x: 25, y: 23, w: 239, h: 1057 }, X0 = LAT.x + LAT.w + G, X1 = 1920 - LAT.x;
+    /** Distribui larguras relativas entre x0 e x1 com o espaço G entre elas. */
+    function faixa(pesos, x0, x1, y, h) {
+      var tot = soma(pesos, function (p) { return p; }), livre = x1 - x0 - G * (pesos.length - 1), x = x0;
+      return pesos.map(function (p) { var w = livre * p / tot, r = { x: x, y: y, w: w, h: h }; x += w + G; return r; });
+    }
+    var yK = 129, hK = 121, y2 = yK + hK + G, h2 = 206, y3 = y2 + h2 + G, h3 = 244, y4 = y3 + h3 + G, yFim = 1068;
+    var k = faixa([155, 151, 120, 112, 113, 234, 284, 285, 103], X0, X1, yK, hK);
+    var L = { W: 1920, H: 1080, cabH: 205, tituloX: X0 + 12, lateral: LAT, G: G,
+      kpis: { area: k[0], exec: k[1], dec: k[2], plan: k[3], prev: k[4], gauge: k[5], talh: k[6], ritmo: k[7], rep: k[8] } };
     var a = aspectoFazenda(comp), cabe = function (w, h) { var lw = Math.min(w, h * a); return lw * lw / a; };
     L.alto = !todas && !!comp && cabe(586, 552) > cabe(636, 382) * 1.25;
+    var c = faixa(L.alto ? [270, 200, 160, 360, 606] : [270, 230, 160, 280, 656], X0, X1, y2, h2);
+    var hDano = 66;
+    L.dano = { x: c[0].x, y: y2, w: c[0].w, h: hDano };
+    L.donut = { x: c[0].x, y: y2 + hDano + G, w: c[0].w, h: h2 - hDano - G };
+    L.eq7 = c[1]; L.eqT = c[2]; L.vari = c[3];
+    var fimEsq = c[3].x + c[3].w, larg = X1 - X0;
+    L.meta = { x: X0, y: y3, w: fimEsq - X0, h: h3 };
+    var hTal = (yFim - y4 - G) / 2;
     if (L.alto) {
-      Object.assign(L, { eq7: { x: 547, y: 260, w: 200, h: 206 }, eqT: { x: 757, y: 260, w: 160, h: 206 }, vari: { x: 927, y: 260, w: 360, h: 206 },
-        mapa: { x: 1297, y: 260, w: 606, h: 640 }, meta: { x: 267, y: 476, w: 1020, h: 244 },
-        tal: [{ x: 267, y: 730, w: 1020, h: 170 }, { x: 267, y: 910, w: 1636, h: 158 }] });
+      L.mapa = { x: c[4].x, y: y2, w: c[4].w, h: y4 + hTal - y2 };
+      L.tal = [{ x: X0, y: y4, w: fimEsq - X0, h: hTal }, { x: X0, y: y4 + hTal + G, w: larg, h: hTal }];
     } else {
-      Object.assign(L, { eq7: { x: 547, y: 260, w: 230, h: 206 }, eqT: { x: 787, y: 260, w: 160, h: 206 }, vari: { x: 957, y: 260, w: 280, h: 206 },
-        mapa: { x: 1247, y: 260, w: 656, h: 460 }, meta: { x: 267, y: 476, w: 970, h: 244 },
-        tal: todas ? [{ x: 267, y: 730, w: 1636, h: 338 }] : [{ x: 267, y: 730, w: 1636, h: 170 }, { x: 267, y: 910, w: 1636, h: 158 }] });
+      L.mapa = { x: c[4].x, y: y2, w: c[4].w, h: y3 + h3 - y2 };
+      L.tal = todas ? [{ x: X0, y: y4, w: larg, h: yFim - y4 }] : [{ x: X0, y: y4, w: larg, h: hTal }, { x: X0, y: y4 + hTal + G, w: larg, h: hTal }];
     }
+    // muitas variedades: a faixa do meio cresce (o gráfico diário encolhe); se ainda faltar, o cartão
+    // das variedades ocupa o lugar do "Área total por equipe" (duas colunas)
     var extra = Math.max(0, Math.min(90, 52 + (nVar || 0) * 17 - L.vari.h));
     if (extra) {
       [L.eq7, L.eqT, L.vari].forEach(function (r) { r.h += extra; });
@@ -1773,7 +1821,7 @@
       var nl = Math.max(1, Math.min(5, Math.ceil(m.talhoes.length / 45)));
       for (var i = 0; i < nl; i++) { L.tal.push({ x: M, y: y, w: lw, h: i ? 170 : 196 }); y += (i ? 170 : 196) + g; }
     }
-    L.nota = { x: M, y: y, w: lw, h: 122 }; y += 122 + M;
+    L.nota = { x: M, y: y, w: lw, h: 170 }; y += 170 + M;
     L.H = y;
     return L;
   }
@@ -1787,8 +1835,8 @@
     var x = r.x + wl + 30, w = r.w - wl - 50;
     escrever(c, 'Unidade:', x, r.y + 44, 17, 400, COR.teal, w);
     escrever(c, u === TODAS ? 'Todas as fazendas' : titulo(u), x, r.y + 88, 36, 700, COR.escuro, w * 0.62);
-    c.fillStyle = '#1C1C1C'; c.fillRect(x + w * 0.66, r.y + 72, 16, 16);
-    escrever(c, nomeSafra(m.s).toUpperCase(), x + w * 0.66 + 26, r.y + 87, 19, 500, COR.texto, w * 0.34 - 26);
+    c.font = fonteCv(15, 600);
+    seloSafra(c, nomeSafra(m.s), x + w - Math.min(w * 0.34, c.measureText(nomeSafra(m.s)).width + 26), r.y + 86, 'left', w * 0.34);
     var cw = w / 2;
     [['Início da operação', m.ini], ['Último dia de operação', m.ult], ['Data final planejada', m.termino], ['Previsão de término', m.previsao]].forEach(function (d, i) {
       dataRotulo(c, x + (i % 2) * cw, r.y + 150 + Math.floor(i / 2) * 84, d[0], d[1] ? fmtData(d[1]) : '—', cw - 16);
