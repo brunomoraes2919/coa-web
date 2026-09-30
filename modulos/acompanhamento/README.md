@@ -20,6 +20,17 @@ o mapa em duas faixas, como a página de Guapirama do Power BI. Em "Todas", o ma
 fazendas e as barras mostram o % de cada fazenda. No celular, **Compartilhar** manda a imagem direto
 para o WhatsApp.
 
+Os mapas (painel, ampliado, Modo TV e imagem exportada) têm o mapa base **Esri Topo** clareado atrás
+dos talhões (o mesmo "Topográfico claro" do Mapa de Chuva, com a fonte no canto) e os nomes dos
+talhões com um contorno branco. As miniaturas da tela "Todas" ficam sem mapa base.
+
+Variedades: "A DEFINIR" (variedade ainda não informada no PIMS) não entra na lista. A lista aparece
+inteira, sem rolagem; na imagem, com muitas variedades o cartão cresce (o gráfico diário encolhe) e,
+se ainda faltar espaço, vira duas colunas.
+
+O fundo das faixas (painel, Modo TV e imagem) é a ilustração da cultura da safra em `assets/fundo_*.webp`
+(soja, milho/silagem, sorgo/milheto, algodão).
+
 A foto da máquina (barra lateral, faixa do painel e Modo TV) sai de `assets/`: `trator_8r.webp` no
 plantio; na colheita, `colheitadeira_milho.webp` (milho), `colhedora_algodao.webp` (algodão) e
 `colheitadeira_soja.webp` (soja e demais grãos). Sem o arquivo, a faixa fica sem foto.

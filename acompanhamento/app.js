@@ -313,7 +313,11 @@
     }).sort(function (a, b) { return b.ult7 - a.ult7 || b.total - a.total; });
 
     var vr = {};
-    m.talhoes.forEach(function (t) { var k = t.variedade || 'Sem variedade'; var v = vr[k] = vr[k] || { v: k, prev: 0, exec: 0 }; v.prev += t.base; v.exec += t.efetivo; });
+    m.talhoes.forEach(function (t) {
+      // "A DEFINIR" é só o marcador do PIMS para variedade ainda não informada: não entra na lista
+      if (!t.variedade || /^A\s*DEFINIR$/i.test(String(t.variedade).trim())) return;
+      var v = vr[t.variedade] = vr[t.variedade] || { v: t.variedade, prev: 0, exec: 0 }; v.prev += t.base; v.exec += t.efetivo;
+    });
     m.variedades = Object.keys(vr).map(function (k) { return vr[k]; }).sort(function (a, b) { return b.prev - a.prev; });
     return m;
   }
@@ -460,10 +464,12 @@
       '<br><b>' + fmtPct(x.perc) + '</b> · ' + fmtN(x.efetivo) + ' de ' + fmtN(x.base) + ' ha' +
       (x.enc ? '<br>Plantio encerrado no PIMS' : '') + (x.variedade ? '<br><span style="color:#5B6B62">' + esc(x.variedade) + '</span>' : '');
   }
-  function dadosMapa(mp, faz) {
+  function dadosMapa(mp, faz, topo) {
     return mp.features.map(function (f) {
       var x = mp.porId[f.properties.name], cor = corClasse(x ? x.k : -1);
-      return { name: f.properties.name, talhao: f.properties.talhao, x: x, faz: faz, itemStyle: { areaColor: cor }, emphasis: { itemStyle: { areaColor: cor } } };
+      // com o mapa base, o talhão fica levemente translúcido (o relevo aparece por baixo)
+      var op = !topo ? 1 : !x ? 0.55 : x.k === 0 ? 0.82 : 0.93;
+      return { name: f.properties.name, talhao: f.properties.talhao, x: x, faz: faz, itemStyle: { areaColor: cor, opacity: op }, emphasis: { itemStyle: { areaColor: cor, opacity: 1 } } };
     });
   }
   var registrados = {};
@@ -474,35 +480,123 @@
   /** layoutSize que faz o mapa (aspecto a = largura/altura) caber no quadro fw × fh. */
   function tamanhoQueCabe(a, fw, fh) { return (a >= 1 ? Math.min(fw, fh * a) : Math.min(fh, fw / a)) * 0.94; }
 
+  // ---- mapa base Esri Topo atrás dos talhões (o "Topográfico claro" do Mapa de Chuva) ----
+  // Os tiles viram imagens do próprio gráfico, posicionadas pela projeção do mapa; o Esri responde
+  // com Access-Control-Allow-Origin: *, então a imagem exportada continua podendo ser gerada.
+  var TOPO = {
+    url: function (z, x, y) { return 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/' + z + '/' + y + '/' + x; },
+    maxZoom: 17, clarear: 0.35, maxTiles: 160, atribuicao: 'Mapa base: Esri, HERE, Garmin, © OpenStreetMap'
+  };
+  var R_TERRA = 6378137, ORIGEM = Math.PI * R_TERRA, cacheTiles = {};
+  function lonLat(mx, my) { return [mx / R_TERRA * 180 / Math.PI, (2 * Math.atan(Math.exp(my / R_TERRA)) - Math.PI / 2) * 180 / Math.PI]; }
+  function tile(z, x, y, aoCarregar) {
+    var k = z + '/' + x + '/' + y, t = cacheTiles[k];
+    if (!t) {
+      t = cacheTiles[k] = { img: new Image(), ok: false, erro: false, espera: [] };
+      t.img.crossOrigin = 'anonymous';
+      var fim = function (ok) { t.ok = ok; t.erro = !ok; t.espera.splice(0).forEach(function (f) { f(); }); };
+      t.img.onload = function () { fim(true); };
+      t.img.onerror = function () { fim(false); };
+      t.img.src = TOPO.url(z, x, y);
+    }
+    if (!t.ok && !t.erro && aoCarregar) t.espera.push(aoCarregar);
+    return t;
+  }
+  function agendarTopo(g) {
+    var st = g && g.__topo;
+    if (!st || st.agendado) return;
+    st.agendado = true;
+    requestAnimationFrame(function () { st.agendado = false; atualizarTopo(g); });
+  }
+  function atualizarTopo(g) {
+    var st = g.__topo;
+    if (!st || g.isDisposed()) return;
+    var filhos = [], pend = 0, pr = st.pr || window.devicePixelRatio || 1;
+    var GW = g.getWidth(), GH = g.getHeight();
+    st.quadros.forEach(function (qq) {
+      var q = { i: qq.i, x: 0, y: qq.fy * GH, w: GW, h: qq.fh * GH };
+      var p0 = g.convertFromPixel({ seriesIndex: q.i }, [q.x, q.y]), p1 = g.convertFromPixel({ seriesIndex: q.i }, [q.x + q.w, q.y + q.h]);
+      if (!p0 || !p1) return;
+      if (!(q.w > 0 && q.h > 0) || !isFinite(p0[0] + p0[1] + p1[0] + p1[1])) return;
+      var a = merc(p0[0], p0[1]), b = merc(p1[0], p1[1]);
+      var minX = Math.min(a[0], b[0]), maxX = Math.max(a[0], b[0]), minY = Math.min(a[1], b[1]), maxY = Math.max(a[1], b[1]);
+      var z = Math.max(3, Math.min(TOPO.maxZoom, Math.round(Math.log(156543.034 * q.w * pr / Math.max(1, maxX - minX)) / Math.LN2))), tam, x0, x1, y0, y1;
+      if (!isFinite(z)) return;
+      for (;;) {
+        tam = 2 * ORIGEM / Math.pow(2, z);
+        x0 = Math.floor((minX + ORIGEM) / tam); x1 = Math.floor((maxX + ORIGEM) / tam);
+        y0 = Math.floor((ORIGEM - maxY) / tam); y1 = Math.floor((ORIGEM - minY) / tam);
+        if ((x1 - x0 + 1) * (y1 - y0 + 1) <= TOPO.maxTiles || z <= 3) break;
+        z--;
+      }
+      // os tiles do quadro são montados num canvas do tamanho do quadro (o recorte fica na borda dele)
+      var cv = document.createElement('canvas'), k = Math.max(1, pr);
+      cv.width = Math.max(1, Math.round(q.w * k)); cv.height = Math.max(1, Math.round(q.h * k));
+      var cx = cv.getContext('2d');
+      cx.setTransform(k, 0, 0, k, -q.x * k, -q.y * k);
+      for (var tx = x0; tx <= x1; tx++) for (var ty = y0; ty <= y1; ty++) {
+        var t = tile(z, tx, ty, function () { agendarTopo(g); });
+        if (!t.ok) { if (!t.erro) pend++; continue; }
+        var bx0 = tx * tam - ORIGEM, by1 = ORIGEM - ty * tam;
+        var c0 = g.convertToPixel({ seriesIndex: q.i }, lonLat(bx0, by1)), c1 = g.convertToPixel({ seriesIndex: q.i }, lonLat(bx0 + tam, by1 - tam));
+        // meio pixel a mais em cada lado: sem frestas entre os tiles
+        cx.drawImage(t.img, c0[0] - 0.25, c0[1] - 0.25, c1[0] - c0[0] + 0.5, c1[1] - c0[1] + 0.5);
+      }
+      cx.setTransform(1, 0, 0, 1, 0, 0);
+      cx.fillStyle = 'rgba(255,255,255,' + TOPO.clarear + ')'; cx.fillRect(0, 0, cv.width, cv.height);
+      filhos.push({ id: 'topo-q' + qq.i, type: 'image', silent: true, z: 1, style: { image: cv, x: q.x, y: q.y, width: q.w, height: q.h } });
+    });
+    st.pendentes = pend;
+    // cada quadro tem o seu elemento (id próprio): a troca não mexe nos títulos nem na fonte do mapa base
+    if (filhos.length) g.setOption({ graphic: filhos });
+    if (!pend) st.prontos.splice(0).forEach(function (f) { f(); });
+  }
+  /** Espera os tiles da vista atual (para exportar a imagem já com o mapa base). */
+  function aguardarTopo(g, ms) {
+    var st = g && g.__topo;
+    if (!st || st.pendentes === 0) return Promise.resolve();
+    return new Promise(function (ok) { st.prontos.push(ok); setTimeout(ok, ms || 10000); });
+  }
+
   function desenharMapaFazenda(el, u, m, comp, opcoes) {
     opcoes = opcoes || {};
-    var mp = comp.mp, W = el.clientWidth, H = el.clientHeight, series = [], graphic = [];
+    var comTopo = opcoes.topo !== false && !(opcoes.estatico && !opcoes.rotulos);
+    var mp = comp.mp, W = el.clientWidth, H = el.clientHeight, series = [], graphic = [], quadros = [];
     var y = 0, vao = comp.quadros.length > 1 ? 10 : 0, alturaUtil = H - vao * (comp.quadros.length - 1);
-    var dados = dadosMapa(mp, opcoes.faz ? u : null), porNome = {};
+    var dados = dadosMapa(mp, opcoes.faz ? u : null, comTopo), porNome = {};
     dados.forEach(function (d) { porNome[d.name] = d; });
     comp.quadros.forEach(function (q, i) {
       var fh = comp.quadros.length > 1 ? alturaUtil * q.fr : H, topo = q.titulo ? Math.round((opcoes.fonteTitulo || 12) * 1.8) : 0;
       var a = (q.bbox[2] - q.bbox[0]) / Math.max(1, q.bbox[3] - q.bbox[1]);
       var nome = registrar(u + '|' + mp.rotulo + '|' + (comp.quadros.length > 1 ? 'q' + i : 'todo'), q.fs);
       var lat = (Math.atan(Math.exp(((q.bbox[1] + q.bbox[3]) / 2) / 6378137)) * 2 - Math.PI / 2);
-      if (q.titulo) graphic.push({ type: 'text', left: 4, top: y + 2, style: { text: q.titulo, fontSize: opcoes.fonteTitulo || 12, fontWeight: 600, fill: COR.suave } });
+      quadros.push({ i: i, fy: y / Math.max(1, H), fh: fh / Math.max(1, H) });
+      if (q.titulo) graphic.push({ id: 'titulo' + i, type: 'text', z: 100, left: 4, top: y + 2, style: { text: q.titulo, fontSize: opcoes.fonteTitulo || 12, fontWeight: 600, fill: COR.texto, stroke: '#FFFFFF', lineWidth: 3 } });
       series.push({
         type: 'map', map: nome, roam: !opcoes.estatico && !opcoes.semZoom, selectedMode: false, aspectScale: Math.cos(lat),
         layoutCenter: [W / 2, y + topo + (fh - topo) / 2], layoutSize: tamanhoQueCabe(a, W, fh - topo),
         scaleLimit: { min: 0.8, max: 14 },
         itemStyle: { borderColor: '#FFFFFF', borderWidth: opcoes.estatico ? 0.4 : 0.8 },
-        emphasis: { label: { show: !opcoes.estatico, color: '#000', fontWeight: 700 }, itemStyle: { borderColor: COR.escuro, borderWidth: 1.4 } },
-        label: { show: !opcoes.estatico || !!opcoes.rotulos, fontSize: opcoes.fonte || (opcoes.grande ? 11 : 9), color: COR.texto, formatter: function (p) { return p.data ? p.data.talhao : ''; } },
+        emphasis: { label: { show: !opcoes.estatico, color: '#000', fontWeight: 700, textBorderColor: '#FFFFFF', textBorderWidth: 3 }, itemStyle: { borderColor: COR.escuro, borderWidth: 1.4 } },
+        // nome do talhão com um pequeno contorno branco (legível sobre qualquer cor e sobre o mapa base)
+        label: { show: !opcoes.estatico || !!opcoes.rotulos, fontSize: opcoes.fonte || (opcoes.grande ? 11 : 9), color: COR.texto, textBorderColor: '#FFFFFF',
+          textBorderWidth: Math.max(2, (opcoes.fonte || (opcoes.grande ? 11 : 9)) * 0.28), formatter: function (p) { return p.data ? p.data.talhao : ''; } },
         labelLayout: { hideOverlap: true },
         data: q.fs.map(function (f) { return porNome[f.properties.name]; }),
         cursor: opcoes.aoClicar ? 'pointer' : 'default'
       });
       y += fh + vao;
     });
+    // a camada do mapa base de cada quadro já nasce na opção; as atualizações a trocam pelo id
+    if (comTopo) quadros.forEach(function (q) { graphic.unshift({ id: 'topo-q' + q.i, type: 'image', silent: true, z: 1, style: { x: 0, y: 0, width: 0, height: 0 } }); });
+    if (comTopo) graphic.push({ id: 'topo-fonte', type: 'text', z: 100, right: 4, bottom: 3, silent: true,
+      style: { text: TOPO.atribuicao, fontSize: opcoes.fonteAtribuicao || 9, fill: COR.suave, backgroundColor: 'rgba(255,255,255,.75)', padding: [1, 4], borderRadius: 3 } });
     var g = chart(el);
     g.setOption(opt({ tooltip: tt({ trigger: 'item', formatter: tooltipTalhao }), graphic: graphic, series: series }), true);
-    g.off('click');
+    g.off('click'); g.off('georoam');
     if (opcoes.aoClicar) g.on('click', opcoes.aoClicar);
+    g.__topo = comTopo ? { quadros: quadros, pr: opcoes.pixelRatio, prontos: [], pendentes: 1 } : null;
+    if (comTopo) { g.on('georoam', function () { agendarTopo(g); }); atualizarTopo(g); }
     return g;
   }
 
@@ -549,6 +643,13 @@
     if (c === 'ALGODAO') return { src: 'assets/colhedora_algodao.webp', alt: 'Colhedora de algodão' };
     return { src: 'assets/colheitadeira_soja.webp', alt: 'Colheitadeira com plataforma draper' };
   }
+  /** Ilustração em traço da cultura no fundo da faixa (soja, milho, sorgo ou algodão). */
+  function fundoCultura(s) {
+    var c = cultura(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    var f = ({ MILHO: 'milho', SILAGEM: 'milho', SORGO: 'sorgo', MILHETO: 'sorgo', ALGODAO: 'algodao' })[c] || 'soja';
+    return 'assets/fundo_' + f + '.webp';
+  }
+  function aplicarFundo(el, s) { el.style.setProperty('--fundo-cultura', 'url("' + fundoCultura(s) + '")'); }
   /** Mostra a foto só depois que ela carrega (sem foto, a faixa fica limpa). */
   function mostrarMaquina(img, m) {
     var f = fotoMaquina(m);
@@ -569,6 +670,7 @@
     var datas = [['Início', m.ini], ['Último apontamento', m.ult], ['Término planejado', m.termino], ['Previsão de término', m.previsao]];
     $('d-datas').innerHTML = datas.map(function (d) { return '<li><span>' + d[0] + '</span><b>' + (d[1] ? fmtData(d[1]) : '—') + '</b></li>'; }).join('');
     mostrarMaquina($('d-maquina'), m);
+    aplicarFundo($('destaque'), m.s);
   }
 
   function renderSituacao(m) {
@@ -580,7 +682,7 @@
     }).join('') + '</div>' +
       '<p class="rodape-cartao">Dano ' + fmtN(m.dano) + ' ha · Replantio ' + fmtN(m.replantio) + ' ha</p>';
     var l = m.variedades.filter(function (v) { return v.prev > 0; });
-    $('variedades').innerHTML = l.length ? '<table class="tabela"><thead><tr><th>Variedade</th><th class="n">' + (m.o === 'PLANTIO' ? 'Plantado' : 'Colhido') + '</th></tr></thead><tbody>' +
+    $('variedades').innerHTML = l.length ? '<table class="tabela' + (l.length > 8 ? ' compacta' : '') + '"><thead><tr><th>Variedade</th><th class="n">' + (m.o === 'PLANTIO' ? 'Plantado' : 'Colhido') + '</th></tr></thead><tbody>' +
       l.map(function (v) {
         return '<tr><td>' + esc(v.v) + '<div class="var-barra"><span style="width:' + Math.min(100, v.exec / v.prev * 100).toFixed(1) + '%"></span></div></td><td class="n">' + fmtN(v.exec) + '<br><small style="color:#8A988F">de ' + fmtN(v.prev) + '</small></td></tr>';
       }).join('') + '</tbody></table>' : '<div class="vazio">Sem variedades cadastradas</div>';
@@ -718,7 +820,7 @@
   // ---- mapa: fazenda (adaptativo) ou quadro de fazendas (Todas) ----
   /** Depois de trocar o layout (todas/paisagem/retrato), os gráficos precisam da nova largura. */
   function redimensionarDepois() {
-    requestAnimationFrame(function () { Object.keys(charts).forEach(function (k) { if (charts[k] && !charts[k].isDisposed()) charts[k].resize(); }); });
+    requestAnimationFrame(function () { Object.keys(charts).forEach(function (k) { if (charts[k] && !charts[k].isDisposed()) { charts[k].resize(); agendarTopo(charts[k]); } }); });
   }
 
   function renderMapa(m) {
@@ -1081,6 +1183,7 @@
     var g = DADOS.geradoEm ? new Date(DADOS.geradoEm) : null;
     set('tv-atualizado', g ? 'PIMS · ' + g.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
     mostrarMaquina($('tv-maquina'), m);
+    aplicarFundo(document.querySelector('.tv-barra'), m.s);
     $('tv-kpis').innerHTML = htmlKpis(m);
     $('tv-paginas').innerHTML = tv.lista.map(function (x, i) {
       return '<button class="' + (i === tv.i ? 'ativo' : '') + '" data-i="' + i + '">' + esc(x === TODAS ? 'Todas' : titulo(x)) + '</button>';
@@ -1175,17 +1278,18 @@
   }
   function talvezImagem(src) { return carregarImagem(src).catch(function () { return null; }); }
   /** Desenha um gráfico ECharts fora da tela, no tamanho pedido (página base), e devolve a imagem na resolução final. */
-  function imagemGrafico(w, h, desenhar, pr) {
+  async function imagemGrafico(w, h, desenhar, pr) {
     var el = document.createElement('div');
     el.id = 'exp-' + Math.random().toString(36).slice(2);
     el.style.cssText = 'position:fixed;left:-30000px;top:0;width:' + Math.round(w) + 'px;height:' + Math.round(h) + 'px;';
     document.body.appendChild(el);
     try {
       var g = desenhar(el);
-      if (!g) return Promise.resolve(null);
+      if (!g) return null;
+      if (g.__topo) { g.__topo.pr = pr || 1; atualizarTopo(g); await aguardarTopo(g, 12000); atualizarTopo(g); }
       var zr = g.getZr();
       if (zr.refreshImmediately) zr.refreshImmediately();
-      return carregarImagem(g.getDataURL({ type: 'png', pixelRatio: pr || 1, backgroundColor: '#FFFFFF' }));
+      return await carregarImagem(g.getDataURL({ type: 'png', pixelRatio: pr || 1, backgroundColor: '#FFFFFF' }));
     } finally { descartar(el.id); el.remove(); }
   }
   function grafico(w, h, opcoes, pr) {
@@ -1305,24 +1409,30 @@
     var img = await grafico(r.w - 16, r.h - topo - 8, opcoesColunas(l.map(function (e) { return e.nome; }), l.map(function (e) { return Math.round(e.v); }), l.length > 4 ? 10.5 : 12, r.w - 16), pr);
     if (img) c.drawImage(img, r.x + 8, r.y + topo, r.w - 16, r.h - topo - 8);
   }
+  function variedadesVisiveis(m) { return m.variedades.filter(function (v) { return v.prev > 0; }); }
+  /** Tabela de variedades: todas as linhas, mais compactas quando são muitas; em cartão largo, em duas colunas. */
   function cartaoVariedades(c, r, m) {
     caixa(c, r);
-    var pl = m.o === 'PLANTIO', x0 = r.x + 14, x1 = r.x + r.w - 14, cQ = x1 - 60;
-    escrever(c, 'Variedades', x0, r.y + 28, 15, 600, COR.escuro, r.w * 0.5);
-    escrever(c, pl ? 'Plantado (ha)' : 'Colhido (ha)', cQ, r.y + 28, 13, 600, COR.escuro, 110, 'right');
-    escrever(c, '%', x1, r.y + 28, 13, 600, COR.escuro, 50, 'right');
-    c.fillStyle = COR.linha; c.fillRect(x0, r.y + 38, x1 - x0, 1);
-    var l = m.variedades.filter(function (v) { return v.prev > 0; }), lh = 23, cabe = Math.max(1, Math.floor((r.h - 50) / lh));
-    if (!l.length) { escrever(c, 'Sem variedades cadastradas', r.x + r.w / 2, r.y + r.h / 2 + 10, 13, 500, COR.fraco, r.w - 20, 'center'); return; }
-    var mostrar = l.length > cabe ? l.slice(0, cabe - 1) : l;
-    mostrar.forEach(function (v, i) {
-      var y = r.y + 44 + i * lh;
-      if (i % 2 === 0) { c.fillStyle = '#F3F6F3'; c.fillRect(x0, y, x1 - x0, lh); }
-      escrever(c, v.v, x0 + 6, y + 16, 12.5, 500, COR.texto, cQ - x0 - 90);
-      escrever(c, fmtN(v.exec, 2), cQ, y + 16, 12.5, 500, COR.texto, 100, 'right');
-      escrever(c, fmtPct(v.exec / v.prev), x1 - 4, y + 16, 12.5, 500, COR.texto, 50, 'right');
-    });
-    if (mostrar.length < l.length) escrever(c, '+ ' + (l.length - mostrar.length) + ' variedades', x0 + 6, r.y + 44 + mostrar.length * lh + 16, 12, 500, COR.fraco, r.w - 30);
+    var pl = m.o === 'PLANTIO', l = variedadesVisiveis(m);
+    escrever(c, 'Variedades', r.x + 14, r.y + 28, 15, 600, COR.escuro, r.w * 0.5);
+    if (!l.length) { escrever(c, 'Sem variedades informadas', r.x + r.w / 2, r.y + r.h / 2 + 10, 13, 500, COR.fraco, r.w - 20, 'center'); return; }
+    var util = r.h - 52, cols = r.w >= 440 && l.length * 16 > util ? 2 : 1, porCol = Math.ceil(l.length / cols);
+    var lh = Math.max(12, Math.min(23, util / porCol)), px = Math.max(9, Math.min(12.5, lh * 0.58));
+    var cw = (r.w - 28 - (cols - 1) * 16) / cols;
+    for (var k = 0; k < cols; k++) {
+      var x0 = r.x + 14 + k * (cw + 16), x1 = x0 + cw, cQ = x1 - 52;
+      escrever(c, pl ? 'Plantado (ha)' : 'Colhido (ha)', cQ, r.y + 28, 12.5, 600, COR.escuro, 100, 'right');
+      escrever(c, '%', x1, r.y + 28, 12.5, 600, COR.escuro, 40, 'right');
+      c.fillStyle = COR.linha; c.fillRect(x0, r.y + 38, cw, 1);
+      l.slice(k * porCol, (k + 1) * porCol).forEach(function (v, i) {
+        var y = r.y + 44 + i * lh;
+        if (i % 2 === 0) { c.fillStyle = '#F3F6F3'; c.fillRect(x0, y, cw, lh); }
+        var yb = y + lh / 2 + px * 0.36;
+        escrever(c, v.v, x0 + 6, yb, px, 500, COR.texto, cQ - x0 - 84);
+        escrever(c, fmtN(v.exec, 2), cQ, yb, px, 500, COR.texto, 80, 'right');
+        escrever(c, fmtPct(v.exec / v.prev), x1 - 4, yb, px, 500, COR.texto, 44, 'right');
+      });
+    }
   }
   function metaReferencia(m) {
     if (m.metaHoje !== null) return m.metaHoje;
@@ -1441,16 +1551,16 @@
     var gr = c.createLinearGradient(0, 0, W, h * 0.35);
     gr.addColorStop(0, '#0B8C7F'); gr.addColorStop(0.34, '#0B6E62'); gr.addColorStop(0.68, '#094C44'); gr.addColorStop(1, '#06312C');
     c.fillStyle = gr; c.fillRect(0, 0, W, h);
-    if (imgs.soja) {
-      // pés de soja em traço fino só à direita, esmaecendo para a esquerda (igual à faixa do painel)
-      var sh = h * 1.35, sw = imgs.soja.width / imgs.soja.height * sh, ww = Math.min(W * 0.66, sw);
+    if (imgs.cultura) {
+      // ilustração da cultura em traço, apoiada na base, só à direita e esmaecendo para a esquerda (igual à faixa do painel)
+      var sh = h * 1.05, sw = imgs.cultura.width / imgs.cultura.height * sh, ww = W * 0.62;
       var off = document.createElement('canvas'); off.width = Math.round(ww * 2); off.height = Math.round(h * 2);
       var o = off.getContext('2d'); o.scale(2, 2);
-      o.drawImage(imgs.soja, ww - sw, (h - sh) / 2, sw, sh);
+      for (var xx = ww - sw; xx > -sw; xx -= sw) o.drawImage(imgs.cultura, xx, h - sh, sw, sh);
       o.globalCompositeOperation = 'destination-in';
-      var mg = o.createLinearGradient(0, 0, ww, 0); mg.addColorStop(0, 'rgba(0,0,0,0)'); mg.addColorStop(0.55, 'rgba(0,0,0,1)');
+      var mg = o.createLinearGradient(0, 0, ww, 0); mg.addColorStop(0, 'rgba(0,0,0,0)'); mg.addColorStop(0.6, 'rgba(0,0,0,1)');
       o.fillStyle = mg; o.fillRect(0, 0, ww, h);
-      c.save(); c.globalAlpha = 0.13; c.drawImage(off, W - ww, 0, ww, h); c.restore();
+      c.save(); c.globalAlpha = 0.16; c.drawImage(off, W - ww, 0, ww, h); c.restore();
     }
   }
   function cabecalho(c, L, m, imgs) {
@@ -1557,7 +1667,7 @@
     return (bb[2] - bb[0]) / Math.max(1, bb[3] - bb[1]);
   }
   /** Página 1920 × 1080 do relatório. Fazenda alta: o mapa ocupa duas faixas (como na página de Guapirama do Power BI). */
-  function layoutPaisagem(todas, comp) {
+  function layoutPaisagem(todas, comp, nVar) {
     var y1 = 129, h1 = 121, K = {
       area: { x: 266, y: y1, w: 155, h: h1 }, exec: { x: 431, y: y1, w: 151, h: h1 }, dec: { x: 592, y: y1, w: 120, h: h1 },
       plan: { x: 722, y: y1, w: 112, h: h1 }, prev: { x: 844, y: y1, w: 113, h: h1 }, gauge: { x: 967, y: y1, w: 234, h: h1 },
@@ -1576,6 +1686,12 @@
         mapa: { x: 1247, y: 260, w: 656, h: 460 }, meta: { x: 267, y: 476, w: 970, h: 244 },
         tal: todas ? [{ x: 267, y: 730, w: 1636, h: 338 }] : [{ x: 267, y: 730, w: 1636, h: 170 }, { x: 267, y: 910, w: 1636, h: 158 }] });
     }
+    var extra = Math.max(0, Math.min(90, 52 + (nVar || 0) * 17 - L.vari.h));
+    if (extra) {
+      [L.eq7, L.eqT, L.vari].forEach(function (r) { r.h += extra; });
+      L.donut.h += extra; L.meta.y += extra; L.meta.h -= extra;
+    }
+    if (52 + (nVar || 0) * 17 > L.vari.h) { L.vari.w += L.vari.x - L.eqT.x; L.vari.x = L.eqT.x; L.eqT = null; }
     return L;
   }
   /** Os mesmos blocos empilhados, 1080 de largura (a altura acompanha o conteúdo). */
@@ -1594,8 +1710,8 @@
     L.eq7 = { x: M + hw + g, y: y, w: (hw - g) * 0.55, h: 240 };
     L.eqT = { x: L.eq7.x + L.eq7.w + g, y: y, w: hw - g - L.eq7.w, h: 240 };
     y += 240 + g;
-    var nv = Math.min(12, Math.max(1, m.variedades.filter(function (v) { return v.prev > 0; }).length));
-    L.vari = { x: M, y: y, w: lw, h: 60 + nv * 23 }; y += L.vari.h + g;
+    var nv = Math.max(1, variedadesVisiveis(m).length);
+    L.vari = { x: M, y: y, w: lw, h: 60 + Math.ceil(nv / (nv > 10 ? 2 : 1)) * 23 }; y += L.vari.h + g;
     L.meta = { x: M, y: y, w: lw, h: 320 }; y += 320 + g;
     var hm = todas ? 70 + m.unidades.length * 76 : Math.max(460, Math.min(980, (lw - 20) / aspectoFazenda(comp) + 100));
     L.mapa = { x: M, y: y, w: lw, h: hm }; y += hm + g;
@@ -1640,7 +1756,7 @@
     var mp = !todas && MAPAS ? escolherMapa(u, m.talhoes, m.s) : null;
     var comp = mp ? compor(mp.features) : null;
     if (comp) comp.mp = mp;
-    var L = formato === 'vertical' ? layoutVertical(m, todas, comp) : layoutPaisagem(todas, comp);
+    var L = formato === 'vertical' ? layoutVertical(m, todas, comp) : layoutPaisagem(todas, comp, variedadesVisiveis(m).length);
     // quadros empilhados só cabem num espaço mais alto que largo; senão, um quadro só
     if (comp && comp.quadros.length > 1 && L.mapa.w > L.mapa.h * 1.1) {
       comp = { orientacao: comp.orientacao, mp: mp, quadros: [{ fs: mp.features, bbox: mp.features.map(bboxFeature).filter(Boolean).reduce(uniao), fr: 1, titulo: null }] };
@@ -1648,8 +1764,8 @@
     var S = F.escala, cv = document.createElement('canvas');
     cv.width = Math.round(L.W * S); cv.height = Math.round(L.H * S);
     var c = cv.getContext('2d'); c.scale(S, S);
-    var res = await Promise.all([talvezImagem('assets/soja_header.svg'), talvezImagem('assets/logo_locks.png'), talvezImagem('assets/logo_coa_branco.png'), talvezImagem('assets/rosa.png'), talvezImagem(fotoMaquina(m).src)]);
-    var imgs = { soja: res[0], locks: res[1], coa: res[2], rosa: res[3], maquina: res[4] };
+    var res = await Promise.all([talvezImagem(fundoCultura(m.s)), talvezImagem('assets/logo_locks.png'), talvezImagem('assets/logo_coa_branco.png'), talvezImagem('assets/rosa.png'), talvezImagem(fotoMaquina(m).src)]);
+    var imgs = { cultura: res[0], locks: res[1], coa: res[2], rosa: res[3], maquina: res[4] };
 
     c.fillStyle = '#F1F2F1'; c.fillRect(0, 0, L.W, L.H);
     cabecalho(c, L, m, imgs);
@@ -1659,7 +1775,7 @@
     cartaoDanoReplantio(c, L.dano, m);
     cartaoRosca(c, L.donut, m);
     await cartaoColunas(c, L.eq7, 'Área por equipe (ha) - Últimos 7 dias', equipesUltimos7(m), S);
-    await cartaoColunas(c, L.eqT, 'Área total por equipe (ha)', m.equipes.filter(function (e) { return e.total > 0; }).map(function (e) { return { nome: e.nome, v: e.total }; }), S);
+    if (L.eqT) await cartaoColunas(c, L.eqT, 'Área total por equipe (ha)', m.equipes.filter(function (e) { return e.total > 0; }).map(function (e) { return { nome: e.nome, v: e.total }; }), S);
     cartaoVariedades(c, L.vari, m);
     await cartaoMeta(c, L.meta, m, S);
     if (todas) cartaoListaFazendas(c, L.mapa, m);

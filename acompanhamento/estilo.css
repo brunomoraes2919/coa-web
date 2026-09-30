@@ -108,10 +108,12 @@ button, input, select { font: inherit; color: inherit; }
   position: relative; isolation: isolate; overflow: hidden; color: #fff;
   background: linear-gradient(100deg, #0B8C7F 0%, #0B6E62 34%, #094C44 68%, #06312C 100%);
 }
+/* ilustração em traço da cultura (--fundo-cultura, trocada pela página conforme a safra): apoiada na base,
+   repetida só à direita e bem transparente, para não competir com os números */
 .faixa-marca::before {
-  content: ""; position: absolute; inset: 0 0 0 34%; z-index: -1; pointer-events: none; opacity: .13;
-  background: url("assets/soja_header.svg") right center / auto 135% no-repeat;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 55%); mask-image: linear-gradient(90deg, transparent 0%, #000 55%);
+  content: ""; position: absolute; inset: 0 0 0 36%; z-index: -1; pointer-events: none; opacity: .18;
+  background: var(--fundo-cultura, url("assets/fundo_soja.webp")) right bottom / auto 108% repeat-x;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 60%); mask-image: linear-gradient(90deg, transparent 0%, #000 60%);
 }
 .faixa-marca::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--dourado); }
 .destaque {
@@ -255,9 +257,10 @@ button, input, select { font: inherit; color: inherit; }
 .equipe .v small { color: var(--texto-fraco); font-weight: 500; }
 
 .tabela-rolagem { overflow: auto; }
-.area-lateral .tabela-rolagem { max-height: 300px; }
-.grade.paisagem .area-lateral .tabela-rolagem { max-height: calc(var(--mapa-h) - 250px); min-height: 120px; }
-.grade.retrato .area-lateral .tabela-rolagem { max-height: 260px; }
+/* variedades: a lista inteira aparece (sem rolagem); com muitas, as linhas ficam mais compactas */
+.area-lateral .tabela-rolagem { overflow: visible; }
+.tabela.compacta td { padding: 4px 8px; font-size: 12.5px; }
+.tabela.compacta .var-barra { margin-top: 3px; }
 .tabela { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tabela th {
   position: sticky; top: 0; background: #fff; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em;
@@ -410,7 +413,7 @@ button, input, select { font: inherit; color: inherit; }
 .tv-pct { text-align: right; }
 .tv-pct b { display: block; font-size: 2.5em; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; }
 .tv-pct span { font-size: .8em; color: #D7E8E2; white-space: nowrap; }
-.tv-maquina { height: 3.8em; width: auto; max-width: 9em; object-fit: contain; margin: -.4em 0 -.8em; align-self: end; filter: drop-shadow(0 .35em .45em rgba(0, 0, 0, .35)); }
+.tv-maquina { height: 3.4em; width: auto; max-width: 8em; object-fit: contain; align-self: center; filter: drop-shadow(0 .3em .4em rgba(0, 0, 0, .35)); }
 .tv-relogio { display: flex; flex-direction: column; align-items: flex-end; text-align: right; border-left: 1px solid rgba(255, 255, 255, .2); padding-left: 1.2em; }
 .tv-relogio b { font-size: 1.9em; line-height: 1; font-weight: 650; font-variant-numeric: tabular-nums; }
 .tv-relogio span { font-size: .72em; color: #D7E8E2; white-space: nowrap; }
