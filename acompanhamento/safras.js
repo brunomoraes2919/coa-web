@@ -1,7 +1,7 @@
 /* =====================================================================
    Acompanhamento Operacional — aba "Safras"
    Relatório de uma fazenda: hectares por dia da safra atual e das 3 anteriores
-   (mesma cultura), com a chuva do dia (gotas) e o comparativo acumulado pela
+   (mesma cultura), com a chuva do dia (mancha azul, eixo da direita) e o comparativo acumulado pela
    data do ano. Exporta o relatório inteiro em PNG ou PDF.
    Usa o núcleo do app.js (window.AcompNucleo), que chama AcompSafras.render().
 ===================================================================== */
@@ -12,8 +12,7 @@
   // atual = verde da marca (destaque); 1, 2 e 3 anos antes = laranja, violeta, magenta
   var COR_SAFRA = ['#0C5A50', '#eb6834', '#4a3aa7', '#e87ba4'];
   var COR_CHUVA = '#2a78d6';
-  var GOTA = 'path://M12 1.5C12 1.5 4.5 10.2 4.5 15a7.5 7.5 0 0 0 15 0C19.5 10.2 12 1.5 12 1.5Z';
-  var CHUVA_MIN = 1;          // mm: abaixo disso não desenha a gota
+    var CHUVA_MIN = 1;          // mm: dia com chuva (contagem de dias no resumo)
   var MARGEM_DIAS = 4;        // dias antes do 1º início e depois do último fim, no eixo comum
   var MAX_DIAS = 200;
 
@@ -93,7 +92,16 @@
       ini = new Date(+ini - MARGEM_DIAS * N.DIA); fim = new Date(+fim + MARGEM_DIAS * N.DIA);
       for (var t = +ini; t <= +fim && eixo.length < MAX_DIAS; t += N.DIA) { var d = new Date(t); eixo.push(new Date(d.getFullYear(), d.getMonth(), d.getDate())); }
     }
-    return { u: u, s: s, o: o, safras: safras, eixo: eixo, chuvaU: chuvaU, temChuva: Object.keys(chuvaU).length > 0 };
+    // mesma escala (ha e mm) nos gráficos das safras, para comparar de cima para baixo
+    var maxHa = 1, maxMm = 10;
+    safras.forEach(function (x) {
+      eixo.forEach(function (d) {
+        var k = N.paraIso(N.anosAntes(d, x.anos));
+        if ((x.porDia[k] || 0) > maxHa) maxHa = x.porDia[k];
+        if ((chuvaU[k] || 0) > maxMm) maxMm = chuvaU[k];
+      });
+    });
+    return { u: u, s: s, o: o, safras: safras, eixo: eixo, chuvaU: chuvaU, temChuva: Object.keys(chuvaU).length > 0, maxHa: maxHa, maxMm: maxMm };
   }
 
   // ------------------------------------------------------------------
@@ -119,52 +127,61 @@
   // ------------------------------------------------------------------
   // Gráficos (as mesmas opções servem para a página e para a exportação; k = escala)
   // ------------------------------------------------------------------
+  /** Rótulos do eixo de datas num intervalo fixo (a cada 7 dias; 3 em períodos curtos), a partir do 1º dia. */
+  function passoDatas(n) { return n <= 30 ? 3 : 7; }
+  function eixoDatas(cats, k, boundaryGap) {
+    var passo = passoDatas(cats.length), mostra = function (i) { return i % passo === 0; };
+    return Object.assign({}, N.eixoX, { type: 'category', boundaryGap: boundaryGap, data: cats.map(dataCurta),
+      axisTick: { show: true, interval: mostra, lineStyle: { color: N.COR.linha, width: k } },
+      axisLabel: { color: N.COR.suave, fontSize: 11 * k, interval: mostra, hideOverlap: false },
+      axisLine: { lineStyle: { color: N.COR.linha, width: k } } });
+  }
+
+  /**
+   * Hectares por dia (barras com o valor na vertical) e, ao fundo, a chuva do dia como uma mancha azul
+   * no eixo da direita (mm).
+   */
   function opcoesSafra(rel, x, k) {
     k = k || 1;
     var cats = rel.eixo, idxDe = {};
     var datasReais = cats.map(function (d) { return N.anosAntes(d, x.anos); });
     datasReais.forEach(function (d, i) { idxDe[N.paraIso(d)] = i; });
     var ha = datasReais.map(function (d) { var v = x.porDia[N.paraIso(d)]; return v ? Math.round(v) : null; });
-    var gotas = [];
-    datasReais.forEach(function (d, i) {
-      var mm = rel.chuvaU[N.paraIso(d)];
-      if (mm >= CHUVA_MIN) gotas.push({ value: [i, 0], mm: mm, symbolSize: Math.round((9 + Math.min(15, Math.sqrt(mm) * 2.6)) * k) });
-    });
+    var mm = datasReais.map(function (d) { var v = rel.chuvaU[N.paraIso(d)]; return v ? Math.round(v * 10) / 10 : 0; });
+    var maxHa = rel.maxHa, maxMm = rel.maxMm;
     var marcas = [];
     if (x.ini) marcas.push({ xAxis: idxDe[N.paraIso(x.ini)], label: { formatter: 'Início ' + dataCurta(x.ini) } });
     if (x.fim) marcas.push({ xAxis: idxDe[N.paraIso(x.fim)], label: { formatter: 'Fim ' + dataCurta(x.fim) } });
-    var alturaChuva = 46 * k;
+    // o rótulo vertical fica menor quando as barras são muitas
+    var fonteRotulo = (cats.length > 90 ? 8.5 : cats.length > 60 ? 9.5 : 10.5) * k;
     return N.opt({
-      grid: [
-        { left: 48 * k, right: 16 * k, top: 6 * k, height: alturaChuva },
-        { left: 48 * k, right: 16 * k, top: alturaChuva + 14 * k, bottom: 26 * k }
-      ],
+      grid: { left: 48 * k, right: rel.temChuva ? 46 * k : 16 * k, top: 14 * k, bottom: 26 * k },
       tooltip: N.tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.06)' } }, formatter: function (ps) {
-        var i = ps[0].dataIndex, d = datasReais[i], mm = rel.chuvaU[N.paraIso(d)];
+        var i = ps[0].dataIndex, d = datasReais[i];
         return '<b>' + d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) + '</b>' +
           '<br>' + N.titulo(op(rel.o)) + ': <b>' + (ha[i] ? N.fmtN(ha[i]) + ' ha' : '—') + '</b>' +
-          '<br><span style="color:' + COR_CHUVA + '">Chuva: ' + (mm ? N.fmtN(mm, 1) + ' mm' : 'sem chuva') + '</span>';
+          (rel.temChuva ? '<br><span style="color:' + COR_CHUVA + '">Chuva: ' + (mm[i] ? N.fmtN(mm[i], 1) + ' mm' : 'sem chuva') + '</span>' : '');
       } }),
-      axisPointer: { link: [{ xAxisIndex: 'all' }] },
-      xAxis: [
-        { type: 'category', gridIndex: 0, data: cats.map(dataCurta), show: false, boundaryGap: true },
-        Object.assign({}, N.eixoX, { type: 'category', gridIndex: 1, data: cats.map(dataCurta), boundaryGap: true,
-          axisLabel: { color: N.COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: N.COR.linha, width: k } } })
-      ],
+      xAxis: eixoDatas(cats, k, true),
       yAxis: [
-        { type: 'value', gridIndex: 0, min: 0, max: 1, show: false },
-        Object.assign({}, N.eixoY, { type: 'value', gridIndex: 1,
-          axisLabel: { color: N.COR.fraco, fontSize: 11 * k, formatter: function (v) { return N.fmtN(v); } }, splitLine: { lineStyle: { color: N.COR.grade, width: k } } })
+        Object.assign({}, N.eixoY, { type: 'value', max: Math.ceil(maxHa * 1.22),
+          axisLabel: { color: N.COR.fraco, fontSize: 11 * k, formatter: function (v) { return v > maxHa * 1.05 ? '' : N.fmtN(v); } }, splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
+        { type: 'value', show: rel.temChuva, position: 'right', min: 0, max: Math.ceil(maxMm * 1.25 / 20) * 20, interval: Math.ceil(maxMm * 1.25 / 20) * 5, splitLine: { show: false },
+          axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: COR_CHUVA, fontSize: 10.5 * k, formatter: function (v) { return v ? v + ' mm' : ''; } } }
       ],
       series: [
-        { name: 'Chuva', type: 'scatter', xAxisIndex: 0, yAxisIndex: 0, symbol: GOTA, data: gotas.map(function (g) { return { value: [g.value[0], 0.3], mm: g.mm, symbolSize: g.symbolSize }; }),
-          itemStyle: { color: COR_CHUVA, opacity: 0.9 }, silent: true,
-          label: { show: true, position: 'top', distance: 3 * k, fontSize: 10 * k, color: N.COR.suave, formatter: function (p) { return N.fmtN(p.data.mm, p.data.mm < 10 ? 1 : 0); } } },
-        { name: N.nomeSafra(x.nome), type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: ha, barCategoryGap: '18%',
+        // chuva: mancha azul ao fundo (eixo da direita)
+        { name: 'Chuva (mm)', type: 'line', yAxisIndex: 1, data: mm, step: 'middle', symbol: 'none', silent: true, z: 1,
+          lineStyle: { color: 'rgba(42,120,214,.55)', width: 1.2 * k }, areaStyle: { color: 'rgba(42,120,214,.20)' } },
+        { name: N.nomeSafra(x.nome), type: 'bar', yAxisIndex: 0, data: ha, barCategoryGap: '18%', z: 3,
           itemStyle: { color: x.cor, borderRadius: [2 * k, 2 * k, 0, 0] },
+          // área do dia em cada barra, na vertical
+          label: { show: true, position: 'top', rotate: 90, align: 'left', verticalAlign: 'middle', distance: 4 * k,
+            fontSize: fonteRotulo, color: N.COR.texto, textBorderColor: '#fff', textBorderWidth: 2 * k,
+            formatter: function (p) { return p.value ? N.fmtN(p.value) : ''; } },
           markLine: x.ini ? { silent: true, symbol: 'none', lineStyle: { color: N.COR.fraco, type: [4 * k, 4 * k], width: k },
-            label: { position: 'insideEndTop', color: N.COR.suave, fontSize: 10.5 * k }, data: marcas.concat(x.media ? [{ yAxis: Math.round(x.media), label: { position: 'insideEndTop', formatter: 'média ' + N.fmtN(x.media) + ' ha/dia' }, lineStyle: { color: x.cor, type: [6 * k, 4 * k], width: 1.2 * k } }] : []) } : undefined,
-          markPoint: x.pico && x.pico.d ? { symbol: 'circle', symbolSize: 0.1, silent: true, data: [{ coord: [idxDe[N.paraIso(x.pico.d)], Math.round(x.pico.a)], label: { show: true, position: 'top', distance: 4 * k, formatter: 'pico ' + N.fmtN(x.pico.a), fontSize: 10.5 * k, fontWeight: 600, color: N.COR.texto, textBorderColor: '#fff', textBorderWidth: 2.5 * k } }] } : undefined }
+            label: { position: 'insideEndTop', color: N.COR.suave, fontSize: 10.5 * k }, data: marcas.concat(x.media ? [{ yAxis: Math.round(x.media), label: { position: 'insideEndTop', formatter: 'média ' + N.fmtN(x.media) + ' ha/dia' }, lineStyle: { color: x.cor, type: [6 * k, 4 * k], width: 1.2 * k } }] : []) } : undefined }
       ]
     });
   }
@@ -200,8 +217,7 @@
         ps.forEach(function (p) { if (p.value !== null && p.value !== undefined) s += '<br>' + p.marker + p.seriesName + ': <b>' + (modoComp === 'pct' ? N.fmtN(p.value) + '%' : N.fmtN(p.value) + ' ha') + '</b>'; });
         return s;
       } }),
-      xAxis: Object.assign({}, N.eixoX, { type: 'category', boundaryGap: false, data: cats.map(dataCurta),
-        axisLabel: { color: N.COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: N.COR.linha, width: k } } }),
+      xAxis: eixoDatas(cats, k, false),
       yAxis: Object.assign({}, N.eixoY, { type: 'value', max: modoComp === 'pct' ? 100 : null,
         axisLabel: { color: N.COR.fraco, fontSize: 11 * k, formatter: function (v) { return modoComp === 'pct' ? v + '%' : N.fmtN(v); } }, splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
       series: series.concat([{ type: 'line', data: [], silent: true,
@@ -324,11 +340,10 @@
     if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
   }
   function legendaChuva(c, x, y, cor) {
-    // gota desenhada à mão (a mesma forma do gráfico)
-    c.save(); c.translate(x, y - 16); c.scale(0.75, 0.75);
-    c.beginPath(); c.moveTo(12, 1.5); c.bezierCurveTo(12, 1.5, 4.5, 10.2, 4.5, 15); c.arc(12, 15, 7.5, Math.PI, 0, true); c.bezierCurveTo(19.5, 10.2, 12, 1.5, 12, 1.5); c.closePath();
-    c.fillStyle = COR_CHUVA; c.fill(); c.restore();
-    N.escrever(c, 'Chuva do dia (mm) — só dias com 1 mm ou mais', x + 24, y, 13, 500, cor || N.COR.suave, 420);
+    // mancha azul (a mesma do gráfico)
+    N.rr(c, x, y - 13, 18, 13, 2); c.fillStyle = 'rgba(42,120,214,.35)'; c.fill();
+    c.strokeStyle = 'rgba(42,120,214,.8)'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(x, y - 13); c.lineTo(x + 18, y - 13); c.stroke();
+    N.escrever(c, 'Chuva do dia (mm, eixo da direita)', x + 26, y, 13, 500, cor || N.COR.suave, 420);
   }
   async function imagens() {
     var r = await Promise.all([N.talvezImagem(N.fundoCultura(R.s)), N.talvezImagem('assets/logo_coa_branco.png')]);
