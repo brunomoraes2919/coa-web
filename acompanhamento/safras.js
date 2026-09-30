@@ -137,6 +137,31 @@
       axisLine: { lineStyle: { color: N.COR.linha, width: k } } });
   }
 
+  var MESES_LONGOS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  /**
+   * Eixo de dias como no Power BI: o dia embaixo de cada coluna (também nos dias sem operação) e, na
+   * linha de baixo, o mês e o ano, com um traço separando os meses. `datas` = datas reais da safra.
+   */
+  function eixosDias(datas, k, espaco) {
+    // espaco = largura de cada coluna em px: todos os dias quando cabem; senão, um sim outro não (ou a cada 3)
+    var n = datas.length, fonte = Math.max(8, Math.min(10.5, espaco * 0.62)) * k, pulo = espaco >= 13 ? 0 : espaco >= 7 ? 1 : 2;
+    var meio = {}, ini = 0;
+    datas.forEach(function (d, i) {
+      var fimMes = i === n - 1 || datas[i + 1].getMonth() !== d.getMonth();
+      if (fimMes) { meio[Math.floor((ini + i) / 2)] = true; ini = i + 1; }
+    });
+    var viraMes = function (i) { return i > 0 && datas[i].getDate() === 1; };
+    return [
+      Object.assign({}, N.eixoX, { type: 'category', boundaryGap: true, data: datas.map(function (d) { return String(d.getDate()); }),
+        axisTick: { show: false }, axisLine: { lineStyle: { color: N.COR.linha, width: k } },
+        axisLabel: { color: N.COR.suave, fontSize: fonte, interval: pulo, hideOverlap: false, margin: 6 * k } }),
+      { type: 'category', boundaryGap: true, position: 'bottom', offset: 16 * k, data: datas.map(function (d) { return MESES_LONGOS[d.getMonth()] + ' ' + d.getFullYear(); }),
+        axisLine: { show: false },
+        axisTick: { show: true, interval: function (i) { return viraMes(i); }, length: 16 * k, inside: false, lineStyle: { color: N.COR.linha, type: [2 * k, 2 * k], width: k } },
+        axisLabel: { color: N.COR.suave, fontSize: 11 * k, interval: function (i) { return !!meio[i]; }, hideOverlap: false, margin: 4 * k } }
+    ];
+  }
+
   /** Eixo da chuva com 8 a 10 marcas num passo redondo (5, 10, 15, 20, 25 ou 50 mm). */
   function escalaMm(maxMm) {
     var topo = maxMm * 1.25, passo = [5, 10, 15, 20, 25, 50].filter(function (p) { return topo / p <= 10; })[0] || 50;
@@ -147,8 +172,9 @@
    * Hectares por dia (barras com o valor na vertical) e, ao fundo, a chuva do dia como uma mancha azul
    * no eixo da direita (mm).
    */
-  function opcoesSafra(rel, x, k) {
+  function opcoesSafra(rel, x, k, largura) {
     k = k || 1;
+    var espaco = ((largura || 1200) - (rel.temChuva ? 94 : 64) * k) / Math.max(1, rel.eixo.length) / k;
     var cats = rel.eixo, idxDe = {};
     var datasReais = cats.map(function (d) { return N.anosAntes(d, x.anos); });
     datasReais.forEach(function (d, i) { idxDe[N.paraIso(d)] = i; });
@@ -159,16 +185,16 @@
     if (x.ini) marcas.push({ xAxis: idxDe[N.paraIso(x.ini)], label: { formatter: 'Início ' + dataCurta(x.ini) } });
     if (x.fim) marcas.push({ xAxis: idxDe[N.paraIso(x.fim)], label: { formatter: 'Fim ' + dataCurta(x.fim) } });
     // o rótulo vertical fica menor quando as barras são muitas
-    var fonteRotulo = (cats.length > 90 ? 8.5 : cats.length > 60 ? 9.5 : 10.5) * k;
+    var fonteRotulo = Math.max(8, Math.min(10.5, espaco * 0.7)) * k;
     return N.opt({
-      grid: { left: 48 * k, right: rel.temChuva ? 46 * k : 16 * k, top: 14 * k, bottom: 26 * k },
+      grid: { left: 48 * k, right: rel.temChuva ? 46 * k : 16 * k, top: 14 * k, bottom: 46 * k },
       tooltip: N.tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.06)' } }, formatter: function (ps) {
         var i = ps[0].dataIndex, d = datasReais[i];
         return '<b>' + d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) + '</b>' +
           '<br>' + N.titulo(op(rel.o)) + ': <b>' + (ha[i] ? N.fmtN(ha[i]) + ' ha' : '—') + '</b>' +
           (rel.temChuva ? '<br><span style="color:' + COR_CHUVA + '">Chuva: ' + (mm[i] ? N.fmtN(mm[i], 1) + ' mm' : 'sem chuva') + '</span>' : '');
       } }),
-      xAxis: eixoDatas(cats, k, true),
+      xAxis: eixosDias(datasReais, k, espaco),
       yAxis: [
         Object.assign({}, N.eixoY, { type: 'value', max: Math.ceil(maxHa * 1.3),
           axisLabel: { color: N.COR.fraco, fontSize: 11 * k, formatter: function (v) { return v > maxHa * 1.05 ? '' : N.fmtN(v); } }, splitLine: { lineStyle: { color: N.COR.grade, width: k } } }),
@@ -184,7 +210,7 @@
         { name: N.nomeSafra(x.nome), type: 'bar', yAxisIndex: 0, data: ha, barCategoryGap: '18%', z: 3,
           itemStyle: { color: x.cor, borderRadius: [2 * k, 2 * k, 0, 0] },
           // área do dia em cada barra, na vertical
-          label: { show: true, position: 'top', rotate: 90, align: 'left', verticalAlign: 'middle', distance: 4 * k,
+          label: { show: espaco >= 7, position: 'top', rotate: 90, align: 'left', verticalAlign: 'middle', distance: 4 * k,
             fontSize: fonteRotulo, color: N.COR.texto, textBorderColor: '#fff', textBorderWidth: 2 * k,
             formatter: function (p) { return p.value ? N.fmtN(p.value) : ''; } },
           markLine: x.ini ? { silent: true, symbol: 'none', lineStyle: { color: N.COR.fraco, type: [4 * k, 4 * k], width: k },
@@ -273,7 +299,7 @@
     rel.safras.forEach(function (x, i) {
       var el = $('rel-g' + i);
       if (!x.ini) return N.vazio(el, 'Sem apontamentos de ' + op(e.o) + ' nesta safra.');
-      N.chart(el).setOption(opcoesSafra(rel, x, 1), true);
+      N.chart(el).setOption(opcoesSafra(rel, x, 1, el.clientWidth), true);
     });
 
     // comparativo
@@ -334,7 +360,7 @@
     });
     var a = { x: r.x + 8, y: r.y + 46, w: r.w - 16, h: r.h - 52 };
     if (!x.ini) { N.escrever(c, 'Sem apontamentos nesta safra.', a.x + a.w / 2, a.y + a.h / 2, 15, 500, N.COR.fraco, a.w, 'center'); return; }
-    var img = await N.grafico(a.w, a.h, opcoesSafra(rel, x, 1), ESC);
+    var img = await N.grafico(a.w, a.h, opcoesSafra(rel, x, 1, a.w), ESC);
     if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
   }
   async function cartaoComparativo(c, r, rel) {

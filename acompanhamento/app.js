@@ -2173,6 +2173,7 @@
     clearTimeout(tRes);
     tRes = setTimeout(function () {
       if (tv.ativo) return tvDesenhar();
+      if (estado.vista === 'safras') return render(); // o eixo de dias depende da largura
       if (estado.vista === 'painel' && mUltimo) renderMapa(mUltimo);
       Object.keys(charts).forEach(function (k) { charts[k].resize(); });
     }, 150);
