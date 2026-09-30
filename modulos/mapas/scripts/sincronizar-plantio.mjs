@@ -465,24 +465,111 @@ export function linhasAcompanhamento({ talhoes, plantio, colheita }, geradoEm) {
   return [...linhas.values()].sort((a, b) => comparar(a.safra, b.safra) || comparar(a.unidade, b.unidade));
 }
 
+// ---------- comparativo com as safras anteriores ----------
+
+/**
+ * Chave da cultura de um nome de safra do PIMS, sem o ano: os nomes mudam de um ano para outro
+ * ('MILHO SAFRINHA 23/24', 'MILHO 2ª SAFRA 24/25', 'MILHO 2º SAFRA 25/26' → 'MILHO 2 SAFRA').
+ */
+export function culturaDaSafra(nome) {
+  let s = chaveNome(nome).replace(/\s*\d{2}\/\d{2}$/, '');
+  s = s.replace(/(\d)\s*[ªº°]/g, '$1').replace(/\bSAFRINHA\b/g, '2 SAFRA').replace(/^MILHO\s+SILAGEM\b/, 'SILAGEM');
+  if (/\bSAFRA\b/.test(s) && !/\d\s+SAFRA\b/.test(s)) s = s.replace(/\bSAFRA\b/, '1 SAFRA');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+/** Ano inicial (2 dígitos) de um nome de safra ('SOJA 26/27' → 26), ou null. */
+function anoDaSafra(nome) {
+  const m = /(\d{2})\/\d{2}\s*$/.exec(String(nome ?? ''));
+  return m ? Number(m[1]) : null;
+}
+
+/** Nomes das duas safras anteriores (mesma cultura, 1 e 2 anos antes) de cada safra, entre os nomes do PIMS. */
+export function safrasAnteriores(atuais, todas) {
+  const saida = new Set();
+  for (const a of atuais) {
+    const c = culturaDaSafra(a);
+    const ano = anoDaSafra(a);
+    if (ano === null) continue;
+    for (const n of todas) {
+      const an = anoDaSafra(n);
+      if (an !== null && (ano - an === 1 || ano - an === 2) && culturaDaSafra(n) === c) saida.add(String(n).trim());
+    }
+  }
+  return [...saida].sort(comparar);
+}
+
+/** Hectares por dia × unidade × safra × operação das safras anteriores (só o total do dia, sem talhão). */
+export function montarSqlHistorico(safras) {
+  const em = listaSql(safras);
+  return `SELECT u.DE_UNI_ADM AS unidade, ps.DE_PER_SAFRA AS safra, 'PLANTIO' AS op,
+  CONVERT(varchar(10), a.DT_OPERACAO, 120) AS data, SUM(a.QT_AREA) AS area
+FROM ${PIMS}APPLANTIO a
+JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO AND os.ID_UNIDADEADM = a.ID_UNIDADEADM
+JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = a.ID_UPNIVEL3
+JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+LEFT JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
+WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN (${em}) AND a.DT_OPERACAO IS NOT NULL
+  AND ISNULL(a.FG_REPLANTIO, 'N') <> 'S' AND ISNULL(o.CD_OPERACAO, 0) <> 18
+GROUP BY u.DE_UNI_ADM, ps.DE_PER_SAFRA, CONVERT(varchar(10), a.DT_OPERACAO, 120)
+UNION ALL
+SELECT u.DE_UNI_ADM, ps.DE_PER_SAFRA, 'COLHEITA', CONVERT(varchar(10), a.DT_OPERACAO, 120), SUM(a.QT_AREA_EXEC)
+FROM ${PIMS}APATIVPROD a
+JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO AND os.ID_UNIDADEADM = a.ID_UNIDADEADM
+JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = a.ID_UPNIVEL3
+JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
+WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em}) AND a.DT_OPERACAO IS NOT NULL
+GROUP BY u.DE_UNI_ADM, ps.DE_PER_SAFRA, CONVERT(varchar(10), a.DT_OPERACAO, 120)`;
+}
+
+/**
+ * Linhas de acomp_pims das safras anteriores: sem talhões (a página as usa só no comparativo do
+ * gráfico diário e não as mostra na lista de safras) e com um apontamento por dia e operação.
+ * Uma safra que também está entre as atuais não entra (a linha dela já tem os talhões).
+ */
+export function linhasHistorico(res, geradoEm, atuais = []) {
+  const ja = new Set(atuais.map((s) => String(s).trim()));
+  const linhas = new Map();
+  for (const r of objetosDe(res)) {
+    const s = txt(r.safra);
+    const u = txt(r.unidade);
+    const d = txt(r.data);
+    const a = num(r.area);
+    if (!s || !u || !d || ja.has(s) || !(a > 0)) continue;
+    const k = `${s}\u0000${u}`;
+    if (!linhas.has(k)) linhas.set(k, { safra: s, unidade: u, gerado_em: geradoEm, talhoes: [], apontamentos: [] });
+    linhas.get(k).apontamentos.push({ op: txt(r.op) === 'COLHEITA' ? 'COLHEITA' : 'PLANTIO', d, a });
+  }
+  for (const l of linhas.values()) l.apontamentos.sort((x, y) => comparar(x.op + x.d, y.op + y.d));
+  return [...linhas.values()].sort((a, b) => comparar(a.safra, b.safra) || comparar(a.unidade, b.unidade));
+}
+
 /** Consulta o PIMS pelo Agrovex e devolve { geradoEm, safras, linhas } do acompanhamento (não grava nada). */
 export async function sincronizarAcompanhamento({ url, token, safras, excluirPrefixos = [], fetchImpl = fetch, agora = new Date() }) {
   const cliente = await abrirSessao(url, token, fetchImpl);
   try {
-    let nomes;
-    if (safras === 'auto') {
-      const lista = await cliente.consultar(SQL_SAFRAS, 'lista de safras do PIMS', 'lista de safras');
-      nomes = filtrarSafras(lista.rows.map((r) => r[0]), safrasPadrao(agora), excluirPrefixos);
-    } else {
-      nomes = [...new Set(safras.map((s) => String(s).trim()).filter(Boolean))];
-    }
+    // a lista de safras do PIMS também serve para achar as safras anteriores (comparativo do gráfico diário)
+    const lista = await cliente.consultar(SQL_SAFRAS, 'lista de safras do PIMS', 'lista de safras');
+    const todas = lista.rows.map((r) => String(r[0] ?? '').trim()).filter(Boolean);
+    const nomes = safras === 'auto'
+      ? filtrarSafras(todas, safrasPadrao(agora), excluirPrefixos)
+      : [...new Set(safras.map((s) => String(s).trim()).filter(Boolean))];
     const geradoEm = agora.toISOString();
     if (!nomes.length) return { geradoEm, safras: [], linhas: [] };
     const sql = montarSqlAcompanhamento(nomes);
     const talhoes = await cliente.consultar(sql.talhoes, 'talhões do acompanhamento operacional', 'talhões do acompanhamento');
     const plantio = await cliente.consultar(sql.plantio, 'apontamentos de plantio do acompanhamento operacional', 'plantio do acompanhamento');
     const colheita = await cliente.consultar(sql.colheita, 'apontamentos de colheita do acompanhamento operacional', 'colheita do acompanhamento');
-    return { geradoEm, safras: nomes, linhas: linhasAcompanhamento({ talhoes, plantio, colheita }, geradoEm) };
+    const linhas = linhasAcompanhamento({ talhoes, plantio, colheita }, geradoEm);
+    const anteriores = safrasAnteriores(nomes, todas).filter((s) => !nomes.includes(s));
+    if (anteriores.length && linhas.length) {
+      const hist = await cliente.consultar(montarSqlHistorico(anteriores), 'hectares por dia das safras anteriores (comparativo)', 'safras anteriores');
+      linhas.push(...linhasHistorico(hist, geradoEm, nomes));
+    }
+    return { geradoEm, safras: nomes, anteriores, linhas };
   } finally {
     await cliente.fechar();
   }
@@ -521,9 +608,12 @@ export async function gravarAcompanhamentoSupabase(dados, { url, chave, fetch: f
 
 /** Linha de log do acompanhamento: só totais (os logs podem ser públicos). */
 export function logAcompanhamento(dados, situacao) {
-  const n = (op) => dados.linhas.reduce((s, l) => s + l.apontamentos.filter((a) => a.op === op).length, 0);
-  const talhoes = dados.linhas.reduce((s, l) => s + l.talhoes.length, 0);
-  return `Acompanhamento: ${situacao}; ${dados.linhas.length} linhas (safra × unidade), ${talhoes} talhões, ${n('PLANTIO')} apontamentos de plantio, ${n('COLHEITA')} de colheita.`;
+  const atuais = dados.linhas.filter((l) => l.talhoes.length);
+  const hist = dados.linhas.length - atuais.length;
+  const n = (op) => atuais.reduce((s, l) => s + l.apontamentos.filter((a) => a.op === op).length, 0);
+  const talhoes = atuais.reduce((s, l) => s + l.talhoes.length, 0);
+  return `Acompanhamento: ${situacao}; ${atuais.length} linhas (safra × unidade), ${talhoes} talhões, ${n('PLANTIO')} apontamentos de plantio, ${n('COLHEITA')} de colheita` +
+    (hist ? `; ${hist} linhas de safras anteriores (comparativo).` : '.');
 }
 
 /**

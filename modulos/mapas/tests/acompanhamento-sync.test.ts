@@ -1,8 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  culturaDaSafra,
   gravarAcompanhamentoSupabase,
   limparVariedade,
   linhasAcompanhamento,
+  linhasHistorico,
+  montarSqlHistorico,
+  safrasAnteriores,
   logAcompanhamento,
   montarSqlAcompanhamento,
   primeiroNome,
@@ -39,6 +43,20 @@ const PLANTIO_MAPAS = {
   rows: [['SM3', 'SM3', '015', 'SOJA 26/27', 120.5, 3, '2026-09-24', '2026-09-24', null, null]],
 };
 const COLHEITA = { columns: COL_COLHEITA, rows: [['SM3', 'MILHO 2ª SAFRA 26/27', '2', '015', '2027-06-10', 40, 'DANILO SOUZA', 16]] };
+const SAFRAS = {
+  columns: ['DE_PER_SAFRA'],
+  rows: [['SOJA 24/25'], ['SOJA 25/26'], ['SOJA 26/27'], ['MILHO 2º SAFRA 25/26'], ['MILHO SAFRINHA 23/24'], ['MILHO 2ª SAFRA 26/27'], ['ADM 25/26']],
+};
+const HIST = {
+  columns: ['unidade', 'safra', 'op', 'data', 'area'],
+  rows: [
+    ['SM3', 'SOJA 25/26', 'PLANTIO', '2025-09-24', 210.5],
+    ['SM3', 'SOJA 25/26', 'PLANTIO', '2025-09-23', 80],
+    ['SIRIEMA', 'SOJA 24/25', 'PLANTIO', '2024-09-30', 64],
+    ['SM3', 'SOJA 25/26', 'COLHEITA', '2026-02-10', 0],
+    ['SM3', 'SOJA 26/27', 'PLANTIO', '2026-09-24', 3],
+  ],
+};
 
 describe('acompanhamento: regras puras', () => {
   it('limpa o nome da variedade como o Power BI', () => {
@@ -82,6 +100,35 @@ describe('acompanhamento: regras puras', () => {
     expect(linhas.some((l) => l.unidade === 'GLOBO')).toBe(false);
   });
 
+  it('reconhece a mesma cultura mesmo com o nome da safra mudando de um ano para outro', () => {
+    expect(culturaDaSafra('MILHO SAFRINHA 23/24')).toBe('MILHO 2 SAFRA');
+    expect(culturaDaSafra('MILHO 2ª SAFRA 24/25')).toBe('MILHO 2 SAFRA');
+    expect(culturaDaSafra('MILHO 2º SAFRA 25/26')).toBe('MILHO 2 SAFRA');
+    expect(culturaDaSafra('ALGODÃO SAFRA 23/24')).toBe('ALGODAO 1 SAFRA');
+    expect(culturaDaSafra('MILHO SILAGEM 25/26')).toBe(culturaDaSafra('SILAGEM 26/27'));
+    expect(culturaDaSafra('MILHETO  25/26')).toBe('MILHETO');
+  });
+
+  it('acha as duas safras anteriores da mesma cultura', () => {
+    const todas = SAFRAS.rows.map((r) => r[0]);
+    expect(safrasAnteriores(['SOJA 26/27'], todas)).toEqual(['SOJA 24/25', 'SOJA 25/26']);
+    expect(safrasAnteriores(['MILHO 2ª SAFRA 26/27'], todas)).toEqual(['MILHO 2º SAFRA 25/26']);
+    expect(safrasAnteriores(['MILHO 2ª SAFRA 25/26'], todas)).toEqual(['MILHO SAFRINHA 23/24']);
+  });
+
+  it('comparativo: um total por dia, sem talhões, sem a safra atual e sem dia zerado', () => {
+    expect(montarSqlHistorico(['SOJA 25/26'])).toContain("IN ('SOJA 25/26')");
+    expect(montarSqlHistorico(['SOJA 25/26'])).toContain('UNION ALL');
+    const linhas = linhasHistorico(HIST, 'g', ['SOJA 26/27']);
+    expect(linhas.map((l) => `${l.safra}|${l.unidade}`)).toEqual(['SOJA 24/25|SIRIEMA', 'SOJA 25/26|SM3']);
+    const sm3 = linhas[1];
+    expect(sm3.talhoes).toEqual([]);
+    expect(sm3.apontamentos).toEqual([
+      { op: 'PLANTIO', d: '2025-09-23', a: 80 },
+      { op: 'PLANTIO', d: '2025-09-24', a: 210.5 },
+    ]);
+  });
+
   it('log só com totais, sem nome de fazenda', () => {
     const linhas = linhasAcompanhamento({ talhoes: TALHOES, plantio: PLANTIO, colheita: COLHEITA }, 'x');
     const log = logAcompanhamento({ geradoEm: 'x', safras: [], linhas }, 'ok');
@@ -109,7 +156,9 @@ function agrovexFalso(opcoes: { http?: number } = {}) {
     // a consulta do plantio dos mapas (montarSql) também passa por aqui no teste do atenderPedidos
     const r = sql.includes('area_prevista')
       ? PLANTIO_MAPAS
-      : sql.includes('APPLANTIO') ? PLANTIO : sql.includes('APATIVPROD') ? COLHEITA : TALHOES;
+      : sql.includes('UNION ALL') ? HIST
+      : sql.includes('APPLANTIO') ? PLANTIO : sql.includes('APATIVPROD') ? COLHEITA
+      : sql.includes('JOIN') ? TALHOES : SAFRAS;
     const texto = JSON.stringify({ status: 'success', columns: r.columns, rows: r.rows, row_count: r.rows.length, truncated: false });
     return new Response(JSON.stringify({ jsonrpc: '2.0', id: corpo.id, result: { content: [{ type: 'text', text: texto }] } }), {
       status: 200, headers: { 'content-type': 'application/json' },
@@ -119,16 +168,20 @@ function agrovexFalso(opcoes: { http?: number } = {}) {
 }
 
 describe('sincronizarAcompanhamento', () => {
-  it('faz as três consultas numa sessão e monta as linhas', async () => {
+  it('faz as consultas numa sessão e monta as linhas, com as safras anteriores para o comparativo', async () => {
     const { impl, sqls } = agrovexFalso();
     const dados = await sincronizarAcompanhamento({
       url: 'https://agrovex.test/mcp', token: 'tk', safras: ['SOJA 26/27', 'MILHO 2ª SAFRA 26/27'],
       fetchImpl: impl, agora: new Date('2026-09-29T12:00:00Z'),
     });
-    expect(sqls).toHaveLength(3);
+    // lista de safras, talhões, plantio, colheita e o total por dia das safras anteriores
+    expect(sqls).toHaveLength(5);
+    expect(sqls[4]).toContain("'MILHO 2º SAFRA 25/26','SOJA 24/25','SOJA 25/26'");
     expect(dados.geradoEm).toBe('2026-09-29T12:00:00.000Z');
     expect(dados.safras).toEqual(['SOJA 26/27', 'MILHO 2ª SAFRA 26/27']);
-    expect(dados.linhas).toHaveLength(3);
+    expect(dados.anteriores).toEqual(['MILHO 2º SAFRA 25/26', 'SOJA 24/25', 'SOJA 25/26']);
+    expect(dados.linhas.filter((l) => l.talhoes.length)).toHaveLength(3);
+    expect(dados.linhas.filter((l) => !l.talhoes.length).map((l) => l.safra)).toEqual(['SOJA 24/25', 'SOJA 25/26']);
     expect(dados.linhas.every((l) => l.gerado_em === dados.geradoEm)).toBe(true);
   });
 });

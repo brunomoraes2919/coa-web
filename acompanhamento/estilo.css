@@ -445,6 +445,7 @@ button, input, select { font: inherit; color: inherit; }
 .tv-cartao .legenda { font-size: .72em; gap: 1em; }
 .tv-cartao .legenda i { width: .95em; height: .95em; }
 .tv-cartao .legenda i.tracejada { width: 1.3em; height: 0; }
+.tv-cartao .legenda i.linha { width: 1.3em; height: .22em; }
 .tv-g { position: relative; flex: 1 1 auto; min-height: 0; }
 .tv-g .vazio { font-size: .8em; }
 

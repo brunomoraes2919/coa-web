@@ -93,10 +93,26 @@ export interface LinhaAcompScript {
   apontamentos: ApontamentoAcompScript[];
 }
 
+/** Apontamento de uma safra anterior: só o total do dia (comparativo do gráfico diário). */
+export interface ApontamentoHistScript {
+  op: 'PLANTIO' | 'COLHEITA';
+  d: string;
+  a: number;
+}
+
+export interface LinhaHistScript {
+  safra: string;
+  unidade: string;
+  gerado_em: string;
+  talhoes: [];
+  apontamentos: ApontamentoHistScript[];
+}
+
 export interface AcompanhamentoScript {
   geradoEm: string;
   safras: string[];
-  linhas: LinhaAcompScript[];
+  anteriores?: string[];
+  linhas: (LinhaAcompScript | LinhaHistScript)[];
 }
 
 type Resultado = { columns: string[]; rows: unknown[][] };
@@ -108,6 +124,10 @@ export function linhasAcompanhamento(
   r: { talhoes: Resultado; plantio: Resultado; colheita: Resultado },
   geradoEm: string,
 ): LinhaAcompScript[];
+export function culturaDaSafra(nome: string): string;
+export function safrasAnteriores(atuais: string[], todas: string[]): string[];
+export function montarSqlHistorico(safras: string[]): string;
+export function linhasHistorico(r: Resultado, geradoEm: string, atuais?: string[]): LinhaHistScript[];
 export function sincronizarAcompanhamento(opcoes: {
   url: string;
   token: string;

@@ -20,6 +20,8 @@
     s: ['#E3E8E4', '#A9D8BD', '#4FA37A', '#0C5A50'], fora: '#F3F5F3'
   };
   // cor fixa por fazenda (paleta categórica validada; nunca pela posição no ranking)
+  // safras anteriores no gráfico diário: tons claros, sem destaque (1 ano antes, 2 anos antes)
+  var COR_COMPARATIVO = ['#7FB5A7', '#B3C2BC'];
   var COR_FAZENDA = { 'TRES FLECHAS': '#2a78d6', GLOBO: '#eb6834', SM3: '#1baf7a', DOURADO: '#eda100', NEBRASKA: '#e87ba4', GUAPIRAMA: '#008300', SIRIEMA: '#4a3aa7' };
 
   // ===========================================================================
@@ -135,14 +137,19 @@
         // fazenda do COA WEB → unidade do PIMS (para seguir a fazenda escolhida no topo do COA WEB)
         var fz = await sb.from('mapas_fazendas').select('unidade_pims,coa_fazenda_id');
         (fz.data || []).forEach(function (f) { if (f.unidade_pims && f.coa_fazenda_id !== null) fazendasCoa[f.coa_fazenda_id] = String(f.unidade_pims).trim().toUpperCase(); });
-        var talhoes = [], apontamentos = [], safras = {}, gerado = null;
+        var talhoes = [], apontamentos = [], historico = [], safras = {}, gerado = null;
         linhas.forEach(function (l) {
-          safras[l.safra] = true;
           if (!gerado || l.gerado_em > gerado) gerado = l.gerado_em;
-          (l.talhoes || []).forEach(function (t) { talhoes.push(Object.assign({ u: l.unidade, s: l.safra }, t)); });
+          // linha sem talhão = safra anterior (só o total por dia, para o comparativo do gráfico diário)
+          if (!(l.talhoes || []).length) {
+            (l.apontamentos || []).forEach(function (a) { historico.push({ u: l.unidade, s: l.safra, op: a.op, d: a.d, a: a.a }); });
+            return;
+          }
+          safras[l.safra] = true;
+          l.talhoes.forEach(function (t) { talhoes.push(Object.assign({ u: l.unidade, s: l.safra }, t)); });
           (l.apontamentos || []).forEach(function (a) { apontamentos.push(Object.assign({ u: l.unidade, s: l.safra }, a)); });
         });
-        return { geradoEm: gerado, safras: Object.keys(safras).sort(), talhoes: talhoes, apontamentos: apontamentos };
+        return { geradoEm: gerado, safras: Object.keys(safras).sort(), talhoes: talhoes, apontamentos: apontamentos, historico: historico };
       },
       planos: async function () {
         var r = await sb.from('acomp_metas').select('*');
@@ -237,6 +244,30 @@
     return null;
   }
 
+  // ---- comparativo com as duas safras anteriores (mesma regra de scripts/sincronizar-plantio.mjs) ----
+  /** Cultura de um nome de safra, sem o ano ('MILHO SAFRINHA 23/24' e 'MILHO 2ª SAFRA 24/25' → 'MILHO 2 SAFRA'). */
+  function culturaDaSafra(nome) {
+    var s = String(nome || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim().replace(/\s*\d{2}\/\d{2}$/, '');
+    s = s.replace(/(\d)\s*[ªº°]/g, '$1').replace(/\bSAFRINHA\b/g, '2 SAFRA').replace(/^MILHO\s+SILAGEM\b/, 'SILAGEM');
+    if (/\bSAFRA\b/.test(s) && !/\d\s+SAFRA\b/.test(s)) s = s.replace(/\bSAFRA\b/, '1 SAFRA');
+    return s.replace(/\s+/g, ' ').trim();
+  }
+  function anoDaSafra(nome) { var m = /(\d{2})\/\d{2}\s*$/.exec(String(nome || '')); return m ? +m[1] : null; }
+  /** Safras de 1 e 2 anos antes, da mesma cultura, que têm dados no comparativo (mais recente primeiro). */
+  function safrasAnteriores(s) {
+    var c = culturaDaSafra(s), ano = anoDaSafra(s), vistas = {};
+    (DADOS.historico || []).forEach(function (h) { vistas[h.s] = true; });
+    return Object.keys(vistas).map(function (n) { return { nome: n, anos: ano - anoDaSafra(n) }; })
+      .filter(function (x) { return (x.anos === 1 || x.anos === 2) && culturaDaSafra(x.nome) === c; })
+      .sort(function (a, b) { return a.anos - b.anos || (a.nome < b.nome ? -1 : 1); });
+  }
+  /** Mesmo dia e mês, `anos` antes (29/02 vira 28/02). */
+  function anosAntes(d, anos) {
+    var r = new Date(d.getFullYear() - anos, d.getMonth(), d.getDate());
+    if (r.getMonth() !== d.getMonth()) r = new Date(d.getFullYear() - anos, d.getMonth() + 1, 0);
+    return r;
+  }
+
   // ===========================================================================
   // Indicadores (equivalentes às medidas do relatório Power BI)
   // ===========================================================================
@@ -297,10 +328,17 @@
     m.necessario = m.termino && m.restante > 0 ? m.restante / Math.max(1, dif(h, m.termino) + 1) : null;
     m.metaHoje = m.metaDia(h);
 
+    // safras anteriores no mesmo período (mesmos dias do ano), só para comparar no gráfico diário
+    m.comparativos = safrasAnteriores(s).map(function (c) {
+      var pd = {}, tem = false;
+      (DADOS.historico || []).forEach(function (h) { if (h.s === c.nome && h.op === o && U[h.u]) { pd[h.d] = (pd[h.d] || 0) + h.a; tem = true; } });
+      return tem ? { nome: c.nome, anos: c.anos, porDia: pd } : null;
+    }).filter(Boolean);
     m.serie = [];
     if (m.ini) for (var t = +m.ini; t <= +m.ult; t += DIA) {
       var d = new Date(t); d = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-      m.serie.push({ d: d, a: porDia[paraIso(d)] || 0, meta: m.metaDia(d) });
+      m.serie.push({ d: d, a: porDia[paraIso(d)] || 0, meta: m.metaDia(d),
+        comp: m.comparativos.map(function (c) { return Math.round(c.porDia[paraIso(anosAntes(d, c.anos))] || 0); }) });
     }
 
     var eq = {};
@@ -701,11 +739,15 @@
 
   function renderMeta(m) {
     var el = $('g-meta');
-    legenda('leg-meta', [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Meta diária', cor: COR.dourado, tipo: 'tracejada' }]);
+    legenda('leg-meta', itensLegendaMeta(m));
     if (!m.serie.length) return vazio(el, 'Ainda não há apontamentos de ' + m.o.toLowerCase() + ' nesta safra.');
     chart(el).setOption(opcoesMeta(m, 1), true);
   }
 
+  function itensLegendaMeta(m) {
+    return [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Meta diária', cor: COR.dourado, tipo: 'tracejada' }]
+      .concat((m.comparativos || []).map(function (c, i) { return { nome: nomeSafra(c.nome), cor: COR_COMPARATIVO[i] || COR_COMPARATIVO[1], tipo: 'linha' }; }));
+  }
   /** Gráfico "realizado x meta por dia"; `k` multiplica fontes e traços (TV e imagem exportada). */
   function opcoesMeta(m, k, ultimosDias) {
     var serie = ultimosDias ? m.serie.slice(-ultimosDias) : m.serie;
@@ -717,11 +759,17 @@
       labelLayout: { hideOverlap: true }
     }];
     if (temMeta) series.push({ name: 'Meta', type: 'line', step: 'middle', data: serie.map(function (x) { return x.meta; }), symbol: 'none', lineStyle: { color: COR.dourado, width: 2 * k, type: [6 * k, 4 * k] }, z: 5 });
+    // safras anteriores no mesmo período: linhas finas e claras, só para comparar
+    (m.comparativos || []).forEach(function (c, i) {
+      series.push({ name: nomeSafra(c.nome), type: 'line', data: serie.map(function (x) { return x.comp ? x.comp[i] : null; }), symbol: 'none', silent: true, z: 4,
+        lineStyle: { color: COR_COMPARATIVO[i] || COR_COMPARATIVO[1], width: 1.6 * k }, emphasis: { disabled: true } });
+    });
     return opt({
       grid: { left: 4 * k, right: 8 * k, top: 20 * k, bottom: 4 * k, containLabel: true },
       tooltip: tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.05)' } }, formatter: function (ps) {
         var x = serie[ps[0].dataIndex];
-        return '<b>' + x.d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) + '</b><br>Realizado: <b>' + fmtN(x.a) + ' ha</b>' + (x.meta !== null ? '<br>Meta: ' + fmtN(x.meta) + ' ha' : '');
+        return '<b>' + x.d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) + '</b><br>Realizado: <b>' + fmtN(x.a) + ' ha</b>' + (x.meta !== null ? '<br>Meta: ' + fmtN(x.meta) + ' ha' : '') +
+          (m.comparativos || []).map(function (c, i) { return '<br><span style="color:#8A988F">' + esc(nomeSafra(c.nome)) + ': ' + fmtN(x.comp[i]) + ' ha</span>'; }).join('');
       } }),
       xAxis: Object.assign({}, eixoX, { type: 'category', data: serie.map(function (x) { return x.d.getDate() === 1 || x === serie[0] ? fmtData(x.d, true) : String(x.d.getDate()); }), axisLabel: { color: COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: COR.linha, width: k } } }),
       yAxis: Object.assign({}, eixoY, { type: 'value', axisLabel: { color: COR.fraco, fontSize: 11 * k, formatter: function (v) { return fmtN(v); } }, splitLine: { lineStyle: { color: COR.grade, width: k } } }),
@@ -1214,7 +1262,8 @@
       if (u === TODAS) tvFazendas(m);
       else if (comp) desenharMapaFazenda(elMapa, u, m, comp, { semZoom: true, rotulos: true, fonte: 8.5 * k, fonteTitulo: 11 * k });
       else vazio(elMapa, MAPAS ? 'Sem limites de talhões para esta fazenda.' : 'Carregando os limites dos talhões…');
-      var eg = $('tv-grafico');
+      legenda('tv-leg-meta', itensLegendaMeta(m));
+    var eg = $('tv-grafico');
       if (m.serie.length) chart(eg).setOption(opcoesMeta(m, k, 21), true);
       else vazio(eg, 'Ainda não há apontamentos nesta safra.');
     });
@@ -1442,9 +1491,12 @@
   async function cartaoMeta(c, r, m, pr) {
     caixa(c, r);
     escrever(c, 'Meta x Realizado - ha por dia', r.x + 16, r.y + 28, 15, 600, COR.texto, r.w * 0.5);
-    [[COR.teal, 'Área executada dia'], [COR.dourado, 'Meta diária']].reduce(function (x, l) {
-      c.fillStyle = l[0]; c.beginPath(); c.arc(x + 5, r.y + 46, 5, 0, 2 * Math.PI); c.fill();
-      return x + 16 + escrever(c, l[1], x + 14, r.y + 50, 12.5, 500, COR.suave, 160) + 10;
+    var itensMeta = [[COR.teal, 'Área executada dia'], [COR.dourado, 'Meta diária']].concat((m.comparativos || []).map(function (cp, i) { return [COR_COMPARATIVO[i] || COR_COMPARATIVO[1], nomeSafra(cp.nome), true]; }));
+    itensMeta.reduce(function (x, l) {
+      c.fillStyle = l[0]; c.strokeStyle = l[0];
+      if (l[2]) { c.lineWidth = 2.5; c.beginPath(); c.moveTo(x, r.y + 46); c.lineTo(x + 12, r.y + 46); c.stroke(); }
+      else { c.beginPath(); c.arc(x + 5, r.y + 46, 5, 0, 2 * Math.PI); c.fill(); }
+      return x + 16 + escrever(c, l[1], x + (l[2] ? 16 : 14), r.y + 50, 12.5, 500, COR.suave, 160) + 12;
     }, r.x + 16);
     var mr = metaReferencia(m);
     [['Meta diária (ha)', mr !== null ? fmtN(mr) : '—'], ['Média real ha/dia', m.media ? fmtN(m.media) : '—']].forEach(function (p, i) {
@@ -1457,7 +1509,7 @@
     var dias = Math.max(14, Math.floor(a.w / 13));
     var o = opcoesMeta(m, 1, m.serie.length > dias ? dias : null);
     o.series[0].itemStyle.color = COR.teal;
-    if (o.series[1]) o.series[1].lineStyle = { color: '#F2C200', width: 2.5 };
+    o.series.forEach(function (se) { if (se.name === 'Meta') se.lineStyle = { color: '#F2C200', width: 2.5 }; });
     var img = await grafico(a.w, a.h, o, pr);
     if (img) c.drawImage(img, a.x, a.y, a.w, a.h);
   }
