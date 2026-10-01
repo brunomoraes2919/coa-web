@@ -294,6 +294,18 @@ button, input, select { font: inherit; color: inherit; }
 .bloco-cab { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .bloco-cab h3 { margin: 0; font-size: 13.5px; font-weight: 650; color: var(--verde-escuro); }
 .tabela-periodos input { width: 100%; }
+.campo-ajuda { position: relative; display: flex; align-items: center; gap: 6px; }
+.campo-ajuda input { flex: 1; min-width: 0; }
+.tabela-periodos input.travado { background: var(--linha-suave); color: var(--texto-suave); cursor: not-allowed; pointer-events: none; }
+.ajuda { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--verde-teal); background: #fff; color: var(--verde-teal);
+  font-size: 12.5px; font-weight: 700; line-height: 1; cursor: help; padding: 0; }
+.ajuda:hover, .ajuda:focus-visible { background: var(--verde-teal); color: #fff; outline: none; }
+.ajuda::after {
+  content: attr(data-dica); position: absolute; left: 0; top: calc(100% + 8px); z-index: 20; width: 300px; padding: 10px 12px;
+  background: var(--verde-escuro); color: #fff; font-size: 12.5px; font-weight: 500; line-height: 1.45; text-align: left; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(16, 54, 50, .25); opacity: 0; visibility: hidden; transition: opacity .15s; pointer-events: none; white-space: normal;
+}
+.ajuda:hover::after, .ajuda:focus::after { opacity: 1; visibility: visible; }
 .tabela-periodos input[type="number"] { text-align: right; }
 .tabela-periodos td { padding: 5px 6px; }
 .remover { border: 0; background: none; color: var(--texto-fraco); font-size: 18px; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: 6px; }

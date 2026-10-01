@@ -1012,8 +1012,12 @@
     $('m-op').value = o;
     var p = planoDe(u, s, o);
     form.periodos = p ? p.periodos.map(function (x) { return { inicio: x.inicio, fim: x.fim, meta: x.meta }; }) : [];
+    form.periodos.sort(function (a, b) { return a.inicio < b.inicio ? -1 : a.inicio > b.inicio ? 1 : 0; });
+    // início do 1º período = 1º boletim de plantio apontado no PIMS (travado); sem boletim ainda, fica editável
+    var mIni = calcula([u], s, o).ini;
+    form.iniTravado = mIni ? paraIso(mIni) : null;
     if (!form.periodos.length) {
-      var m = calcula([u], s, o), ini = m.ini ? paraIso(m.ini) : paraIso(hoje());
+      var ini = form.iniTravado || paraIso(hoje());
       form.periodos.push({ inicio: ini, fim: paraIso(new Date(+iso(ini) + 29 * DIA)), meta: '' });
     }
     $('m-termino').value = p && p.dataTermino ? String(p.dataTermino).slice(0, 10) : '';
@@ -1027,9 +1031,16 @@
     listarPlanos();
   }
 
+  var DICA_INICIO = 'A data de início do 1º período é a do primeiro boletim de plantio apontado no PIMS para esta fazenda e safra. Ela é preenchida e atualizada automaticamente e não pode ser alterada aqui.';
+  var DICA_INICIO_SEM = 'Ainda não há boletim de plantio apontado no PIMS para esta fazenda e safra. Informe o início previsto; quando o primeiro boletim for apontado, esta data passa a ser a dele automaticamente e fica travada.';
   function desenharPeriodos() {
+    if (form.iniTravado && form.periodos.length) form.periodos[0].inicio = form.iniTravado;
     $('m-periodos').innerHTML = form.periodos.map(function (p, i) {
-      return '<tr data-i="' + i + '"><td><input type="date" data-k="inicio" value="' + esc(p.inicio) + '" aria-label="Início do período ' + (i + 1) + '"></td>' +
+      var trava = i === 0 && !!form.iniTravado, dica = form.iniTravado ? DICA_INICIO : DICA_INICIO_SEM;
+      var campo = '<input type="date" data-k="inicio" value="' + esc(p.inicio) + '" aria-label="Início do período ' + (i + 1) + '"' + (trava ? ' readonly class="travado" tabindex="-1"' : '') + '>';
+      return '<tr data-i="' + i + '"><td>' + (i === 0
+          ? '<div class="campo-ajuda">' + campo + '<button type="button" class="ajuda" aria-label="' + esc(dica) + '" data-dica="' + esc(dica) + '">?</button></div>'
+          : campo) + '</td>' +
         '<td><input type="date" data-k="fim" value="' + esc(p.fim) + '" aria-label="Fim do período ' + (i + 1) + '"></td>' +
         '<td class="n"><input type="number" data-k="meta" min="0" step="1" value="' + esc(p.meta) + '" placeholder="ha/dia" aria-label="Meta diária do período ' + (i + 1) + '"></td>' +
         '<td class="n" data-dias></td><td class="n" data-area></td>' +
