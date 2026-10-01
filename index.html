@@ -2626,7 +2626,15 @@ function exportarExcelMec(ind, sel){
   XLSX.utils.book_append_sheet(wb, ws2, 'Boletins');
   XLSX.writeFile(wb, nomeArquivoMec('xlsx'));
 }
-function exportarPdfMec(ind, sel){
+/** Logo do COA (branco, para o cabeçalho verde do PDF); carregado uma vez. */
+let logoCoaPdfMec = null;
+function carregarLogoCoaMec(){
+  if(logoCoaPdfMec) return logoCoaPdfMec;
+  logoCoaPdfMec = new Promise(ok=>{ const img = new Image(); img.onload = ()=>ok(img); img.onerror = ()=>{ logoCoaPdfMec = null; ok(null); }; img.src = 'mapas/logo-coa-branco.png'; });
+  return logoCoaPdfMec;
+}
+async function exportarPdfMec(ind, sel){
+  const logo = await carregarLogoCoaMec();
   const { jsPDF } = window.jspdf;
   const { headers, dados, validacao, validacaoAtencao } = mecExport.atual, cab = cabecalhoRelatorioMec();
   // colunas principais do relatório do PIMS (as de código levam a descrição na coluna seguinte)
@@ -2650,6 +2658,7 @@ function exportarPdfMec(ind, sel){
     doc.text('Relatório de erros — boletins de atividades mecanizadas', M, 8);
     doc.setFont('helvetica','normal'); doc.setFontSize(9);
     doc.text(`${cab.faz}  ·  arquivo ${cab.arquivo}  ·  gerado em ${cab.gerado}`, M, 14);
+    if(logo){ const lh = 11, lw = logo.width / logo.height * lh; doc.addImage(logo, 'PNG', W - M - lw, (18 - lh) / 2, lw, lh, 'logo-coa', 'FAST'); }
     y = 26;
   };
   cabPagina();
@@ -2705,13 +2714,13 @@ document.getElementById('form-mec-export').addEventListener('click', e=>{
   document.querySelectorAll(`#dlg-mec-export input[data-tipo="${tipo}"]`).forEach(i=>{ i.checked = !!t.dataset.todos; });
   atualizarTotalExportMec();
 });
-document.getElementById('form-mec-export').addEventListener('submit', e=>{
+document.getElementById('form-mec-export').addEventListener('submit', async e=>{
   e.preventDefault();
   if(!mecExport) return;
   const sel = selecaoExportMec(), ind = linhasExportMec(sel);
   if(!ind.length) return;
   const fmt = document.querySelector('#dlg-mec-export input[name="mec-fmt"]:checked').value;
-  try{ fmt === 'pdf' ? exportarPdfMec(ind, sel) : exportarExcelMec(ind, sel); document.getElementById('dlg-mec-export').close(); }
+  try{ if(fmt === 'pdf') await exportarPdfMec(ind, sel); else exportarExcelMec(ind, sel); document.getElementById('dlg-mec-export').close(); }
   catch(erro){ console.error(erro); alert('Não foi possível gerar o relatório: ' + (erro && erro.message ? erro.message : erro)); }
 });
 
