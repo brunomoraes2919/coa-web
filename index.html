@@ -149,7 +149,39 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .fazendas-permitidas-tag{display:inline-block;font-size:11px;background:var(--fundo);border:1px solid var(--linha);
   border-radius:20px;padding:2px 9px;margin:2px 3px 2px 0;color:var(--texto-suave);}
 
-main{padding:26px 34px 60px;min-width:0;margin-left:236px;box-sizing:border-box;}
+main{padding:26px 34px 60px;min-width:0;margin-left:236px;box-sizing:border-box;transition:margin-left .2s ease;}
+
+/* ---------- barra lateral recolhível (botão Reduzir/Expandir, como no Locks Agtech) ---------- */
+.sidebar{transition:width .2s ease, padding .2s ease;overflow-x:hidden;}
+@media (min-width:901px){ .sidebar-foot{margin-top:auto;} }
+.btn-recolher{
+  display:flex;align-items:center;gap:10px;width:calc(100% + 28px);margin:12px -14px -22px;padding:12px 24px 12px;
+  background:none;border:none;border-top:1px solid rgba(255,255,255,.12);color:var(--dourado);
+  font-size:11px;font-weight:700;letter-spacing:.12em;cursor:pointer;text-align:left;flex:none;
+}
+.btn-recolher svg{width:18px;height:18px;flex:none;}
+.btn-recolher:hover{background:rgba(255,255,255,.05);}
+.sidebar-acoes .btn-sair{display:flex;align-items:center;justify-content:center;gap:6px;}
+.sidebar-acoes .btn-sair svg{width:14px;height:14px;flex:none;}
+@media (min-width:901px){
+  .app.recolhida .sidebar{width:68px;padding-left:8px;padding-right:8px;}
+  .app.recolhida main{margin-left:68px;}
+  .app.recolhida .brand{padding:4px 0 16px;}
+  .app.recolhida .brand-logo{width:48px;}
+  .app.recolhida .sb-fazenda-select,
+  .app.recolhida .nav-eyebrow,
+  .app.recolhida .usuario-logado{display:none;}
+  .app.recolhida nav{margin-top:8px;}
+  /* só o ícone (o nome aparece ao parar o mouse: title) */
+  .app.recolhida .nav-btn{font-size:0;justify-content:center;padding:11px 0;}
+  .app.recolhida .nav-btn svg{width:19px;height:19px;}
+  .app.recolhida .sidebar-foot{padding:10px 0 2px;}
+  .app.recolhida .sidebar-acoes .btn-sair{font-size:0;padding:7px 0;}
+  .app.recolhida .sidebar-acoes .btn-sair svg{width:16px;height:16px;}
+  .app.recolhida .btn-recolher{width:calc(100% + 16px);margin:12px -8px -22px;padding:12px 0;justify-content:center;}
+  .app.recolhida .btn-recolher span{display:none;}
+}
+@media (max-width:900px){ .btn-recolher{display:none;} }
 .topbar{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:22px;flex-wrap:wrap;gap:10px;}
 .topbar h1{font-size:21px;margin:0 0 4px;letter-spacing:.1px;}
 .topbar p{margin:0;color:var(--texto-suave);font-size:13px;}
@@ -578,10 +610,14 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <div class="sidebar-foot">
       <div class="usuario-logado" id="usuario-logado"></div>
       <div class="sidebar-acoes">
-        <button class="btn-sair" id="btn-trocar-categoria">← Trocar categoria</button>
-        <button class="btn-sair" id="btn-sair">Sair</button>
+        <button class="btn-sair" id="btn-trocar-categoria" title="Trocar categoria"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Trocar categoria</button>
+        <button class="btn-sair" id="btn-sair" title="Sair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>Sair</button>
       </div>
     </div>
+    <button type="button" class="btn-recolher" id="btn-recolher" aria-expanded="true" title="Reduzir menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h10"/></svg>
+      <span>REDUZIR</span>
+    </button>
   </aside>
 
   <main>
@@ -3049,6 +3085,29 @@ document.getElementById('btn-entrar').addEventListener('click', tentarLogin);
 document.getElementById('login-usuario').addEventListener('keydown', e=>{ if(e.key==='Enter') tentarLogin(); });
 document.getElementById('login-senha').addEventListener('keydown', e=>{ if(e.key==='Enter') tentarLogin(); });
 document.getElementById('btn-trocar-categoria').addEventListener('click', mostrarCategoriaScreen);
+
+/* Barra lateral recolhível: só os ícones (o nome de cada item aparece ao parar o mouse). A escolha fica
+   guardada neste navegador. */
+(function(){
+  const app = document.getElementById('app-shell'), btn = document.getElementById('btn-recolher');
+  document.querySelectorAll('.sidebar .nav-btn').forEach(b=>{ if(!b.title) b.title = b.textContent.trim(); });
+  function aplicar(recolhida){
+    app.classList.toggle('recolhida', recolhida);
+    btn.setAttribute('aria-expanded', String(!recolhida));
+    btn.title = recolhida ? 'Expandir menu' : 'Reduzir menu';
+    btn.querySelector('span').textContent = recolhida ? 'EXPANDIR' : 'REDUZIR';
+  }
+  let guardado = null;
+  try{ guardado = localStorage.getItem('coa.menuRecolhido'); }catch(e){ /* sem armazenamento */ }
+  aplicar(guardado === '1');
+  btn.addEventListener('click', ()=>{
+    const recolhida = !app.classList.contains('recolhida');
+    aplicar(recolhida);
+    try{ localStorage.setItem('coa.menuRecolhido', recolhida ? '1' : '0'); }catch(e){ /* sem armazenamento */ }
+    // os módulos em iframe (mapas, acompanhamento) e os gráficos refazem o tamanho
+    setTimeout(()=>window.dispatchEvent(new Event('resize')), 230);
+  });
+})();
 document.getElementById('btn-sair').addEventListener('click', sair);
 
 function renderTudo(){
