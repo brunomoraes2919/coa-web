@@ -2167,8 +2167,10 @@ function verificarRegra3(ctx){
 }
 function verificarRegra4(ctx){
   if(ctx.operacaoCod==null || !ctx.periodoDesc) return null;
-  if(OPS_ALGODAO.has(ctx.operacaoCod) && periodoEhPecuaria(ctx.periodoDesc)){
-    return `Operação de algodão não pode ser lançada em período de pecuária`;
+  // operações de algodão (rolos, módulos, beneficiamento…) só em período de algodão
+  // (antes só barrava período de pecuária; ex.: rolo de algodão em CORRECAO PREP. SOLO)
+  if(OPS_ALGODAO.has(ctx.operacaoCod) && !/^ALGODAO\b/.test(ctx.periodoDesc)){
+    return `Operação de algodão "${ctx.operacaoDescOriginal}" só pode ser lançada em período de algodão — veio em "${ctx.periodoDescOriginal}"`;
   }
   if(OPS_PECUARIA.has(ctx.operacaoCod) && !periodoEhPecuaria(ctx.periodoDesc)){
     return `Operação de pecuária só pode ser lançada em período de pecuária — veio em "${ctx.periodoDescOriginal}"`;
