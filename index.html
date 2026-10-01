@@ -2062,7 +2062,8 @@ function validarPeriodoCentroCusto(headers, dados){
 // informado. Se o período é uma safra "XX/YY", a janela vai de 01/09/20XX a
 // 31/08/20YY. Se o período é um ano civil "YYYY", a janela é o próprio ano civil
 // (01/01 a 31/12). Fora disso é erro (antes era só atenção; virou erro a pedido
-// do COA em 01/10/2026).
+// do COA em 01/10/2026). Exceção: períodos de ALGODÃO (1ª e 2ª safra) seguem
+// como atenção — o ciclo do algodão passa de 31/08 (colheita/beneficiamento).
 function extrairJanelaDoPeriodo(periodoNorm){
   let m = periodoNorm.match(/(\d{2})\/(\d{2})$/);
   if(m){
@@ -2090,10 +2091,10 @@ function validarAnoAgricolaData(headers, dados){
   const idxPeriodo = headers.findIndex(h => normalizarTextoMec(h) === 'PERIODO DE PRODUCAO');
   const idxData = headers.findIndex(h => normalizarTextoMec(h) === 'DATA');
   if(idxPeriodo === -1 || idxData === -1){
-    return { aplicavel:false, erros: dados.map(()=>null) };
+    return { aplicavel:false, erros: dados.map(()=>null), atencoes: dados.map(()=>null) };
   }
   const idxPeriodoDesc = idxPeriodo + 1;
-  const erros = dados.map(row=>{
+  const msgs = dados.map(row=>{
     const periodoDesc = normalizarTextoMec(row[idxPeriodoDesc]);
     if(!periodoDesc) return null;
     const janela = extrairJanelaDoPeriodo(periodoDesc);
@@ -2105,7 +2106,11 @@ function validarAnoAgricolaData(headers, dados){
     }
     return null;
   });
-  return { aplicavel:true, erros };
+  // algodão: atenção; demais períodos: erro
+  const ehAlgodao = row => /^ALGODAO\b/.test(normalizarTextoMec(row[idxPeriodoDesc]));
+  const erros = msgs.map((m,i)=> m && !ehAlgodao(dados[i]) ? m : null);
+  const atencoes = msgs.map((m,i)=> m && ehAlgodao(dados[i]) ? m : null);
+  return { aplicavel:true, erros, atencoes };
 }
 
 function encontrarIndiceColuna(headers, nomeNormalizado){
@@ -2314,9 +2319,9 @@ function processarArquivoMecanizadas(file){
     const v2 = validarAnoAgricolaData(headers, dados);
     const v3 = validarRegrasOperacionais(headers, dados);
     const erros = mesclarMensagens(v1.erros, v2.erros, v3.erros);
-    const atencoes = mesclarMensagens(v3.atencoes);
+    const atencoes = mesclarMensagens(v2.atencoes, v3.atencoes);
     const validacao = { aplicavel: v1.aplicavel || v2.aplicavel || v3.aplicavel, erros };
-    const validacaoAtencao = { aplicavel: v3.aplicavel, atencoes };
+    const validacaoAtencao = { aplicavel: v2.aplicavel || v3.aplicavel, atencoes };
     mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao, validacaoAtencao, preLimpeza };
     mecFiltroTipo = 'todos';
     mecFiltroErroDetalhe = '';
@@ -2386,7 +2391,7 @@ function renderTabelaMecanizadas(){
   }
   if(mostrarColunaAtencao){
     resumoValidacao += qtdAtencoes
-      ? `<div class="aviso-atencao">${qtdAtencoes} linha(s) para atenção — confira as regras de operação sinalizadas.</div>`
+      ? `<div class="aviso-atencao">${qtdAtencoes} linha(s) para atenção — regras de operação e datas fora da janela em períodos de algodão.</div>`
       : `<div class="aviso-ok">Nenhuma linha para atenção.</div>`;
   } else {
     resumoValidacao += `<div class="aviso">Não encontrei a coluna "Operação" nesse arquivo — validação de atenção não aplicada.</div>`;
