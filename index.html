@@ -2903,6 +2903,14 @@ window.addEventListener('message', ev=>{
   const d = ev.data;
   if(!d || typeof d !== 'object' || d.tipo !== 'acomp-rota') return;
   if(d.vista === 'painel' || d.vista === 'metas' || d.vista === 'safras'){ acompVista = d.vista; destacarBotaoAcomp(); }
+  // fazenda escolhida nas abas do módulo → seletor do menu lateral (e o resto do COA WEB, como numa troca manual)
+  if(typeof d.coaFazenda === 'number'){
+    const el = document.getElementById('sb-fazenda');
+    if(el && el.value !== String(d.coaFazenda) && [...el.options].some(o=>o.value===String(d.coaFazenda))){
+      el.value = String(d.coaFazenda);
+      el.dispatchEvent(new Event('change'));
+    }
+  }
 });
 
 /* =====================================================================

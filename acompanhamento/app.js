@@ -104,7 +104,8 @@
       salvar: function (p) { return api('PUT', '/api/metas', p); },
       excluir: function (p) { return api('DELETE', '/api/metas?chave=' + encodeURIComponent([p.unidade, p.safra, p.operacao].join('|'))); },
       atualizar: function () { return api('POST', '/api/sincronizar'); },
-      unidadeDaFazendaCoa: function () { return null; }
+      unidadeDaFazendaCoa: function () { return null; },
+      fazendaCoaDaUnidade: function () { return null; }
     };
   }
 
@@ -218,7 +219,9 @@
         }
         throw new Error('O servidor do PIMS não respondeu em 2 minutos. Os dados são atualizados sozinhos a cada hora.');
       },
-      unidadeDaFazendaCoa: function (id) { return id === null || id === undefined ? null : (fazendasCoa[id] || null); }
+      unidadeDaFazendaCoa: function (id) { return id === null || id === undefined ? null : (fazendasCoa[id] || null); },
+      /** Unidade do PIMS → id da fazenda no COA WEB (para o menu lateral acompanhar a aba escolhida aqui). */
+      fazendaCoaDaUnidade: function (u) { var ids = Object.keys(fazendasCoa).filter(function (k) { return fazendasCoa[k] === u; }); return ids.length ? Number(ids[0]) : null; }
     };
   }
 
@@ -2058,7 +2061,10 @@
 
   function avisarPai() {
     if (!EMBED || window.parent === window) return;
-    try { window.parent.postMessage({ tipo: 'acomp-rota', vista: estado.vista }, location.origin); } catch (e) { /* sem pai */ }
+    // a fazenda da aba também vai para o COA WEB (o seletor do menu lateral acompanha); em Todas, não muda
+    var id = estado.u !== TODAS ? fonte.fazendaCoaDaUnidade(estado.u) : null;
+    if (id !== null) coaFazenda = id;
+    try { window.parent.postMessage({ tipo: 'acomp-rota', vista: estado.vista, coaFazenda: id }, location.origin); } catch (e) { /* sem pai */ }
   }
 
   async function carregarDados() {
