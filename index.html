@@ -342,6 +342,31 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .mec-resumo-card.atencao{border-color:#E9CE7A;background:#FFFBEF;color:#7A5A00;}
 .mec-resumo-card.ok{border-color:#BEE0D2;background:#F5FBF8;color:#0F6249;}
 .mec-filtros-box{border:1px solid var(--linha);border-radius:10px;background:#FAFCFA;padding:13px 14px;}
+.mec-arquivo-acoes{display:flex;gap:8px;flex-wrap:wrap;}
+/* ---------- exportar relatório de erros (Mecanizadas) ---------- */
+.dlg-mec{width:min(760px,calc(100vw - 32px));max-height:calc(100vh - 32px);border:0;border-radius:14px;padding:0;box-shadow:0 24px 70px rgba(16,54,50,.35);color:var(--texto);}
+.dlg-mec::backdrop{background:rgba(16,54,50,.5);}
+.dlg-mec form{display:flex;flex-direction:column;max-height:calc(100vh - 32px);}
+.dlg-mec-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:18px 22px 12px;border-bottom:1px solid var(--linha);}
+.dlg-mec-cab h3{margin:0;font-size:17px;color:var(--verde-escuro);}
+.dlg-mec-cab p{margin:3px 0 0;font-size:12.5px;color:var(--texto-suave);}
+.dlg-mec-fechar{background:none;border:0;font-size:22px;line-height:1;color:var(--texto-suave);cursor:pointer;padding:2px 6px;}
+.dlg-mec-corpo{padding:14px 22px;overflow:auto;display:flex;flex-direction:column;gap:14px;}
+.dlg-mec-grupo{border:1px solid var(--linha);border-radius:10px;padding:10px 12px;}
+.dlg-mec-grupo.erro{border-color:#F2B8B2;background:#FFF8F7;}
+.dlg-mec-grupo.atencao{border-color:#F3D9A0;background:#FFFBF1;}
+.dlg-mec-grupo-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px;}
+.dlg-mec-grupo-cab b{font-size:13px;}
+.dlg-mec-grupo-cab button{background:none;border:0;color:var(--verde-teal);font-size:12px;font-weight:600;cursor:pointer;padding:2px 4px;}
+.dlg-mec-item{display:flex;align-items:flex-start;gap:8px;padding:4px 2px;font-size:13px;cursor:pointer;}
+.dlg-mec-item input{margin-top:2px;accent-color:var(--verde-teal);}
+.dlg-mec-item small{color:var(--texto-suave);margin-left:auto;padding-left:10px;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.dlg-mec-formatos{display:flex;gap:10px;flex-wrap:wrap;}
+.dlg-mec-formatos label{flex:1 1 200px;display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--linha);border-radius:10px;padding:10px 12px;cursor:pointer;font-size:13px;}
+.dlg-mec-formatos label:has(input:checked){border-color:var(--verde-teal);background:#F1F8F5;}
+.dlg-mec-formatos small{display:block;color:var(--texto-suave);font-size:12px;}
+.dlg-mec-rodape{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 22px 16px;border-top:1px solid var(--linha);flex-wrap:wrap;}
+.dlg-mec-rodape span{font-size:12.5px;color:var(--texto-suave);}
 .mec-filtros-topo{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
 .mec-filtros-titulo{font-size:12px;font-weight:700;color:var(--verde-escuro);text-transform:uppercase;letter-spacing:.045em;}
 .mec-filtros-ajuda{font-size:11.5px;color:var(--texto-suave);}
@@ -922,6 +947,27 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <div id="mec-resultado"></div>
       </div>
       <div id="mec-tabela-wrap"></div>
+      <dialog class="dlg-mec" id="dlg-mec-export" aria-labelledby="dlg-mec-titulo">
+        <form method="dialog" id="form-mec-export">
+          <div class="dlg-mec-cab">
+            <div><h3 id="dlg-mec-titulo">Exportar relatório de erros</h3><p id="dlg-mec-sub">Escolha o que entra no relatório. Já vem marcado o filtro que está na tela.</p></div>
+            <button type="button" class="dlg-mec-fechar" id="dlg-mec-fechar" aria-label="Fechar">×</button>
+          </div>
+          <div class="dlg-mec-corpo">
+            <div class="dlg-mec-grupo erro" id="dlg-mec-erros"></div>
+            <div class="dlg-mec-grupo atencao" id="dlg-mec-atencoes"></div>
+            <label class="dlg-mec-item"><input type="checkbox" id="dlg-mec-sem-erro"> Incluir também os boletins sem erro ou atenção <small id="dlg-mec-sem-erro-qtd"></small></label>
+            <div class="dlg-mec-formatos" role="radiogroup" aria-label="Formato">
+              <label><input type="radio" name="mec-fmt" value="xlsx" checked><span><b>Excel (.xlsx)</b><small>Resumo e todos os boletins com todas as colunas do PIMS, Erro e Atenção</small></span></label>
+              <label><input type="radio" name="mec-fmt" value="pdf"><span><b>PDF</b><small>Resumo por erro e lista dos boletins com as colunas principais, para enviar</small></span></label>
+            </div>
+          </div>
+          <div class="dlg-mec-rodape">
+            <span id="dlg-mec-total"></span>
+            <button type="submit" class="btn ouro" id="dlg-mec-gerar">Gerar relatório</button>
+          </div>
+        </form>
+      </dialog>
     </section>
 
     <!-- ===================== MAPAS (módulo num iframe; o iframe #mapas-frame é criado na primeira entrada) ===================== -->
@@ -2395,7 +2441,10 @@ function renderTabelaMecanizadas(){
           <div class="mec-arquivo-icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></div>
           <div><b>${nomeArquivo}</b><span>${dados.length} boletins processados com sucesso</span></div>
         </div>
-        <button class="btn fantasma" id="btn-trocar-arquivo-mec">Trocar arquivo</button>
+        <div class="mec-arquivo-acoes">
+          <button class="btn ouro" id="btn-exportar-mec" ${qtdErros || qtdAtencoes ? '' : 'disabled title="Sem erros nem pontos de atenção neste arquivo"'}>Exportar relatório</button>
+          <button class="btn fantasma" id="btn-trocar-arquivo-mec">Trocar arquivo</button>
+        </div>
       </div>
       <div class="mec-resumo-grid">
         <div class="mec-resumo-card erro"><div><div class="mec-resumo-num">${qtdErros}</div><div class="mec-resumo-label">Boletins com erro</div></div></div>
@@ -2407,6 +2456,7 @@ function renderTabelaMecanizadas(){
       ${(!mostrarColunaErro || !mostrarColunaAtencao) ? `<div>${resumoValidacao}</div>` : ''}
     </div>
   `;
+  document.getElementById('btn-exportar-mec').addEventListener('click', ()=>abrirExportacaoMec(atual, motivosErro, motivosAtencao, qtdSemErro));
   document.getElementById('btn-trocar-arquivo-mec').addEventListener('click', ()=>{
     delete mecanizadasPorFazenda[fazendaId];
     document.getElementById('input-arquivo-mec').value = '';
@@ -2497,6 +2547,173 @@ function renderTabelaMecanizadas(){
   if(btnAnterior) btnAnterior.addEventListener('click', ()=>{ mecPaginaAtual--; renderTabelaMecanizadas(); });
   if(btnProxima) btnProxima.addEventListener('click', ()=>{ mecPaginaAtual++; renderTabelaMecanizadas(); });
 }
+
+/* ---------- Exportar relatório de erros (Excel ou PDF) ----------
+   Os itens marcados vêm do filtro da tela (tipo e erro/atenção escolhidos); o usuário pode mudar. */
+let mecExport = null; // { atual, motivosErro, motivosAtencao, qtdSemErro }
+function motivosDaLinhaMec(msg){ return String(msg||'').split(' | ').map(x=>x.trim()).filter(Boolean).map(resumirMotivoMec); }
+function abrirExportacaoMec(atual, motivosErro, motivosAtencao, qtdSemErro){
+  mecExport = { atual, motivosErro, motivosAtencao, qtdSemErro };
+  const marcadoErro = m => mecFiltroErroDetalhe ? m===mecFiltroErroDetalhe : (mecFiltroTipo==='todos' || mecFiltroTipo==='erro');
+  const marcadoAtencao = m => mecFiltroAtencaoDetalhe ? m===mecFiltroAtencaoDetalhe : (mecFiltroTipo==='todos' || mecFiltroTipo==='atencao');
+  const grupo = (id, titulo, itens, marcado, tipo) => {
+    const el = document.getElementById(id);
+    el.hidden = !itens.length;
+    el.innerHTML = `<div class="dlg-mec-grupo-cab"><b>${titulo}</b><span><button type="button" data-todos="${tipo}">Marcar todos</button><button type="button" data-nenhum="${tipo}">Limpar</button></span></div>`
+      + itens.map(it=>`<label class="dlg-mec-item"><input type="checkbox" data-tipo="${tipo}" value="${escaparHtmlMec(it.mensagem)}" ${marcado(it.mensagem)?'checked':''}> ${escaparHtmlMec(it.mensagem)} <small>${it.quantidade} boletim(ns)</small></label>`).join('');
+  };
+  grupo('dlg-mec-erros', 'Erros', motivosErro, marcadoErro, 'erro');
+  grupo('dlg-mec-atencoes', 'Pontos de atenção', motivosAtencao, marcadoAtencao, 'atencao');
+  const sem = document.getElementById('dlg-mec-sem-erro');
+  sem.checked = mecFiltroTipo==='sem-erro';
+  document.getElementById('dlg-mec-sem-erro-qtd').textContent = qtdSemErro + ' boletim(ns)';
+  atualizarTotalExportMec();
+  document.getElementById('dlg-mec-export').showModal();
+}
+function selecaoExportMec(){
+  const marcados = tipo => new Set([...document.querySelectorAll(`#dlg-mec-export input[data-tipo="${tipo}"]:checked`)].map(i=>i.value));
+  return { erros: marcados('erro'), atencoes: marcados('atencao'), semErro: document.getElementById('dlg-mec-sem-erro').checked };
+}
+function linhasExportMec(sel){
+  const { dados, validacao, validacaoAtencao } = mecExport.atual;
+  const ind = [];
+  dados.forEach((_,i)=>{
+    const e = motivosDaLinhaMec(validacao.erros[i]), a = motivosDaLinhaMec(validacaoAtencao.atencoes[i]);
+    if(e.some(m=>sel.erros.has(m)) || a.some(m=>sel.atencoes.has(m)) || (sel.semErro && !e.length && !a.length)) ind.push(i);
+  });
+  return ind;
+}
+function atualizarTotalExportMec(){
+  const sel = selecaoExportMec(), n = linhasExportMec(sel).length;
+  document.getElementById('dlg-mec-total').textContent = n ? `${n} boletim(ns) no relatório` : 'Marque ao menos um item';
+  document.getElementById('dlg-mec-gerar').disabled = !n;
+}
+function nomeArquivoMec(ext){
+  const faz = (state.fazendas.find(f=>f.id===fazendaSelecionadaId())||{}).nome || 'fazenda';
+  const s = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
+  const d = new Date(), hoje = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  return `relatorio-erros-mecanizadas-${s(faz)}-${hoje}.${ext}`;
+}
+function contagemMotivosMec(ind, sel){
+  const { validacao, validacaoAtencao } = mecExport.atual, c = new Map();
+  ind.forEach(i=>{
+    motivosDaLinhaMec(validacao.erros[i]).filter(m=>sel.erros.has(m)).forEach(m=>{ const k='Erro|'+m; c.set(k,(c.get(k)||0)+1); });
+    motivosDaLinhaMec(validacaoAtencao.atencoes[i]).filter(m=>sel.atencoes.has(m)).forEach(m=>{ const k='Atenção|'+m; c.set(k,(c.get(k)||0)+1); });
+  });
+  return [...c.entries()].map(([k,q])=>{ const [tipo,...r] = k.split('|'); return { tipo, motivo:r.join('|'), qtd:q }; })
+    .sort((a,b)=>a.tipo.localeCompare(b.tipo) || b.qtd-a.qtd);
+}
+function cabecalhoRelatorioMec(){
+  const faz = (state.fazendas.find(f=>f.id===fazendaSelecionadaId())||{}).nome || '–';
+  return { faz, arquivo: mecExport.atual.nomeArquivo, gerado: new Date().toLocaleString('pt-BR') };
+}
+function exportarExcelMec(ind, sel){
+  const { headers, dados, validacao, validacaoAtencao } = mecExport.atual, cab = cabecalhoRelatorioMec();
+  const resumo = [
+    ['Relatório de erros — boletins de atividades mecanizadas'], [],
+    ['Fazenda', cab.faz], ['Arquivo', cab.arquivo], ['Gerado em', cab.gerado], ['Boletins no relatório', ind.length], [],
+    ['Tipo', 'Motivo', 'Boletins'],
+    ...contagemMotivosMec(ind, sel).map(x=>[x.tipo, x.motivo, x.qtd])
+  ];
+  if(sel.semErro) resumo.push(['—', 'Boletins sem erro ou atenção incluídos', ind.filter(i=>!validacao.erros[i] && !validacaoAtencao.atencoes[i]).length]);
+  const linhas = [['Linha do arquivo', ...headers, 'Erro', 'Atenção'],
+    ...ind.map(i=>[i+2, ...headers.map((_,j)=>dados[i][j]), validacao.erros[i]||'', validacaoAtencao.atencoes[i]||''])];
+  const wb = XLSX.utils.book_new();
+  const ws1 = XLSX.utils.aoa_to_sheet(resumo); ws1['!cols'] = [{wch:22},{wch:80},{wch:12}];
+  const ws2 = XLSX.utils.aoa_to_sheet(linhas); ws2['!cols'] = linhas[0].map((h,j)=>({ wch: j===0 ? 10 : (h==='Erro'||h==='Atenção') ? 70 : Math.min(30, Math.max(10, String(h).length + 2)) }));
+  ws2['!autofilter'] = { ref: XLSX.utils.encode_range({ s:{r:0,c:0}, e:{r:linhas.length-1,c:linhas[0].length-1} }) };
+  XLSX.utils.book_append_sheet(wb, ws1, 'Resumo');
+  XLSX.utils.book_append_sheet(wb, ws2, 'Boletins');
+  XLSX.writeFile(wb, nomeArquivoMec('xlsx'));
+}
+function exportarPdfMec(ind, sel){
+  const { jsPDF } = window.jspdf;
+  const { headers, dados, validacao, validacaoAtencao } = mecExport.atual, cab = cabecalhoRelatorioMec();
+  // colunas principais do relatório do PIMS (as de código levam a descrição na coluna seguinte)
+  const achar = n => headers.findIndex(h=>normalizarTextoMec(h)===n);
+  const cols = [];
+  const add = (rot, idx, larg) => { if(idx>=0) cols.push({ rot, idx, larg }); };
+  add('Data', achar('DATA'), 20);
+  const iBol = headers.findIndex(h=>/BOLETIM/.test(normalizarTextoMec(h))); add('Boletim', iBol, 20);
+  const iEq = headers.findIndex(h=>/^EQUIPAMENTO/.test(normalizarTextoMec(h))); add('Equipamento', iEq, 24);
+  const iPer = achar('PERIODO DE PRODUCAO'); add('Período', iPer>=0 ? iPer+1 : -1, 26);
+  const iCC = achar('CENTRO DE CUSTO'); add('Centro de custo', iCC>=0 ? iCC+1 : -1, 34);
+  const iOp = achar('OPERACAO'); add('Operação', iOp>=0 ? iOp+1 : -1, 38);
+  const usado = cols.reduce((s,c)=>s+c.larg, 12);
+  const doc = new jsPDF({ orientation:'landscape', unit:'mm', format:'a4' });
+  const W = 297, H = 210, M = 10, larguraMotivo = W - 2*M - usado;
+  const verde = [16,54,50], cinza = [91,107,98];
+  let y = 0;
+  const cabPagina = () => {
+    doc.setFillColor(...verde); doc.rect(0, 0, W, 18, 'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.text('Relatório de erros — boletins de atividades mecanizadas', M, 8);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    doc.text(`${cab.faz}  ·  arquivo ${cab.arquivo}  ·  gerado em ${cab.gerado}`, M, 14);
+    y = 26;
+  };
+  cabPagina();
+  // resumo
+  doc.setTextColor(...verde); doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text(`Resumo — ${ind.length} boletim(ns) no relatório`, M, y); y += 6;
+  doc.setFontSize(9);
+  contagemMotivosMec(ind, sel).forEach(x=>{
+    if(y > H-14){ doc.addPage(); cabPagina(); }
+    doc.setTextColor(...(x.tipo==='Erro' ? [179,38,30] : [150,100,0])); doc.setFont('helvetica','bold');
+    doc.text(x.tipo, M, y);
+    doc.setTextColor(23,37,31); doc.setFont('helvetica','normal');
+    const t = doc.splitTextToSize(x.motivo, W - 2*M - 50); doc.text(t, M + 20, y);
+    doc.setFont('helvetica','bold'); doc.text(String(x.qtd), W - M, y, { align:'right' });
+    y += 4.4 * t.length + 1.2;
+  });
+  y += 4;
+  // tabela
+  const linhaCab = () => {
+    doc.setFillColor(234,240,236); doc.rect(M, y-4.2, W-2*M, 6.4, 'F');
+    doc.setTextColor(...verde); doc.setFont('helvetica','bold'); doc.setFontSize(8);
+    let x = M + 1; doc.text('Linha', x, y); x += 12;
+    cols.forEach(c=>{ doc.text(c.rot, x, y); x += c.larg; });
+    doc.text('Erro / atenção', x, y);
+    y += 5;
+  };
+  if(y > H-30){ doc.addPage(); cabPagina(); }
+  linhaCab();
+  doc.setFontSize(7.6);
+  ind.forEach((i,k)=>{
+    const motivos = [validacao.erros[i] ? 'ERRO: ' + validacao.erros[i] : '', validacaoAtencao.atencoes[i] ? 'ATENÇÃO: ' + validacaoAtencao.atencoes[i] : ''].filter(Boolean).join('  ·  ') || 'sem erro ou atenção';
+    doc.setFont('helvetica','normal');
+    const celulas = cols.map(c=>doc.splitTextToSize(String(dados[i][c.idx] ?? '–'), c.larg - 2));
+    const mot = doc.splitTextToSize(motivos, larguraMotivo - 2);
+    const alt = Math.max(1, mot.length, ...celulas.map(c=>c.length)) * 3.4 + 1.6;
+    if(y + alt > H - 10){ doc.addPage(); cabPagina(); linhaCab(); doc.setFontSize(7.6); }
+    if(k % 2 === 0){ doc.setFillColor(248,250,248); doc.rect(M, y-3.2, W-2*M, alt, 'F'); }
+    doc.setTextColor(...cinza); let x = M + 1; doc.text(String(i+2), x, y); x += 12;
+    doc.setTextColor(23,37,31);
+    celulas.forEach((t,j)=>{ doc.text(t, x, y); x += cols[j].larg; });
+    doc.setTextColor(...(validacao.erros[i] ? [179,38,30] : [150,100,0])); doc.text(mot, x, y);
+    y += alt;
+  });
+  const n = doc.getNumberOfPages();
+  for(let pg=1; pg<=n; pg++){ doc.setPage(pg); doc.setFontSize(8); doc.setTextColor(...cinza); doc.text(`COA WEB · página ${pg} de ${n}`, W - M, H - 5, { align:'right' }); }
+  doc.save(nomeArquivoMec('pdf'));
+}
+document.getElementById('dlg-mec-fechar').addEventListener('click', ()=>document.getElementById('dlg-mec-export').close());
+document.getElementById('form-mec-export').addEventListener('change', atualizarTotalExportMec);
+document.getElementById('form-mec-export').addEventListener('click', e=>{
+  const t = e.target.closest('button[data-todos],button[data-nenhum]'); if(!t) return;
+  const tipo = t.dataset.todos || t.dataset.nenhum;
+  document.querySelectorAll(`#dlg-mec-export input[data-tipo="${tipo}"]`).forEach(i=>{ i.checked = !!t.dataset.todos; });
+  atualizarTotalExportMec();
+});
+document.getElementById('form-mec-export').addEventListener('submit', e=>{
+  e.preventDefault();
+  if(!mecExport) return;
+  const sel = selecaoExportMec(), ind = linhasExportMec(sel);
+  if(!ind.length) return;
+  const fmt = document.querySelector('#dlg-mec-export input[name="mec-fmt"]:checked').value;
+  try{ fmt === 'pdf' ? exportarPdfMec(ind, sel) : exportarExcelMec(ind, sel); document.getElementById('dlg-mec-export').close(); }
+  catch(erro){ console.error(erro); alert('Não foi possível gerar o relatório: ' + (erro && erro.message ? erro.message : erro)); }
+});
 
 function renderImportarMecanizadas(){
   const elFazenda = document.getElementById('mec-fazenda-atual');
