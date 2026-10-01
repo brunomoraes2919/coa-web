@@ -65,11 +65,11 @@ describe('pedidos de "Atualizar plantio"', () => {
         agrovex: { url: 'https://agrovex.test/mcp', token: TOKEN, safras: ['SOJA 26/27'] },
         fetch: impl,
       }),
-    ).rejects.toThrow(/Agrovex recusou o acesso/);
+    ).rejects.toThrow(/O servidor de dados do PIMS recusou o acesso/);
     const patch = chamadas.find((c) => c.init?.method === 'PATCH');
     expect(patch?.url).toContain('id=lte.8');
     const corpo = JSON.parse(String(patch?.init?.body));
-    expect(corpo.resultado).toMatch(/^erro: Agrovex recusou o acesso/);
+    expect(corpo.resultado).toMatch(/^erro: O servidor de dados do PIMS recusou o acesso/);
     expect(corpo.resultado).not.toContain(TOKEN);
     expect(corpo.resultado).not.toContain(CHAVE);
   });

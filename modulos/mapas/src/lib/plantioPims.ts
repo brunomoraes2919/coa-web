@@ -18,7 +18,7 @@ import type {
 
 const URL_PLANTIO = './dados/plantio.json';
 /** Mesma fonte que scripts/sincronizar-plantio.mjs grava no plantio.json. */
-const FONTE_PIMS = 'PIMS via Agrovex';
+const FONTE_PIMS = 'PIMS';
 
 const STATUS: readonly StatusPlantio[] = ['plantado', 'plantando', 'a_plantar'];
 

@@ -4,7 +4,7 @@ import type { PlantioPimsArquivo } from '../src/lib/types';
 const { lerDoRepo } = vi.hoisted(() => ({ lerDoRepo: vi.fn<() => Promise<PlantioPimsArquivo | null>>() }));
 vi.mock('../src/data', () => ({ repo: () => ({ lerPlantioPims: lerDoRepo }) }));
 
-const arq: PlantioPimsArquivo = { versao: 1, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS via Agrovex', safras: [] };
+const arq: PlantioPimsArquivo = { versao: 1, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS', safras: [] };
 
 const novo: PlantioPimsArquivo = { ...arq, geradoEm: '2026-09-28T12:01:00.000Z' };
 

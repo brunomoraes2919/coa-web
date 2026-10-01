@@ -1910,7 +1910,7 @@ const CENTROS_PERMITIDOS_ADM = new Set([
   'VILA RESIDENCIAL'
 ]);
 const UNIDADES_PULVERIZACAO_AEREA_ADM = new Set(['GLOBO', 'SIRIEMA']);
-const UNIDADES_BIO_FERTILIZANTES_ADM = new Set(['GLOBO']);
+const UNIDADES_BIO_FERTILIZANTES_ADM = new Set(['GLOBO', 'DOURADO']);
 
 // Regra 1: em período de cultura (inclui preparo de solo/cobertura), o centro
 // de custo tem que ser o respectivo àquele período. Em período ADM, somente
@@ -1985,7 +1985,7 @@ function validarPeriodoCentroCusto(headers, dados){
         if(idxUnidade === -1){
           motivos.push('Não foi possível validar Bio Fertilizantes: coluna "Unidade Administrativa" não encontrada');
         } else if(!UNIDADES_BIO_FERTILIZANTES_ADM.has(info.unidadeDesc)){
-          motivos.push(`Bio Fertilizantes em período ADM só é permitido na unidade Globo — veio "${info.unidadeDesc || 'VAZIO'}"`);
+          motivos.push(`Bio Fertilizantes em período ADM só é permitido nas unidades Globo e Dourado — veio "${info.unidadeDesc || 'VAZIO'}"`);
         }
       }
       return motivos.length ? motivos.join(' | ') : null;

@@ -43,7 +43,7 @@
   function fmtData(d, curta) { if (!d) return '—'; return curta ? d.getDate() + ' ' + MESES[d.getMonth()] : d.toLocaleDateString('pt-BR'); }
   function titulo(s) {
     var t = String(s || '').toLowerCase().replace(/(^|\s)\S/g, function (m) { return m.toUpperCase(); });
-    return t.replace(/\bSm3\b/, 'SM3').replace(/\bTres\b/, 'Três');
+    return t.replace(/\bSm3\b/, 'SM3').replace(/\bTres\b/, 'Três').replace(/\bSao\b/, 'São');
   }
   function cultura(safra) { return String(safra || '').split(/\s+/)[0].toUpperCase(); }
   function nomeSafra(s) { return titulo(s).replace(/(\d)ª/, '$1ª').replace(/\bDe\b/, 'de'); }
@@ -431,6 +431,21 @@
   }
   function orientacao(w, h) { return w > 0 && h / w > LIMIAR_RETRATO ? 'retrato' : 'paisagem'; }
 
+  /**
+   * Nome de um quadro do mapa pelos setores (PIMS) dos talhões dele: 'SAO MIGUEL I' e 'SAO MIGUEL II' viram
+   * 'São Miguel'; com setores diferentes, vale o que tem mais talhões no quadro (ex.: Siriema).
+   */
+  function nomeDoGrupo(fs) {
+    var cont = {};
+    fs.forEach(function (f) {
+      var st = f.properties.setor; if (!st) return;
+      var base = String(st).trim().toUpperCase().replace(/\s+(I{1,3}|IV|V|VI{0,3}|\d+)$/, '');
+      cont[base] = (cont[base] || 0) + 1;
+    });
+    var ks = Object.keys(cont).sort(function (a, b) { return cont[b] - cont[a]; });
+    return ks.length ? titulo(ks[0]) : null;
+  }
+
   function compor(features) {
     var grupos = agrupar(features);
     if (!grupos.length) return { orientacao: 'paisagem', quadros: [] };
@@ -447,9 +462,7 @@
     return {
       orientacao: om,
       quadros: grupos.map(function (g, i) {
-        var setores = {}; g.fs.forEach(function (f) { if (f.properties.setor) setores[f.properties.setor] = true; });
-        var ks = Object.keys(setores);
-        return { fs: g.fs, bbox: g.bbox, fr: fr[i], titulo: ks.length === 1 ? titulo(ks[0]) : 'Bloco ' + (i + 1) };
+        return { fs: g.fs, bbox: g.bbox, fr: fr[i], titulo: nomeDoGrupo(g.fs) || 'Bloco ' + (i + 1) };
       })
     };
   }

@@ -297,7 +297,7 @@ describe('rodarAcompanhamento', () => {
       supabase: { url: URL_SB, chave: CHAVE },
       fetchImpl: impl,
     });
-    expect(msg).toMatch(/Agrovex recusou o acesso/);
+    expect(msg).toMatch(/O servidor de dados do PIMS recusou o acesso/);
     expect(msg).not.toContain('token-secreto');
     expect(msg).not.toContain(CHAVE);
     log.mockRestore();

@@ -23,7 +23,7 @@ function arquivo(talhoes: PlantioPimsTalhao[], unidade = 'SIRIEMA', safra = 'SOJ
   return {
     versao: 1,
     geradoEm: '2026-09-28T10:00:00.000Z',
-    fonte: 'PIMS via Agrovex',
+    fonte: 'PIMS',
     safras: [
       { nome: 'MILHO 2ª SAFRA 26/27', unidades: [{ unidade, talhoes: [pims({ codigo: '001', status: 'a_plantar' })] }] },
       { nome: safra, unidades: [{ unidade: 'OUTRA', talhoes: [] }, { unidade, talhoes }] },
@@ -126,7 +126,7 @@ describe('montarPlantioPims (linhas de mapas_plantio_pims → mesmo formato do p
     expect(arq).toEqual({
       versao: 1,
       geradoEm: '2026-09-28T10:00:00.000Z',
-      fonte: 'PIMS via Agrovex',
+      fonte: 'PIMS',
       safras: [
         { nome: 'MILHO 2ª SAFRA 26/27', unidades: [{ unidade: 'GLOBO', talhoes: [pims({ codigo: '010' })] }] },
         {

@@ -53,7 +53,7 @@ describe('localRepo: perfil, fazendas do COA WEB e plantio do PIMS', () => {
   });
 
   it('lerPlantioPims lê ./dados/plantio.json (sem arquivo → null)', async () => {
-    const arq: PlantioPimsArquivo = { versao: 1, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS via Agrovex', safras: [] };
+    const arq: PlantioPimsArquivo = { versao: 1, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS', safras: [] };
     const urls: string[] = [];
     vi.stubGlobal('fetch', async (url: string) => {
       urls.push(url);

@@ -195,7 +195,7 @@ describe('sincronizar', () => {
     expect(dados).toEqual({
       versao: 1,
       geradoEm: '2026-09-28T10:00:00.000Z',
-      fonte: 'PIMS via Agrovex',
+      fonte: 'PIMS',
       safras: [{
         nome: 'SOJA 26/27',
         unidades: [
@@ -259,26 +259,26 @@ describe('sincronizar', () => {
   it('lança erro em português quando o Agrovex recusa o token', async () => {
     const { impl } = fetchFalso(() => null, { http: 401 });
     await expect(sincronizar({ url: 'u', token: 't', safras: ['SOJA 26/27'], fetchImpl: impl, agora }))
-      .rejects.toThrow(/Agrovex recusou o acesso \(HTTP 401\)/);
+      .rejects.toThrow(/O servidor de dados do PIMS recusou o acesso \(HTTP 401\)/);
   });
 
   it('403 do Cloudflare (error code: 1010) é bloqueio do servidor, não do token', async () => {
     const impl = async () => new Response('error code: 1010', { status: 403 });
     await expect(sincronizar({ url: 'u', token: 't', safras: ['SOJA 26/27'], fetchImpl: impl, agora }))
-      .rejects.toThrow(/Cloudflare do Agrovex bloqueou o acesso deste servidor \(erro 1010\)/);
+      .rejects.toThrow(/servidor de dados do PIMS bloqueou o acesso deste servidor \(erro 1010\)/);
   });
 
   it('403 do Agrovex mostra o começo da resposta, sem o token', async () => {
     const impl = async () => new Response('{"error":"Forbidden: token-secreto-123 sem acesso"}', { status: 403 });
     const erro = await sincronizar({ url: 'u', token: 'token-secreto-123', safras: ['SOJA 26/27'], fetchImpl: impl, agora }).catch((e: Error) => e);
-    expect(String(erro)).toMatch(/Agrovex recusou o acesso \(HTTP 403\).*Forbidden/);
+    expect(String(erro)).toMatch(/O servidor de dados do PIMS recusou o acesso \(HTTP 403\).*Forbidden/);
     expect(String(erro)).not.toContain('token-secreto-123');
   });
 
   it('403 com página HTML do Cloudflare é bloqueio do servidor', async () => {
     const impl = async () => new Response('<!DOCTYPE html><title>Just a moment...</title> cloudflare', { status: 403 });
     await expect(sincronizar({ url: 'u', token: 't', safras: ['SOJA 26/27'], fetchImpl: impl, agora }))
-      .rejects.toThrow(/Cloudflare do Agrovex barrou este servidor/);
+      .rejects.toThrow(/servidor de dados do PIMS barrou este servidor/);
   });
 
   it('recusa resultado truncado', async () => {
@@ -290,7 +290,7 @@ describe('sincronizar', () => {
 
 describe('mesmosDados / resumo', () => {
   const base = {
-    versao: 1 as const, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS via Agrovex',
+    versao: 1 as const, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS',
     safras: [{ nome: 'SOJA 26/27', unidades: [{ unidade: 'SIRIEMA', talhoes: [
       { codigo: '001', codigoPims: '001', setor: 'SIRIEMA', status: 'plantado' as const, areaPrevista: 97, areaPlantada: 97, inicio: null, fim: null, variedade: null },
       { codigo: '007', codigoPims: '007', setor: 'SIRIEMA', status: 'plantando' as const, areaPrevista: 228, areaPlantada: 208, inicio: null, fim: null, variedade: null },
@@ -310,7 +310,7 @@ describe('mesmosDados / resumo', () => {
 
 describe('linhasDeLog (logs do GitHub Actions são públicos)', () => {
   const dados = {
-    versao: 1 as const, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS via Agrovex',
+    versao: 1 as const, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS',
     safras: [
       { nome: 'SOJA 26/27', unidades: [
         { unidade: 'GLOBO', talhoes: [
@@ -360,7 +360,7 @@ const TALHOES_GLOBO = [
 const ARQUIVO = {
   versao: 1 as const,
   geradoEm: '2026-09-28T10:00:00.000Z',
-  fonte: 'PIMS via Agrovex',
+  fonte: 'PIMS',
   safras: [
     {
       nome: 'SOJA 26/27',
@@ -500,7 +500,7 @@ describe('gravarSupabase', () => {
   it('sem nenhum talhão (arquivo vazio), não chama o Supabase (nem upsert nem limpeza)', async () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { impl, chamadas } = fetchFalsoSupabase([new Response(null, { status: 200 })]);
-    const vazio = { versao: 1 as const, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS via Agrovex', safras: [] };
+    const vazio = { versao: 1 as const, geradoEm: '2026-09-28T10:00:00.000Z', fonte: 'PIMS', safras: [] };
     await gravarSupabase(vazio, { url: 'https://proj.supabase.co', chave: JWT, fetch: impl });
     expect(chamadas).toHaveLength(0);
     expect(aviso).toHaveBeenCalledWith(expect.stringContaining('não retornou nenhum talhão'));
@@ -513,7 +513,7 @@ describe('gravarSupabase', () => {
     const semUnidades = {
       versao: 1 as const,
       geradoEm: '2026-09-28T10:00:00.000Z',
-      fonte: 'PIMS via Agrovex',
+      fonte: 'PIMS',
       safras: [
         { nome: 'SOJA 26/27', unidades: [] },
         { nome: 'MILHO 2ª SAFRA 26/27', unidades: [{ unidade: 'SIRIEMA', talhoes: [] }] },

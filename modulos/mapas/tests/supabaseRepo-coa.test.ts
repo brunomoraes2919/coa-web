@@ -136,7 +136,7 @@ describe('supabaseRepo: lerPlantioPims (tabela mapas_plantio_pims)', () => {
       ...Array.from({ length: 1200 }, (_, i) => linha('FEIJAO 26/27', `U${String(i).padStart(4, '0')}`, '2026-09-28T08:00:00+00:00')),
     ]);
     const arq = await criarSupabaseRepo(banco.cliente()).lerPlantioPims();
-    expect(arq).toMatchObject({ versao: 1, fonte: 'PIMS via Agrovex', geradoEm: '2026-09-28T11:30:00.000Z' });
+    expect(arq).toMatchObject({ versao: 1, fonte: 'PIMS', geradoEm: '2026-09-28T11:30:00.000Z' });
     expect(arq!.safras.map((s) => s.nome)).toEqual(['FEIJAO 26/27', 'MILHO 26/27', 'SOJA 26/27']);
     expect(arq!.safras[0].unidades).toHaveLength(1200);
     expect(arq!.safras[2].unidades.map((u) => [u.unidade, u.talhoes.map((x) => x.codigo)])).toEqual([

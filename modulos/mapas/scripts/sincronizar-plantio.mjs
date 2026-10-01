@@ -103,17 +103,17 @@ async function lerResposta(resp, token = '') {
   // 403 com "error code: NNNN" é o Cloudflare do Agrovex barrando este servidor (não é o token)
   const cloudflare = resp.status === 403 ? /error code: (\d+)/i.exec(texto) : null;
   if (cloudflare) {
-    throw new Error(`O Cloudflare do Agrovex bloqueou o acesso deste servidor (erro ${cloudflare[1]}); o token não foi recusado.`);
+    throw new Error(`O servidor de dados do PIMS bloqueou o acesso deste servidor (erro ${cloudflare[1]}); o token não foi recusado.`);
   }
   if (resp.status === 403 && /cloudflare|<html/i.test(texto)) {
-    throw new Error('O Cloudflare do Agrovex barrou este servidor com uma página de verificação (HTTP 403); o token não foi recusado.');
+    throw new Error('O servidor de dados do PIMS barrou este servidor com uma página de verificação (HTTP 403); o token não foi recusado.');
   }
   if (resp.status === 401 || resp.status === 403) {
     // o corpo do Agrovex é curto ({"error": ...}) e não traz o token; mesmo assim ele é tirado da mensagem
     const corpo = token ? texto.split(token).join('[REDACTED]') : texto;
-    throw new Error(`Agrovex recusou o acesso (HTTP ${resp.status}): verifique o AGROVEX_TOKEN. Resposta: ${corpo.replace(/s+/g, ' ').slice(0, 150)}`);
+    throw new Error(`O servidor de dados do PIMS recusou o acesso (HTTP ${resp.status}): verifique o token de acesso do servidor. Resposta: ${corpo.replace(/s+/g, ' ').slice(0, 150)}`);
   }
-  if (!resp.ok) throw new Error(`Agrovex respondeu HTTP ${resp.status}: ${texto.slice(0, 300)}`);
+  if (!resp.ok) throw new Error(`O servidor de dados do PIMS respondeu HTTP ${resp.status}: ${texto.slice(0, 300)}`);
   const t = texto.trim();
   if (!t) return null;
   let json;
@@ -125,9 +125,9 @@ async function lerResposta(resp, token = '') {
       json = JSON.parse(dados[dados.length - 1].slice(5).trim());
     }
   } catch {
-    throw new Error(`Resposta do Agrovex ilegível: ${t.slice(0, 300)}`);
+    throw new Error(`Resposta ilegível do servidor de dados do PIMS: ${t.slice(0, 300)}`);
   }
-  if (json?.error) throw new Error(`Agrovex: ${json.error.message ?? JSON.stringify(json.error)}`);
+  if (json?.error) throw new Error(`Servidor de dados do PIMS: ${json.error.message ?? JSON.stringify(json.error)}`);
   return json;
 }
 
@@ -254,7 +254,7 @@ export async function sincronizar({ url, token, safras, excluirPrefixos = [], fe
       resultado.push({ nome, unidades: montarUnidades(r, nome) });
     }
     resultado.sort((a, b) => comparar(a.nome, b.nome));
-    return { versao: 1, geradoEm: agora.toISOString(), fonte: 'PIMS via Agrovex', safras: resultado };
+    return { versao: 1, geradoEm: agora.toISOString(), fonte: 'PIMS', safras: resultado };
   } finally {
     await cliente.fechar();
   }
