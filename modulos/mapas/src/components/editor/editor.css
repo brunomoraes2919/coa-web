@@ -82,11 +82,12 @@
 .mapa-cartao-corpo .linha { margin-top: auto; padding-top: 8px; }
 
 /* edição da chuva de um PIC (nova interpolação) */
-.lista-pics .pic-acoes { white-space: nowrap; text-align: right; width: 1%; }
+.lista-pics .pic-valor { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.lista-pics td.num .pic-valor { justify-content: flex-end; }
 .botao-icone-pic { background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; cursor: pointer; color: var(--verde-teal, #0c5a50); line-height: 0; }
 .botao-icone-pic:hover { background: #eef4f1; border-color: #d6e2db; }
 .botao-icone-pic svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.lista-pics .pic-mm { width: 74px; text-align: right; padding: 3px 6px; font: inherit; border: 1.5px solid var(--verde-teal, #0c5a50); border-radius: 6px; }
+.lista-pics .pic-mm { width: 64px; text-align: right; padding: 3px 6px; font: inherit; border: 1.5px solid var(--verde-teal, #0c5a50); border-radius: 6px; }
 .lista-pics .pic-mm[aria-invalid="true"] { border-color: #b3261e; }
 .pic-editado { font-weight: 700; color: #b45309; border-bottom: 1px dotted currentColor; cursor: help; }
 .erro-pic { margin: 0; color: #b3261e; font-size: 0.85rem; }

@@ -109,7 +109,6 @@ export default function TabelaPics({ pics, onChange, foraDaRegiao }: Props) {
               <th>PIC</th>
               <th className="num">Chuva (mm)</th>
               <th>Situação</th>
-              <th aria-label="Editar" />
             </tr>
           </thead>
           <tbody>
@@ -161,25 +160,26 @@ export default function TabelaPics({ pics, onChange, foraDaRegiao }: Props) {
                         }}
                       />
                     ) : (
-                      <span className={editado ? 'pic-editado' : undefined} title={editado ? `Valor do CSV: ${p.chuvaOriginal === null ? 'sem leitura' : `${fmtChuva(p.chuvaOriginal ?? 0)} mm`}` : undefined}>
-                        {p.chuva === null ? '—' : fmtChuva(p.chuva)}
-                      </span>
-                    )}
-                  </td>
-                  <td className={s ? 'destaque' : undefined}>{s}</td>
-                  <td className="pic-acoes">
-                    {editando === i ? null : (
-                      <>
+                      // o lápis fica junto do valor (não numa coluna à parte, que podia sair da área visível)
+                      <span className="pic-valor">
+                        <span className={editado ? 'pic-editado' : undefined} title={editado ? `Valor do CSV: ${p.chuvaOriginal === null ? 'sem leitura' : `${fmtChuva(p.chuvaOriginal ?? 0)} mm`}` : undefined}>
+                          {p.chuva === null ? '—' : fmtChuva(p.chuva)}
+                        </span>
                         <button type="button" className="botao-icone-pic" onClick={() => abrir(i)} title="Editar a chuva deste PIC" aria-label={`Editar a chuva de ${p.nome}`}>
                           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
                         </button>
-                        {editado ? (
-                          <button type="button" className="botao-icone-pic" onClick={() => restaurar(i)} title="Voltar ao valor do CSV" aria-label={`Voltar ${p.nome} ao valor do CSV`}>
-                            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
-                          </button>
-                        ) : null}
-                      </>
+                      </span>
                     )}
+                  </td>
+                  <td className={s ? 'destaque' : undefined}>
+                    <span className="pic-valor">
+                      {s}
+                      {editado && editando !== i ? (
+                        <button type="button" className="botao-icone-pic" onClick={() => restaurar(i)} title="Voltar ao valor do CSV" aria-label={`Voltar ${p.nome} ao valor do CSV`}>
+                          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>
+                        </button>
+                      ) : null}
+                    </span>
                   </td>
                 </tr>
               );

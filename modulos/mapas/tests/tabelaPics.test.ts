@@ -69,4 +69,21 @@ describe('TabelaPics: editar a chuva de um PIC', () => {
     act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
     expect(mudancas.at(-1)![1]).toMatchObject({ chuva: 7, incluir: true, chuvaOriginal: null });
   });
+
+  it('depois de editar um PIC, os outros continuam editáveis (um atrás do outro)', () => {
+    const { caixa, mudancas } = montar();
+    const editar = (nome: string, valor: string) => {
+      act(() => (caixa.querySelector(`button[aria-label="Editar a chuva de ${nome}"]`) as HTMLButtonElement).click());
+      const input = caixa.querySelector('input.pic-mm') as HTMLInputElement;
+      digitar(input, valor);
+      act(() => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    };
+    editar('PIC 27 SM3', '4');
+    // todos os lápis seguem na tela
+    expect(caixa.querySelectorAll('button[aria-label^="Editar a chuva de"]')).toHaveLength(2);
+    editar('PIC 20 SM3', '9');
+    editar('PIC 27 SM3', '5');
+    const ult = mudancas.at(-1)!;
+    expect(ult.map((p) => p.chuva)).toEqual([5, 9]);
+  });
 });
