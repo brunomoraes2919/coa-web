@@ -17,6 +17,8 @@ export interface Pic {
   fim: Date | null;
   /** padrão: !inativo && chuva !== null */
   incluir: boolean;
+  /** chuva que veio do CSV, guardada quando o usuário edita o valor à mão (ausente = não editado) */
+  chuvaOriginal?: number | null;
 }
 
 export interface ZeusCsvResult {

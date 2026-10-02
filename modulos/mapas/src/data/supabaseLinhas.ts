@@ -90,7 +90,7 @@ function isoParaData(v: unknown): Date | null {
 export function reviverPics(pics: unknown[]): Pic[] {
   return pics.map((p) => {
     const o = p as Record<string, unknown>;
-    return {
+    const pic: Pic = {
       id: o.id as string,
       nome: o.nome as string,
       lat: o.lat as number,
@@ -101,6 +101,9 @@ export function reviverPics(pics: unknown[]): Pic[] {
       fim: isoParaData(o.fim),
       incluir: Boolean(o.incluir),
     };
+    // chuva do CSV de um PIC editado à mão (mapas salvos antes disso não têm o campo)
+    if (o.chuvaOriginal !== undefined) pic.chuvaOriginal = (o.chuvaOriginal as number | null) ?? null;
+    return pic;
   });
 }
 
