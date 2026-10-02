@@ -25,11 +25,23 @@ export function resolvePalette(id: string, max: number): Palette {
   return id === 'auto' ? autoPalette(max) : getPalette(id);
 }
 
-/** Índice da classe (primeira com v <= max; acima da última → última). NaN → -1. */
+/**
+ * Chuva como ela é lida no PIC (uma casa decimal): o IDW dá 0,97 em volta de um PIC de 1 mm cercado
+ * por PICs menores, e isso tem que pintar como 1 mm.
+ */
+export function arredondarChuva(v: number): number {
+  return Math.round(v * 10) / 10;
+}
+
+/**
+ * Índice da classe: o limite de cima é exclusivo ("1 mm já é chuva" → 1,0 cai em 1 - 5 mm), com o valor
+ * arredondado a uma casa decimal. Acima da última → última. NaN → -1.
+ */
 export function classify(v: number, p: Palette): number {
   if (Number.isNaN(v)) return -1;
+  const r = arredondarChuva(v);
   const c = p.classes;
-  for (let i = 0; i < c.length; i++) if (v <= c[i].max) return i;
+  for (let i = 0; i < c.length; i++) if (r < c[i].max) return i;
   return c.length - 1;
 }
 
@@ -44,8 +56,9 @@ export function buildClassIndex(values: Float32Array, p: Palette): Uint8Array {
       out[i] = 255;
       continue;
     }
+    const r = Math.round(v * 10) / 10; // = arredondarChuva, sem a chamada no laço do grid
     let k = 0;
-    while (k < ultimo && v > maxs[k]) k++;
+    while (k < ultimo && r >= maxs[k]) k++;
     out[i] = k;
   }
   return out;

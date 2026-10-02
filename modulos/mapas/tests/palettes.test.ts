@@ -8,12 +8,15 @@ describe('paletas', () => {
     expect(() => getPalette('nao-existe')).toThrow();
   });
 
-  it('classifica como o DISCRETE do QGIS (v <= max)', () => {
+  it('classifica com 1 mm já pintando (limite exclusivo, uma casa decimal)', () => {
     const p = getPalette('locks_0_160');
     expect(classify(0, p)).toBe(0);
-    expect(classify(1, p)).toBe(0);
-    expect(classify(1.01, p)).toBe(1);
-    expect(classify(5, p)).toBe(1);
+    expect(classify(0.94, p)).toBe(0);
+    // em volta de um PIC de 1 mm cercado por PICs menores o IDW dá ~0,97: pinta como 1 mm
+    expect(classify(0.97, p)).toBe(1);
+    expect(classify(1, p)).toBe(1);
+    expect(classify(4.9, p)).toBe(1);
+    expect(classify(5, p)).toBe(2);
     expect(classify(160, p)).toBe(17);
     expect(classify(999, p)).toBe(17);
     expect(classify(NaN, p)).toBe(-1);
@@ -31,8 +34,8 @@ describe('paletas', () => {
 
   it('gera o índice de classes com 255 para sem dado', () => {
     const p = getPalette('locks_0_160');
-    const idx = buildClassIndex(new Float32Array([0, 7, NaN, 200]), p);
-    expect(Array.from(idx)).toEqual([0, 2, 255, 17]);
+    const idx = buildClassIndex(new Float32Array([0, 0.97, 7, NaN, 200]), p);
+    expect(Array.from(idx)).toEqual([0, 1, 2, 255, 17]);
   });
 
   it('converte hex em rgb', () => {

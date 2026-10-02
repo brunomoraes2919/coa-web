@@ -30,11 +30,14 @@ const K_MIN = 0.7;
 
 export const TITULO_PRECIPITACAO = 'Precipitação (mm)';
 
-/** Rótulo da classe sem a unidade (já está no título) e com "≤": "<= 1 mm" → "≤ 1". */
+/**
+ * Rótulo da classe sem a unidade (já está no título): "<= 1 mm" → "< 1", porque o limite é exclusivo
+ * (1 mm já pinta a classe seguinte; ver classify).
+ */
 export function rotuloClasse(label: string): string {
   return label
     .replace(/\s*mm\s*$/i, '')
-    .replace(/<=\s*/g, '≤ ')
+    .replace(/<=\s*/g, '< ')
     .replace(/>=\s*/g, '≥ ')
     .trim();
 }

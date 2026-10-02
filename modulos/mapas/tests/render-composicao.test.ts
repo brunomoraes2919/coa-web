@@ -115,7 +115,7 @@ describe('título do quadro e rótulos', () => {
     expect(textoTituloQuadro('  ')).toBe('');
   });
   it('rótulo da classe sem "mm" (está no título) e com ≤', () => {
-    expect(rotuloClasse('<= 1 mm')).toBe('≤ 1');
+    expect(rotuloClasse('<= 1 mm')).toBe('< 1');
     expect(rotuloClasse('1 - 5 mm')).toBe('1 - 5');
     expect(rotuloClasse('> 150')).toBe('> 150');
   });
@@ -317,7 +317,7 @@ describe('legenda: itens e colunas', () => {
     expect(itens.map((i) => i.tipo)).toEqual(['pic', 'situacao', 'titulo', 'classe', 'classe', 'classe']);
     expect(itens[2].texto).toBe('Precipitação (mm)');
     const compacta = itensLegenda({ ...inp, config: { ...inp.config, legendaCompacta: true } }, [true, false, true]);
-    expect(compacta.filter((i) => i.tipo === 'classe').map((i) => i.texto)).toEqual(['≤ 1', '5 - 10']);
+    expect(compacta.filter((i) => i.tipo === 'classe').map((i) => i.texto)).toEqual(['< 1', '5 - 10']);
     expect(itensLegenda(inp, null).some((i) => i.tipo === 'titulo')).toBe(false);
   });
 
