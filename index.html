@@ -1342,11 +1342,19 @@ function comBotaoCarregando(btn, textoCarregando, tarefa){
   tarefa().finally(()=>{ btn.disabled = false; btn.innerHTML = original; });
 }
 
+// Escala do PNG (nítido no celular/WhatsApp), limitada pela área máxima de canvas do aparelho
+// (iPhone/iPad: ~16,7 Mpx; acima disso o Safari devolve imagem em branco).
+function escalaPng(el, alvo){
+  const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const area = Math.max(1, el.offsetWidth * el.offsetHeight);
+  return Math.max(1, Math.min(alvo, Math.floor(Math.sqrt((ios ? 16e6 : 64e6) / area) * 100) / 100));
+}
+
 document.getElementById('btn-export-png').addEventListener('click', (e)=>{
   comBotaoCarregando(e.currentTarget, 'Gerando imagem…', async ()=>{
     montarDocumentoExport();
     const el = document.getElementById('export-doc');
-    const canvas = await html2canvas(el, {scale:2, backgroundColor:'#ffffff', useCORS:true});
+    const canvas = await html2canvas(el, {scale:escalaPng(el, 3), backgroundColor:'#ffffff', useCORS:true});
     const link = document.createElement('a');
     link.download = nomeArquivoExport('png');
     link.href = canvas.toDataURL('image/png');

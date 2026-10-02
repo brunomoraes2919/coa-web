@@ -379,7 +379,7 @@
   // Exportar (PNG único ou PDF A4 deitado)
   // ------------------------------------------------------------------
   // LARG = largura base; ESC = pixels por unidade (nitidez ao dar zoom); KEXP = aumento das letras dos gráficos
-  var LARG = 1600, ESC = 1.5, KEXP = 1.2;
+  var LARG = 1600, ESC = 1.5, KEXP = 1.2, ESC_PNG = 2.5;
 
   function cabecalho(c, W, h, rel, imgs, compacto) {
     N.faixaMarca(c, W, h, imgs);
@@ -467,12 +467,14 @@
     var rel = R, imgs = await imagens(), W = LARG, M = 32, g = 16;
     var hCab = 170, hCards = 236, hSafra = 380, hComp = 490;
     var H = hCab + g + hCards + g + rel.safras.length * (hSafra + g) + hComp + g + 60;
+    ESC = N.escalaExport(W, H, ESC_PNG); // nítido no celular (4000 px de largura)
     var t = novoCanvas(W, H), c = t.c, y = hCab + g;
     cabecalho(c, W, hCab, rel, imgs, false);
     cartoes(c, { x: M, y: y, w: W - 2 * M, h: hCards }, rel); y += hCards + g;
     for (var i = 0; i < rel.safras.length; i++) { await cartaoSafra(c, { x: M, y: y, w: W - 2 * M, h: hSafra }, rel, rel.safras[i]); y += hSafra + g; }
     await cartaoComparativo(c, { x: M, y: y, w: W - 2 * M, h: hComp }, rel); y += hComp + g;
     rodape(c, W, y + 26);
+    exp.tam = { w: t.cv.width, h: t.cv.height };
     return new Promise(function (ok) { t.cv.toBlob(ok, 'image/png'); });
   }
 
@@ -536,7 +538,7 @@
       exp.blob = blob; exp.url = URL.createObjectURL(blob);
       $('rel-exp-previa').hidden = exp.formato === 'pdf';
       if (exp.formato === 'png') $('rel-exp-previa').src = exp.url;
-      st.textContent = (exp.formato === 'pdf' ? 'PDF A4 deitado · ' + (1 + Math.ceil(R.safras.length / 2)) + ' páginas' : 'PNG · 2000 px de largura') + ' · ' + Math.round(blob.size / 1024) + ' KB';
+      st.textContent = (exp.formato === 'pdf' ? 'PDF A4 deitado · ' + (1 + Math.ceil(R.safras.length / 2)) + ' páginas' : 'PNG · ' + exp.tam.w + ' × ' + exp.tam.h + ' px') + ' · ' + Math.round(blob.size / 1024) + ' KB' + (exp.formato === 'png' ? N.AVISO_WHATSAPP : '');
       $('rel-exp-baixar').disabled = false;
     } catch (e) {
       if (n === exp.gerando) st.textContent = 'Não foi possível gerar: ' + (e && e.message ? e.message : e);

@@ -1368,14 +1368,24 @@
   // ===========================================================================
   // Exportar PNG: a mesma página do relatório Power BI (barra lateral, indicadores,
   // medidor, rosca, equipes, variedades, meta × realizado, mapa e barras por talhão).
-  //  - paisagem: a página 1920 × 1080 do Power BI, gravada em 2400 × 1350
-  //  - vertical: os mesmos blocos empilhados para ler no celular (1080 de largura)
-  // As medidas abaixo são da página base; o canvas é escalado por `escala`.
+  //  - paisagem: a página 1920 × 1080 do Power BI, gravada em 4800 × 2700
+  //  - vertical: os mesmos blocos empilhados para ler no celular (1080 de largura base → 2700)
+  // As medidas abaixo são da página base; o canvas é escalado por `escala` (ver escalaExport).
   // ===========================================================================
   var FORMATOS = {
-    paisagem: { base: 1920, escala: 1.25 },
-    vertical: { base: 1080, escala: 1.25 }
+    paisagem: { base: 1920, escala: 2.5 },
+    vertical: { base: 1080, escala: 2.5 }
   };
+  /**
+   * Escala do PNG: a pedida, limitada pela área máxima de canvas do aparelho (iPhone/iPad: ~16,7 Mpx;
+   * acima disso o Safari devolve imagem em branco). Nunca abaixo de 1.
+   */
+  function escalaExport(w, h, alvo) {
+    var ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var limite = ios ? 16e6 : 64e6;
+    return Math.max(1, Math.min(alvo, Math.floor(Math.sqrt(limite / (w * h)) * 100) / 100));
+  }
+  var AVISO_WHATSAPP = ' · no WhatsApp, envie em HD (ou como documento) para manter a nitidez';
   var exp = { formato: FORMATOS[ls('formatoPng')] ? ls('formatoPng') : 'paisagem', blob: null, url: null, arquivo: '', gerando: 0, tam: null };
   var FAMILIA = '"Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif';
   var COR_BARRA = '#0F4B45';
@@ -1945,7 +1955,7 @@
     if (comp && comp.quadros.length > 1 && L.mapa.w > L.mapa.h * 1.1) {
       comp = { orientacao: comp.orientacao, mp: mp, quadros: [{ fs: mp.features, bbox: mp.features.map(bboxFeature).filter(Boolean).reduce(uniao), fr: 1, titulo: null }] };
     }
-    var S = F.escala, cv = document.createElement('canvas');
+    var S = escalaExport(L.W, L.H, F.escala), cv = document.createElement('canvas');
     cv.width = Math.round(L.W * S); cv.height = Math.round(L.H * S);
     var c = cv.getContext('2d'); c.scale(S, S);
     var res = await Promise.all([talvezImagem(fundoCultura(m.s)), talvezImagem('assets/logo_locks.png'), talvezImagem('assets/logo_coa_branco.png'), talvezImagem('assets/rosa.png'), talvezImagem(fotoMaquina(m).src)]);
@@ -1998,7 +2008,7 @@
       if (exp.url) URL.revokeObjectURL(exp.url);
       exp.blob = blob; exp.url = URL.createObjectURL(blob); exp.arquivo = nomeArquivo();
       $('exp-previa').src = exp.url;
-      set('exp-status', exp.tam.w + ' × ' + exp.tam.h + ' px · ' + Math.round(blob.size / 1024) + ' KB' + (exp.formato === 'paisagem' ? ' · no WhatsApp, envie em HD para manter a nitidez' : ''));
+      set('exp-status', exp.tam.w + ' × ' + exp.tam.h + ' px · ' + Math.round(blob.size / 1024) + ' KB' + AVISO_WHATSAPP);
       $('exp-baixar').disabled = false; $('exp-compartilhar').disabled = false;
       var arq = new File([blob], exp.arquivo, { type: 'image/png' });
       $('exp-compartilhar').hidden = !(navigator.canShare && navigator.canShare({ files: [arq] }));
@@ -2233,7 +2243,8 @@
     fmtN: fmtN, fmtPct: fmtPct, fmtData: fmtData, titulo: titulo, nomeSafra: nomeSafra, esc: esc,
     opt: opt, tt: tt, eixoX: eixoX, eixoY: eixoY, chart: chart, vazio: vazio,
     aplicarFundo: aplicarFundo, fundoCultura: fundoCultura, faixaMarca: faixaMarca,
-    escrever: escrever, caixa: caixa, rr: rr, legendaCartao: legendaCartao, grafico: grafico, talvezImagem: talvezImagem
+    escrever: escrever, caixa: caixa, rr: rr, legendaCartao: legendaCartao, grafico: grafico, talvezImagem: talvezImagem,
+    escalaExport: escalaExport, AVISO_WHATSAPP: AVISO_WHATSAPP
   };
 
   // ---- início ----
