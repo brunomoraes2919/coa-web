@@ -800,6 +800,50 @@
     });
   }
 
+  /**
+   * TV de "Todas as fazendas": % da área já feita, dia a dia, uma linha por fazenda (cor da fazenda) e
+   * a linha grossa do conjunto. O nome e o % ficam na ponta de cada linha, sem legenda para decifrar.
+   */
+  function opcoesEvolucaoFazendas(m, k) {
+    var cats = [];
+    for (var t = +m.ini; t <= +m.ult; t += DIA) { var d = new Date(t); cats.push(new Date(d.getFullYear(), d.getMonth(), d.getDate())); }
+    // % acumulado por dia; a curva é ajustada para terminar no % oficial (talhões encerrados contam 100%)
+    var curva = function (x) {
+      if (!x.ini || !x.areaTotal) return null;
+      var ac = 0, v = cats.map(function (d) { ac += x.porDia[paraIso(d)] || 0; return d < x.ini ? null : Math.min(1, ac / x.areaTotal); });
+      var ultimo = v[v.length - 1], f = ultimo > 0 ? x.pct / ultimo : 1;
+      return v.map(function (y) { return y === null ? null : Math.round(Math.min(1, y * f) * 1000) / 10; });
+    };
+    var rotulo = function (nome, cor, forte) {
+      return { show: true, distance: 6 * k, fontSize: 12 * k, fontWeight: forte ? 700 : 600, color: COR.texto,
+        formatter: function (p) { return '{p|\u25CF} ' + nome + '  {v|' + Math.round(p.value) + '%}'; },
+        rich: { p: { color: cor, fontSize: 11 * k }, v: { fontWeight: 700, fontSize: 12 * k, color: COR.texto } } };
+    };
+    var series = m.unidades.map(function (u) { return { u: u, dados: curva(calcula([u], m.s, m.o)) }; })
+      .filter(function (l) { return l.dados; })
+      .map(function (l) {
+        var cor = COR_FAZENDA[l.u] || COR.fraco;
+        return { name: titulo(l.u), type: 'line', data: l.dados, symbol: 'none', connectNulls: false, z: 3,
+          lineStyle: { color: cor, width: 2.4 * k }, itemStyle: { color: cor }, emphasis: { disabled: true },
+          endLabel: rotulo(titulo(l.u), cor, false), labelLayout: { moveOverlap: 'shiftY' } };
+      });
+    series.push({ name: 'Geral', type: 'line', data: curva(m), symbol: 'none', z: 4,
+      lineStyle: { color: COR.escuro, width: 4 * k }, itemStyle: { color: COR.escuro }, emphasis: { disabled: true },
+      endLabel: rotulo('Geral', COR.escuro, true), labelLayout: { moveOverlap: 'shiftY' } });
+    return opt({
+      grid: { left: 4 * k, right: 128 * k, top: 14 * k, bottom: 4 * k, containLabel: true },
+      tooltip: tt({ trigger: 'axis', formatter: function (ps) {
+        return '<b>' + cats[ps[0].dataIndex].toLocaleDateString('pt-BR') + '</b>' + ps.slice().sort(function (a, b) { return (b.value || 0) - (a.value || 0); })
+          .map(function (p) { return p.value === null || p.value === undefined ? '' : '<br>' + p.marker + esc(p.seriesName) + ': <b>' + fmtN(p.value) + '%</b>'; }).join('');
+      } }),
+      xAxis: Object.assign({}, eixoX, { type: 'category', boundaryGap: false, data: cats.map(function (d) { return fmtData(d, true); }),
+        axisLabel: { color: COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: COR.linha, width: k } } }),
+      yAxis: Object.assign({}, eixoY, { type: 'value', min: 0, max: 100, interval: 25,
+        axisLabel: { color: COR.fraco, fontSize: 11 * k, formatter: '{value}%' }, splitLine: { lineStyle: { color: COR.grade, width: k } } }),
+      series: series
+    });
+  }
+
   function itensLegendaAcum(m) {
     return [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Planejado pelas metas', cor: COR.dourado, tipo: 'tracejada' }, { nome: 'Projeção pelo ritmo', cor: '#9AA79F', tipo: 'tracejada' }]
       .concat((m.comparativos || []).map(function (c, i) { return { nome: nomeSafra(c.nome), cor: COR_COMPARATIVO[i] || COR_COMPARATIVO[1], tipo: 'linha' }; }));
@@ -1315,13 +1359,20 @@
       if (u === TODAS) tvFazendas(m);
       else if (comp) desenharMapaFazenda(elMapa, u, m, comp, { semZoom: true, rotulos: true, fonte: 8.5 * k, fonteTitulo: 11 * k });
       else vazio(elMapa, MAPAS ? 'Sem limites de talhões para esta fazenda.' : 'Carregando os limites dos talhões…');
-      legenda('tv-leg-meta', itensLegendaMeta(m));
-      legenda('tv-leg-acum', itensLegendaAcum(m));
       // os dois gráficos lado a lado num cartão largo; um sobre o outro num cartão alto
       var caixaG = document.querySelector('.tv-graficos');
-      caixaG.className = 'tv-graficos ' + (caixaG.clientWidth > caixaG.clientHeight * 1.7 ? 'lado' : 'pilha');
+      caixaG.className = 'tv-graficos ' + (caixaG.clientWidth > caixaG.clientHeight * 1.7 ? 'lado' : 'pilha') + (u === TODAS ? ' todas' : '');
       var eg = $('tv-grafico'), ea = $('tv-acum');
-      if (m.serie.length) {
+      // "Todas": em cima, a evolução de cada fazenda (uma linha por fazenda, nome e % na ponta);
+      // embaixo, o realizado × meta por dia do conjunto
+      set('tv-t-meta', u === TODAS ? 'Evolução por fazenda · % da área ' + (m.o === 'PLANTIO' ? 'plantada' : 'colhida') : 'Realizado × meta por dia');
+      set('tv-t-acum', u === TODAS ? 'Realizado × meta por dia' : 'Evolução acumulada');
+      legenda('tv-leg-meta', u === TODAS ? [] : itensLegendaMeta(m));
+      legenda('tv-leg-acum', u === TODAS ? itensLegendaMeta(m) : itensLegendaAcum(m));
+      if (m.serie.length && u === TODAS) {
+        chart(eg).setOption(opcoesEvolucaoFazendas(m, k), true);
+        chart(ea).setOption(opcoesMeta(m, k, 21), true);
+      } else if (m.serie.length) {
         chart(eg).setOption(opcoesMeta(m, k, 21), true);
         chart(ea).setOption(opcoesAcumulado(m, k), true);
       } else { vazio(eg, 'Ainda não há apontamentos nesta safra.'); vazio(ea, 'Ainda não há apontamentos nesta safra.'); }
