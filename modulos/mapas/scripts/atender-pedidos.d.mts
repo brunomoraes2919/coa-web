@@ -20,3 +20,12 @@ export function atenderPedidosChuva(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<number>;
+export interface PedidoMecPendente { id: number; unidade: string; de: string; ate: string }
+export function pedidosMecPendentes(ctx: Ctx): Promise<PedidoMecPendente[]>;
+export function responderPedidoMec(ctx: Ctx, id: number, resultado: string, dados: unknown, agora?: Date): Promise<void>;
+export function atenderPedidosMec(opcoes: {
+  supabase: { url: string; chave: string };
+  agrovex: { url: string; token: string };
+  fetch?: FetchLike;
+  agora?: () => Date;
+}): Promise<number>;

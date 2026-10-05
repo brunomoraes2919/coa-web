@@ -4,11 +4,13 @@
 // pedidos pendentes como atendidos ('ok' ou a mensagem de erro, sem segredos).
 // Na mesma verificação atende os pedidos de "Inserir dados via integração" do Mapa de Chuva (tabela
 // mapas_chuva_pedidos): busca na ZEUS a chuva de cada PIC da fazenda no período e grava no pedido.
+// E os pedidos de "Buscar direto no PIMS" de Mecanizadas (tabela mec_pims_pedidos): os boletins de
+// atividades mecanizadas da unidade no período, no formato do relatório exportado do PIMS.
 // Variáveis: AGROVEX_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (as mesmas da rotina horária).
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, semChave, sincronizar } from './sincronizar-plantio.mjs';
+import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, semChave, sincronizar } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -149,6 +151,65 @@ export async function atenderPedidosChuva({ supabase, agrovex, fetch: fetchImpl 
   return pedidos.length;
 }
 
+// ---------- pedidos de boletins de atividades mecanizadas ("Buscar direto no PIMS" de Mecanizadas) ----------
+
+const TABELA_MEC = 'mec_pims_pedidos';
+const GUARDAR_MEC_DIAS = 3;
+const MAX_MEC_POR_RODADA = 2;
+
+/** Pedidos de boletins pendentes ({ id, unidade, de, ate }), do mais antigo para o mais novo; sem a tabela → []. */
+export async function pedidosMecPendentes({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
+  const resp = await fetchImpl(`${url}/rest/v1/${TABELA_MEC}?select=id,unidade,de,ate&atendido_em=is.null&order=id.asc&limit=${MAX_MEC_POR_RODADA}`, {
+    headers: cabecalhosSupabase(chave),
+  });
+  if (!resp.ok) {
+    if (await semTabela(resp)) return [];
+    await erroRest(resp, chave, 'a leitura dos pedidos de boletins');
+  }
+  const linhas = await resp.json();
+  return Array.isArray(linhas) ? linhas.filter((l) => Number.isFinite(Number(l?.id))) : [];
+}
+
+/** Grava a resposta de um pedido de boletins: 'ok' com os dados, ou 'erro: ...' sem dados. */
+export async function responderPedidoMec({ url, chave, fetch: fetchImpl = globalThis.fetch }, id, resultado, dados, agora = new Date()) {
+  const resp = await fetchImpl(`${url}/rest/v1/${TABELA_MEC}?atendido_em=is.null&id=eq.${Number(id)}`, {
+    method: 'PATCH',
+    headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ atendido_em: agora.toISOString(), resultado: String(resultado).slice(0, 400), dados: dados ?? null }),
+  });
+  if (!resp.ok) await erroRest(resp, chave, 'a resposta do pedido de boletins');
+}
+
+/**
+ * Uma verificação dos pedidos de boletins: para cada pendente, consulta o PIMS (lançamentos da unidade no
+ * período, no formato do relatório exportado) e grava a resposta no próprio pedido. Devolve quantos foram
+ * atendidos. Erro de um pedido vira o `resultado` dele e não impede os outros.
+ */
+export async function atenderPedidosMec({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+  const ctx = { ...supabase, fetch: fetchImpl };
+  const pedidos = await pedidosMecPendentes(ctx);
+  for (const p of pedidos) {
+    try {
+      const dados = await boletinsMecanizadas({ url: agrovex.url, token: agrovex.token, unidade: p.unidade, de: p.de, ate: p.ate, fetchImpl });
+      await responderPedidoMec(ctx, p.id, 'ok', dados, agora());
+      console.log(`== ${agora().toISOString()} boletins mecanizadas: ${dados.unidade} ${dados.de} a ${dados.ate}, ${dados.linhas.length} linhas.`);
+    } catch (e) {
+      const msg = semChave(semChave(e instanceof Error ? e.message : String(e), supabase.chave), agrovex.token);
+      console.error(`Erro no pedido de boletins ${p.id}: ${msg}`);
+      await responderPedidoMec(ctx, p.id, `erro: ${msg}`, null, agora()).catch(() => undefined);
+    }
+  }
+  if (pedidos.length) {
+    // a resposta é grande (o relatório inteiro) e já foi para a tela: não fica guardada
+    const limite = new Date(agora().getTime() - GUARDAR_MEC_DIAS * 86_400_000).toISOString();
+    await fetchImpl(`${supabase.url}/rest/v1/${TABELA_MEC}?atendido_em=lt.${encodeURIComponent(limite)}`, {
+      method: 'DELETE',
+      headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
+    }).catch(() => undefined);
+  }
+  return pedidos.length;
+}
+
 async function main() {
   const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const config = JSON.parse(readFileSync(join(raiz, 'scripts', 'plantio.config.json'), 'utf8'));
@@ -163,15 +224,17 @@ async function main() {
     safras: config.safras ?? 'auto',
     excluirPrefixos: config.excluirPrefixos ?? [],
   };
-  // a chuva primeiro (resposta em segundos; quem pediu está esperando na tela); um erro nela não impede o plantio
-  let erroChuva = null;
-  try {
-    await atenderPedidosChuva({ supabase, agrovex });
-  } catch (e) {
-    erroChuva = e;
+  // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
+  let erroConsulta = null;
+  for (const atender of [atenderPedidosChuva, atenderPedidosMec]) {
+    try {
+      await atender({ supabase, agrovex });
+    } catch (e) {
+      erroConsulta = erroConsulta ?? e;
+    }
   }
   await atenderPedidos({ supabase, acompanhamento: config.acompanhamento !== false, agrovex });
-  if (erroChuva) throw erroChuva;
+  if (erroConsulta) throw erroConsulta;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

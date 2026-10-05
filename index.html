@@ -367,6 +367,15 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .dlg-mec-formatos small{display:block;color:var(--texto-suave);font-size:12px;}
 .dlg-mec-rodape{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 22px 16px;border-top:1px solid var(--linha);flex-wrap:wrap;}
 .dlg-mec-rodape span{font-size:12.5px;color:var(--texto-suave);}
+/* Mecanizadas: "Buscar direto no PIMS" (sem exportar o relatório) */
+.mec-pims-linha{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:12.5px;color:var(--texto-suave);}
+.dlg-mec.dlg-mec-pims{width:min(520px,calc(100vw - 32px));}
+.mec-pims-datas{display:flex;gap:14px;flex-wrap:wrap;}
+.mec-pims-datas label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--texto-suave);}
+.mec-pims-datas input{padding:7px 9px;border:1px solid var(--linha);border-radius:8px;font:inherit;color:var(--texto);}
+.mec-pims-nota{margin:0;font-size:12.5px;color:var(--texto-suave);}
+.mec-pims-erro{margin:0;padding:9px 12px;border-radius:8px;background:#FBE6E4;color:#8F1E18;font-size:13px;}
+.mec-pims-acoes{display:flex;gap:10px;margin-left:auto;}
 .mec-filtros-topo{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
 .mec-filtros-titulo{font-size:12px;font-weight:700;color:var(--verde-escuro);text-transform:uppercase;letter-spacing:.045em;}
 .mec-filtros-ajuda{font-size:11.5px;color:var(--texto-suave);}
@@ -933,7 +942,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <!-- ===================== MECANIZADAS: IMPORTAR BOLETIM ===================== -->
     <section class="page" data-page="importar-mecanizadas">
       <div class="section-head">
-        <div><h2>Importar boletim de atividades mecanizadas</h2><div class="desc">Suba o relatório extraído do TOTVS PIMS — fazenda atual: <b id="mec-fazenda-atual"></b></div></div>
+        <div><h2>Importar boletim de atividades mecanizadas</h2><div class="desc">Suba o relatório extraído do TOTVS PIMS ou busque os boletins direto no PIMS — fazenda atual: <b id="mec-fazenda-atual"></b></div></div>
       </div>
       <div class="card import-box">
         <div class="import-linha">
@@ -944,9 +953,36 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
           <p style="margin:0 0 8px">Arraste o arquivo aqui ou</p>
           <button class="btn ouro" id="btn-escolher-mec">Escolher arquivo</button>
         </div>
+        <div class="mec-pims-linha">
+          <span>ou, sem exportar o relatório:</span>
+          <button class="btn" id="btn-mec-pims" type="button">Buscar direto no PIMS</button>
+        </div>
         <div id="mec-resultado"></div>
       </div>
       <div id="mec-tabela-wrap"></div>
+      <dialog class="dlg-mec dlg-mec-pims" id="dlg-mec-pims" aria-labelledby="dlg-mec-pims-titulo">
+        <form method="dialog" id="form-mec-pims">
+          <div class="dlg-mec-cab">
+            <div><h3 id="dlg-mec-pims-titulo">Buscar direto no PIMS</h3><p>Busca os boletins de atividades mecanizadas da fazenda <b id="mec-pims-fazenda"></b> no período abaixo, como no relatório exportado.</p></div>
+            <button type="button" class="dlg-mec-fechar" id="mec-pims-fechar" aria-label="Fechar">×</button>
+          </div>
+          <div class="dlg-mec-corpo">
+            <div class="mec-pims-datas">
+              <label>De<input type="date" id="mec-pims-de" required></label>
+              <label>Até<input type="date" id="mec-pims-ate" required></label>
+            </div>
+            <p class="mec-pims-nota">As duas datas entram na busca. O período pode ter até 62 dias.</p>
+            <p class="mec-pims-nota" id="mec-pims-etapa" aria-live="polite" hidden></p>
+            <p class="mec-pims-erro" id="mec-pims-erro" role="alert" hidden></p>
+          </div>
+          <div class="dlg-mec-rodape">
+            <div class="mec-pims-acoes">
+              <button type="button" class="btn fantasma" id="mec-pims-cancelar">Cancelar</button>
+              <button type="submit" class="btn ouro" id="mec-pims-buscar">Buscar boletins</button>
+            </div>
+          </div>
+        </form>
+      </dialog>
       <dialog class="dlg-mec" id="dlg-mec-export" aria-labelledby="dlg-mec-titulo">
         <form method="dialog" id="form-mec-export">
           <div class="dlg-mec-cab">
@@ -2323,23 +2359,135 @@ function processarArquivoMecanizadas(file){
       alert('Não foi possível ler o arquivo. Confira se é um .xlsx, .xls ou .csv válido.');
       return;
     }
-    const preLimpeza = filtrarMecanizadasPorFazenda(headers, dados, fazendaId);
-    dados = preLimpeza.dados;
-    const v1 = validarPeriodoCentroCusto(headers, dados);
-    const v2 = validarAnoAgricolaData(headers, dados);
-    const v3 = validarRegrasOperacionais(headers, dados);
-    const erros = mesclarMensagens(v1.erros, v2.erros, v3.erros);
-    const atencoes = mesclarMensagens(v2.atencoes, v3.atencoes);
-    const validacao = { aplicavel: v1.aplicavel || v2.aplicavel || v3.aplicavel, erros };
-    const validacaoAtencao = { aplicavel: v2.aplicavel || v3.aplicavel, atencoes };
-    mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo: file.name, validacao, validacaoAtencao, preLimpeza };
-    mecFiltroTipo = 'todos';
-    mecFiltroErroDetalhe = '';
-    mecFiltroAtencaoDetalhe = '';
-    mecPaginaAtual = 1;
-    renderTabelaMecanizadas();
+    carregarBoletimMecanizadas(fazendaId, headers, dados, file.name);
   };
   leitor.readAsArrayBuffer(file);
+}
+
+// Valida e mostra um boletim (do arquivo exportado ou buscado direto no PIMS): mesmas colunas, mesmas regras.
+function carregarBoletimMecanizadas(fazendaId, headers, dados, nomeArquivo){
+  const preLimpeza = filtrarMecanizadasPorFazenda(headers, dados, fazendaId);
+  dados = preLimpeza.dados;
+  const v1 = validarPeriodoCentroCusto(headers, dados);
+  const v2 = validarAnoAgricolaData(headers, dados);
+  const v3 = validarRegrasOperacionais(headers, dados);
+  const erros = mesclarMensagens(v1.erros, v2.erros, v3.erros);
+  const atencoes = mesclarMensagens(v2.atencoes, v3.atencoes);
+  const validacao = { aplicavel: v1.aplicavel || v2.aplicavel || v3.aplicavel, erros };
+  const validacaoAtencao = { aplicavel: v2.aplicavel || v3.aplicavel, atencoes };
+  mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo, validacao, validacaoAtencao, preLimpeza };
+  mecFiltroTipo = 'todos';
+  mecFiltroErroDetalhe = '';
+  mecFiltroAtencaoDetalhe = '';
+  mecPaginaAtual = 1;
+  renderTabelaMecanizadas();
+}
+
+/* ---------------------------------------------------------------------
+   "Buscar direto no PIMS": em vez do relatório exportado, o navegador grava um pedido (unidade e período)
+   em mec_pims_pedidos; o servidor do COA WEB (o mesmo que atualiza o plantio) busca os boletins no PIMS e
+   grava a resposta no próprio pedido, com as mesmas 22 colunas do relatório. O navegador não fala com o PIMS.
+--------------------------------------------------------------------- */
+const MEC_PIMS_MAX_DIAS = 62;
+const MEC_PIMS_INTERVALO_MS = 4000;
+const MEC_PIMS_LIMITE_MS = 150000;
+let mecPimsBusca = 0; // busca em andamento que ainda vale (fechar a janela descarta a resposta)
+
+function isoLocalMec(d){
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function dataBrMec(iso){ return iso.slice(8,10) + '/' + iso.slice(5,7) + '/' + iso.slice(0,4); }
+
+// Mensagem de erro do período (null = pode buscar).
+function validarPeriodoPimsMec(de, ate, hoje){
+  const ok = v=>/^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v+'T00:00:00'));
+  if(!ok(de) || !ok(ate)) return 'Informe as duas datas do período.';
+  if(de > ate) return 'A data inicial é depois da final.';
+  if(ate > hoje) return 'O período não pode passar de hoje.';
+  const dias = Math.round((Date.parse(ate+'T00:00:00Z') - Date.parse(de+'T00:00:00Z')) / 86400000) + 1;
+  if(dias > MEC_PIMS_MAX_DIAS) return `Período muito longo (${dias} dias): o máximo é ${MEC_PIMS_MAX_DIAS} dias.`;
+  return null;
+}
+function erroPedidoPimsMec(erro){
+  const codigo = (erro && erro.code) || '', msg = (erro && erro.message) || '';
+  if(codigo==='42501' || /row-level security|permission denied/i.test(msg)) return 'Sem permissão para buscar no PIMS: é preciso ter pelo menos uma fazenda liberada no COA WEB.';
+  if(codigo==='PGRST205' || codigo==='42P01') return 'Falta a tabela de pedidos no Supabase (rode modulos/mecanizadas/supabase/0001_pedidos_mecanizadas.sql).';
+  if(/abort|timeout|timed out|failed to fetch|network/i.test(msg)) return 'O Supabase não respondeu a tempo. Verifique a internet e tente de novo.';
+  return 'Não foi possível falar com o servidor' + (codigo ? ` (código ${codigo})` : '') + '. Tente de novo em instantes.';
+}
+function mostrarEtapaPimsMec(texto){
+  const el = document.getElementById('mec-pims-etapa');
+  el.hidden = !texto; el.textContent = texto || '';
+  document.getElementById('mec-pims-buscar').disabled = !!texto;
+  document.getElementById('mec-pims-buscar').textContent = texto ? 'Buscando…' : 'Buscar boletins';
+  document.getElementById('mec-pims-de').disabled = !!texto;
+  document.getElementById('mec-pims-ate').disabled = !!texto;
+}
+function mostrarErroPimsMec(texto){
+  const el = document.getElementById('mec-pims-erro');
+  el.hidden = !texto; el.textContent = texto || '';
+}
+function abrirBuscaPimsMec(){
+  const fazendaId = fazendaSelecionadaId();
+  const fazenda = state.fazendas.find(f=>f.id===fazendaId);
+  if(!fazenda){ alert('Escolha a fazenda primeiro.'); return; }
+  if(!unidadePimsDaFazenda(fazenda.nome)){ alert('Esta fazenda ainda não está ligada a uma unidade do PIMS.'); return; }
+  const hoje = new Date(), hojeIso = isoLocalMec(hoje);
+  const de = document.getElementById('mec-pims-de'), ate = document.getElementById('mec-pims-ate');
+  // padrão: do dia 1 do mês até hoje (o período que costuma ser exportado)
+  if(!de.value) de.value = isoLocalMec(new Date(hoje.getFullYear(), hoje.getMonth(), 1));
+  if(!ate.value || ate.value > hojeIso) ate.value = hojeIso;
+  de.max = hojeIso; ate.max = hojeIso;
+  document.getElementById('mec-pims-fazenda').textContent = fazenda.nome;
+  mostrarEtapaPimsMec(''); mostrarErroPimsMec('');
+  document.getElementById('dlg-mec-pims').showModal();
+}
+function fecharBuscaPimsMec(){
+  mecPimsBusca += 1;
+  mostrarEtapaPimsMec('');
+  document.getElementById('dlg-mec-pims').close();
+}
+async function buscarBoletinsPimsMec(){
+  const fazendaId = fazendaSelecionadaId();
+  const fazenda = state.fazendas.find(f=>f.id===fazendaId);
+  const unidade = fazenda ? unidadePimsDaFazenda(fazenda.nome) : null;
+  const de = document.getElementById('mec-pims-de').value, ate = document.getElementById('mec-pims-ate').value;
+  const invalido = !unidade ? 'Esta fazenda ainda não está ligada a uma unidade do PIMS.' : validarPeriodoPimsMec(de, ate, isoLocalMec(new Date()));
+  mostrarErroPimsMec(invalido || '');
+  if(invalido) return;
+  const esta = ++mecPimsBusca;
+  const vale = ()=> mecPimsBusca === esta;
+  mostrarEtapaPimsMec('Pedindo ao servidor…');
+  try{
+    const pedido = await sb.from('mec_pims_pedidos').insert({ unidade, de, ate }).select('id').single();
+    if(pedido.error) throw new Error(erroPedidoPimsMec(pedido.error));
+    if(!vale()) return;
+    mostrarEtapaPimsMec('Buscando no PIMS… (até 1 minuto)');
+    let resposta = null;
+    for(let esperado = 0; esperado < MEC_PIMS_LIMITE_MS && !resposta; esperado += MEC_PIMS_INTERVALO_MS){
+      await new Promise(r=>setTimeout(r, MEC_PIMS_INTERVALO_MS));
+      if(!vale()) return;
+      // falha passageira na leitura (rede): tenta de novo na próxima volta
+      const leitura = await sb.from('mec_pims_pedidos').select('atendido_em, resultado, dados').eq('id', pedido.data.id).maybeSingle();
+      if(!vale()) return;
+      if(!leitura.error && leitura.data && leitura.data.atendido_em) resposta = leitura.data;
+    }
+    if(!resposta) throw new Error('O servidor não respondeu a tempo. Tente de novo em instantes.');
+    if(String(resposta.resultado||'').trim() !== 'ok'){
+      throw new Error('O servidor não conseguiu buscar os boletins: ' + (String(resposta.resultado||'').replace(/^\s*erro:\s*/i,'').trim() || 'sem detalhes'));
+    }
+    const dados = resposta.dados;
+    if(!dados || !Array.isArray(dados.cabecalho) || !Array.isArray(dados.linhas)) throw new Error('O servidor devolveu uma resposta que não foi possível ler.');
+    if(!dados.linhas.length) throw new Error(`O PIMS não tem boletins de atividades mecanizadas desta fazenda entre ${dataBrMec(de)} e ${dataBrMec(ate)}.`);
+    const nome = 'PIMS · ' + (de===ate ? dataBrMec(de) : dataBrMec(de) + ' a ' + dataBrMec(ate));
+    carregarBoletimMecanizadas(fazendaId, dados.cabecalho.map(h=>String(h)), dados.linhas.map(l=>l.map(c=>String(c==null?'':c))), nome);
+    mostrarEtapaPimsMec('');
+    document.getElementById('dlg-mec-pims').close();
+  } catch(erro){
+    if(!vale()) return;
+    mostrarEtapaPimsMec('');
+    mostrarErroPimsMec(erro && erro.message ? erro.message : String(erro));
+  }
 }
 
 const MEC_LINHAS_POR_PAGINA = 200;
@@ -2746,6 +2894,12 @@ function renderImportarMecanizadas(){
   elFazenda.textContent = fazendaAtual ? fazendaAtual.nome : '–';
   renderTabelaMecanizadas();
 }
+
+document.getElementById('btn-mec-pims').addEventListener('click', abrirBuscaPimsMec);
+document.getElementById('mec-pims-fechar').addEventListener('click', fecharBuscaPimsMec);
+document.getElementById('mec-pims-cancelar').addEventListener('click', fecharBuscaPimsMec);
+document.getElementById('dlg-mec-pims').addEventListener('cancel', ()=>{ mecPimsBusca += 1; mostrarEtapaPimsMec(''); });
+document.getElementById('form-mec-pims').addEventListener('submit', e=>{ e.preventDefault(); buscarBoletinsPimsMec(); });
 
 const inputArquivoMec = document.getElementById('input-arquivo-mec');
 document.getElementById('btn-escolher-mec').addEventListener('click', ()=> inputArquivoMec.click());

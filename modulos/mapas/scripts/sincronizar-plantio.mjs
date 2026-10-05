@@ -703,6 +703,123 @@ export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globa
   }
 }
 
+// ---------- boletins de atividades mecanizadas (botão "Buscar direto no PIMS" de Mecanizadas) ----------
+
+/** período máximo de um pedido de boletins (dias) */
+export const MEC_MAX_DIAS = 62;
+/** linhas por consulta (o servidor de dados corta o resultado em 5.000) e teto do pedido inteiro */
+const MEC_PAGINA = 4000;
+const MEC_MAX_LINHAS = 40000;
+
+/** As 22 colunas do relatório "atividades mecanizadas" exportado do PIMS, na mesma ordem e com os mesmos nomes. */
+export const MEC_CABECALHO = [
+  'Unidade Administrativa', 'Categoria Operacional', 'Equipe', 'Boletim', 'Data', 'Equipamento', 'Modelo', 'Implemento', '',
+  'Funcionário', '', 'Ano Agrícola', 'Período de Produção', '', 'Centro de Custo', '', 'Operação', '', 'Hr/Km Inicial', 'Hr/Km Final',
+  'Total Hr/Km', 'Situação',
+];
+
+/** Confere o pedido: unidade do PIMS (ex.: 'T. FLECHAS') e período 'YYYY-MM-DD' de até MEC_MAX_DIAS dias; lança Error legível. */
+export function validarPedidoMec(unidade, de, ate) {
+  const u = String(unidade ?? '').trim().toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9 .]{1,29}$/.test(u)) throw new Error('Unidade inválida.');
+  const ehData = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+  if (!ehData(de) || !ehData(ate)) throw new Error('Período inválido: informe as duas datas.');
+  if (de > ate) throw new Error('Período inválido: a data inicial é depois da final.');
+  const dias = Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000) + 1;
+  if (dias > MEC_MAX_DIAS) throw new Error(`Período muito longo (${dias} dias): o máximo é ${MEC_MAX_DIAS} dias.`);
+  return { unidade: u, de, ate, dias };
+}
+
+/**
+ * Lançamentos dos boletins de atividades mecanizadas de uma unidade no período (de e até inclusive), uma
+ * página por vez. Só operações apontadas por horímetro/km (FG_TP_HR = '1'), como no relatório do PIMS (as
+ * apontadas por relógio, como pausa e inspeção diária, não aparecem lá). O período de produção vem do
+ * lançamento ou, na falta, do talhão.
+ */
+export function montarSqlMecanizadas(unidade, de, ate, pular = 0, tamanho = MEC_PAGINA) {
+  const p = validarPedidoMec(unidade, de, ate);
+  return `SELECT u.DA_UNI_ADM AS unidade, co.DE_CATEG_OPERAC AS categoria, e.DE_EQUIPE AS equipe, a.NO_BOLETIM AS boletim,
+  CONVERT(varchar(10), a.DT_OPERACAO, 23) AS data, eq.CD_EQUIPTO AS equipamento, mo.DE_MODELO AS modelo,
+  im.CD_EQUIPTO AS implemento, mi.DE_MODELO AS implemento_de, f.CD_FUNCIONAR AS funcionario, f.DE_FUNCIONAR AS funcionario_de,
+  s.CD_SAFRA AS ano_agricola, ps.CD_PER_SAFRA AS periodo, ps.DE_PER_SAFRA AS periodo_de, cc.CD_CCUSTO AS ccusto, cc.DE_CCUSTO AS ccusto_de,
+  o.CD_OPERACAO AS operacao, o.DE_OPERACAO AS operacao_de, lc.QT_INI_HK AS ini, lc.QT_FIM_HK AS fim, lc.QT_TOTAL_HK AS total
+FROM ${PIMS}APATIVMEC a
+JOIN ${PIMS}APATIVMEC_LC lc ON lc.ID_APATIVMEC = a.ID_APATIVMEC
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = a.ID_UNIDADEADM
+JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = lc.ID_OPERACAO
+LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = a.ID_EQUIPE
+LEFT JOIN ${PIMS}EQUIPTO eq ON eq.ID_EQUIPTO = a.ID_EQUIPTO
+LEFT JOIN ${PIMS}MODELO mo ON mo.ID_MODELO = eq.ID_MODELO
+LEFT JOIN ${PIMS}CATOPERACIONAL co ON co.ID_CATOPERACIONAL = eq.ID_CATOPERACIONAL
+LEFT JOIN ${PIMS}EQUIPTO im ON im.ID_EQUIPTO = lc.ID_EQUIPTO_IM
+LEFT JOIN ${PIMS}MODELO mi ON mi.ID_MODELO = im.ID_MODELO
+LEFT JOIN ${PIMS}FUNCIONAR f ON f.ID_FUNCIONAR = a.ID_FUNCIONAR
+LEFT JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = lc.ID_UPNIVEL3
+LEFT JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = COALESCE(lc.ID_PERIODOSAFRA, up.ID_PERIODOSAFRA)
+LEFT JOIN ${PIMS}SAFRA s ON s.ID_SAFRA = COALESCE(lc.ID_SAFRA, ps.ID_SAFRA)
+LEFT JOIN ${PIMS}CCUSTO cc ON cc.ID_CCUSTO = lc.ID_CCUSTO
+WHERE u.DA_UNI_ADM = '${p.unidade.replace(/'/g, "''")}' AND o.FG_TP_HR = '1'
+  AND a.DT_OPERACAO >= '${p.de}' AND a.DT_OPERACAO < DATEADD(day, 1, '${p.ate}')
+ORDER BY a.DT_OPERACAO, a.NO_BOLETIM, lc.ID_APATIVMEC_LC
+OFFSET ${Math.max(0, Math.floor(pular))} ROWS FETCH NEXT ${Math.max(1, Math.floor(tamanho))} ROWS ONLY`;
+}
+
+/** 3491.9 → '3.491,90' (como o PIMS escreve Hr/Km no relatório); sem número → ''. */
+export function fmtHrKm(v) {
+  if (v === null || v === undefined || v === '') return '';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  const [inteiro, dec] = Math.abs(n).toFixed(2).split('.');
+  return `${n < 0 ? '-' : ''}${inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${dec}`;
+}
+
+/**
+ * Resultado da consulta → linhas do relatório, com as mesmas 22 colunas, a mesma ordem (categoria,
+ * equipamento, data, Hr/Km inicial) e a coluna "Situação" do PIMS: "Início" no primeiro lançamento de cada
+ * equipamento; "Correto" quando o Hr/Km inicial continua o final do lançamento anterior; senão "Incorreto".
+ */
+export function linhasMecanizadas(objs) {
+  const t = (v) => (v === null || v === undefined ? '' : String(v).trim());
+  const ordenadas = objs.slice().sort((a, b) =>
+    comparar(t(a.categoria), t(b.categoria)) || comparar(t(a.equipamento), t(b.equipamento)) || comparar(t(a.data), t(b.data)) ||
+    (Number(a.ini) || 0) - (Number(b.ini) || 0) || (Number(a.fim) || 0) - (Number(b.fim) || 0) || (Number(a.boletim) || 0) - (Number(b.boletim) || 0));
+  const fimAnterior = new Map();
+  return ordenadas.map((r) => {
+    const eq = t(r.equipamento);
+    const ini = Number(r.ini);
+    const situacao = !fimAnterior.has(eq) ? 'Início' : Math.abs(fimAnterior.get(eq) - ini) < 0.011 ? 'Correto' : 'Incorreto';
+    fimAnterior.set(eq, Number(r.fim));
+    const d = t(r.data);
+    return [
+      t(r.unidade), t(r.categoria), t(r.equipe), t(r.boletim), /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d.slice(8)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : d,
+      eq, t(r.modelo), t(r.implemento), t(r.implemento_de), t(r.funcionario), t(r.funcionario_de), t(r.ano_agricola), t(r.periodo), t(r.periodo_de),
+      t(r.ccusto), t(r.ccusto_de), t(r.operacao), t(r.operacao_de), fmtHrKm(r.ini), fmtHrKm(r.fim), fmtHrKm(r.total), situacao,
+    ];
+  });
+}
+
+/**
+ * Consulta o PIMS pelo Agrovex: boletins de atividades mecanizadas da unidade no período. Devolve
+ * { unidade, de, ate, cabecalho, linhas } no formato do relatório exportado (não grava nada).
+ */
+export async function boletinsMecanizadas({ url, token, unidade, de, ate, fetchImpl = fetch }) {
+  const p = validarPedidoMec(unidade, de, ate);
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    const objs = [];
+    for (let pular = 0; ; pular += MEC_PAGINA) {
+      const res = await cliente.consultar(montarSqlMecanizadas(p.unidade, p.de, p.ate, pular, MEC_PAGINA), 'boletins de atividades mecanizadas (COA WEB)', 'atividades mecanizadas');
+      const pagina = objetosDe(res);
+      objs.push(...pagina);
+      if (pagina.length < MEC_PAGINA) break;
+      if (objs.length >= MEC_MAX_LINHAS) throw new Error(`O período tem mais de ${MEC_MAX_LINHAS} lançamentos: escolha um período menor.`);
+    }
+    return { unidade: p.unidade, de: p.de, ate: p.ate, cabecalho: MEC_CABECALHO, linhas: linhasMecanizadas(objs) };
+  } finally {
+    await cliente.fechar();
+  }
+}
+
 // ---------- chuva por PIC (botão "Inserir dados via integração" do Mapa de Chuva) ----------
 
 /** período máximo de um pedido de chuva (dias) */

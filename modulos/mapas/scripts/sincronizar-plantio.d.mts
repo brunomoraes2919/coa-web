@@ -166,6 +166,14 @@ export function fazendasDaZeus(r: Resultado): string[];
 export function montarSqlChuvaPics(ids: string[], de: string, ate: string): string;
 export function montarChuvaPics(pics: PicZeusScript[], r: Resultado): { pics: PicChuvaScript[]; ultimoDia: string | null };
 export function chuvaPorPicZeus(opcoes: { url: string; token: string; fazenda: string; de: string; ate: string; fetchImpl?: FetchLike }): Promise<ChuvaPicsScript>;
+export interface BoletinsMecScript { unidade: string; de: string; ate: string; cabecalho: string[]; linhas: string[][] }
+export const MEC_MAX_DIAS: number;
+export const MEC_CABECALHO: string[];
+export function validarPedidoMec(unidade: unknown, de: unknown, ate: unknown): { unidade: string; de: string; ate: string; dias: number };
+export function montarSqlMecanizadas(unidade: string, de: string, ate: string, pular?: number, tamanho?: number): string;
+export function fmtHrKm(v: unknown): string;
+export function linhasMecanizadas(objs: Record<string, unknown>[]): string[][];
+export function boletinsMecanizadas(opcoes: { url: string; token: string; unidade: string; de: string; ate: string; fetchImpl?: FetchLike }): Promise<BoletinsMecScript>;
 export function rodarAcompanhamento(opcoes: {
   agrovex: { url: string; token: string; safras: 'auto' | string[]; excluirPrefixos?: string[] };
   supabase: { url: string; chave: string };
