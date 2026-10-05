@@ -132,6 +132,7 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .categoria-card svg{width:38px;height:38px;opacity:.9;}
 .categoria-card span{font-size:15px;font-weight:600;letter-spacing:.2px;}
 .categoria-card:hover{background:rgba(219,138,8,.14);border-color:var(--dourado);transform:translateY(-2px);}
+.categoria-vazia{margin:18px 0 0;font-size:14px;color:#EAF2EF;opacity:.9;text-align:center;}
 .categoria-rodape{margin-top:34px;display:flex;align-items:center;justify-content:center;gap:16px;color:#7FA79B;font-size:12px;}
 .categoria-sair{background:none;border:1px solid rgba(255,255,255,.25);color:#EAF2EF;font-size:11.5px;padding:5px 12px;border-radius:6px;cursor:pointer;}
 .categoria-sair:hover{background:rgba(255,255,255,.08);}
@@ -597,6 +598,37 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 @media (max-width:480px){
   .app.modo-acomp .page[data-page="acompanhamento"].active{margin:0 -12px -12px;}
 }
+
+/* ---------- categoria LOCKS SAT: módulo num iframe (sat/index.html?embed=1) ---------- */
+.app.modo-sat{min-height:0;}
+.app.modo-sat main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
+.app.modo-sat .topbar{flex:none;margin-bottom:0;}
+.app.modo-sat .page[data-page="sat"].active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin:0 -34px -60px;}
+#sat-frame{display:block;flex:1 1 auto;width:100%;min-height:0;border:0;background:var(--fundo);}
+@media (max-width:900px){
+  .app.modo-sat{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+  .app.modo-sat .sidebar{flex:none;}
+  .app.modo-sat main{flex:1 1 auto;min-height:0;height:auto;}
+  .app.modo-sat .page[data-page="sat"].active{margin:0 -18px -18px;}
+}
+@media (max-width:640px){
+  .app.modo-sat .page[data-page="sat"].active{margin:0 -14px -14px;}
+}
+@media (max-width:480px){
+  .app.modo-sat .page[data-page="sat"].active{margin:0 -12px -12px;}
+}
+/* estado do Locks SAT no card da categoria */
+.categoria-card small.categoria-card-nota{font-size:11.5px;font-weight:400;opacity:.85;}
+.categoria-card small.categoria-card-nota:empty{display:none;}
+/* avisos do Locks SAT: aparecem em qualquer tela depois do login */
+#sat-avisos{position:fixed;right:18px;bottom:18px;z-index:4000;display:flex;flex-direction:column;gap:8px;width:min(380px,calc(100vw - 36px));max-height:calc(100dvh - 36px);overflow-y:auto;}
+.sat-aviso{display:flex;align-items:flex-start;gap:8px;background:var(--fundo-card);border:1px solid var(--linha);border-left:4px solid var(--dourado);border-radius:var(--raio);box-shadow:var(--sombra);padding:10px 12px;}
+.sat-aviso.critico{border-left-color:var(--vermelho-abaixo);}
+.sat-aviso-corpo{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;font-size:13px;color:var(--texto);overflow-wrap:anywhere;}
+.sat-aviso-corpo:focus-visible,.sat-aviso-fechar:focus-visible{outline:2px solid var(--dourado);outline-offset:2px;}
+.sat-aviso-corpo strong{font-weight:600;}
+.sat-aviso-corpo span{color:var(--texto-suave);}
+.sat-aviso-fechar{all:unset;cursor:pointer;padding:0 4px;font-size:18px;line-height:1;color:var(--texto-suave);}
 </style>
 </head>
 <body>
@@ -639,11 +671,17 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 20h18"/><path d="M6 16v-4M11 16V8M16 16v-6M21 16V5"/><path d="m4 9 5-4 5 3 6-5"/></svg>
         <span>Operacional</span>
       </button>
+      <button class="categoria-card" id="card-sat">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 9.5 5 5"/><rect x="9.2" y="8.5" width="5.6" height="7" rx="1" transform="rotate(-45 12 12)"/><path d="m7.6 11.4-3.2-3.2 2.8-2.8 3.2 3.2M16.4 12.6l3.2 3.2-2.8 2.8-3.2-3.2"/><path d="M4.5 16a3.5 3.5 0 0 0 3.5 3.5M2.5 16A5.5 5.5 0 0 0 8 21.5"/></svg>
+        <span>Locks SAT</span>
+        <small class="categoria-card-nota" id="sat-resumo"></small>
+      </button>
       <button class="categoria-card admin-only" id="card-administracao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
         <span>Administração de usuários</span>
       </button>
     </div>
+    <p class="categoria-vazia" id="categoria-vazia" style="display:none">Nenhuma categoria liberada para o seu usuário. Fale com o administrador.</p>
     <div class="categoria-rodape">
       <span id="categoria-usuario-logado"></span>
       <button class="categoria-sair" id="btn-sair-categoria">Sair</button>
@@ -703,6 +741,14 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <button class="nav-btn" data-page="acompanhamento" data-acomp="painel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18"/><path d="M6 16v-4M11 16V8M16 16v-6M21 16V5"/></svg>Painel</button>
         <button class="nav-btn" data-page="acompanhamento" data-acomp="metas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg>Metas</button>
         <button class="nav-btn" data-page="acompanhamento" data-acomp="safras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 20h18"/><path d="M4 16l4-5 4 3 4-6 4 4"/><path d="M12 3.5s-2 2.3-2 3.6a2 2 0 0 0 4 0c0-1.3-2-3.6-2-3.6Z"/></svg>Safras</button>
+      </nav>
+    </div>
+    <div id="nav-sat" style="display:none">
+      <div class="nav-eyebrow">Locks SAT</div>
+      <nav>
+        <button class="nav-btn" data-page="sat" data-sat="/hoje"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Hoje</button>
+        <button class="nav-btn" data-page="sat" data-sat="/mapa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4Z"/><path d="M9 4v13.5M15 6.5V20"/></svg>Mapa</button>
+        <button class="nav-btn" data-page="sat" data-sat="/alertas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 10v4M12 17.5v.5"/></svg>Alertas</button>
       </nav>
     </div>
     <div class="sidebar-foot">
@@ -967,7 +1013,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <section class="page" data-page="usuarios">
       <div class="section" id="nu-form-wrap">
         <div class="section-head">
-          <div><h2 id="nu-titulo">Novo usuário</h2><div class="desc" id="nu-desc">Cria o login e já define o perfil e as fazendas permitidas</div></div>
+          <div><h2 id="nu-titulo">Novo usuário</h2><div class="desc" id="nu-desc">Cria o login e já define o perfil, as fazendas e as categorias permitidas</div></div>
         </div>
         <div class="card">
           <div class="form-grid">
@@ -986,6 +1032,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
             <label>Fazendas permitidas</label>
             <div class="checks-fazendas" id="nu-fazendas-checks"></div>
           </div>
+          <div class="campo-fazendas" id="nu-categorias-wrap">
+            <label>Categorias permitidas</label>
+            <div class="checks-fazendas" id="nu-categorias-checks"></div>
+          </div>
           <div class="section-actions" style="margin-top:14px">
             <button class="btn" id="btn-add-usuario">Criar usuário</button>
             <button class="btn fantasma" id="btn-cancelar-edicao-usuario">Cancelar</button>
@@ -996,7 +1046,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <div class="section-head"><div><h2>Usuários cadastrados</h2></div></div>
         <div class="card tabela-wrap">
           <table>
-            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Fazendas permitidas</th><th></th></tr></thead>
+            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Fazendas permitidas</th><th>Categorias</th><th></th></tr></thead>
             <tbody id="tbl-usuarios"></tbody>
           </table>
         </div>
@@ -1073,6 +1123,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <!-- ===================== MAPAS (módulo num iframe; o iframe #mapas-frame é criado na primeira entrada) ===================== -->
     <section class="page" data-page="mapas"></section>
     <section class="page" data-page="acompanhamento"></section>
+    <section class="page" data-page="sat"></section>
 
   </main>
 </div>
@@ -1107,6 +1158,8 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   </div>
 </div>
 
+<div id="sat-avisos"></div>
+
 <script>
 /* =====================================================================
    SUPABASE — conexão com o banco de dados real (produção)
@@ -1132,13 +1185,34 @@ const state = {
   usuarios: []
 };
 let sessao = null;
-let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento'
+let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat'
+/* categorias que o administrador libera por usuário (tabela usuario_categorias). O admin vê todas. */
+const CATEGORIAS = [
+  { chave:'algodao', nome:'Algodão', card:'card-algodao' },
+  { chave:'mecanizadas', nome:'Mecanizadas', card:'card-mecanizadas' },
+  { chave:'mapas', nome:'Mapas', card:'card-mapas' },
+  { chave:'acompanhamento', nome:'Operacional', card:'card-acompanhamento' },
+  { chave:'sat', nome:'Locks SAT', card:'card-sat' },
+];
+// null = ainda não se sabe, ou a tabela usuario_categorias não existe no banco: vale como "todas"
+let categoriasDoUsuario = null;
+function podeCategoria(chave){
+  if(!sessao) return false;
+  if(sessao.perfil === 'admin' || categoriasDoUsuario === null) return true;
+  return categoriasDoUsuario.includes(chave);
+}
 /* ---- categoria MAPAS: estado do iframe do módulo (ver a seção MAPAS mais abaixo) ---- */
 const MAPAS_ROTA_INICIAL = '/mapas/novo';
 let mapasFrame = null;         // iframe #mapas-frame (criado na primeira entrada; removido ao sair)
 let mapasCarregado = false;    // o módulo já terminou de carregar no iframe
 let mapasRotaAtual = MAPAS_ROTA_INICIAL; // última rota pedida/recebida do módulo
 let mapasTitulo = null;        // último título recebido do módulo (mensagem 'mapas-rota')
+/* ---- categoria LOCKS SAT: estado do iframe do módulo (ver a seção LOCKS SAT mais abaixo) ---- */
+const SAT_ROTA_INICIAL = '/hoje';
+let satFrame = null;        // iframe #sat-frame (criado depois do login, escondido; removido ao sair)
+let satCarregado = false;   // o módulo já terminou de carregar no iframe
+let satRotaAtual = SAT_ROTA_INICIAL; // última rota pedida/recebida do módulo
+let satTitulo = null;       // último título recebido do módulo (mensagem 'sat-rota')
 
 /* ---- conversão entre o formato do banco (snake_case) e o do app (camelCase) ---- */
 function compararTalhao(a, b){
@@ -1248,12 +1322,14 @@ const titulos = {
   'importar-mecanizadas':['Importar Boletim','Suba o relatório de atividades mecanizadas extraído do TOTVS PIMS'],
   mapas:['Mapas','Mapa de Chuva'], // o título real vem do módulo (mensagem 'mapas-rota')
   acompanhamento:['Acompanhamento Operacional','Plantio e colheita com os dados do PIMS'],
+  sat:['Locks SAT','Monitoramento de cintilação RTK'], // o título real vem do módulo (mensagem 'sat-rota')
 };
 document.querySelectorAll('.nav-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     // botões da categoria MAPAS (data-rota) trocam a rota do módulo no iframe
     if(btn.dataset.rota) irParaMapas(btn.dataset.rota);
     else if(btn.dataset.acomp) irParaAcomp(btn.dataset.acomp);
+    else if(btn.dataset.sat) irParaSat(btn.dataset.sat);
     else irPara(btn.dataset.page);
   });
 });
@@ -1264,6 +1340,7 @@ function irPara(pagina){
   document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active', p.dataset.page===pagina));
   document.getElementById('app-shell').classList.toggle('modo-mapas', pagina==='mapas');
   document.getElementById('app-shell').classList.toggle('modo-acomp', pagina==='acompanhamento');
+  document.getElementById('app-shell').classList.toggle('modo-sat', pagina==='sat');
   renderTudo();
 }
 function atualizarCabecalhoPagina(){
@@ -1271,6 +1348,7 @@ function atualizarCabecalhoPagina(){
   if(!paginaAtiva || !titulos[paginaAtiva]) return;
   let titulo = titulos[paginaAtiva][0];
   if(paginaAtiva === 'mapas' && mapasTitulo) titulo = mapasTitulo;
+  if(paginaAtiva === 'sat' && satTitulo) titulo = satTitulo;
   document.getElementById('titulo-pagina').textContent = titulo;
   let subtitulo = titulos[paginaAtiva][1];
   if(paginaAtiva === 'mapas' && /^\/(fazendas|safras)(\/|$)/.test(mapasRotaAtual)) subtitulo = 'Cadastros dos mapas';
@@ -3015,6 +3093,24 @@ function renderUsuarios(){
     if(uEdit) document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = uEdit.fazendasPermitidas.includes(parseInt(c.value)); });
   }
 
+  // categorias permitidas (nomes vêm da constante CATEGORIAS, nunca do banco)
+  const catsWrap = document.getElementById('nu-categorias-checks');
+  if(state.categoriasDisponiveis === false){
+    catsWrap.textContent = 'Rode o script supabase/0001_usuario_categorias.sql no Supabase para liberar categorias por usuário. Até lá todos veem todas.';
+  } else {
+    // renderTudo() recria as caixas a cada mudança em tempo real: guarda o que já estava marcado e remarca
+    const jaHavia = !!catsWrap.querySelector('.nu-categoria-chk');
+    const marcadas = new Set([...catsWrap.querySelectorAll('.nu-categoria-chk:checked')].map(c=>c.value));
+    catsWrap.innerHTML = CATEGORIAS.map(c=>`
+      <label><input type="checkbox" class="nu-categoria-chk" value="${c.chave}"> ${c.nome}</label>
+    `).join('');
+    const uEditCat = usuarioEditandoId ? state.usuarios.find(x=>x.id===usuarioEditandoId) : null;
+    document.querySelectorAll('.nu-categoria-chk').forEach(c=>{
+      if(jaHavia) c.checked = marcadas.has(c.value);
+      else if(uEditCat) c.checked = uEditCat.categoriasPermitidas === null || uEditCat.categoriasPermitidas.includes(c.value);
+    });
+  }
+
   const tbody = document.getElementById('tbl-usuarios');
   tbody.innerHTML = state.usuarios.map(u=>{
     const fazendasTxt = u.perfil==='admin'
@@ -3025,12 +3121,17 @@ function renderUsuarios(){
               return f ? `<span class="fazendas-permitidas-tag">${f.nome}</span>` : '';
             }).join('')
           : '<span class="fazendas-permitidas-tag">Nenhuma</span>');
+    const categoriasTxt = (u.perfil==='admin' || u.categoriasPermitidas===null)
+      ? '<span class="fazendas-permitidas-tag">Todas</span>'
+      : (CATEGORIAS.filter(c=>u.categoriasPermitidas.includes(c.chave)).map(c=>`<span class="fazendas-permitidas-tag">${c.nome}</span>`).join('')
+          || '<span class="fazendas-permitidas-tag">Nenhuma</span>');
     const podeRemover = !(sessao && sessao.id===u.id);
     return `<tr>
       <td><b>${u.nome}</b></td>
       <td>${u.email||'–'}</td>
       <td><span class="perfil-pill ${u.perfil}">${u.perfil==='admin'?'Administrador':'Colaborador'}</span></td>
       <td>${fazendasTxt}</td>
+      <td>${categoriasTxt}</td>
       <td class="acoes-usuario">
         <button class="editar" data-id="${u.id}">editar</button>
         ${podeRemover ? `<button class="remover" data-id="${u.id}">remover perfil</button>` : ''}
@@ -3063,6 +3164,8 @@ function iniciarEdicaoUsuario(id){
   document.getElementById('nu-perfil').value = u.perfil;
   document.getElementById('nu-fazendas-wrap').style.display = u.perfil==='admin' ? 'none' : '';
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = u.fazendasPermitidas.includes(parseInt(c.value)); });
+  document.getElementById('nu-categorias-wrap').style.display = u.perfil==='admin' ? 'none' : '';
+  document.querySelectorAll('.nu-categoria-chk').forEach(c=>{ c.checked = u.categoriasPermitidas === null || u.categoriasPermitidas.includes(c.value); });
   document.getElementById('nu-titulo').textContent = 'Editar usuário';
   document.getElementById('nu-desc').textContent = `Alterando o acesso de ${u.nome} (${u.email||'sem e-mail'}) — para trocar e-mail ou senha, use o painel do Supabase`;
   document.getElementById('btn-add-usuario').textContent = 'Salvar alterações';
@@ -3079,13 +3182,16 @@ function cancelarEdicaoUsuario(){
   document.getElementById('nu-perfil').value = 'colaborador';
   document.getElementById('nu-fazendas-wrap').style.display = '';
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = false; });
+  document.getElementById('nu-categorias-wrap').style.display = '';
+  document.querySelectorAll('.nu-categoria-chk').forEach(c=>{ c.checked = false; });
   document.getElementById('nu-titulo').textContent = 'Novo usuário';
-  document.getElementById('nu-desc').textContent = 'Cria o login e já define o perfil e as fazendas permitidas';
+  document.getElementById('nu-desc').textContent = 'Cria o login e já define o perfil, as fazendas e as categorias permitidas';
   document.getElementById('btn-add-usuario').textContent = 'Criar usuário';
 }
 document.getElementById('btn-cancelar-edicao-usuario').addEventListener('click', cancelarEdicaoUsuario);
 document.getElementById('nu-perfil').addEventListener('change', e=>{
   document.getElementById('nu-fazendas-wrap').style.display = e.target.value==='admin' ? 'none' : '';
+  document.getElementById('nu-categorias-wrap').style.display = e.target.value==='admin' ? 'none' : '';
 });
 
 async function salvarEdicaoUsuario(){
@@ -3094,6 +3200,7 @@ async function salvarEdicaoUsuario(){
   if(!nome){ alert('Informe o nome.'); return; }
   const fazendasPermitidas = perfil==='admin' ? [] :
     [...document.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>parseInt(c.value));
+  const categoriasPermitidas = perfil==='admin' ? [] : [...document.querySelectorAll('.nu-categoria-chk:checked')].map(c=>c.value);
 
   const btn = document.getElementById('btn-add-usuario');
   btn.disabled = true;
@@ -3105,6 +3212,17 @@ async function salvarEdicaoUsuario(){
     const linhas = fazendasPermitidas.map(fid=>({ usuario_id: usuarioEditandoId, fazenda_id: fid }));
     const { error: erroPerm } = await sb.from('usuario_fazendas').insert(linhas);
     if(erroPerm){ alert('Perfil salvo, mas houve erro nas permissões de fazenda: '+erroPerm.message); }
+  }
+
+  // categorias: só se a tabela usuario_categorias existe no banco
+  if(state.categoriasDisponiveis !== false){
+    const { error: erroApagarCat } = await sb.from('usuario_categorias').delete().eq('usuario_id', usuarioEditandoId);
+    if(erroApagarCat){ alert('Perfil salvo, mas houve erro nas categorias: '+erroApagarCat.message); }
+    else if(categoriasPermitidas.length){
+      const linhasCat = categoriasPermitidas.map(ch=>({ usuario_id: usuarioEditandoId, categoria: ch }));
+      const { error: erroCat } = await sb.from('usuario_categorias').insert(linhasCat);
+      if(erroCat){ alert('Perfil salvo, mas houve erro nas categorias: '+erroCat.message); }
+    }
   }
   btn.disabled = false;
 
@@ -3122,6 +3240,7 @@ async function criarNovoUsuario(){
   if(senha.length < 6){ alert('A senha precisa ter pelo menos 6 caracteres.'); return; }
   const fazendasPermitidas = perfil==='admin' ? [] :
     [...document.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>parseInt(c.value));
+  const categoriasPermitidas = perfil==='admin' ? [] : [...document.querySelectorAll('.nu-categoria-chk:checked')].map(c=>c.value);
 
   const btn = document.getElementById('btn-add-usuario');
   btn.disabled = true;
@@ -3166,6 +3285,12 @@ async function criarNovoUsuario(){
     const linhas = fazendasPermitidas.map(fid=>({ usuario_id: novoId, fazenda_id: fid }));
     const { error: erroPerm } = await sb.from('usuario_fazendas').insert(linhas);
     if(erroPerm){ alert('Usuário criado, mas houve erro nas permissões de fazenda: '+erroPerm.message); }
+  }
+
+  if(state.categoriasDisponiveis !== false && categoriasPermitidas.length){
+    const linhasCat = categoriasPermitidas.map(ch=>({ usuario_id: novoId, categoria: ch }));
+    const { error: erroCat } = await sb.from('usuario_categorias').insert(linhasCat);
+    if(erroCat){ alert('Usuário criado, mas houve erro nas categorias: '+erroCat.message); }
   }
 
   btn.disabled = false; btn.textContent = 'Criar usuário';
@@ -3334,12 +3459,14 @@ function irParaAcomp(vista){
   destacarBotaoAcomp();
 }
 function entrarAcompanhamento(){
+  if(!podeCategoria('acompanhamento')){ mostrarCategoriaScreen(); return; }
   categoriaAtual = 'acompanhamento';
   document.getElementById('nav-algodao').style.display = 'none';
   document.getElementById('nav-mecanizadas').style.display = 'none';
   document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = '';
+  document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaAcomp(null); // 1ª entrada: cria o iframe no painel; depois mantém o módulo onde estava
@@ -3372,6 +3499,146 @@ window.addEventListener('message', ev=>{
 });
 
 /* =====================================================================
+   LOCKS SAT — monitoramento de cintilação num iframe da mesma origem
+   (sat/index.html?embed=1#<rota>; a sessão do Supabase é a mesma do COA WEB)
+   O iframe é criado DEPOIS DO LOGIN, escondido: o vigia do módulo roda o tempo
+   todo e os avisos aparecem em qualquer tela. Entrar na categoria só o mostra.
+   - módulo → COA: { tipo:'sat-rota', rota, titulo }
+                   { tipo:'sat-alerta', id, titulo, texto, severidade:'aviso'|'critico' }
+                   { tipo:'sat-resumo', texto }
+   Só aceita mensagens da mesma origem vindas do próprio iframe.
+===================================================================== */
+const SAT_ROTAS = ['/hoje','/mapa','/alertas'];
+const SAT_MAX_AVISOS = 3;
+const SAT_DURACAO_AVISO_MS = 8000;
+function urlSat(rota){
+  return 'sat/index.html?embed=1#' + rota;
+}
+function destacarBotaoSat(){
+  document.querySelectorAll('#nav-sat .nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.sat===satRotaAtual));
+}
+function criarSatFrame(rota){
+  const frame = document.createElement('iframe');
+  frame.id = 'sat-frame';
+  frame.title = 'Locks SAT';
+  frame.addEventListener('load', ()=>{
+    if(frame !== satFrame) return;
+    satCarregado = true;
+  });
+  frame.src = urlSat(rota);
+  satFrame = frame;
+  satCarregado = false;
+  document.querySelector('.page[data-page="sat"]').appendChild(frame);
+}
+// o iframe está mostrando o módulo em modo embutido? (sat/, sat/index.html, ?embed=1)
+function iframeNoModuloSat(loc){
+  const pasta = new URL('sat/', location.href).pathname.replace(/\/$/, '');
+  return loc.pathname.replace(/\/(index\.html)?$/, '') === pasta
+    && new URLSearchParams(loc.search).get('embed') === '1';
+}
+// trocar de botão só muda o hash do iframe (o módulo, e o vigia dele, não recarregam)
+function navegarSat(rota){
+  let loc = null;
+  try{ loc = satFrame.contentWindow.location; if(!iframeNoModuloSat(loc)) loc = null; }catch(e){ loc = null; }
+  if(satCarregado && loc){
+    loc.hash = rota;
+  } else {
+    satCarregado = false;
+    satFrame.src = urlSat(rota);
+  }
+}
+function irParaSat(rota){
+  if(rota && SAT_ROTAS.includes(rota)){
+    // rota nova: título provisório (o do botão) até o módulo responder. Na mesma rota o módulo não
+    // avisa de novo, então o título que ele já mandou fica.
+    if(rota !== satRotaAtual || !satTitulo){
+      const botao = document.querySelector('#nav-sat .nav-btn[data-sat="' + rota + '"]');
+      satTitulo = botao ? botao.textContent.trim() : null;
+    }
+    satRotaAtual = rota;
+  }
+  irPara('sat');
+  if(!satFrame) criarSatFrame(satRotaAtual);
+  else if(rota) navegarSat(satRotaAtual);
+  destacarBotaoSat();
+}
+function entrarSat(rota){
+  if(!podeCategoria('sat')){ mostrarCategoriaScreen(); return; }
+  categoriaAtual = 'sat';
+  document.getElementById('nav-algodao').style.display = 'none';
+  document.getElementById('nav-mecanizadas').style.display = 'none';
+  document.getElementById('nav-administracao').style.display = 'none';
+  document.getElementById('nav-mapas').style.display = 'none';
+  document.getElementById('nav-acompanhamento').style.display = 'none';
+  document.getElementById('nav-sat').style.display = '';
+  document.getElementById('categoria-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = '';
+  irParaSat(typeof rota === 'string' ? rota : null); // sem rota: mantém o módulo onde estava
+}
+// ao sair: descarrega o módulo (para o vigia) e limpa avisos e estado do card
+function descarregarSat(){
+  if(satFrame){
+    satFrame.src = 'about:blank';
+    satFrame.remove();
+  }
+  satFrame = null;
+  satCarregado = false;
+  satRotaAtual = SAT_ROTA_INICIAL;
+  satTitulo = null;
+  document.getElementById('sat-avisos').replaceChildren();
+  document.getElementById('sat-resumo').textContent = '';
+}
+function mostrarAvisoSat(d){
+  const caixa = document.getElementById('sat-avisos');
+  if([...caixa.children].some(el=>el.dataset.id===d.id)) return;
+  const el = document.createElement('div');
+  el.className = 'sat-aviso' + (d.severidade==='critico' ? ' critico' : '');
+  el.dataset.id = d.id;
+  el.setAttribute('role','alert');
+  const corpo = document.createElement('button');
+  corpo.type = 'button';
+  corpo.className = 'sat-aviso-corpo';
+  const titulo = document.createElement('strong');
+  titulo.textContent = d.titulo;
+  const texto = document.createElement('span');
+  texto.textContent = d.texto;
+  corpo.append(titulo, texto);
+  const fechar = document.createElement('button');
+  fechar.type = 'button';
+  fechar.className = 'sat-aviso-fechar';
+  fechar.setAttribute('aria-label','Fechar aviso');
+  fechar.textContent = '×';
+  const relogio = setTimeout(()=>el.remove(), SAT_DURACAO_AVISO_MS);
+  const remover = ()=>{ clearTimeout(relogio); el.remove(); };
+  corpo.addEventListener('click', ()=>{ remover(); entrarSat('/alertas'); });
+  fechar.addEventListener('click', remover);
+  el.append(corpo, fechar);
+  caixa.appendChild(el);
+  // passou do limite: sai primeiro o aviso (não crítico) mais antigo; só críticos, o mais antigo.
+  // (com 3 críticos na tela, um aviso novo não entra — ele continua em Locks SAT › Alertas)
+  while(caixa.children.length > SAT_MAX_AVISOS){
+    ([...caixa.children].find(x=>!x.classList.contains('critico')) || caixa.firstElementChild).remove();
+  }
+}
+const textoCurto = (v, max)=> typeof v === 'string' && v.length > 0 && v.length <= max;
+window.addEventListener('message', ev=>{
+  if(ev.origin !== location.origin) return;
+  if(!satFrame || ev.source !== satFrame.contentWindow) return;
+  const d = ev.data;
+  if(!d || typeof d !== 'object') return;
+  if(d.tipo === 'sat-rota' && SAT_ROTAS.includes(d.rota)){
+    satRotaAtual = d.rota;
+    satTitulo = textoCurto(d.titulo, 80) ? d.titulo : null;
+    destacarBotaoSat();
+    atualizarCabecalhoPagina();
+  } else if(d.tipo === 'sat-alerta' && textoCurto(d.id, 200) && textoCurto(d.titulo, 120) && textoCurto(d.texto, 600)){
+    mostrarAvisoSat(d);
+  } else if(d.tipo === 'sat-resumo' && typeof d.texto === 'string' && d.texto.length <= 120){
+    document.getElementById('sat-resumo').textContent = d.texto;
+  }
+});
+
+/* =====================================================================
    LOGIN / LOGOUT — Supabase Auth
 ===================================================================== */
 function aplicarPermissoesNav(){
@@ -3400,15 +3667,20 @@ async function recarregarTudoDoSupabase(){
   state.talhoes = (th.data || []).map(talhaoDoBanco);
 
   if(sessao && sessao.perfil==='admin'){
-    const [pf, uf] = await Promise.all([
+    const [pf, uf, uc] = await Promise.all([
       sb.from('perfis').select('*'),
-      sb.from('usuario_fazendas').select('*')
+      sb.from('usuario_fazendas').select('*'),
+      sb.from('usuario_categorias').select('*')
     ]);
     const perfis = pf.data || [];
     const permissoes = uf.data || [];
+    // erro na consulta (tabela ainda não criada no banco) = sem controle por categoria: todos veem todas
+    state.categoriasDisponiveis = !uc.error;
+    const permCategorias = uc.error ? [] : (uc.data || []);
     state.usuarios = perfis.map(p=>({
       id: p.id, nome: p.nome, perfil: p.perfil, email: p.email,
-      fazendasPermitidas: permissoes.filter(u=>u.usuario_id===p.id).map(u=>u.fazenda_id)
+      fazendasPermitidas: permissoes.filter(u=>u.usuario_id===p.id).map(u=>u.fazenda_id),
+      categoriasPermitidas: uc.error ? null : permCategorias.filter(u=>u.usuario_id===p.id).map(u=>u.categoria)
     }));
   } else {
     state.usuarios = [];
@@ -3416,13 +3688,34 @@ async function recarregarTudoDoSupabase(){
   renderTudo();
 }
 
+/* categorias liberadas para quem está logado. Erro na consulta (tabela ainda não criada no banco,
+   rede) = null = todas: o site segue como era antes desta tabela, em vez de travar todo mundo.
+   Se já havia uma lista conhecida, um erro passageiro não a apaga. */
+async function carregarCategoriasDoUsuario(){
+  if(!sessao){ categoriasDoUsuario = null; return; }
+  const id = sessao.id;
+  const { data, error } = await sb.from('usuario_categorias').select('categoria').eq('usuario_id', id);
+  if(!sessao || sessao.id !== id) return; // saiu (ou trocou de usuário) durante a consulta
+  if(!error) categoriasDoUsuario = (data || []).map(l=>l.categoria);
+}
+/* depois de recarregar as categorias: fecha o que deixou de ser permitido */
+function aplicarCategoriasDoUsuario(){
+  if(!sessao) return;
+  if(!podeCategoria('sat')){ if(satFrame) descarregarSat(); }
+  else if(!satFrame && !location.hostname.endsWith('github.io')) criarSatFrame(SAT_ROTA_INICIAL);
+  const naTelaDeCategorias = document.getElementById('categoria-screen').style.display !== 'none';
+  if(naTelaDeCategorias) mostrarCategoriaScreen();
+  else if(categoriaAtual && CATEGORIAS.some(c=>c.chave===categoriaAtual) && !podeCategoria(categoriaAtual)) mostrarCategoriaScreen();
+}
+
 let canalRealtime = null;
 function configurarRealtime(){
   if(canalRealtime) return;
   canalRealtime = sb.channel('coa-web-mudancas');
-  ['talhoes','fazendas','variedades','safras','perfis','usuario_fazendas'].forEach(tabela=>{
+  ['talhoes','fazendas','variedades','safras','perfis','usuario_fazendas','usuario_categorias'].forEach(tabela=>{
     canalRealtime.on('postgres_changes', {event:'*', schema:'public', table:tabela}, ()=>{
       recarregarTudoDoSupabase();
+      carregarCategoriasDoUsuario().then(aplicarCategoriasDoUsuario);
     });
   });
   canalRealtime.subscribe();
@@ -3443,8 +3736,13 @@ async function carregarSessaoEDados(){
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('login-senha').value = '';
 
+  categoriasDoUsuario = null; // sem lista de uma sessão anterior
+  await carregarCategoriasDoUsuario();
   await recarregarTudoDoSupabase();
   configurarRealtime();
+  // Locks SAT em segundo plano: o vigia de cintilação começa já, em qualquer categoria — só para quem
+  // tem a categoria, e só onde existe a ponte /api/gnss (na cópia do GitHub Pages não há função)
+  if(!satFrame && podeCategoria('sat') && !location.hostname.endsWith('github.io')) criarSatFrame(SAT_ROTA_INICIAL);
   mostrarCategoriaScreen();
 }
 
@@ -3459,28 +3757,39 @@ function mostrarCategoriaScreen(){
   document.getElementById('categoria-screen').style.display = 'flex';
   const cardAdministracao = document.getElementById('card-administracao');
   if(cardAdministracao) cardAdministracao.style.display = sessao && sessao.perfil==='admin' ? '' : 'none';
+  // só os cards das categorias liberadas para o usuário
+  CATEGORIAS.forEach(c=>{
+    const card = document.getElementById(c.card);
+    if(card) card.style.display = podeCategoria(c.chave) ? '' : 'none';
+  });
+  const semCategoria = sessao && sessao.perfil !== 'admin' && !CATEGORIAS.some(c=>podeCategoria(c.chave));
+  document.getElementById('categoria-vazia').style.display = semCategoria ? '' : 'none';
   if(sessao){
     document.getElementById('categoria-usuario-logado').textContent = sessao.nome;
   }
 }
 function entrarAlgodao(){
+  if(!podeCategoria('algodao')){ mostrarCategoriaScreen(); return; }
   categoriaAtual = 'algodao';
   document.getElementById('nav-algodao').style.display = '';
   document.getElementById('nav-mecanizadas').style.display = 'none';
   document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = 'none';
+  document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('relatorio');
 }
 function entrarMecanizadas(){
+  if(!podeCategoria('mecanizadas')){ mostrarCategoriaScreen(); return; }
   categoriaAtual = 'mecanizadas';
   document.getElementById('nav-algodao').style.display = 'none';
   document.getElementById('nav-mecanizadas').style.display = '';
   document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = 'none';
+  document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('importar-mecanizadas');
@@ -3493,17 +3802,20 @@ function entrarAdministracao(){
   document.getElementById('nav-administracao').style.display = '';
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = 'none';
+  document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('usuarios');
 }
 function entrarMapas(){
+  if(!podeCategoria('mapas')){ mostrarCategoriaScreen(); return; }
   categoriaAtual = 'mapas';
   document.getElementById('nav-algodao').style.display = 'none';
   document.getElementById('nav-mecanizadas').style.display = 'none';
   document.getElementById('nav-administracao').style.display = 'none';
   document.getElementById('nav-mapas').style.display = '';
   document.getElementById('nav-acompanhamento').style.display = 'none';
+  document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaMapas(null); // 1ª entrada: cria o iframe na rota inicial; depois mantém o módulo onde estava
@@ -3514,6 +3826,7 @@ document.getElementById('card-mecanizadas').addEventListener('click', entrarMeca
 document.getElementById('card-administracao').addEventListener('click', entrarAdministracao);
 document.getElementById('card-mapas').addEventListener('click', entrarMapas);
 document.getElementById('card-acompanhamento').addEventListener('click', entrarAcompanhamento);
+document.getElementById('card-sat').addEventListener('click', ()=>entrarSat());
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
 
 async function tentarLogin(){
@@ -3539,9 +3852,11 @@ async function tentarLogin(){
 async function sair(){
   descarregarMapas();
   descarregarAcomp();
+  descarregarSat();
   if(canalRealtime){ sb.removeChannel(canalRealtime); canalRealtime = null; }
   await sb.auth.signOut();
   sessao = null;
+  categoriasDoUsuario = null;
   document.getElementById('login-usuario').value = '';
   document.getElementById('login-senha').value = '';
   document.getElementById('login-erro').textContent = '';
@@ -3570,7 +3885,7 @@ document.getElementById('btn-trocar-categoria').addEventListener('click', mostra
     const recolhida = !app.classList.contains('recolhida');
     aplicar(recolhida);
     try{ localStorage.setItem('coa.menuRecolhido', recolhida ? '1' : '0'); }catch(e){ /* sem armazenamento */ }
-    // os módulos em iframe (mapas, acompanhamento) e os gráficos refazem o tamanho
+    // os módulos em iframe (mapas, acompanhamento, sat) e os gráficos refazem o tamanho
     setTimeout(()=>window.dispatchEvent(new Event('resize')), 230);
   });
 })();
@@ -3601,7 +3916,7 @@ function renderTudo(){
   else { mostrarTelaLogin(); }
 })();
 sb.auth.onAuthStateChange((event)=>{
-  if(event === 'SIGNED_OUT'){ descarregarMapas(); descarregarAcomp(); mostrarTelaLogin(); }
+  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = null; descarregarMapas(); descarregarAcomp(); descarregarSat(); mostrarTelaLogin(); }
 });
 
 </script>

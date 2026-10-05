@@ -7,6 +7,9 @@ modulos/mapas/dados-teste/
 modulos/mapas/dados-fonte/
 mapas/dados/
 *.zip
+# módulo LOCKS SAT (código em modulos/sat, build em sat/)
+modulos/sat/node_modules/
+modulos/sat/dist/
 # rascunhos do desenvolvimento
 .superpowers/
 

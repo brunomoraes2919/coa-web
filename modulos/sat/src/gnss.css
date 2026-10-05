@@ -1,0 +1,205 @@
+/* ==================================================================
+   Locks SAT — conteúdo das telas. As variáveis (cores, tamanhos,
+   movimento) vêm de estilos/tokens.css.
+   ================================================================== */
+
+.gnss-pagina { display: flex; flex-direction: column; gap: 16px; font-family: var(--fonte); color: var(--tinta); }
+.gnss-cabecalho { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.gnss-cabecalho h1 { margin: 2px 0 4px; font-size: var(--t-lg); font-weight: 600; letter-spacing: -0.02em; }
+.gnss-cabecalho p { margin: 0; font-size: var(--t-peq); color: var(--tinta-2); max-width: 62ch; }
+.gnss-sobre { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 0.06em; color: var(--tinta-3); }
+.gnss-acoes, .gnss-camadas, .gnss-filtros { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.gnss-btn {
+  font: inherit; font-size: var(--t-peq); padding: 7px 12px; border-radius: var(--r-pq);
+  border: 1px solid var(--linha-forte); background: var(--superficie); color: var(--tinta); cursor: pointer;
+  transition: background var(--mov-rapida) var(--mov-padrao);
+}
+.gnss-btn:hover:not(:disabled) { background: var(--afundado); }
+.gnss-btn:disabled { opacity: 0.5; cursor: default; }
+.gnss-btn.icone { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; }
+.gnss-chip {
+  font: inherit; font-size: var(--t-mini); padding: 5px 11px; border-radius: 999px;
+  border: 1px solid var(--linha-forte); background: var(--superficie); color: var(--tinta-2); cursor: pointer;
+}
+.gnss-chip.ativo { background: var(--verde); border-color: var(--verde); color: var(--sobre-verde); }
+.gnss-notif { font-size: var(--t-mini); color: var(--tinta-3); }
+.gnss-notif.ok { color: var(--verde); }
+
+.gnss-faixa-erro { padding: 10px 14px; border-radius: var(--r-md); background: var(--erro-fundo); color: var(--erro); font-size: var(--t-peq); }
+.gnss-vazio {
+  padding: 28px; text-align: center; color: var(--tinta-3); font-size: var(--t-peq);
+  border: 1px dashed var(--linha-forte); border-radius: var(--r-md);
+}
+.gnss-temas { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--t-mini); color: var(--tinta-2); }
+.gnss-temas > span { display: inline-flex; align-items: center; gap: 4px; }
+
+.gnss-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.gnss-card {
+  background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--r-md);
+  padding: 14px 16px; box-shadow: var(--sombra); display: flex; flex-direction: column; gap: 10px;
+}
+.gnss-card > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gnss-card h2 { margin: 0; font-size: var(--t-md); font-weight: 600; }
+.gnss-selo {
+  --cor: var(--tinta-3);
+  font-size: var(--t-micro); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 3px 8px; border-radius: 999px; color: var(--cor);
+  background: color-mix(in srgb, var(--cor) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cor) 35%, transparent);
+}
+.gnss-kv { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.gnss-kv dt {
+  font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 0.05em; color: var(--tinta-3);
+  display: flex; align-items: flex-start; gap: 2px;
+}
+.gnss-kv dd {
+  margin: 2px 0 0; font-size: var(--t-peq); font-weight: 600; font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; gap: 5px;
+}
+.gnss-bolinha { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.gnss-nota { margin: 0; font-size: var(--t-peq); color: var(--tinta-2); }
+.gnss-linha { width: 100%; }
+.gnss-linha-legenda { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 2px 0 0; font-size: var(--t-micro); color: var(--tinta-3); }
+.gnss-linha-legenda span { display: inline-flex; align-items: center; gap: 5px; }
+.gnss-linha-legenda i { display: inline-block; }
+.gnss-leg-linha { width: 14px; height: 2px; background: #a8321f; }
+.gnss-leg-coluna { width: 4px; height: 10px; background: #d9b92b; }
+.gnss-leg-hachura { width: 12px; height: 10px; background: repeating-linear-gradient(45deg, rgba(92, 98, 93, 0.55) 0 2px, rgba(139, 144, 138, 0.14) 2px 6px); }
+.gnss-dica {
+  background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--r-pq);
+  padding: 6px 9px; font-size: var(--t-mini); display: flex; flex-direction: column; gap: 2px; box-shadow: var(--sombra);
+}
+
+/* Botão "?" */
+.gnss-ajuda { position: relative; display: inline-flex; }
+.gnss-ajuda-botao { display: inline-flex; padding: 2px; border: 0; background: none; color: var(--tinta-3); cursor: pointer; border-radius: 50%; }
+.gnss-ajuda-botao:hover, .gnss-ajuda-botao[aria-expanded='true'] { color: var(--verde); }
+.gnss-ajuda-caixa {
+  position: absolute; z-index: 1100; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  width: min(380px, 86vw); background: var(--superficie); border: 1px solid var(--linha);
+  border-radius: var(--r-md); box-shadow: var(--sombra-alta); padding: 12px 14px;
+  font-size: var(--t-mini); line-height: 1.5; color: var(--tinta-2);
+  text-transform: none; letter-spacing: 0; font-weight: 400; text-align: left;
+  max-height: min(70vh, 460px); overflow-y: auto;
+}
+.gnss-ajuda-caixa strong { display: block; color: var(--tinta); font-size: var(--t-peq); margin-bottom: 4px; }
+.gnss-ajuda-caixa p { margin: 0 0 6px; }
+.gnss-ajuda-caixa b { color: var(--tinta); }
+.gnss-ajuda-caixa small { display: block; color: var(--tinta-3); border-top: 1px solid var(--linha); padding-top: 6px; }
+/* Nos cards da Hoje o "?" fica numa coluna estreita: a caixa centrada nele
+   passaria da borda do card. Aqui ela se ancora no .gnss-kv e ocupa a largura
+   do card; `top: auto` mantém a posição vertical natural (no topo do "?", já
+   que o .gnss-ajuda é um flex), e a margem a desce para logo abaixo do botão
+   (20 px de altura + 6 px de respiro). */
+.gnss-kv .gnss-ajuda { position: static; }
+.gnss-kv .gnss-ajuda-caixa { left: 0; right: 0; width: auto; transform: none; top: auto; margin-top: 26px; }
+
+/* Botão "Como isso afeta o RTK" */
+/* O painel se ancora na borda direita do CABEÇALHO (que é position: relative), não no
+   botão: na Hoje o botão é o mais à esquerda das ações e o cabeçalho quebra linha. */
+.gnss-guia-rtk-caixa { position: static; display: inline-flex; }
+.gnss-guia-rtk-botao { display: inline-flex; align-items: center; gap: 6px; }
+.gnss-guia-rtk-botao[aria-expanded='true'] { background: var(--afundado); }
+.gnss-guia-rtk {
+  position: absolute; z-index: 1100; top: calc(100% + 6px); right: 0;
+  width: min(560px, 100%); max-height: min(75vh, 560px); overflow-y: auto;
+  background: var(--superficie); border: 1px solid var(--linha);
+  border-radius: var(--r-md); box-shadow: var(--sombra-alta); padding: 12px 14px;
+  font-size: var(--t-mini); line-height: 1.5; color: var(--tinta-2); text-align: left;
+}
+.gnss-guia-rtk strong { display: block; color: var(--tinta); font-size: var(--t-peq); margin-bottom: 6px; }
+.gnss-guia-rtk b { display: block; color: var(--tinta); margin: 10px 0 2px; }
+.gnss-guia-rtk ul { margin: 0 0 8px; padding-left: 18px; }
+.gnss-guia-rtk p { margin: 0 0 8px; }
+.gnss-guia-rtk small { display: block; color: var(--tinta-3); border-top: 1px solid var(--linha); padding-top: 6px; }
+.gnss-guia-rtk-tabela { width: 100%; table-layout: fixed; border-collapse: collapse; }
+.gnss-guia-rtk-tabela th {
+  text-align: left; font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--tinta-3); font-weight: 600; padding: 4px 8px 4px 0; border-bottom: 1px solid var(--linha);
+}
+.gnss-guia-rtk-tabela td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--linha); vertical-align: top; }
+.gnss-guia-rtk-tabela th, .gnss-guia-rtk-tabela td { overflow-wrap: break-word; }
+.gnss-guia-rtk-tabela th:nth-child(1) { width: 30%; }
+.gnss-guia-rtk-tabela th:nth-child(2) { width: 40%; }
+.gnss-guia-rtk-tabela .gnss-bolinha { margin-right: 6px; vertical-align: middle; }
+
+/* Alertas */
+.gnss-tabela { width: 100%; border-collapse: collapse; font-size: var(--t-peq); background: var(--superficie); border: 1px solid var(--linha); }
+.gnss-tabela th {
+  text-align: left; font-size: var(--t-micro); text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--tinta-3); font-weight: 600; padding: 9px 12px; border-bottom: 1px solid var(--linha);
+}
+.gnss-tabela td { padding: 9px 12px; border-bottom: 1px solid var(--linha); vertical-align: top; }
+.gnss-tabela td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gnss-badge {
+  font-size: var(--t-micro); font-weight: 600; padding: 2px 8px; border-radius: 999px;
+  background: color-mix(in srgb, var(--ambar) 14%, transparent); color: #8e5a04;
+}
+.gnss-badge.critico { background: var(--erro-fundo); color: var(--erro); }
+
+/* Mapa */
+.gnss-mapa-caixa { position: relative; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--linha); }
+.gnss-mapa { height: min(62vh, 640px); min-height: 360px; width: 100%; background: var(--afundado); }
+.gnss-legenda {
+  position: absolute; z-index: 500; top: 12px; right: 12px; background: var(--superficie);
+  border: 1px solid var(--linha); border-radius: var(--r-md); padding: 8px 10px; box-shadow: var(--sombra);
+  font-size: var(--t-micro); display: flex; flex-direction: column; gap: 6px;
+}
+.gnss-legenda-corpo { display: flex; gap: 6px; }
+.gnss-legenda-barra { width: 12px; height: 120px; border-radius: 3px; opacity: 0.75; }
+.gnss-legenda-rotulos { display: flex; flex-direction: column; justify-content: space-between; color: var(--tinta-2); }
+.gnss-barra-horario { display: flex; align-items: center; gap: 12px; }
+.gnss-barra-horario input[type='range'] { flex: 1; accent-color: var(--verde); }
+.gnss-barra-hora { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 5ch; }
+.gnss-barra-hora small { font-weight: 400; color: var(--erro); }
+
+/* Legenda da cintilação em três faixas */
+.gnss-legenda-faixas { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.gnss-legenda-faixas li { display: flex; align-items: center; gap: 6px; color: var(--tinta-2); }
+.gnss-legenda-faixas i { width: 12px; height: 12px; border-radius: 3px; opacity: 0.75; flex: none; }
+.gnss-legenda-faixas i.vazia { border: 1px dashed var(--tinta-3); opacity: 1; }
+.gnss-legenda-faixas small { color: var(--tinta-3); font-variant-numeric: tabular-nums; }
+.gnss-legenda-nota { color: var(--tinta-3); }
+
+/* Fundo do mapa (canto inferior esquerdo) */
+.gnss-fundo {
+  position: absolute; z-index: 500; left: 12px; bottom: 12px; display: flex; gap: 2px; padding: 3px;
+  background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--r-md); box-shadow: var(--sombra);
+}
+.gnss-fundo-opcao {
+  border: 0; background: none; padding: 4px 8px; border-radius: var(--r-pq); cursor: pointer;
+  font: inherit; font-size: var(--t-micro); color: var(--tinta-2);
+}
+.gnss-fundo-opcao:hover { background: var(--afundado); }
+.gnss-fundo-opcao.ativo { background: var(--verde); color: var(--sobre-verde); }
+
+/* Aviso sobre o mapa (dia passado sem dados) */
+.gnss-mapa-aviso {
+  position: absolute; z-index: 500; top: 12px; left: 50%; transform: translateX(-50%);
+  background: var(--erro-fundo); color: var(--erro); border: 1px solid var(--erro);
+  border-radius: var(--r-md); padding: 6px 12px; font-size: var(--t-peq); white-space: nowrap;
+}
+
+/* Dia + barra de horário */
+.gnss-controles-tempo { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.gnss-controles-tempo .gnss-barra-horario { flex: 1; min-width: 280px; }
+.gnss-seletor-dia { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gnss-seletor-dia input[type='date'] {
+  font: inherit; font-size: var(--t-peq); padding: 4px 8px; border: 1px solid var(--linha);
+  border-radius: var(--r-md); background: var(--superficie); color: var(--tinta);
+}
+.gnss-barra-hora { white-space: nowrap; }
+
+/* Selo de conexão no topo do módulo */
+.gnss-selo-conexao {
+  margin-left: auto; font-size: var(--t-micro); font-weight: 600; letter-spacing: 0.06em;
+  padding: 4px 10px; border-radius: 999px; background: var(--afundado); color: var(--tinta-2); white-space: nowrap;
+}
+.gnss-selo-conexao.ok { background: color-mix(in srgb, var(--verde-claro) 12%, transparent); color: var(--verde); }
+.gnss-selo-conexao.erro { background: var(--erro-fundo); color: var(--erro); }
+
+@media (max-width: 700px) {
+  .gnss-kv, .gnss-cards { grid-template-columns: 1fr; }
+  .gnss-selo-conexao { display: none; }
+}
