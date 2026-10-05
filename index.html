@@ -55,7 +55,8 @@ button, select, input{font-family:inherit;font-size:inherit;}
     repeating-linear-gradient(0deg, rgba(255,255,255,.035) 0 1px, transparent 1px 28px);
 }
 .brand{display:flex;flex-direction:column;align-items:center;gap:8px;padding:4px 8px 22px 8px;border-bottom:1px solid rgba(255,255,255,.12);margin-bottom:16px;text-align:center;}
-.brand-logo{width:150px;height:auto;display:block;}
+.brand-logo{width:150px;height:auto;display:block;cursor:pointer;border-radius:6px;}
+.brand-logo:focus-visible{outline:2px solid var(--dourado-claro);outline-offset:4px;}
 .sb-fazenda-select{
   width:100%;max-width:180px;background:rgba(255,255,255,.08);color:#EAF2EF;
   border:1px solid rgba(255,255,255,.25);border-radius:7px;padding:5px 22px 5px 10px;
@@ -3866,6 +3867,17 @@ document.getElementById('btn-entrar').addEventListener('click', tentarLogin);
 document.getElementById('login-usuario').addEventListener('keydown', e=>{ if(e.key==='Enter') tentarLogin(); });
 document.getElementById('login-senha').addEventListener('keydown', e=>{ if(e.key==='Enter') tentarLogin(); });
 document.getElementById('btn-trocar-categoria').addEventListener('click', mostrarCategoriaScreen);
+/* a logo do COA WEB também volta para a tela das categorias (o "início" do site) */
+(function(){
+  const logo = document.querySelector('.sidebar .brand-logo');
+  if(!logo) return;
+  logo.setAttribute('role','button');
+  logo.setAttribute('tabindex','0');
+  logo.setAttribute('aria-label','Voltar para as categorias');
+  logo.title = 'Voltar para as categorias';
+  logo.addEventListener('click', mostrarCategoriaScreen);
+  logo.addEventListener('keydown', e=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); mostrarCategoriaScreen(); } });
+})();
 
 /* Barra lateral recolhível: só os ícones (o nome de cada item aparece ao parar o mouse). A escolha fica
    guardada neste navegador. */
