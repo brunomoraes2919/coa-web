@@ -36,3 +36,25 @@ export function diaDentroDoMapa(dia: number | null, agora: number): number | nul
   const { hoje, primeiro } = diasDoMapa(agora)
   return dia >= primeiro && dia < hoje ? dia : null
 }
+
+/** O laço do ao vivo mostra as últimas 3 h: 18 passos de 10 min. */
+export const PASSOS_AO_VIVO = 18
+/** No passo mais novo o laço segura antes de recomeçar. */
+export const PAUSA_NO_ULTIMO_MS = 3000
+
+/** Índice do primeiro passo da janela do ao vivo (dia com menos de 18 passos: o dia todo). */
+export function inicioDaJanelaAoVivo(total: number): number {
+  return Math.max(0, total - PASSOS_AO_VIVO)
+}
+
+/**
+ * Próximo passo do laço do ao vivo, a partir de `atual`: um a mais dentro da janela; depois do
+ * último, volta ao início DELA. `segurar` diz que `atual` é o último — fica nele
+ * `PAUSA_NO_ULTIMO_MS` antes de ir. Índice antes da janela (ela deslizou) segue do início dela.
+ */
+export function proximoPassoAoVivo(total: number, atual: number): { indice: number; segurar: boolean } {
+  const inicio = inicioDaJanelaAoVivo(total)
+  if (atual >= total - 1) return { indice: inicio, segurar: true }
+  if (atual < inicio) return { indice: inicio, segurar: false }
+  return { indice: atual + 1, segurar: false }
+}

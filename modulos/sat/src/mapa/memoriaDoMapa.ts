@@ -9,9 +9,11 @@ export interface MemoriaDoMapa {
   dia: number | null
   /** Índice do passo escolhido; `null` = acompanhar o último. */
   escolhido: number | null
+  /** Ao vivo: hoje, seguindo o passo mais novo. `dia: null` com `aoVivo: false` é o Hoje, escolhido à mão. */
+  aoVivo: boolean
 }
 
-const PADRAO: MemoriaDoMapa = { camada: 'sci', dia: null, escolhido: null }
+const PADRAO: MemoriaDoMapa = { camada: 'sci', dia: null, escolhido: null, aoVivo: true }
 let memoria: MemoriaDoMapa = { ...PADRAO }
 
 export function lerMemoriaDoMapa(): MemoriaDoMapa {
