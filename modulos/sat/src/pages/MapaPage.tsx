@@ -2,7 +2,8 @@
  * Mapa da ionosfera na paleta do módulo: a imagem da Trimble (um tile Web Mercator de zoom 0
  * do mundo) vira uma camada em grade recolorida sobre o fundo escolhido; as fazendas aparecem
  * como bolinha (de longe) ou pelo contorno dos talhões (de perto), na cor da cintilação do
- * horário. Dá para voltar até 30 dias.
+ * horário. Abre ao vivo (hoje, seguindo o passo mais novo, com um laço das últimas 3 h no play);
+ * dá para ver hoje à mão e voltar até 30 dias.
  */
 import L from 'leaflet'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -12,12 +13,19 @@ import AjudaGnss from '../componentes/AjudaGnss'
 import BarraHorario from '../componentes/BarraHorario'
 import GuiaRtk from '../componentes/GuiaRtk'
 import LegendaGnss from '../componentes/LegendaGnss'
-import SeletorDia from '../componentes/SeletorDia'
+import SeletorDia, { type ModoDia } from '../componentes/SeletorDia'
 import { celulasDasFazendas } from '../fazendasGnss'
 import { useVisivel } from '../lib/useVisivel'
 import type { LimiteFazenda } from '../logic/limites'
 import { COR_NIVEL, nivelCintilacao, ROTULO_NIVEL } from '../logic/niveis'
-import { diaDentroDoMapa, passosDoDia, passosDoDiaPassado } from '../logic/passosMapa'
+import {
+  diaDentroDoMapa,
+  inicioDaJanelaAoVivo,
+  passosDoDia,
+  passosDoDiaPassado,
+  PAUSA_NO_ULTIMO_MS,
+  proximoPassoAoVivo,
+} from '../logic/passosMapa'
 import { dataCurta, horaDe } from '../logic/tempo'
 import CamadaIonosfera from '../mapa/CamadaIonosfera'
 import ControleFundo from '../mapa/ControleFundo'
@@ -37,7 +45,7 @@ const CAMADAS: { id: Camada; rotulo: string }[] = [
   { id: 'tec', rotulo: 'TEC' },
   { id: 'sci', rotulo: 'Cintilação' },
 ]
-/** Um passo por segundo: dá tempo de a imagem chegar e segura o ritmo dos pedidos. */
+/** Um passo por segundo (no laço do ao vivo também): dá tempo de a imagem chegar e segura o ritmo dos pedidos. */
 const INTERVALO_PLAY_MS = 1000
 const PRECARREGAR = 3
 /** Arrastar a barra passa por dezenas de passos: só pede a imagem do horário em que ela parou. */
@@ -139,18 +147,21 @@ function RefazerTamanho() {
 export default function MapaPage() {
   const { estado } = useVigiaGnss()
   const visivel = useVisivel()
-  /** A vista de antes (a tela desmonta ao trocar de rota); o dia que saiu da janela de 30 dias volta para hoje. */
+  /** A vista de antes (a tela desmonta ao trocar de rota); o dia que saiu da janela de 30 dias volta ao vivo. */
   const [inicio] = useState(() => {
     const agora = Date.now()
     const lembrada = lerMemoriaDoMapa()
     const dia = diaDentroDoMapa(lembrada.dia, agora)
-    return { agora, camada: lembrada.camada, dia, escolhido: dia === lembrada.dia ? lembrada.escolhido : null }
+    const aoVivo = lembrada.dia != null ? dia == null : lembrada.aoVivo
+    return { agora, camada: lembrada.camada, dia, aoVivo, escolhido: aoVivo || dia !== lembrada.dia ? null : lembrada.escolhido }
   })
   const [camada, setCamada] = useState<Camada>(inicio.camada)
   const [fundo, setFundo] = useState<ChaveFundo>(() => lerFundo())
   const [zoom, setZoom] = useState(ZOOM_INICIAL)
-  /** `null` = hoje (ao vivo); senão, 00:00 local do dia passado escolhido. */
+  /** `null` = hoje; senão, 00:00 local do dia passado escolhido. */
   const [dia, setDia] = useState<number | null>(inicio.dia)
+  /** Hoje seguindo o passo mais novo; só com `dia` nulo. */
+  const [aoVivo, setAoVivo] = useState(inicio.aoVivo)
   const [agora, setAgora] = useState(inicio.agora)
   useEffect(() => {
     const t = window.setInterval(() => setAgora(Date.now()), 60_000)
@@ -158,11 +169,13 @@ export default function MapaPage() {
   }, [])
 
   const passos = useMemo(() => (dia == null ? passosDoDia(agora) : passosDoDiaPassado(dia)), [dia, agora])
-  /** `null` = acompanhar o último passo (o padrão de hoje). */
+  /** Passo escolhido à mão (ou onde o laço está); `null` = o último. */
   const [escolhido, setEscolhido] = useState<number | null>(inicio.escolhido)
-  const indice = escolhido == null ? passos.length - 1 : Math.min(escolhido, passos.length - 1)
-  const passo = passos[indice]
   const [tocando, setTocando] = useState(false)
+  const ultimo = passos.length - 1
+  // Ao vivo parado acompanha o passo mais novo; só o laço (play) anda por `escolhido`.
+  const indice = (aoVivo && !tocando) || escolhido == null ? ultimo : Math.min(escolhido, ultimo)
+  const passo = passos[indice]
   /** O passo da imagem com a barra: segue `passo` 250 ms depois de ela parar. */
   const [passoImagem, setPassoImagem] = useState(passo)
   /** Falhas por camada + passo: a de uma camada não marca a outra, e some quando a imagem carrega. */
@@ -178,7 +191,7 @@ export default function MapaPage() {
   // Escondido (outra categoria do COA WEB) o play para: ninguém está vendo, e cada passo é um pedido.
   const tocandoDeFato = tocando && visivel
   useEffect(() => {
-    if (!tocandoDeFato) return
+    if (!tocandoDeFato || aoVivo) return
     const t = window.setInterval(() => {
       setEscolhido((v) => {
         const i = v ?? passos.length - 1
@@ -186,7 +199,22 @@ export default function MapaPage() {
       })
     }, INTERVALO_PLAY_MS)
     return () => window.clearInterval(t)
-  }, [tocandoDeFato, passos.length])
+  }, [tocandoDeFato, aoVivo, passos.length])
+
+  /* Ao vivo, o play é um laço das últimas 3 h: um passo por segundo até o mais novo, onde segura
+     alguns segundos antes de recomeçar. Cada passo reagenda o próximo, e a janela desliza sozinha
+     quando sai um passo novo. */
+  useEffect(() => {
+    if (!tocandoDeFato || !aoVivo) return
+    const { indice: proximo, segurar } = proximoPassoAoVivo(passos.length, indice)
+    const t = window.setTimeout(() => setEscolhido(proximo), segurar ? PAUSA_NO_ULTIMO_MS : INTERVALO_PLAY_MS)
+    return () => window.clearTimeout(t)
+  }, [tocandoDeFato, aoVivo, indice, passos.length])
+
+  // Escondido, o laço ao vivo larga o passo em que estava: ao voltar mostra o mais novo e segue dali.
+  useEffect(() => {
+    if (aoVivo && tocando && !visivel) setEscolhido(null)
+  }, [aoVivo, tocando, visivel])
 
   /* Pré-carrega os passos seguintes ao horário PARADO: dar play dali não pisca. Durante o
      play, não — cada passo já pede a sua imagem. */
@@ -215,18 +243,55 @@ export default function MapaPage() {
     setCamada(c)
     guardarMemoriaDoMapa({ camada: c })
   }
+  /** Mexer na barra tira do ao vivo: vira Hoje, no passo escolhido. */
   const escolherPasso = (i: number) => {
     setTocando(false)
+    setAoVivo(false)
     setEscolhido(i)
-    guardarMemoriaDoMapa({ escolhido: i })
+    guardarMemoriaDoMapa({ escolhido: i, aoVivo: false })
   }
-  const trocarDia = (d: number | null) => {
+  const trocarModo = (modo: ModoDia) => {
     setTocando(false)
-    setDia(d)
-    // Hoje acompanha o último passo; dia passado abre em 00:00.
-    const primeiro = d == null ? null : 0
-    setEscolhido(primeiro)
-    guardarMemoriaDoMapa({ dia: d, escolhido: primeiro })
+    if (modo === 'ao-vivo') {
+      setDia(null)
+      setAoVivo(true)
+      setEscolhido(null)
+      guardarMemoriaDoMapa({ dia: null, aoVivo: true, escolhido: null })
+    } else if (modo === 'hoje') {
+      // De ao vivo (ou de um dia passado) fica no passo que está na tela; de um dia passado, no mais novo de hoje.
+      const passoHoje = dia == null ? indice : passosDoDia(agora).length - 1
+      setDia(null)
+      setAoVivo(false)
+      setEscolhido(passoHoje)
+      guardarMemoriaDoMapa({ dia: null, aoVivo: false, escolhido: passoHoje })
+    } else {
+      // Dia passado abre em 00:00.
+      setDia(modo)
+      setAoVivo(false)
+      setEscolhido(0)
+      guardarMemoriaDoMapa({ dia: modo, aoVivo: false, escolhido: 0 })
+    }
+  }
+  const alternarPlay = () => {
+    if (!tocando) {
+      // O laço do ao vivo começa 3 h atrás; os outros seguem de onde estão.
+      if (aoVivo) setEscolhido(inicioDaJanelaAoVivo(passos.length))
+      setTocando(true)
+      return
+    }
+    // Pausar congela a imagem no passo do play — sem voltar ao anterior enquanto a espera da barra
+    // não venceu. Ao vivo, pausar no passo mais novo segue ao vivo; em outro passo vira Hoje nele.
+    setPassoImagem(passo)
+    setTocando(false)
+    if (aoVivo && indice === ultimo) {
+      setEscolhido(null)
+    } else if (aoVivo) {
+      setAoVivo(false)
+      setEscolhido(indice)
+      guardarMemoriaDoMapa({ aoVivo: false, escolhido: indice })
+    } else {
+      guardarMemoriaDoMapa({ escolhido: indice })
+    }
   }
   const serieDa = (f: FazendaGnss): PontoIono[] | undefined => {
     if (!f.celulaId) return undefined
@@ -319,23 +384,16 @@ export default function MapaPage() {
       </div>
 
       <div className="gnss-controles-tempo">
-        <SeletorDia dia={dia} agora={agora} aoMudar={trocarDia} />
+        <SeletorDia modo={aoVivo ? 'ao-vivo' : (dia ?? 'hoje')} agora={agora} aoMudar={trocarModo} />
         <BarraHorario
           passos={passos}
           indice={indice}
           tocando={tocando}
           comData={dia != null}
+          aoVivo={aoVivo}
           indisponivel={camada !== 'off' && falhas.has(`${camada}:${passo}`)}
           aoMudar={escolherPasso}
-          aoAlternar={() => {
-            // Pausar congela a imagem no passo do play — sem voltar ao anterior
-            // enquanto a espera da barra não venceu — e é o passo que a tela lembra.
-            if (tocando) {
-              setPassoImagem(passo)
-              guardarMemoriaDoMapa({ escolhido: indice })
-            }
-            setTocando((v) => !v)
-          }}
+          aoAlternar={alternarPlay}
         />
       </div>
     </div>

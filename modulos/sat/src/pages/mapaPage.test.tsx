@@ -519,7 +519,7 @@ describe('mapa da ionosfera', () => {
       expect(botaoDia('Hoje').getAttribute('aria-pressed')).toBe('true')
     })
 
-    it('voltar a hoje também fica lembrado (acompanha o último passo)', async () => {
+    it('voltar a Hoje também fica lembrado (Hoje à mão, no passo mais novo)', async () => {
       await act(async () => botaoDia('Ontem').click())
       await act(async () => botaoDia('Hoje').click())
       await sairEVoltar()
@@ -550,21 +550,21 @@ describe('mapa da ionosfera', () => {
       expect(barra().value).toBe('2')
     })
 
-    it('limpar a memória (outro usuário) volta ao padrão: hoje, Cintilação, último passo', async () => {
+    it('limpar a memória (outro usuário) volta ao padrão: ao vivo, Cintilação, último passo', async () => {
       await act(async () => chip('TEC').click())
       await act(async () => botaoDia('Ontem').click())
       limparMemoriaDoMapa()
       await sairEVoltar()
       expect(pressionado('Cintilação')).toBe(true)
-      expect(botaoDia('Hoje').getAttribute('aria-pressed')).toBe('true')
+      expect(botaoDia('Ao vivo').getAttribute('aria-pressed')).toBe('true')
       expect(barra().value).toBe(String(PASSOS.length - 1))
     })
 
-    it('dia lembrado que saiu da janela de 30 dias: abre em hoje, no último passo', async () => {
+    it('dia lembrado que saiu da janela de 30 dias: abre ao vivo, no último passo', async () => {
       // 01/08 é mais velho que 24/09 − 29 dias (26/08).
-      guardarMemoriaDoMapa({ dia: new Date(2026, 7, 1).getTime(), escolhido: 7, camada: 'tec' })
+      guardarMemoriaDoMapa({ dia: new Date(2026, 7, 1).getTime(), escolhido: 7, camada: 'tec', aoVivo: false })
       await sairEVoltar()
-      expect(botaoDia('Hoje').getAttribute('aria-pressed')).toBe('true')
+      expect(botaoDia('Ao vivo').getAttribute('aria-pressed')).toBe('true')
       expect(barra().value).toBe(String(PASSOS.length - 1))
       expect(m.chamadasSerie.at(-1)!.dia).toBeNull()
       // A camada não depende do dia: segue a lembrada.
@@ -587,13 +587,298 @@ describe('mapa da ionosfera', () => {
 
     it('a memória é gravada nas mudanças: camada, dia e passo', async () => {
       await act(async () => chip('Off').click())
-      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: null, escolhido: null })
+      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: null, escolhido: null, aoVivo: true })
       await act(async () => botaoDia('Ontem').click())
-      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: ONTEM, escolhido: 0 })
+      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: ONTEM, escolhido: 0, aoVivo: false })
       await act(async () => {
         fireEvent.change(barra(), { target: { value: '9' } })
       })
-      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: ONTEM, escolhido: 9 })
+      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: ONTEM, escolhido: 9, aoVivo: false })
+    })
+  })
+
+  describe('ao vivo', () => {
+    const pressionados = () =>
+      [...container.querySelectorAll<HTMLButtonElement>('.gnss-seletor-dia button')]
+        .filter((b) => b.getAttribute('aria-pressed') === 'true')
+        .map((b) => b.textContent)
+    const rotuloVivo = (passo: number) => `AO VIVO · ${horaDe(passo)}`
+    const N = PASSOS.length
+    const INICIO_JANELA = N - 18
+    const passoTocando = (i: number) => PASSOS[i]
+
+    async function sairEVoltar() {
+      await act(async () => root.unmount())
+      root = createRoot(container)
+      await act(async () => root.render(<MapaPage />))
+    }
+    /** O laço do ao vivo agenda o passo seguinte a cada render: avança em fatias de 1 s para o React renderizar entre elas. */
+    async function avancar(ms: number) {
+      for (let restante = ms; restante > 0; restante -= 1_000) {
+        await act(async () => vi.advanceTimersByTime(Math.min(1_000, restante)))
+      }
+    }
+
+    it('abre ao vivo: Ao vivo pressionado, rótulo "AO VIVO · hora", aria-valuetext e o passo mais novo', () => {
+      expect(pressionados()).toEqual(['Ao vivo'])
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+      expect(barra().getAttribute('aria-valuetext')).toBe(`ao vivo · ${horaDe(ULTIMO)}`)
+      expect(container.querySelector('.gnss-barra-hora .gnss-ao-vivo')?.textContent).toBe('AO VIVO')
+      expect(overlay()).toBe(urlOverlay('sci', ULTIMO))
+      expect(barra().value).toBe(String(N - 1))
+    })
+
+    it('ao vivo, um passo novo publicado leva a barra, o rótulo e a imagem para ele', async () => {
+      await remontarComTimersFalsos()
+      await avancar(11 * 60_000)
+      const novos = passosDoDia(AGORA + 11 * 60_000)
+      expect(novos.length).toBe(N + 1)
+      const novo = novos.at(-1)!
+      expect(barra().max).toBe(String(N))
+      expect(barra().value).toBe(String(N))
+      expect(hora()).toBe(rotuloVivo(novo))
+      await avancar(250)
+      expect(overlay()).toBe(urlOverlay('sci', novo))
+    })
+
+    it('em Hoje (à mão) o passo novo NÃO leva a tela: a barra cresce e fica onde estava', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => botaoDia('Hoje').click())
+      expect(pressionados()).toEqual(['Hoje'])
+      expect(hora()).toBe(horaDe(ULTIMO))
+      await avancar(11 * 60_000)
+      expect(barra().max).toBe(String(N))
+      expect(barra().value).toBe(String(N - 1))
+      expect(hora()).toBe(horaDe(ULTIMO))
+      expect(overlay()).toBe(urlOverlay('sci', ULTIMO))
+    })
+
+    it('arrastar a barra ao vivo vira Hoje no passo escolhido: play parado, rótulo sem "AO VIVO"', async () => {
+      await act(async () => {
+        fireEvent.change(barra(), { target: { value: '10' } })
+      })
+      expect(pressionados()).toEqual(['Hoje'])
+      expect(hora()).toBe(horaDe(PASSOS[10]))
+      expect(container.querySelector('.gnss-ao-vivo')).toBeNull()
+      expect(play()).not.toBeNull()
+    })
+
+    it('Hoje a partir do ao vivo fica no passo que está na tela e para o play', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => play().click())
+      await avancar(3_000)
+      expect(hora()).toBe(rotuloVivo(passoTocando(INICIO_JANELA + 3)))
+      await act(async () => botaoDia('Hoje').click())
+      expect(pressionados()).toEqual(['Hoje'])
+      expect(hora()).toBe(horaDe(PASSOS[INICIO_JANELA + 3]))
+      expect(play()).not.toBeNull()
+      await avancar(5_000)
+      expect(hora()).toBe(horaDe(PASSOS[INICIO_JANELA + 3]))
+    })
+
+    it('Hoje a partir do ao vivo parado fica no passo mais novo', async () => {
+      await act(async () => botaoDia('Hoje').click())
+      expect(hora()).toBe(horaDe(ULTIMO))
+      expect(barra().value).toBe(String(N - 1))
+    })
+
+    it('Ao vivo a partir de um dia passado volta para hoje, no passo mais novo, parado', async () => {
+      await act(async () => botaoDia('Ontem').click())
+      await act(async () => play().click())
+      expect(pausa()).not.toBeNull()
+      await act(async () => botaoDia('Ao vivo').click())
+      expect(pressionados()).toEqual(['Ao vivo'])
+      expect(barra().max).toBe(String(N - 1))
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+      expect(pausa()).toBeNull()
+      expect(m.chamadasSerie.at(-1)!.dia).toBeNull()
+    })
+
+    it('Ao vivo a partir de Hoje (em outro passo) volta ao mais novo', async () => {
+      await act(async () => {
+        fireEvent.change(barra(), { target: { value: '4' } })
+      })
+      await act(async () => botaoDia('Ao vivo').click())
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+    })
+
+    it('Ontem e data personalizada: dia passado a partir de 00:00; nenhum botão de modo fica pressionado na data', async () => {
+      await act(async () => botaoDia('Ontem').click())
+      expect(pressionados()).toEqual(['Ontem'])
+      expect(hora()).toBe(`${dataCurta(ONTEM)} · 00:00`)
+      const outro = new Date(2026, 8, 10).getTime()
+      await act(async () => {
+        fireEvent.change(container.querySelector('input[aria-label="Escolher o dia"]')!, { target: { value: '2026-09-10' } })
+      })
+      expect(pressionados()).toEqual([])
+      expect(hora()).toBe(`${dataCurta(outro)} · 00:00`)
+      expect(m.chamadasSerie.at(-1)!.dia).toBe(outro)
+    })
+
+    it('o campo de data mostra o dia que está sendo visto', async () => {
+      const campo = () => container.querySelector<HTMLInputElement>('input[aria-label="Escolher o dia"]')!
+      expect(campo().value).toBe('2026-09-24')
+      await act(async () => botaoDia('Ontem').click())
+      expect(campo().value).toBe('2026-09-23')
+    })
+
+    it('play ao vivo: laço das últimas 18 passos — um por segundo, 3 s no mais novo, recomeça no início da janela', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => play().click())
+      // Começa no início da janela (3 h atrás), ainda ao vivo.
+      expect(hora()).toBe(rotuloVivo(PASSOS[INICIO_JANELA]))
+      expect(overlay()).toBe(urlOverlay('sci', PASSOS[INICIO_JANELA]))
+      expect(pressionados()).toEqual(['Ao vivo'])
+
+      const vistos: string[] = [hora()]
+      for (let s = 1; s <= 17; s++) {
+        await avancar(1_000)
+        vistos.push(hora())
+        expect(overlay()).toBe(urlOverlay('sci', PASSOS[INICIO_JANELA + s])) // sem a espera da barra
+      }
+      expect(vistos).toEqual(Array.from({ length: 18 }, (_, k) => rotuloVivo(PASSOS[INICIO_JANELA + k])))
+      expect(vistos.at(-1)).toBe(rotuloVivo(ULTIMO))
+
+      // No mais novo: segura 3 s.
+      await avancar(2_999)
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+      await avancar(1)
+      expect(hora()).toBe(rotuloVivo(PASSOS[INICIO_JANELA]))
+      await avancar(1_000)
+      expect(hora()).toBe(rotuloVivo(PASSOS[INICIO_JANELA + 1]))
+    })
+
+    it('play ao vivo nunca mostra um passo anterior à janela, volta após volta', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => play().click())
+      const janela = new Set(PASSOS.slice(INICIO_JANELA).map(rotuloVivo))
+      for (let s = 0; s < 60; s++) {
+        await avancar(1_000)
+        expect(janela.has(hora())).toBe(true)
+      }
+    })
+
+    it('play ao vivo: com um passo novo publicado a janela desliza e o passo novo entra na volta seguinte', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => play().click())
+      const todos = passosDoDia(AGORA + 11 * 60_000)
+      const novo = todos.at(-1)!
+      const janelaNova = new Set(todos.slice(todos.length - 18).map(rotuloVivo))
+      let depois = false
+      const vistosDepois: string[] = []
+      // Um salto até pouco antes do passo novo (o laço só dá um passo nele); dali, em fatias de 1 s.
+      await act(async () => vi.advanceTimersByTime(9 * 60_000))
+      for (let s = 0; s < 200; s++) {
+        await avancar(1_000)
+        if (barra().max === String(N)) depois = true
+        if (depois) vistosDepois.push(hora())
+      }
+      expect(depois).toBe(true)
+      expect(vistosDepois.length).toBeGreaterThan(40)
+      // Depois do deslize só passos da janela nova (a amostra do instante do deslize pode ser o passo que
+      // estava na tela e saiu dela: o laço o larga no tick seguinte); o passo novo aparece, e o que saiu não volta.
+      expect(vistosDepois.slice(1).every((h) => janelaNova.has(h))).toBe(true)
+      expect(vistosDepois).toContain(rotuloVivo(novo))
+      expect(vistosDepois.slice(1)).not.toContain(rotuloVivo(PASSOS[INICIO_JANELA]))
+    }, 20_000)
+
+    it('play ao vivo não pré-carrega imagens: cada passo pede a sua; parado ao vivo não há o que pré-carregar', async () => {
+      await remontarComTimersFalsos()
+      expect(m.pedidas).toEqual([])
+      await act(async () => play().click())
+      await avancar(25_000)
+      expect(m.pedidas).toEqual([])
+    })
+
+    it('pausar o laço ao vivo no passo mais novo continua ao vivo', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => play().click())
+      await avancar(17_000)
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+      await act(async () => pausa()!.click())
+      expect(pressionados()).toEqual(['Ao vivo'])
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+      expect(play()).not.toBeNull()
+    })
+
+    it('pausar o laço ao vivo em outro passo vira Hoje nesse passo', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => play().click())
+      await avancar(5_000)
+      await act(async () => pausa()!.click())
+      expect(pressionados()).toEqual(['Hoje'])
+      expect(hora()).toBe(horaDe(PASSOS[INICIO_JANELA + 5]))
+      await avancar(5_000)
+      expect(hora()).toBe(horaDe(PASSOS[INICIO_JANELA + 5]))
+    })
+
+    it('escondido (outra categoria do COA WEB) o laço ao vivo para; ao voltar mostra o passo mais novo e segue', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => play().click())
+      await avancar(4_000)
+      expect(hora()).toBe(rotuloVivo(PASSOS[INICIO_JANELA + 4]))
+
+      await act(async () => {
+        tamanho(0, 0)
+        window.dispatchEvent(new Event('resize'))
+      })
+      await avancar(10_000)
+      const parado = hora()
+      await avancar(10_000)
+      expect(hora()).toBe(parado)
+      expect(m.pedidas).toEqual([])
+
+      await act(async () => {
+        tamanho(larguraDeVerdade, alturaDeVerdade)
+        window.dispatchEvent(new Event('resize'))
+      })
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+      // E o laço segue: 3 s no mais novo, depois volta ao início da janela.
+      await avancar(3_000)
+      expect(hora()).toBe(rotuloVivo(PASSOS[INICIO_JANELA]))
+    })
+
+    it('trocar para Ontem com o laço ao vivo tocando para o play', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => play().click())
+      await avancar(2_000)
+      await act(async () => botaoDia('Ontem').click())
+      expect(pausa()).toBeNull()
+      expect(hora()).toBe(`${dataCurta(ONTEM)} · 00:00`)
+    })
+
+    it('memória: o ao vivo volta ao vivo, e o Hoje à mão volta no mesmo passo', async () => {
+      await sairEVoltar()
+      expect(pressionados()).toEqual(['Ao vivo'])
+      await act(async () => {
+        fireEvent.change(barra(), { target: { value: '12' } })
+      })
+      await sairEVoltar()
+      expect(pressionados()).toEqual(['Hoje'])
+      expect(barra().value).toBe('12')
+      expect(container.querySelector('.gnss-ao-vivo')).toBeNull()
+      await act(async () => botaoDia('Ao vivo').click())
+      await sairEVoltar()
+      expect(pressionados()).toEqual(['Ao vivo'])
+      expect(lerMemoriaDoMapa()).toMatchObject({ aoVivo: true, dia: null, escolhido: null })
+    })
+
+    it('memória: dia passado volta como dia passado (nunca ao vivo); limpar volta ao vivo', async () => {
+      await act(async () => botaoDia('Ontem').click())
+      expect(lerMemoriaDoMapa()).toMatchObject({ aoVivo: false, dia: ONTEM })
+      await sairEVoltar()
+      expect(pressionados()).toEqual(['Ontem'])
+      limparMemoriaDoMapa()
+      await sairEVoltar()
+      expect(pressionados()).toEqual(['Ao vivo'])
+    })
+
+    it('memória: o play ao vivo não volta tocando', async () => {
+      await act(async () => play().click())
+      await sairEVoltar()
+      expect(pausa()).toBeNull()
+      expect(pressionados()).toEqual(['Ao vivo'])
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
     })
   })
 })

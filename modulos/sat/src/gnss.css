@@ -191,6 +191,18 @@
 }
 .gnss-barra-hora { white-space: nowrap; }
 
+/* Marca "AO VIVO" na hora da barra: etiqueta pequena, verde (não parece erro), com um ponto que pulsa */
+.gnss-ao-vivo {
+  display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-micro); font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--verde);
+}
+.gnss-ao-vivo::before {
+  content: ''; width: 7px; height: 7px; border-radius: 50%; background: currentColor;
+  animation: gnss-pulsa 1.6s ease-in-out infinite;
+}
+@keyframes gnss-pulsa { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.7); } }
+@media (prefers-reduced-motion: reduce) { .gnss-ao-vivo::before { animation: none; } }
+
 /* Selo de conexão no topo do módulo */
 .gnss-selo-conexao {
   margin-left: auto; font-size: var(--t-micro); font-weight: 600; letter-spacing: 0.06em;
