@@ -76,7 +76,9 @@
 .gnss-ajuda-botao { display: inline-flex; padding: 2px; border: 0; background: none; color: var(--tinta-3); cursor: pointer; border-radius: 50%; }
 .gnss-ajuda-botao:hover, .gnss-ajuda-botao[aria-expanded='true'] { color: var(--verde); }
 .gnss-ajuda-caixa {
-  position: absolute; z-index: 1100; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  /* --gnss-ajuda-desvio: o AjudaGnss mede o balão ao abrir e o empurra para dentro do documento */
+  position: absolute; z-index: 1100; top: calc(100% + 6px); left: 50%;
+  transform: translateX(calc(-50% + var(--gnss-ajuda-desvio, 0px)));
   width: min(380px, 86vw); background: var(--superficie); border: 1px solid var(--linha);
   border-radius: var(--r-md); box-shadow: var(--sombra-alta); padding: 12px 14px;
   font-size: var(--t-mini); line-height: 1.5; color: var(--tinta-2);
@@ -93,7 +95,7 @@
    que o .gnss-ajuda é um flex), e a margem a desce para logo abaixo do botão
    (20 px de altura + 6 px de respiro). */
 .gnss-kv .gnss-ajuda { position: static; }
-.gnss-kv .gnss-ajuda-caixa { left: 0; right: 0; width: auto; transform: none; top: auto; margin-top: 26px; }
+.gnss-kv .gnss-ajuda-caixa { left: 0; right: 0; width: auto; transform: translateX(var(--gnss-ajuda-desvio, 0px)); top: auto; margin-top: 26px; }
 
 /* Botão "Como isso afeta o RTK" */
 /* O painel se ancora na borda direita do CABEÇALHO (que é position: relative), não no
