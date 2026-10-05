@@ -13,8 +13,8 @@ import {
 } from '../src/data/supabaseLinhas';
 import { area, fazenda, mapa, plantio, safra, talhao } from './helpers/dominio';
 
-/** Os scripts do módulo, na ordem em que rodam (0002: pedidos do botão "Atualizar plantio"). */
-const SCRIPTS = ['supabase/coa-web/0001_mapas.sql', 'supabase/coa-web/0002_pedidos_plantio.sql'];
+/** Os scripts do módulo, na ordem em que rodam (0002: pedidos de "Atualizar plantio"; 0003: pedidos de chuva da ZEUS). */
+const SCRIPTS = ['supabase/coa-web/0001_mapas.sql', 'supabase/coa-web/0002_pedidos_plantio.sql', 'supabase/coa-web/0003_pedidos_chuva.sql'];
 const sql = SCRIPTS.map((s) => readFileSync(s, 'utf8'))
   .join('\n')
   .replace(/--.*$/gm, '');
@@ -32,7 +32,7 @@ function colunasDasTabelas(): Map<string, Set<string>> {
   return tabelas;
 }
 
-describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql × repositório', () => {
+describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql + 0003_pedidos_chuva.sql × repositório', () => {
   const tabelas = colunasDasTabelas();
 
   it('cria exatamente as tabelas de TABELAS', () => {
@@ -57,12 +57,14 @@ describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql × reposit�
     }
     // pedidos: o repositório insere uma linha vazia e lê estas colunas
     for (const coluna of ['id', 'atendido_em', 'resultado']) expect(tabelas.get(TABELAS.pedidosPlantio)?.has(coluna), coluna).toBe(true);
+    // pedidos de chuva: o repositório insere fazenda e período e lê a resposta
+    for (const coluna of ['id', 'fazenda', 'de', 'ate', 'atendido_em', 'resultado', 'dados']) expect(tabelas.get(TABELAS.pedidosChuva)?.has(coluna), coluna).toBe(true);
   });
 
   it.each(Object.values(TABELAS))('tabela %s: RLS ligado, nada para anon, acesso explícito para authenticated', (t) => {
     expect(sql).toMatch(new RegExp(`alter table public\\.${t}\\s+enable row level security;`));
     expect(sql).toMatch(new RegExp(`revoke all on table public\\.${t}\\s+from anon, authenticated;`));
-    const privilegios = t === TABELAS.plantioPims ? 'select' : t === TABELAS.pedidosPlantio ? 'select, insert' : 'select, insert, update, delete';
+    const privilegios = t === TABELAS.plantioPims ? 'select' : t === TABELAS.pedidosPlantio || t === TABELAS.pedidosChuva ? 'select, insert' : 'select, insert, update, delete';
     expect(sql).toMatch(new RegExp(`grant ${privilegios}\\s+on table public\\.${t}\\s+to authenticated;`));
   });
 

@@ -155,6 +155,17 @@ export function gravarAcompanhamentoSupabase(
   opcoes: { url: string; chave: string; fetch: FetchLike },
 ): Promise<'ok' | 'vazio' | 'sem-tabela'>;
 export function logAcompanhamento(dados: AcompanhamentoScript, situacao: string): string;
+export interface PicZeusScript { id: string; nome: string; lat: number; lon: number }
+export interface PicChuvaScript extends PicZeusScript { chuva: number | null; leituras: number }
+export interface ChuvaPicsScript { fazenda: string; de: string; ate: string; ultimoDia: string | null; pics: PicChuvaScript[] }
+export const CHUVA_PICS_MAX_DIAS: number;
+export const SQL_PICS_ZEUS: string;
+export function validarPeriodoChuva(de: unknown, ate: unknown): { de: string; ate: string; dias: number };
+export function picsDaFazendaZeus(r: Resultado, fazenda: string): PicZeusScript[];
+export function fazendasDaZeus(r: Resultado): string[];
+export function montarSqlChuvaPics(ids: string[], de: string, ate: string): string;
+export function montarChuvaPics(pics: PicZeusScript[], r: Resultado): { pics: PicChuvaScript[]; ultimoDia: string | null };
+export function chuvaPorPicZeus(opcoes: { url: string; token: string; fazenda: string; de: string; ate: string; fetchImpl?: FetchLike }): Promise<ChuvaPicsScript>;
 export function rodarAcompanhamento(opcoes: {
   agrovex: { url: string; token: string; safras: 'auto' | string[]; excluirPrefixos?: string[] };
   supabase: { url: string; chave: string };

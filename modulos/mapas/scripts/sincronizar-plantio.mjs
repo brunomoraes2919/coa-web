@@ -703,6 +703,98 @@ export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globa
   }
 }
 
+// ---------- chuva por PIC (botão "Inserir dados via integração" do Mapa de Chuva) ----------
+
+/** período máximo de um pedido de chuva (dias) */
+export const CHUVA_PICS_MAX_DIAS = 366;
+
+/** Confere as datas do pedido ('YYYY-MM-DD', de ≤ até, no máximo CHUVA_PICS_MAX_DIAS dias); lança Error legível. */
+export function validarPeriodoChuva(de, ate) {
+  const ehData = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+  if (!ehData(de) || !ehData(ate)) throw new Error('Período inválido: informe as duas datas.');
+  if (de > ate) throw new Error('Período inválido: a data inicial é depois da final.');
+  const dias = Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000) + 1;
+  if (dias > CHUVA_PICS_MAX_DIAS) throw new Error(`Período muito longo (${dias} dias): o máximo é ${CHUVA_PICS_MAX_DIAS} dias.`);
+  return { de, ate, dias };
+}
+
+/** Cadastro dos PICs da ZEUS (um por picid; a tabela repete o PIC a cada talhão que ele cobre). */
+export const SQL_PICS_ZEUS = `SELECT DISTINCT ON (picid) picid, picname, farm, lat, lon
+FROM "DATABASE".stg_zeus_picarea
+WHERE picid IS NOT NULL
+ORDER BY picid, farm`;
+
+/**
+ * PICs de uma fazenda: compara o nome da fazenda do mapa com a fazenda da ZEUS sem acento, caixa e
+ * prefixo ("Faz_SM3" = "SM3" = "Fazenda SM3"). Sem coordenada válida o PIC é descartado.
+ */
+export function picsDaFazendaZeus(res, fazenda) {
+  const alvo = unidadeDaFazendaZeus(fazenda);
+  const pics = [];
+  for (const r of objetosDe(res)) {
+    if (!alvo || unidadeDaFazendaZeus(r.farm) !== alvo) continue;
+    const id = txt(r.picid);
+    const lat = Number(String(r.lat ?? '').replace(',', '.'));
+    const lon = Number(String(r.lon ?? '').replace(',', '.'));
+    if (!id || !/^[A-Za-z0-9_-]+$/.test(id) || !Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) continue;
+    pics.push({ id, nome: txt(r.picname) ?? `PIC ${id}`, lat, lon });
+  }
+  return pics.sort((a, b) => comparar(a.nome, b.nome));
+}
+
+/** Fazendas que a ZEUS conhece (para a mensagem de "fazenda não encontrada"). */
+export function fazendasDaZeus(res) {
+  return [...new Set(objetosDe(res).map((r) => unidadeDaFazendaZeus(r.farm)).filter(Boolean))].sort(comparar);
+}
+
+/** Chuva somada de cada PIC no período (de e até inclusive), com a quantidade de leituras e o último dia lido. */
+export function montarSqlChuvaPics(ids, de, ate) {
+  const lista = ids.filter((i) => /^[A-Za-z0-9_-]+$/.test(String(i))).map((i) => `'${i}'`).join(', ');
+  const d = String(de).replace(/[^0-9-]/g, '');
+  const a = String(ate).replace(/[^0-9-]/g, '');
+  return `SELECT c.picid, round(sum(c.pluviometria)::numeric, 1) AS mm, count(c.pluviometria) AS leituras,
+  to_char(max(c.data), 'YYYY-MM-DD') AS ultimo
+FROM "DATABASE".stg_climatemonitoring2 c
+WHERE c.picid IN (${lista}) AND c.data >= DATE '${d}' AND c.data < DATE '${a}' + INTERVAL '1 day'
+GROUP BY c.picid`;
+}
+
+/** Junta o cadastro com a chuva: PIC sem nenhuma leitura no período fica com chuva null (não entra no mapa). */
+export function montarChuvaPics(pics, res) {
+  const porId = new Map(objetosDe(res).map((r) => [txt(r.picid), r]));
+  let ultimoDia = null;
+  const lista = pics.map((p) => {
+    const r = porId.get(p.id);
+    const leituras = r ? Number(r.leituras) || 0 : 0;
+    const ultimo = r ? txt(r.ultimo) : null;
+    if (ultimo && (!ultimoDia || ultimo > ultimoDia)) ultimoDia = ultimo;
+    const mm = r && leituras > 0 ? Number(r.mm) : null;
+    return { ...p, chuva: mm !== null && Number.isFinite(mm) ? Math.round(mm * 10) / 10 : null, leituras };
+  });
+  return { pics: lista, ultimoDia };
+}
+
+/**
+ * Consulta a ZEUS pelo Agrovex: PICs da fazenda e a chuva de cada um no período. Devolve
+ * { fazenda, de, ate, ultimoDia, pics: [{ id, nome, lat, lon, chuva, leituras }] } (não grava nada).
+ */
+export async function chuvaPorPicZeus({ url, token, fazenda, de, ate, fetchImpl = fetch }) {
+  validarPeriodoChuva(de, ate);
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    const cadastro = await cliente.consultar(SQL_PICS_ZEUS, 'cadastro dos PICs da ZEUS (mapa de chuva)', 'PICs da ZEUS', FONTES.zeus);
+    const pics = picsDaFazendaZeus(cadastro, fazenda);
+    if (!pics.length) {
+      const conhecidas = fazendasDaZeus(cadastro);
+      throw new Error(`A ZEUS não tem PICs para a fazenda "${String(fazenda).slice(0, 60)}"${conhecidas.length ? ` (fazendas na ZEUS: ${conhecidas.join(', ')})` : ''}.`);
+    }
+    const chuva = await cliente.consultar(montarSqlChuvaPics(pics.map((p) => p.id), de, ate), 'chuva por PIC no período (mapa de chuva)', 'chuva por PIC', FONTES.zeus);
+    return { fazenda: unidadeDaFazendaZeus(fazenda), de, ate, ...montarChuvaPics(pics, chuva) };
+  } finally {
+    await cliente.fechar();
+  }
+}
+
 // ---------- execução pela linha de comando ----------
 
 async function main() {

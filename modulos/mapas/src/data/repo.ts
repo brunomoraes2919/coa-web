@@ -1,3 +1,4 @@
+import type { PedidoChuva, SituacaoPedidoChuva } from '../lib/chuvaZeus';
 import type { SituacaoPedidoPlantio } from '../lib/pedidoPlantio';
 import type { AreaCultura, Fazenda, FazendaCoa, MapaSalvo, PerfilUsuario, Plantio, PlantioPimsArquivo, Safra, Talhao } from '../lib/types';
 
@@ -43,6 +44,15 @@ export interface Repositorio {
   pedirAtualizacaoPlantio(): Promise<number>;
   /** Situação do pedido (atendido? resultado 'ok' ou 'erro: ...'); não encontrado → null. Local: null. */
   situacaoPedidoPlantio(id: number): Promise<SituacaoPedidoPlantio | null>;
+  /** Se o botão "Inserir dados via integração" funciona aqui: só no Supabase (o servidor do COA WEB atende os pedidos). */
+  podeBuscarChuva: boolean;
+  /**
+   * Pede ao servidor a chuva de cada PIC da fazenda no período (ZEUS): grava um pedido em
+   * mapas_chuva_pedidos e devolve o id dele. Local: lança erro (só funciona no COA WEB).
+   */
+  pedirChuvaZeus(pedido: PedidoChuva): Promise<number>;
+  /** Situação do pedido de chuva (atendido? resultado e dados); não encontrado → null. Local: null. */
+  situacaoPedidoChuva(id: number): Promise<SituacaoPedidoChuva | null>;
 
   listarFazendas(): Promise<Fazenda[]>;
   obterTalhoes(fazendaId: string): Promise<Talhao[]>;

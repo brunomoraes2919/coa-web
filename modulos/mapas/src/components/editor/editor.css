@@ -92,3 +92,8 @@
 .pic-editado { font-weight: 700; color: #b45309; border-bottom: 1px dotted currentColor; cursor: help; }
 .erro-pic { margin: 0; color: #b3261e; font-size: 0.85rem; }
 .nota-pic { margin: 0; font-size: 0.8rem; }
+
+/* "Inserir dados via integração" (chuva da ZEUS sem o CSV) */
+.integracao-zeus { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.integracao-periodo { align-items: flex-end; gap: 14px; }
+.integracao-periodo .campo input { padding: 7px 9px; border: 1px solid var(--borda); border-radius: 6px; font: inherit; }

@@ -11,3 +11,12 @@ export function atenderPedidos(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<boolean>;
+export interface PedidoChuvaPendente { id: number; fazenda: string; de: string; ate: string }
+export function pedidosChuvaPendentes(ctx: Ctx): Promise<PedidoChuvaPendente[]>;
+export function responderPedidoChuva(ctx: Ctx, id: number, resultado: string, dados: unknown, agora?: Date): Promise<void>;
+export function atenderPedidosChuva(opcoes: {
+  supabase: { url: string; chave: string };
+  agrovex: { url: string; token: string };
+  fetch?: FetchLike;
+  agora?: () => Date;
+}): Promise<number>;

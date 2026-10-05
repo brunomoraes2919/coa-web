@@ -21,6 +21,7 @@ import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarCopiaHistorico, gerarPng, n
 import { DPI_HISTORICO, identidadeMapa, type ModoSalvar } from '../lib/historico';
 import { isoData, parseIsoData } from '../lib/format';
 import { resolvePalette } from '../lib/palettes';
+import type { ResultadoIntegracao } from '../lib/chuvaZeus';
 import { decodeCsvBuffer, parseZeusCsv } from '../lib/zeusCsv';
 import type { LayoutConfig, LayoutTextos, MapaSalvo, Pic } from '../lib/types';
 import { composicaoDe, extentsDosQuadros, TILES, type RenderInput } from '../render';
@@ -179,6 +180,12 @@ export default function NovoMapa() {
     } catch (e) {
       setErro(`Não foi possível ler o CSV: ${mensagemDeErro(e)}`);
     }
+  };
+
+  const receberIntegracao = (r: ResultadoIntegracao) => {
+    setErro(null);
+    setPics(r.pics);
+    setCsv({ nome: r.nome, inicio: r.inicio, fim: r.fim, avisos: r.avisos });
   };
 
   const nomeArquivo = nomeArquivoMapa(textos.fazenda || 'fazenda', textos.periodo);
@@ -342,7 +349,15 @@ export default function NovoMapa() {
             onSetores={trocarSetores}
           />
 
-          <SecaoCsv csv={csv} onArquivo={(f) => void lerCsv(f)} pics={pics} onPics={setPics} foraDaRegiao={foraDaRegiao} />
+          <SecaoCsv
+            csv={csv}
+            onArquivo={(f) => void lerCsv(f)}
+            pics={pics}
+            onPics={setPics}
+            foraDaRegiao={foraDaRegiao}
+            fazendaNome={fazenda?.nome ?? null}
+            onIntegracao={receberIntegracao}
+          />
 
           <section className="cartao pilha">
             <h2>3. Textos do layout</h2>

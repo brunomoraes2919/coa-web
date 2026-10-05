@@ -41,6 +41,7 @@ const CHAVES: Record<string, string[]> = {
   mapas_chuva: ['id'],
   mapas_plantio_pims: ['safra', 'unidade'],
   mapas_plantio_pedidos: ['id'],
+  mapas_chuva_pedidos: ['id'],
   fazendas: ['id'],
   perfis: ['id'],
 };
@@ -53,6 +54,14 @@ const PADROES: Record<string, (b: BancoFalso) => Linha> = {
     pedido_por: b.sessao?.user.id ?? null,
     atendido_em: null,
     resultado: null,
+  }),
+  mapas_chuva_pedidos: (b) => ({
+    id: b.tabelas.mapas_chuva_pedidos.reduce((max, l) => Math.max(max, Number(l.id)), 0) + 1,
+    pedido_em: new Date().toISOString(),
+    pedido_por: b.sessao?.user.id ?? null,
+    atendido_em: null,
+    resultado: null,
+    dados: null,
   }),
 };
 

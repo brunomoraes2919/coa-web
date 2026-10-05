@@ -178,6 +178,10 @@ com execução manual; se um dia o Agrovex liberar a rota `/mcp`, basta religar 
    (`atendido_em`, `resultado` = `ok` ou o erro). Leva uns 15–45 s. Os dois agendamentos usam a mesma trava
    (`~/plantio-pims/.trava`), então nunca rodam ao mesmo tempo; a rotina horária também baixa a versão nova
    de `atender-pedidos.mjs`. Pedidos atendidos há mais de 30 dias são apagados.
+   **Botão "Inserir dados via integração"** (passo 2 do Novo mapa): grava em `mapas_chuva_pedidos`
+   (`supabase/coa-web/0003_pedidos_chuva.sql`) a fazenda e o período; a mesma verificação de ~30 s busca na
+   ZEUS (`"DATABASE".stg_zeus_picarea` e `stg_climatemonitoring2`) a chuva de cada PIC da fazenda e grava a
+   resposta na coluna `dados` do pedido. Sem o script 0003 aplicado, o servidor ignora (não é erro).
 5. Conferir: `systemctl list-timers plantio-pims.timer` (próxima rodada), `tail ~/plantio-pims/rotina.log`
    (histórico: só totais — linhas safra × unidade, talhões, `geradoEm`), rodar agora:
    `sudo systemctl start plantio-pims.service`.

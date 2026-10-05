@@ -28,7 +28,7 @@ import {
   type SafraRow,
   type TalhaoRow,
 } from './supabaseLinhas';
-import { pedidosPlantioSupabase } from './supabasePedidos';
+import { pedidosChuvaSupabase, pedidosPlantioSupabase } from './supabasePedidos';
 
 export { reviverPics, serializarPics } from './supabaseLinhas';
 
@@ -172,6 +172,7 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
     },
 
     ...pedidosPlantioSupabase(client),
+    ...pedidosChuvaSupabase(client),
 
     async listarFazendas() {
       const linhas = await lerTodas<FazendaRow>('Não foi possível listar as fazendas', (de, ate) =>
