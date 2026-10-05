@@ -150,6 +150,7 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .perfil-pill{display:inline-block;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:20px;}
 .perfil-pill.admin{background:rgba(219,138,8,.14);color:#8A5A05;}
 .perfil-pill.colaborador{background:rgba(42,111,151,.14);color:#1F5C82;}
+.perfil-pill.super{box-shadow:inset 0 0 0 1px rgba(219,138,8,.55);font-weight:700;}
 .fazendas-permitidas-tag{display:inline-block;font-size:11px;background:var(--fundo);border:1px solid var(--linha);
   border-radius:20px;padding:2px 9px;margin:2px 3px 2px 0;color:var(--texto-suave);}
 
@@ -1035,6 +1036,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
           </div>
           <div class="campo-fazendas" id="nu-fazendas-wrap">
             <label>Fazendas permitidas</label>
+            <div class="checks-fazendas" id="nu-todas-wrap" style="display:none;margin-bottom:8px"><label><input type="checkbox" id="nu-todas-fazendas" checked> Todas as fazendas</label></div>
             <div class="checks-fazendas" id="nu-fazendas-checks"></div>
           </div>
           <div class="campo-fazendas" id="nu-categorias-wrap">
@@ -1203,8 +1205,20 @@ const CATEGORIAS = [
 let categoriasDoUsuario = null;
 function podeCategoria(chave){
   if(!sessao) return false;
-  if(sessao.perfil === 'admin' || categoriasDoUsuario === null) return true;
+  if(sessao.super || categoriasDoUsuario === null) return true;
   return categoriasDoUsuario.includes(chave);
+}
+/* ADMINISTRADOR+ (perfis.super): vê tudo e gerencia todos, inclusive administradores. Só existe depois de
+   rodar supabase/0002_administrador_mais.sql; antes disso (state.adminMaisDisponivel falso) todo
+   administrador vale como super na tela e o site se comporta como antes. */
+function podeGerenciarUsuario(u){
+  if(!sessao) return false;
+  if(sessao.super) return true;
+  return u.perfil === 'colaborador';
+}
+function nomeDoPerfil(perfil, ehSuper){
+  if(perfil !== 'admin') return 'Colaborador';
+  return state.adminMaisDisponivel && ehSuper ? 'Administrador+' : 'Administrador';
 }
 /* ---- categoria MAPAS: estado do iframe do módulo (ver a seção MAPAS mais abaixo) ---- */
 const MAPAS_ROTA_INICIAL = '/mapas/novo';
@@ -3090,13 +3104,17 @@ document.getElementById('sb-fazenda').addEventListener('change', renderTudo);
 ===================================================================== */
 function renderUsuarios(){
   const checksWrap = document.getElementById('nu-fazendas-checks');
+  // renderTudo() recria as caixas a cada mudança em tempo real: guarda o que já estava marcado e remarca
+  const fazJaHavia = !!checksWrap.querySelector('.nu-fazenda-chk');
+  const fazMarcadas = new Set([...checksWrap.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>c.value));
   checksWrap.innerHTML = state.fazendas.map(f=>`
     <label><input type="checkbox" class="nu-fazenda-chk" value="${f.id}"> ${f.nome}</label>
   `).join('');
-  if(usuarioEditandoId){
-    const uEdit = state.usuarios.find(x=>x.id===usuarioEditandoId);
-    if(uEdit) document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = uEdit.fazendasPermitidas.includes(parseInt(c.value)); });
-  }
+  const uEdit = usuarioEditandoId ? state.usuarios.find(x=>x.id===usuarioEditandoId) : null;
+  document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{
+    if(fazJaHavia) c.checked = fazMarcadas.has(c.value);
+    else if(uEdit) c.checked = uEdit.fazendasPermitidas.includes(parseInt(c.value));
+  });
 
   // categorias permitidas (nomes vêm da constante CATEGORIAS, nunca do banco)
   const catsWrap = document.getElementById('nu-categorias-checks');
@@ -3106,19 +3124,20 @@ function renderUsuarios(){
     // renderTudo() recria as caixas a cada mudança em tempo real: guarda o que já estava marcado e remarca
     const jaHavia = !!catsWrap.querySelector('.nu-categoria-chk');
     const marcadas = new Set([...catsWrap.querySelectorAll('.nu-categoria-chk:checked')].map(c=>c.value));
-    catsWrap.innerHTML = CATEGORIAS.map(c=>`
+    // quem não é ADMINISTRADOR+ só pode liberar as categorias que ele mesmo tem
+    catsWrap.innerHTML = CATEGORIAS.filter(c=>podeCategoria(c.chave)).map(c=>`
       <label><input type="checkbox" class="nu-categoria-chk" value="${c.chave}"> ${c.nome}</label>
     `).join('');
-    const uEditCat = usuarioEditandoId ? state.usuarios.find(x=>x.id===usuarioEditandoId) : null;
     document.querySelectorAll('.nu-categoria-chk').forEach(c=>{
       if(jaHavia) c.checked = marcadas.has(c.value);
-      else if(uEditCat) c.checked = uEditCat.categoriasPermitidas === null || uEditCat.categoriasPermitidas.includes(c.value);
+      else if(uEdit) c.checked = uEdit.categoriasPermitidas === null || uEdit.categoriasPermitidas.includes(c.value);
     });
   }
+  ajustarFormUsuario();
 
   const tbody = document.getElementById('tbl-usuarios');
   tbody.innerHTML = state.usuarios.map(u=>{
-    const fazendasTxt = u.perfil==='admin'
+    const fazendasTxt = (u.perfil==='admin' && (u.super || u.todasFazendas))
       ? '<span class="fazendas-permitidas-tag">Todas</span>'
       : (u.fazendasPermitidas.length
           ? u.fazendasPermitidas.map(id=>{
@@ -3126,19 +3145,24 @@ function renderUsuarios(){
               return f ? `<span class="fazendas-permitidas-tag">${f.nome}</span>` : '';
             }).join('')
           : '<span class="fazendas-permitidas-tag">Nenhuma</span>');
-    const categoriasTxt = (u.perfil==='admin' || u.categoriasPermitidas===null)
+    // "Todas": ADMINISTRADOR+, tabela ainda inexistente, quem tem as cinco; antes do script 0002 todo admin vê tudo
+    const temTodasCat = u.categoriasPermitidas===null || u.super || (!state.adminMaisDisponivel && u.perfil==='admin')
+      || CATEGORIAS.every(c=>u.categoriasPermitidas.includes(c.chave));
+    const categoriasTxt = temTodasCat
       ? '<span class="fazendas-permitidas-tag">Todas</span>'
       : (CATEGORIAS.filter(c=>u.categoriasPermitidas.includes(c.chave)).map(c=>`<span class="fazendas-permitidas-tag">${c.nome}</span>`).join('')
           || '<span class="fazendas-permitidas-tag">Nenhuma</span>');
-    const podeRemover = !(sessao && sessao.id===u.id);
+    const podeEditar = podeGerenciarUsuario(u);
+    const podeRemover = podeEditar && !(sessao && sessao.id===u.id) && !u.super;
+    const ehSuperAqui = !!(state.adminMaisDisponivel && u.super);
     return `<tr>
       <td><b>${u.nome}</b></td>
       <td>${u.email||'–'}</td>
-      <td><span class="perfil-pill ${u.perfil}">${u.perfil==='admin'?'Administrador':'Colaborador'}</span></td>
+      <td><span class="perfil-pill ${u.perfil}${ehSuperAqui?' super':''}">${nomeDoPerfil(u.perfil, u.super)}</span></td>
       <td>${fazendasTxt}</td>
       <td>${categoriasTxt}</td>
       <td class="acoes-usuario">
-        <button class="editar" data-id="${u.id}">editar</button>
+        ${podeEditar ? `<button class="editar" data-id="${u.id}">editar</button>` : ''}
         ${podeRemover ? `<button class="remover" data-id="${u.id}">remover perfil</button>` : ''}
       </td>
     </tr>`;
@@ -3148,8 +3172,10 @@ function renderUsuarios(){
     iniciarEdicaoUsuario(e.target.dataset.id);
   }));
   tbody.querySelectorAll('.remover').forEach(b=>b.addEventListener('click', async e=>{
-    if(!confirm('Isso remove o perfil e as permissões desta pessoa (o login dela continua existindo em Authentication → Users, e pode ser apagado por lá se quiser). Continuar?')) return;
     const id = e.target.dataset.id;
+    const alvo = state.usuarios.find(x=>x.id===id);
+    if(!alvo || !podeGerenciarUsuario(alvo) || (sessao && sessao.id===id) || alvo.super) return;
+    if(!confirm('Isso remove o perfil e as permissões desta pessoa (o login dela continua existindo em Authentication → Users, e pode ser apagado por lá se quiser). Continuar?')) return;
     e.target.disabled = true;
     const { error } = await sb.from('perfis').delete().eq('id', id);
     if(error){ alert('Erro ao remover: '+error.message); e.target.disabled = false; return; }
@@ -3161,16 +3187,16 @@ function renderUsuarios(){
 let usuarioEditandoId = null;
 function iniciarEdicaoUsuario(id){
   const u = state.usuarios.find(x=>x.id===id);
-  if(!u) return;
+  if(!u || !podeGerenciarUsuario(u)) return;
   usuarioEditandoId = id;
   document.getElementById('nu-email-wrap').style.display = 'none';
   document.getElementById('nu-senha-wrap').style.display = 'none';
   document.getElementById('nu-nome').value = u.nome;
   document.getElementById('nu-perfil').value = u.perfil;
-  document.getElementById('nu-fazendas-wrap').style.display = u.perfil==='admin' ? 'none' : '';
+  document.getElementById('nu-todas-fazendas').checked = u.perfil==='admin' ? (u.super || u.todasFazendas) : true;
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = u.fazendasPermitidas.includes(parseInt(c.value)); });
-  document.getElementById('nu-categorias-wrap').style.display = u.perfil==='admin' ? 'none' : '';
   document.querySelectorAll('.nu-categoria-chk').forEach(c=>{ c.checked = u.categoriasPermitidas === null || u.categoriasPermitidas.includes(c.value); });
+  ajustarFormUsuario();
   document.getElementById('nu-titulo').textContent = 'Editar usuário';
   document.getElementById('nu-desc').textContent = `Alterando o acesso de ${u.nome} (${u.email||'sem e-mail'}) — para trocar e-mail ou senha, use o painel do Supabase`;
   document.getElementById('btn-add-usuario').textContent = 'Salvar alterações';
@@ -3185,33 +3211,81 @@ function cancelarEdicaoUsuario(){
   document.getElementById('nu-email').value = '';
   document.getElementById('nu-senha').value = '';
   document.getElementById('nu-perfil').value = 'colaborador';
-  document.getElementById('nu-fazendas-wrap').style.display = '';
+  document.getElementById('nu-todas-fazendas').checked = true;
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = false; });
-  document.getElementById('nu-categorias-wrap').style.display = '';
   document.querySelectorAll('.nu-categoria-chk').forEach(c=>{ c.checked = false; });
+  ajustarFormUsuario();
   document.getElementById('nu-titulo').textContent = 'Novo usuário';
   document.getElementById('nu-desc').textContent = 'Cria o login e já define o perfil, as fazendas e as categorias permitidas';
   document.getElementById('btn-add-usuario').textContent = 'Criar usuário';
 }
 document.getElementById('btn-cancelar-edicao-usuario').addEventListener('click', cancelarEdicaoUsuario);
+/* Monta o formulário conforme quem edita e quem é editado:
+   - colaborador: fazendas e categorias (como sempre);
+   - administrador (só o ADMINISTRADOR+ chega aqui): "Todas as fazendas" + lista de fazendas + categorias;
+   - o próprio ADMINISTRADOR+ (ou outro): só o nome (continua administrador, sem fazendas nem categorias);
+   - antes do script 0002 (state.adminMaisDisponivel falso): administrador não tem fazendas nem categorias, como antes. */
+function ajustarFormUsuario(){
+  const u = usuarioEditandoId ? state.usuarios.find(x=>x.id===usuarioEditandoId) : null;
+  const sel = document.getElementById('nu-perfil');
+  const souSuper = !!(sessao && sessao.super);
+  const optAdmin = sel.querySelector('option[value="admin"]');
+  optAdmin.hidden = !souSuper;
+  optAdmin.disabled = !souSuper;
+  if(!souSuper && sel.value==='admin') sel.value = 'colaborador';
+  const somenteNome = !!(state.adminMaisDisponivel && u && sessao && (u.id===sessao.id || u.super));
+  sel.disabled = somenteNome;
+  const comoAdmin = sel.value==='admin';
+  const layoutAdmin = !!state.adminMaisDisponivel && comoAdmin && !somenteNome;
+  const mostrar = !somenteNome && (!comoAdmin || layoutAdmin);
+  document.getElementById('nu-fazendas-wrap').style.display = mostrar ? '' : 'none';
+  document.getElementById('nu-categorias-wrap').style.display = mostrar ? '' : 'none';
+  document.getElementById('nu-todas-wrap').style.display = layoutAdmin ? '' : 'none';
+  const todas = document.getElementById('nu-todas-fazendas').checked;
+  document.getElementById('nu-fazendas-checks').style.display = layoutAdmin && todas ? 'none' : '';
+}
+document.getElementById('nu-todas-fazendas').addEventListener('change', ajustarFormUsuario);
 document.getElementById('nu-perfil').addEventListener('change', e=>{
-  document.getElementById('nu-fazendas-wrap').style.display = e.target.value==='admin' ? 'none' : '';
-  document.getElementById('nu-categorias-wrap').style.display = e.target.value==='admin' ? 'none' : '';
+  if(!usuarioEditandoId){
+    // usuário novo: administrador começa com todas as fazendas e categorias; voltar a colaborador limpa
+    const admin = e.target.value==='admin';
+    document.getElementById('nu-todas-fazendas').checked = true;
+    document.querySelectorAll('.nu-categoria-chk').forEach(c=>{ c.checked = admin; });
+  }
+  ajustarFormUsuario();
 });
+
+/* o que o formulário manda gravar. u = usuário em edição (null = novo). */
+function lerFormUsuario(u){
+  let perfil = document.getElementById('nu-perfil').value;
+  if(!(sessao && sessao.super)) perfil = 'colaborador'; // administrador comum só cria/edita colaborador
+  const somenteNome = !!(state.adminMaisDisponivel && u && (u.id===sessao.id || u.super));
+  const alvoAdmin = !!state.adminMaisDisponivel && perfil==='admin' && !somenteNome;
+  const todasFazendas = alvoAdmin ? document.getElementById('nu-todas-fazendas').checked : true;
+  const fazendasPermitidas = (perfil==='admin' && !alvoAdmin) || (alvoAdmin && todasFazendas) ? [] :
+    [...document.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>parseInt(c.value));
+  const categoriasPermitidas = perfil==='admin' && !alvoAdmin ? [] :
+    [...document.querySelectorAll('.nu-categoria-chk:checked')].map(c=>c.value);
+  return { perfil, somenteNome, todasFazendas, fazendasPermitidas, categoriasPermitidas };
+}
 
 async function salvarEdicaoUsuario(){
   const nome = document.getElementById('nu-nome').value.trim();
-  const perfil = document.getElementById('nu-perfil').value;
   if(!nome){ alert('Informe o nome.'); return; }
-  const fazendasPermitidas = perfil==='admin' ? [] :
-    [...document.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>parseInt(c.value));
-  const categoriasPermitidas = perfil==='admin' ? [] : [...document.querySelectorAll('.nu-categoria-chk:checked')].map(c=>c.value);
+  const alvo = state.usuarios.find(x=>x.id===usuarioEditandoId);
+  if(!alvo || !podeGerenciarUsuario(alvo)){ alert('Você não tem permissão para alterar este usuário.'); return; }
+  const { perfil, somenteNome, todasFazendas, fazendasPermitidas, categoriasPermitidas } = lerFormUsuario(alvo);
 
   const btn = document.getElementById('btn-add-usuario');
   btn.disabled = true;
-  const { error: erroPerfil } = await sb.from('perfis').update({ nome, perfil }).eq('id', usuarioEditandoId);
+  const dadosPerfil = { nome, perfil };
+  // todas_fazendas só o ADMINISTRADOR+ envia (o banco recusa de outro jeito) e só se a coluna existe
+  if(state.adminMaisDisponivel && sessao.super && !somenteNome) dadosPerfil.todas_fazendas = todasFazendas;
+  const { error: erroPerfil } = await sb.from('perfis').update(dadosPerfil).eq('id', usuarioEditandoId);
   if(erroPerfil){ alert('Erro ao salvar: '+erroPerfil.message); btn.disabled = false; return; }
 
+  // o próprio ADMINISTRADOR+ (ou outro) só tem o nome alterado: fazendas e categorias ficam como estão
+  if(!somenteNome){
   await sb.from('usuario_fazendas').delete().eq('usuario_id', usuarioEditandoId);
   if(fazendasPermitidas.length){
     const linhas = fazendasPermitidas.map(fid=>({ usuario_id: usuarioEditandoId, fazenda_id: fid }));
@@ -3229,6 +3303,7 @@ async function salvarEdicaoUsuario(){
       if(erroCat){ alert('Perfil salvo, mas houve erro nas categorias: '+erroCat.message); }
     }
   }
+  }
   btn.disabled = false;
 
   if(sessao && sessao.id===usuarioEditandoId) sessao = { ...sessao, nome, perfil };
@@ -3240,12 +3315,9 @@ async function criarNovoUsuario(){
   const nome = document.getElementById('nu-nome').value.trim();
   const email = document.getElementById('nu-email').value.trim();
   const senha = document.getElementById('nu-senha').value;
-  const perfil = document.getElementById('nu-perfil').value;
   if(!nome || !email || !senha){ alert('Preencha nome, e-mail e senha.'); return; }
   if(senha.length < 6){ alert('A senha precisa ter pelo menos 6 caracteres.'); return; }
-  const fazendasPermitidas = perfil==='admin' ? [] :
-    [...document.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>parseInt(c.value));
-  const categoriasPermitidas = perfil==='admin' ? [] : [...document.querySelectorAll('.nu-categoria-chk:checked')].map(c=>c.value);
+  const { perfil, todasFazendas, fazendasPermitidas, categoriasPermitidas } = lerFormUsuario(null);
 
   const btn = document.getElementById('btn-add-usuario');
   btn.disabled = true;
@@ -3267,10 +3339,10 @@ async function criarNovoUsuario(){
   // Garante que o perfil exista antes de vincular as fazendas. O gatilho do
   // banco normalmente cria esse registro, mas um update simples não fazia
   // nada quando o gatilho falhava e a inserção das permissões quebrava pela FK.
-  const { error: erroPerfil } = await sb.from('perfis').upsert(
-    { id: novoId, nome, email, perfil },
-    { onConflict:'id' }
-  );
+  const dadosPerfil = { id: novoId, nome, email, perfil };
+  // todas_fazendas só o ADMINISTRADOR+ envia e só se a coluna existe (administrador comum só cria colaborador)
+  if(state.adminMaisDisponivel && sessao.super) dadosPerfil.todas_fazendas = todasFazendas;
+  const { error: erroPerfil } = await sb.from('perfis').upsert(dadosPerfil, { onConflict:'id' });
   if(erroPerfil){
     btn.disabled=false; btn.textContent='Criar usuário';
     alert('O login foi criado, mas não foi possível criar o perfil. Não tente cadastrar o mesmo e-mail novamente. Erro: '+erroPerfil.message);
@@ -3654,7 +3726,7 @@ function atualizarUsuarioLogado(){
   if(!sessao) return;
   const el = document.getElementById('usuario-logado');
   const badgeClass = sessao.perfil==='admin' ? '' : 'colab';
-  el.innerHTML = `<b>${sessao.nome}</b><span class="perfil-badge ${badgeClass}">${sessao.perfil==='admin'?'Administrador':'Colaborador'}</span>`;
+  el.innerHTML = `<b>${sessao.nome}</b><span class="perfil-badge ${badgeClass}">${nomeDoPerfil(sessao.perfil, sessao.super)}</span>`;
 }
 
 /* ---- carrega tudo do Supabase (fazendas/variedades/safras/talhões já
@@ -3684,6 +3756,7 @@ async function recarregarTudoDoSupabase(){
     const permCategorias = uc.error ? [] : (uc.data || []);
     state.usuarios = perfis.map(p=>({
       id: p.id, nome: p.nome, perfil: p.perfil, email: p.email,
+      super: !!p.super, todasFazendas: p.todas_fazendas !== false,
       fazendasPermitidas: permissoes.filter(u=>u.usuario_id===p.id).map(u=>u.fazenda_id),
       categoriasPermitidas: uc.error ? null : permCategorias.filter(u=>u.usuario_id===p.id).map(u=>u.categoria)
     }));
@@ -3711,6 +3784,7 @@ function aplicarCategoriasDoUsuario(){
   const naTelaDeCategorias = document.getElementById('categoria-screen').style.display !== 'none';
   if(naTelaDeCategorias) mostrarCategoriaScreen();
   else if(categoriaAtual && CATEGORIAS.some(c=>c.chave===categoriaAtual) && !podeCategoria(categoriaAtual)) mostrarCategoriaScreen();
+  if(sessao.perfil === 'admin') renderUsuarios(); // as caixas de categoria do formulário dependem da lista dele
 }
 
 let canalRealtime = null;
@@ -3736,7 +3810,14 @@ async function carregarSessaoEDados(){
     await sb.auth.signOut();
     return;
   }
-  sessao = { id: user.id, email: user.email, nome: perfil.nome, perfil: perfil.perfil };
+  // as colunas super/todas_fazendas só existem depois do script 0002; sem elas todo administrador vale como super
+  const temAdminMais = 'super' in perfil;
+  state.adminMaisDisponivel = temAdminMais;
+  sessao = {
+    id: user.id, email: user.email, nome: perfil.nome, perfil: perfil.perfil,
+    super: temAdminMais ? !!perfil.super : perfil.perfil === 'admin',
+    todasFazendas: perfil.todas_fazendas !== false
+  };
 
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('login-senha').value = '';
