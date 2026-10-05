@@ -5,6 +5,8 @@ interface Props {
   /** Centralizar habilitado (o enquadramento não é o automático) */
   podeCentralizar: boolean;
   onCentralizar(): void;
+  /** Aproximar (true) ou afastar (false) pelo centro do mapa: no celular não há roda do mouse */
+  onZoom(aproximar: boolean): void;
 }
 
 const svg = { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' } as const;
@@ -28,8 +30,16 @@ function IconeCentralizar() {
   );
 }
 
-/** Cadeado (trava arraste e zoom da prévia) e Centralizar (volta ao enquadramento automático). */
-export default function BarraPrevia({ travado, onTravado, podeCentralizar, onCentralizar }: Props) {
+function IconeZoom({ mais }: { mais: boolean }) {
+  return (
+    <svg {...svg} aria-hidden="true" focusable="false">
+      <path d={mais ? 'M12 5v14M5 12h14' : 'M5 12h14'} />
+    </svg>
+  );
+}
+
+/** Cadeado (trava arraste e zoom da prévia), aproximar/afastar (com o mapa destravado) e Centralizar (volta ao enquadramento automático). */
+export default function BarraPrevia({ travado, onTravado, podeCentralizar, onCentralizar, onZoom }: Props) {
   const dicaCadeado = travado ? 'Destravar para mover e aproximar' : 'Travar o mapa';
   return (
     <div className="previa-ferramentas" role="toolbar" aria-label="Enquadramento da prévia">
@@ -42,6 +52,16 @@ export default function BarraPrevia({ travado, onTravado, podeCentralizar, onCen
       >
         <IconeCadeado aberto={!travado} />
       </button>
+      {!travado && (
+        <>
+          <button type="button" className="botao-icone-previa" aria-label="Aproximar o mapa" title="Aproximar" onClick={() => onZoom(true)}>
+            <IconeZoom mais />
+          </button>
+          <button type="button" className="botao-icone-previa" aria-label="Afastar o mapa" title="Afastar" onClick={() => onZoom(false)}>
+            <IconeZoom mais={false} />
+          </button>
+        </>
+      )}
       <button type="button" className="botao-icone-previa" aria-label="Centralizar o mapa" title="Centralizar o mapa" disabled={!podeCentralizar} onClick={onCentralizar}>
         <IconeCentralizar />
       </button>

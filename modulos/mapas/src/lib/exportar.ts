@@ -1,4 +1,5 @@
 import { paginaDe, renderLayout, type RenderInput } from '../render';
+import { dpiPermitido, limitesDoAparelho } from './aparelho';
 import { DPI_HISTORICO, QUALIDADE_JPEG_HISTORICO, tamanhoMiniatura } from './historico';
 import { definirDpiPng } from './pngDpi';
 
@@ -69,12 +70,24 @@ function reduzirCanvas(origem: HTMLCanvasElement, largura: number, altura: numbe
   }
 }
 
-/** PNG em alta definição (150, 300 ou 600 dpi). */
-export async function gerarPng(inp: RenderInput, dpi: number = DPI_PADRAO): Promise<{ blob: Blob; avisos: string[] }> {
+/**
+ * PNG em alta definição (150, 300 ou 600 dpi). No celular/tablet o dpi é o maior que o aparelho consegue
+ * desenhar (o iPhone não passa de ~16,7 milhões de pixels por imagem): `dpi` devolve o que foi usado.
+ */
+export async function gerarPng(
+  inp: RenderInput,
+  dpiPedido: number = DPI_PADRAO,
+  maxPixels: number = limitesDoAparelho().maxPixelsCanvas,
+): Promise<{ blob: Blob; avisos: string[]; dpi: number }> {
+  const dpi = dpiPermitido(dpiPedido, paginaDe(inp), maxPixels);
   const { canvas, avisos } = await renderizarPagina(inp, dpi / 25.4);
   try {
     const blob = await definirDpiPng(await paraBlob(canvas), dpi);
-    return { blob, avisos };
+    return {
+      blob,
+      dpi,
+      avisos: dpi < dpiPedido ? [...avisos, `Neste aparelho o PNG saiu em ${dpi} dpi (o máximo que ele consegue gerar); no computador sai em ${dpiPedido} dpi.`] : avisos,
+    };
   } finally {
     liberarCanvas(canvas);
   }

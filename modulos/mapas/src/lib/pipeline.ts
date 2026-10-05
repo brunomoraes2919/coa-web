@@ -1,3 +1,4 @@
+import { pixelParaCaber } from './aparelho';
 import { idwGrid, type IdwPoint } from './idw';
 import { geomToXY, projetorUtm, utmEpsgFor } from './projection';
 import { dilate, gridSpecFromBounds, rasterizeZones } from './raster';
@@ -18,6 +19,12 @@ export interface PipelineInput {
   areas?: { id: string; geom: Geometry }[];
   /** ids das áreas plantadas/plantando: com `areas` não vazio, "área plantada" = união delas */
   plantadosAreas?: string[];
+  /**
+   * Celular/tablet: máximo de células da grade. Se a fazenda não couber com o pixel pedido, a grade usa o
+   * menor pixel inteiro que cabe (em vez de falhar por falta de memória). Sem isto, vale a regra do
+   * computador: erro acima de 60 milhões de células.
+   */
+  maxCelulas?: number;
 }
 
 export interface PipelineOutput {
@@ -25,6 +32,8 @@ export interface PipelineOutput {
   resumo: ResumoChuva;
   /** índices (em `inp.pics`, crescentes) de PICs válidos ignorados por estarem fora da região da grade */
   picsIgnorados: number[];
+  /** pixel (m) realmente usado na grade: o pedido, ou um maior quando `maxCelulas` obrigou */
+  pixelUsado: number;
 }
 
 /** Erro esperado da interpolação, com mensagem em português para o usuário. */
@@ -121,7 +130,15 @@ export function runPipeline(inp: PipelineInput, onProgress?: (f: number) => void
     if (y > maxY) maxY = y;
   }
   const b = params.buffer;
-  const spec = gridSpecFromBounds(minX - b, minY - b, maxX + b, maxY + b, params.pixel);
+  let pixel = params.pixel;
+  let spec = gridSpecFromBounds(minX - b, minY - b, maxX + b, maxY + b, pixel);
+  if (inp.maxCelulas && inp.maxCelulas > 0) {
+    const maior = pixelParaCaber(pixel, spec.cols * spec.rows, inp.maxCelulas);
+    if (maior !== pixel) {
+      pixel = maior;
+      spec = gridSpecFromBounds(minX - b, minY - b, maxX + b, maxY + b, pixel);
+    }
+  }
 
   // PICs em UTM; os fora da região são ignorados, como no GRASS
   const pts: IdwPoint[] = [];
@@ -142,7 +159,7 @@ export function runPipeline(inp: PipelineInput, onProgress?: (f: number) => void
     const zonasAreas = comAreas ? rasterizeZones(spec, areasXY) : null;
     const dentro = new Uint8Array(celulas);
     for (let i = 0; i < celulas; i++) dentro[i] = zonas[i] >= 0 || (zonasAreas !== null && zonasAreas[i] >= 0) ? 1 : 0;
-    const mask = dilate(dentro, spec, Math.round(b / params.pixel));
+    const mask = dilate(dentro, spec, Math.round(b / pixel));
     // 4. IDW nas células da máscara
     const values = idwGrid(
       spec, mask, pts, params.potencia, params.vizinhos,
@@ -192,5 +209,5 @@ export function runPipeline(inp: PipelineInput, onProgress?: (f: number) => void
   const resumo: ResumoChuva = comAreas
     ? { geral, plantado, talhoes, areas: porArea, mediaPicsComChuva: mediaPics }
     : { geral, plantado, talhoes, mediaPicsComChuva: mediaPics };
-  return { grid: { ...spec, epsg, values }, resumo, picsIgnorados };
+  return { grid: { ...spec, epsg, values }, resumo, picsIgnorados, pixelUsado: pixel };
 }

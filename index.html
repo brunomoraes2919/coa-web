@@ -199,7 +199,7 @@ main{padding:26px 34px 60px;min-width:0;margin-left:236px;box-sizing:border-box;
 .metricas{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:22px;}
 @media (max-width:1050px){.metricas{grid-template-columns:repeat(3,1fr);}}
 @media (max-width:640px){.metricas{grid-template-columns:repeat(2,1fr);}}
-@media (max-width:420px){.metricas{grid-template-columns:1fr;}}
+@media (max-width:330px){.metricas{grid-template-columns:1fr;}}
 .metrica{padding:16px 16px 14px;min-width:0;}
 .metrica .rotulo{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--texto-suave);margin-bottom:6px;overflow-wrap:break-word;}
 .info-tooltip{
@@ -492,6 +492,70 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   .lista-simples .item .edit-nome-input{width:100%;margin-right:0;}
   .metrica .valor{font-size:19px;}
   .checks-fazendas label{padding:5px 10px;font-size:12px;}
+}
+
+/* ---------- CELULAR ----------
+   Telas de entrada (login e categorias): rolam quando o conteúdo é mais alto que a tela (antes o topo e
+   o fim ficavam cortados e fora de alcance no celular). */
+.login-screen, .categoria-screen{
+  align-items:flex-start;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:24px 16px;box-sizing:border-box;
+  padding-top:max(24px, env(safe-area-inset-top));padding-bottom:max(24px, env(safe-area-inset-bottom));
+}
+.login-card, .categoria-conteudo{margin:auto;}
+@media (max-width:560px){
+  .categoria-logo{width:150px;margin-bottom:18px;}
+  .categoria-titulo{font-size:18px;margin-bottom:16px;}
+  .categoria-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .categoria-card{width:auto;min-width:0;padding:20px 10px;gap:10px;}
+  .categoria-card svg{width:32px;height:32px;}
+  .categoria-card span{font-size:13.5px;}
+  .categoria-rodape{margin-top:22px;flex-wrap:wrap;}
+}
+
+/* Barra do topo no celular e no tablet: em cima, a fazenda e as ações (Trocar categoria e Sair, só os
+   ícones); embaixo, o menu da categoria, que rola de lado se não couber. Fica presa no topo. */
+@media (max-width:900px){
+  .sidebar{
+    display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 10px;
+    overflow:visible;padding:8px 12px;position:sticky;top:0;z-index:60;
+    padding-top:max(8px, env(safe-area-inset-top));
+  }
+  .brand{grid-column:1;grid-row:1;border-right:none;margin:0;padding:0;justify-content:flex-start;min-width:0;}
+  .sb-fazenda-select{max-width:min(240px,100%);width:auto;font-size:12.5px;padding:7px 24px 7px 11px;}
+  .sidebar-foot{grid-column:2;grid-row:1;padding:0;gap:8px;}
+  .usuario-logado b{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .sidebar-acoes .btn-sair{font-size:0;gap:0;padding:8px 10px;min-width:38px;min-height:36px;}
+  .sidebar-acoes .btn-sair svg{width:17px;height:17px;}
+  .sidebar > div[id^="nav-"]{
+    grid-column:1 / -1;grid-row:2;display:flex;gap:4px;min-width:0;
+    overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .sidebar > div[id^="nav-"]::-webkit-scrollbar{display:none;}
+  .nav-btn{width:auto;padding:9px 12px;min-height:38px;}
+  .nav-btn.active{box-shadow:inset 0 -3px 0 var(--dourado);}
+}
+@media (max-width:560px){
+  .usuario-logado{display:none;}
+}
+/* nos módulos em tela cheia (Mapas e Operacional) o título da página sai no celular: a altura vai para o módulo */
+@media (max-width:900px){
+  .app.modo-mapas .topbar, .app.modo-acomp .topbar{display:none;}
+}
+/* toque: campos com letra de 16px não disparam o zoom automático do iPhone ao focar */
+@media (max-width:900px) and (pointer:coarse){
+  input, select, textarea{font-size:16px;}
+  .sb-fazenda-select{font-size:13px;}
+}
+/* janelas (exportar relatório, buscar no PIMS) ocupam a largura do celular e rolam por dentro */
+@media (max-width:560px){
+  .dlg-mec{width:calc(100vw - 16px);max-height:calc(100dvh - 16px);}
+  .dlg-mec form{max-height:calc(100dvh - 16px);}
+  .dlg-mec-cab, .dlg-mec-corpo, .dlg-mec-rodape{padding-left:16px;padding-right:16px;}
+  .mec-pims-datas label{flex:1 1 130px;}
+  .mec-pims-datas input{width:100%;box-sizing:border-box;}
+  .mec-pims-acoes{width:100%;}
+  .mec-pims-acoes .btn{flex:1 1 0;justify-content:center;}
 }
 
 /* ---------- categoria MAPAS: módulo num iframe (mapas/index.html?embed=1) ----------

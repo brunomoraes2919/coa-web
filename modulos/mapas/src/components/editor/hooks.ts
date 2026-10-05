@@ -1,3 +1,4 @@
+import { limitesDoAparelho } from '../../lib/aparelho';
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { repo } from '../../data';
 import {
@@ -88,7 +89,9 @@ export function useInterpolacao(
       despachar({ tipo: decisao });
       return;
     }
-    const inp = entrada!.inp;
+    // no celular/tablet a grade é limitada pela memória (pixel maior nas fazendas grandes)
+    const maxCelulas = limitesDoAparelho().maxCelulas;
+    const inp = maxCelulas ? { ...entrada!.inp, maxCelulas } : entrada!.inp;
     const t = window.setTimeout(() => {
       despachar({ tipo: 'iniciar', chave });
       let execucao: Promise<PipelineOutput>;

@@ -154,9 +154,12 @@ export default function NovoMapa() {
             `${foraDaRegiao.size === 1 ? '1 PIC está fora' : `${foraDaRegiao.size} PICs estão fora`} da área do mapa e não entra${foraDaRegiao.size === 1 ? '' : 'm'} na interpolação (mesmo comportamento do QGIS).`,
           ]
         : []),
+      ...(resultado && resultado.pixelUsado > aparencia.idw.pixel
+        ? [`Neste aparelho a interpolação usou pixel de ${resultado.pixelUsado} m (em vez de ${aparencia.idw.pixel} m) para caber na memória; no computador o mapa sai com o pixel escolhido.`]
+        : []),
       ...avisosRender,
     ],
-    [csv, pics, talhoesInterp, safra, foraDaRegiao, avisosRender],
+    [csv, pics, talhoesInterp, safra, foraDaRegiao, avisosRender, resultado, aparencia.idw.pixel],
   );
 
   const trocarFazenda = (idF: string) => {
@@ -258,7 +261,7 @@ export default function NovoMapa() {
         ? 'Aguarde a interpolação terminar'
         : situacao === 'erro'
           ? 'A interpolação falhou: veja a mensagem acima'
-          : 'Escolha a fazenda e carregue o CSV da ZEUS';
+          : 'Escolha a fazenda e carregue a chuva da ZEUS';
 
   return (
     <div className="pagina pagina-editor">

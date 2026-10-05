@@ -542,3 +542,44 @@ button, input, select { font: inherit; color: inherit; }
 }
 /* telas baixas (ex.: 1366×768, 1280×720): esconde a máquina para caber o texto */
 @media (max-height: 800px) and (min-aspect-ratio: 4/3) { .tv-maquina { display: none; } }
+
+/* ============================ CELULAR ============================
+   O topo quebra em linhas (filtros, ações, abas) em vez de estourar a largura; a tabela de períodos das
+   metas vira um cartão por período. */
+@media (max-width: 640px) {
+  /* no celular o topo rola junto com a página: preso, ele tomava um quarto da tela */
+  .topo { position: static; }
+  .topo-linha { gap: 10px; }
+  .filtros { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .campo-select { min-width: 0; }
+  .campo-select select { min-width: 0; width: 100%; }
+  .topo-acoes { width: 100%; flex-wrap: wrap; gap: 8px; }
+  .atualizado { margin-right: auto; }
+  .alternador { flex: 1 1 100%; }
+  .alternador button { flex: 1 1 0; justify-content: center; text-align: center; }
+  .contexto { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .tabela-periodos, .tabela-periodos tbody { display: block; width: 100%; }
+  .tabela-periodos thead { display: none; }
+  .tabela-periodos tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px 10px; align-items: end; padding: 12px 0; border-bottom: 1px solid var(--linha); }
+  .tabela-periodos tbody tr:last-child { border-bottom: 0; }
+  .tabela-periodos td { display: block; padding: 0; border: 0; min-width: 0; text-align: left; }
+  .tabela-periodos td::before { display: block; margin-bottom: 3px; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); }
+  .tabela-periodos td:nth-child(1)::before { content: "Início"; }
+  .tabela-periodos td:nth-child(2)::before { content: "Fim"; }
+  .tabela-periodos td:nth-child(3)::before { content: "Meta (ha/dia)"; }
+  .tabela-periodos td:nth-child(4)::before { content: "Dias"; }
+  .tabela-periodos td:nth-child(5)::before { content: "Área (ha)"; }
+  .tabela-periodos td:nth-child(3) { grid-column: 1; }
+  .tabela-periodos td:nth-child(4) { grid-column: 2; }
+  .tabela-periodos td:nth-child(5) { grid-column: 1 / 3; grid-row: 3; display: flex; align-items: baseline; gap: 8px; }
+  .tabela-periodos td:nth-child(5)::before { margin-bottom: 0; }
+  .tabela-periodos td:nth-child(6) { grid-column: 3; grid-row: 1; align-self: center; }
+  .tabela-periodos input[type="number"] { text-align: left; }
+  .ajuda::after { width: min(300px, calc(100vw - 72px)); }
+  .linha-termino { flex-wrap: wrap; }
+}
+/* toque: campos com letra de 16px não disparam o zoom automático do iPhone ao focar */
+@media (max-width: 900px) and (pointer: coarse) {
+  .campo-select select, .campo select, .campo input, .linha-termino input, .tabela-periodos input { font-size: 16px; }
+}

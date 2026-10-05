@@ -20,6 +20,8 @@ interface Props {
 }
 
 const ZOOM_PASSO = 1.2;
+/** fator de cada toque nos botões + e − da prévia */
+const ZOOM_BOTAO = 1.4;
 const ERRO_DESENHO = 'Não foi possível desenhar a prévia do mapa. Tente reenquadrar ou recarregar a página.';
 /** a prévia não passa desta fração da altura da janela (folha em retrato na coluna inteira ficaria enorme) */
 const FRACAO_ALTURA_JANELA = 0.85;
@@ -207,6 +209,14 @@ export default function PreviaLayout({ input, extent, automatico, onExtentChange
     onExtentChange(arrastarExtent(a.base, a.dx / qc.q.k, a.dy / qc.q.k)); // px CSS → mm do desenho
   };
 
+  /** Botões + e − (toque, sem roda do mouse): aproxima ou afasta pelo centro do quadro. */
+  const zoomPeloBotao = (aproximar: boolean) => {
+    const base = aplicarZoomPendente() ?? extent;
+    if (!controles.interativa || !base) return;
+    const novo = zoomNoPonto(base, 0, 0, aproximar ? 1 / ZOOM_BOTAO : ZOOM_BOTAO);
+    if (novo) onExtentChange(novo);
+  };
+
   // Roda do mouse: listener não-passivo para poder impedir a rolagem da página (só destravada;
   // travada, a roda não é capturada e a página rola normalmente).
   useEffect(() => {
@@ -255,7 +265,7 @@ export default function PreviaLayout({ input, extent, automatico, onExtentChange
           onPointerCancel={onPointerUp}
           title={
             controles.interativa
-              ? 'Arraste o mapa para mover; use a roda do mouse para aproximar ou afastar'
+              ? 'Arraste o mapa para mover; use os botões + e − ou a roda do mouse para aproximar ou afastar'
               : panZoom
                 ? 'Mapa travado: clique no cadeado para mover e aproximar'
                 : 'Com vários quadros o enquadramento é automático'
@@ -263,7 +273,7 @@ export default function PreviaLayout({ input, extent, automatico, onExtentChange
         />
       ) : (
         <div className="previa-vazia" style={{ height: alturaCss || 300 }}>
-          Escolha a fazenda e carregue o CSV da ZEUS para ver o mapa.
+          Escolha a fazenda e carregue a chuva da ZEUS para ver o mapa.
         </div>
       )}
       {(ocupado || desenhando) && input && <div className="previa-ocupado">{ocupado ?? 'Desenhando…'}</div>}
@@ -276,7 +286,7 @@ export default function PreviaLayout({ input, extent, automatico, onExtentChange
         <div className="previa-rodape">
           <p className="suave dica-previa">{controles.dica}</p>
           {controles.botoes && (
-            <BarraPrevia travado={travado} onTravado={setTravado} podeCentralizar={controles.centralizar} onCentralizar={centralizar} />
+            <BarraPrevia travado={travado} onTravado={setTravado} podeCentralizar={controles.centralizar} onCentralizar={centralizar} onZoom={zoomPeloBotao} />
           )}
         </div>
       )}

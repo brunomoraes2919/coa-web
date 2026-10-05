@@ -124,7 +124,7 @@ export function controlesPrevia(panZoom: boolean, travado: boolean, automatico: 
   }
   const dica = travado
     ? `Mapa travado. Clique no cadeado para mover e aproximar. ${MESMO_DESENHO}`
-    : `Arraste o mapa para mover e use a roda do mouse para aproximar. ${MESMO_DESENHO}`;
+    : `Arraste o mapa para mover; para aproximar, use os botões + e − ou a roda do mouse. ${MESMO_DESENHO}`;
   return { interativa: !travado, botoes: true, centralizar: !automatico, dica };
 }
 

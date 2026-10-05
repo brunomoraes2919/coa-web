@@ -97,3 +97,9 @@
 .integracao-zeus { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .integracao-periodo { align-items: flex-end; gap: 14px; }
 .integracao-periodo .campo input { padding: 7px 9px; border: 1px solid var(--borda); border-radius: 6px; font: inherit; }
+
+/* celular: sem mapa ainda, a prévia vazia não empurra os passos 1 e 2 para fora da tela */
+@media (max-width: 700px) {
+  .previa-vazia { height: auto !important; min-height: 96px; padding: 14px; font-size: 0.92rem; }
+  .integracao-zeus .botao { flex: 1 1 auto; }
+}

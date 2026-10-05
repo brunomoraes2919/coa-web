@@ -160,7 +160,7 @@ describe('prévia: cadeado e Centralizar', () => {
     const c = controlesPrevia(true, false, false);
     expect(c.interativa).toBe(true);
     expect(c.botoes).toBe(true);
-    expect(c.dica).toBe('Arraste o mapa para mover e use a roda do mouse para aproximar. A prévia é o mesmo desenho do PNG.');
+    expect(c.dica).toBe('Arraste o mapa para mover; para aproximar, use os botões + e − ou a roda do mouse. A prévia é o mesmo desenho do PNG.');
   });
 
   it('Centralizar só com enquadramento manual (travado ou não)', () => {
