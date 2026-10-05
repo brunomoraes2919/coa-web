@@ -481,7 +481,7 @@ button, input, select { font: inherit; color: inherit; }
 /* fazenda alta: mapa em coluna à direita */
 .tv-corpo.retrato { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "kpis mapa" "grafico mapa"; }
 /* todas: indicadores numa linha, fazendas e gráfico embaixo */
-.tv-corpo.todas { grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "kpis kpis" "mapa grafico"; }
+.tv-corpo.todas { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "kpis kpis" "mapa grafico"; }
 .tv-corpo.todas .tv-kpis { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 
 .tv .kpi { padding: .7em .9em .75em; border-radius: .7em; gap: .2em; justify-content: center; min-height: 0; }
@@ -501,9 +501,6 @@ button, input, select { font: inherit; color: inherit; }
 .tv-graficos { flex: 1 1 auto; min-height: 0; display: grid; gap: .9em; }
 .tv-graficos.lado { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
 .tv-graficos.pilha { grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-/* "Todas as fazendas": um gráfico só (plantio × chuva de cada fazenda) ocupa o cartão inteiro */
-.tv-graficos.todas { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-.tv-graficos.todas .tv-sub + .tv-sub { display: none; }
 .tv-graficos.lado .tv-sub + .tv-sub { border-left: 1px solid var(--linha-suave); padding-left: .9em; }
 .tv-graficos.pilha .tv-sub + .tv-sub { border-top: 1px solid var(--linha-suave); padding-top: .6em; }
 .tv-sub { display: flex; flex-direction: column; min-height: 0; min-width: 0; }

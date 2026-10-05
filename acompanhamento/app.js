@@ -801,76 +801,33 @@
   }
 
   /**
-   * TV de "Todas as fazendas": um gráfico pequeno por fazenda, todos com os mesmos dias e as mesmas
-   * escalas, no desenho da aba Safras: colunas com os hectares do dia (valor na vertical) e a chuva do
-   * dia como mancha azul (eixo da direita). W × H = tamanho do cartão em pixels.
+   * TV de "Todas as fazendas": barras deitadas em hectares, uma por fazenda (da mais adiantada para a
+   * mais atrasada): a parte feita e o que falta. O comprimento mostra o tamanho de cada fazenda; ao
+   * lado, o % e "feito / total".
    */
-  var COR_CHUVA_TV = '#2a78d6', TXT_CHUVA_TV = '#1c5cab';
-  function opcoesPlantioChuvaFazendas(m, k, W, H) {
-    var MAX_DIAS = 60, h = hoje(), fim = m.ult > h ? m.ult : h, cats = [];
-    var de = new Date(Math.max(+m.ini - 2 * DIA, +fim - (MAX_DIAS - 1) * DIA));
-    for (var t = +de; t <= +fim + DIA / 2; t += DIA) { var d = new Date(t); cats.push(new Date(d.getFullYear(), d.getMonth(), d.getDate())); }
-    var chaves = cats.map(paraIso), hojeIso = paraIso(h);
-    var chuva = {};
-    (DADOS.chuva || []).forEach(function (c) { var f = chuva[c.u] = chuva[c.u] || {}; f[c.d] = (f[c.d] || 0) + c.a; });
-    var faz = m.unidades.map(function (u) {
-      var x = calcula([u], m.s, m.o), cu = chuva[u] || {}, ultChuva = Object.keys(cu).sort().pop() || '';
-      var ha = chaves.map(function (c) { var v = x.porDia[c]; return v >= 0.5 ? Math.round(v) : null; });
-      // sem chuva depois do último dia lido (a mancha para ali)
-      var mm = chaves.map(function (c) { return c > hojeIso || c > ultChuva ? null : cu[c] ? Math.round(cu[c] * 10) / 10 : 0; });
-      return { u: u, x: x, ha: ha, mm: mm, temChuva: !!ultChuva, totalMm: soma(mm, function (v) { return v || 0; }), diasMm: mm.filter(function (v) { return v >= 1; }).length };
-    });
-    var maxMm = Math.max.apply(null, faz.map(function (f) { return Math.max.apply(null, f.mm.map(function (v) { return v || 0; })); }).concat([0]));
-    var redondo = function (v, passos) { for (var i = 0; i < passos.length; i++) if (v <= passos[i]) return passos[i]; return Math.ceil(v / 100) * 100; };
-    var topoMm = redondo(Math.max(maxMm, 10), [10, 15, 20, 30, 40, 50, 60, 80, 100, 120, 150, 200]);
-    var temChuva = faz.some(function (f) { return f.temChuva; });
-
-    // quadros: uma coluna num cartão alto; duas num cartão largo
-    var colunas = W > H * 1.7 ? 2 : 1, linhas = Math.ceil(faz.length / colunas);
-    var vao = 30 * k, cw = (W - (colunas - 1) * vao) / colunas, ch = H / linhas;
-    // à esquerda de cada gráfico, o nome e o resumo da fazenda (sem gastar altura com título)
-    var cab = 132 * k, esq = 36 * k, dir = (temChuva ? 42 : 10) * k, hEixo = 14 * k;
-    var espaco = (cw - cab - esq - dir) / cats.length / k; // px por dia (na página base)
-    var passo = espaco >= 15 ? 1 : espaco >= 8 ? 2 : espaco >= 5.5 ? 3 : espaco >= 3.4 ? 5 : 7;
-    var fonteRot = Math.max(8.5, Math.min(10.5, espaco * 0.8)) * k;
+  var COR_A_FAZER = '#CBD5CE';
+  function opcoesAreaFazendas(m, k) {
+    // a primeira categoria fica embaixo no eixo: ordem crescente de % para a mais adiantada ficar no topo
+    var faz = m.unidades.map(function (u) { return { nome: titulo(u), x: calcula([u], m.s, m.o) }; }).sort(function (a, b) { return a.x.pct - b.x.pct; });
     var pl = m.o === 'PLANTIO';
-    // altura do gráfico de cada fazenda e a parte dela reservada ao valor escrito na vertical em cima da coluna
-    var hPlot = Math.max(20, ch - hEixo - 9 * k), folga = Math.min(0.55, (2.7 * fonteRot + 5 * k) / hPlot);
-    var o = { title: [], grid: [], xAxis: [], yAxis: [], series: [] };
-    faz.forEach(function (f, i) {
-      var x0 = Math.floor(i / linhas) * (cw + vao), y0 = (i % linhas) * ch;
-      // hectares na escala da própria fazenda (as colunas ficam legíveis nas fazendas menores; o valor está escrito);
-      // a chuva usa a mesma escala em todas
-      var topoHa = redondo(Math.max.apply(null, f.ha.map(function (v) { return v || 0; }).concat([1])), [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500, 2000, 2500, 3000, 4000, 5000]);
-      o.title.push({ left: x0, top: y0 + 4 * k, padding: 0, textStyle: { fontSize: 13 * k, fontWeight: 700, color: COR.escuro, lineHeight: 17 * k,
-        rich: { s: { fontSize: 10.5 * k, fontWeight: 500, color: COR.suave, lineHeight: 15 * k }, b: { fontSize: 12 * k, fontWeight: 700, color: COR.texto, lineHeight: 16 * k }, c: { fontSize: 10.5 * k, fontWeight: 600, color: TXT_CHUVA_TV, lineHeight: 15 * k } } },
-        text: titulo(f.u) + '\n{b|' + fmtPct(f.x.pct) + '}{s| ' + (pl ? 'plantado' : 'colhido') + '}' +
-          '\n{s|' + (f.x.media7 ? fmtN(f.x.media7) + ' ha/dia' : f.x.ini ? 'sem ritmo' : 'não iniciado') + '}' +
-          (f.temChuva ? '\n{c|chuva ' + fmtN(f.totalMm) + ' mm}' : '') });
-      o.grid.push({ left: x0 + cab + esq, top: y0 + 5 * k, width: cw - cab - esq - dir, height: hPlot });
-      o.xAxis.push(Object.assign({}, eixoX, { type: 'category', gridIndex: i, data: chaves, axisLine: { lineStyle: { color: COR.linha, width: k } },
-        axisLabel: { color: COR.suave, fontSize: 9.5 * k, margin: 3 * k, interval: 0, formatter: function (v, j) {
-          var d = cats[j]; if (d.getDate() === 1 || j === 0) return fmtData(d, true);
-          // some com o dia que encostaria no "1 out" / primeiro rótulo
-          if (j < 2 * passo && passo > 1) return (j % passo === 0 && j >= passo * 2) ? String(d.getDate()) : '';
-          return j % passo === 0 && cats[Math.min(cats.length - 1, j + passo - 1)].getMonth() === d.getMonth() ? String(d.getDate()) : '';
-        } } }));
-      o.yAxis.push(Object.assign({}, eixoY, { type: 'value', gridIndex: i, min: 0, max: topoHa / (1 - folga), interval: topoHa,
-        axisLabel: { color: COR.fraco, fontSize: 9.5 * k, margin: 5 * k, formatter: function (v) { return v > topoHa * 1.01 || (v && !f.x.ini) ? '' : fmtN(v); } },
-        splitLine: { lineStyle: { color: COR.grade, width: k } } }));
-      o.yAxis.push({ type: 'value', gridIndex: i, show: temChuva, position: 'right', min: 0, max: topoMm, interval: topoMm, splitLine: { show: false }, axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: TXT_CHUVA_TV, fontSize: 9.5 * k, margin: 5 * k, verticalAlign: 'top', formatter: function (v) { return v ? v + ' mm' : ''; } } });
-      // chuva: mancha azul translúcida por cima das colunas (eixo da direita)
-      o.series.push({ name: 'Chuva', type: 'line', xAxisIndex: i, yAxisIndex: 2 * i + 1, data: f.mm, symbol: 'none', silent: true, z: 5, smooth: 0.25,
-        lineStyle: { color: 'rgba(42,120,214,.75)', width: 1.1 * k },
-        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(42,120,214,.34)' }, { offset: 1, color: 'rgba(42,120,214,.10)' }] } } });
-      o.series.push({ name: titulo(f.u), type: 'bar', xAxisIndex: i, yAxisIndex: 2 * i, data: f.ha, barCategoryGap: '20%', barMaxWidth: 22 * k, z: 3, silent: true,
-        itemStyle: { color: COR.teal, borderRadius: [2 * k, 2 * k, 0, 0] },
-        label: { show: espaco >= 6, position: 'top', rotate: 90, align: 'left', verticalAlign: 'middle', distance: 3 * k, fontSize: fonteRot, fontWeight: 700, color: COR.texto,
-          textBorderColor: '#fff', textBorderWidth: 4 * k, formatter: function (p) { return p.value ? fmtN(p.value) : ''; } },
-        labelLayout: { hideOverlap: espaco * k < fonteRot * 1.02 } });
+    return opt({
+      grid: { left: 4 * k, right: 152 * k, top: 6 * k, bottom: 4 * k, containLabel: true },
+      tooltip: tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.05)' } }, formatter: function (ps) {
+        var x = faz[ps[0].dataIndex].x;
+        return '<b>' + esc(faz[ps[0].dataIndex].nome) + '</b> · ' + fmtPct(x.pct) + '<br>' + (pl ? 'Plantado' : 'Colhido') + ': <b>' + fmtN(x.exec) + ' ha</b><br>' +
+          (pl ? 'A plantar' : 'A colher') + ': ' + fmtN(x.restante) + ' ha<br>Total: ' + fmtN(x.areaTotal) + ' ha';
+      } }),
+      xAxis: Object.assign({}, eixoY, { type: 'value', axisLabel: { color: COR.fraco, fontSize: 11 * k, formatter: function (v) { return fmtN(v); } }, splitLine: { lineStyle: { color: COR.grade, width: k } } }),
+      yAxis: Object.assign({}, eixoX, { type: 'category', data: faz.map(function (f) { return f.nome; }),
+        axisLabel: { color: COR.texto, fontSize: 12 * k, fontWeight: 600 }, axisLine: { lineStyle: { color: COR.linha, width: k } } }),
+      series: [
+        { name: 'Feito', type: 'bar', stack: 'a', barMaxWidth: 28 * k, barCategoryGap: '32%', itemStyle: { color: COR.teal }, data: faz.map(function (f) { return Math.round(f.x.exec); }) },
+        { name: 'A fazer', type: 'bar', stack: 'a', itemStyle: { color: COR_A_FAZER, borderRadius: [0, 4 * k, 4 * k, 0] }, data: faz.map(function (f) { return Math.round(f.x.restante); }),
+          label: { show: true, position: 'right', distance: 6 * k, fontSize: 12 * k, color: COR.suave,
+            formatter: function (p) { var x = faz[p.dataIndex].x; return '{b|' + fmtPct(x.pct) + '}  ' + fmtN(x.exec) + ' / ' + fmtN(x.areaTotal); },
+            rich: { b: { fontWeight: 700, fontSize: 13.5 * k, color: COR.texto } } } }
+      ]
     });
-    return opt(o);
   }
 
   function itensLegendaAcum(m) {
@@ -1392,16 +1349,16 @@
       var caixaG = document.querySelector('.tv-graficos');
       caixaG.className = 'tv-graficos ' + (caixaG.clientWidth > caixaG.clientHeight * 1.7 ? 'lado' : 'pilha') + (u === TODAS ? ' todas' : '');
       var eg = $('tv-grafico'), ea = $('tv-acum');
-      // "Todas": o cartão inteiro compara as fazendas, com um gráfico de plantio × chuva para cada uma
-      var op = m.o === 'PLANTIO' ? 'Plantio' : 'Colheita';
-      set('tv-t-meta', u === TODAS ? op + ' × chuva por fazenda' : 'Realizado × meta por dia');
-      legenda('tv-leg-meta', u === TODAS
-        ? [{ nome: (m.o === 'PLANTIO' ? 'Plantado' : 'Colhido') + ' (ha/dia)', cor: COR.teal }, { nome: 'Chuva (mm)', cor: 'rgba(42,120,214,.45)' }]
-        : itensLegendaMeta(m));
-      legenda('tv-leg-acum', itensLegendaAcum(m));
-      if (m.serie.length && u === TODAS) {
-        descartar(ea.id);
-        chart(eg).setOption(opcoesPlantioChuvaFazendas(m, k, eg.clientWidth, eg.clientHeight), true);
+      // "Todas": em cima, a área de cada fazenda (feito + a fazer); embaixo, o realizado × meta por dia do conjunto
+      var pl = m.o === 'PLANTIO';
+      set('tv-t-meta', u === TODAS ? 'Área por fazenda (ha)' : 'Realizado × meta por dia');
+      set('tv-t-acum', u === TODAS ? 'Realizado × meta por dia' : 'Evolução acumulada');
+      legenda('tv-leg-meta', u === TODAS ? [{ nome: pl ? 'Plantado' : 'Colhido', cor: COR.teal }, { nome: pl ? 'A plantar' : 'A colher', cor: COR_A_FAZER }] : itensLegendaMeta(m));
+      legenda('tv-leg-acum', u === TODAS ? itensLegendaMeta(m) : itensLegendaAcum(m));
+      if (u === TODAS) {
+        chart(eg).setOption(opcoesAreaFazendas(m, k), true);
+        if (m.serie.length) chart(ea).setOption(opcoesMeta(m, k, 21), true);
+        else vazio(ea, 'Ainda não há apontamentos nesta safra.');
       } else if (m.serie.length) {
         chart(eg).setOption(opcoesMeta(m, k, 21), true);
         chart(ea).setOption(opcoesAcumulado(m, k), true);
