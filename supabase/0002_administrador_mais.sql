@@ -18,6 +18,25 @@
 -- ------------------------------------------------------------------------------------------------
 -- 1. Colunas
 -- ------------------------------------------------------------------------------------------------
+-- Só na PRIMEIRA vez (enquanto a coluna super ainda não existe): todo administrador começa com as
+-- cinco categorias. Até aqui o site não olhava as categorias de administrador (e apagava as linhas
+-- ao salvar um), então podia haver administrador sem nenhuma. Rodar o script de novo não devolve
+-- o que o ADMINISTRADOR+ tiver tirado depois.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'perfis' and column_name = 'super'
+  ) then
+    insert into public.usuario_categorias (usuario_id, categoria)
+    select p.id, c.categoria
+    from public.perfis p
+    cross join (values ('algodao'), ('mecanizadas'), ('mapas'), ('acompanhamento'), ('sat')) as c(categoria)
+    where p.perfil = 'admin'
+    on conflict do nothing;
+  end if;
+end $$;
+
 alter table public.perfis add column if not exists super boolean not null default false;
 alter table public.perfis add column if not exists todas_fazendas boolean not null default true;
 
