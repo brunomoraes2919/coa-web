@@ -506,35 +506,6 @@ button, input, select { font: inherit; color: inherit; }
 .tv-sub { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .tv-sub h2 { flex-wrap: wrap; row-gap: .2em; }
 .tv-g .vazio { font-size: .8em; }
-/* "Todas as fazendas": tabela comparativa (o que couber) em cima do gráfico diário por fazenda */
-.tv-graficos.todas.pilha { grid-template-rows: auto minmax(0, 1fr); }
-.tv-graficos.todas.lado { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
-.tv-graficos.todas.pilha .tv-sub:first-child .tv-g { flex: none; }
-.tv-cartao .legenda i.marca { width: .22em; height: 1em; border-radius: .1em; }
-.tv-comp { display: grid; grid-template-columns: max-content minmax(0, 1.25fr) minmax(0, 1fr) max-content; column-gap: 1em; align-items: stretch; font-variant-numeric: tabular-nums; height: 100%; align-content: space-evenly; }
-.tvc-l { display: contents; }
-.tvc-l > * { padding: .34em 0; border-bottom: 1px solid var(--linha-suave); min-width: 0; display: flex; align-items: center; }
-.tvc-l.cab > * { font-size: .62em; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: var(--texto-suave); padding: 0 0 .45em; line-height: 1.2; }
-.tvc-l.geral > * { border-bottom: 0; font-weight: 700; background: #F3F6F4; margin: .2em -.5em 0; padding-left: .5em; padding-right: .5em; }
-.tvc-l.geral > :first-child { border-radius: .4em 0 0 .4em; }
-.tvc-l.geral > :last-child { border-radius: 0 .4em .4em 0; }
-.tvc-nome { gap: .45em; font-size: .86em; font-weight: 650; color: var(--verde-escuro); white-space: nowrap; }
-.tvc-nome i { width: .62em; height: .62em; border-radius: .16em; flex: none; }
-.tvc-barra { gap: .5em; }
-.tvc-barra b { font-size: .92em; min-width: 2.4em; text-align: right; }
-.tvc-barra small { font-size: .64em; color: var(--texto-suave); white-space: nowrap; min-width: 4.6em; }
-.tvc-barra.tvc-so-texto { justify-content: flex-end; }
-.tvc-barra small.bom { color: var(--bom); font-weight: 650; }
-.tvc-barra small.atencao { color: var(--atencao); font-weight: 650; }
-.tvc-barra small.ruim { color: var(--ruim); font-weight: 650; }
-.tvc-trilho { position: relative; flex: 1 1 auto; height: .62em; border-radius: .2em; background: var(--linha-suave); min-width: 2em; }
-.tvc-trilho span { position: absolute; left: 0; top: 0; bottom: 0; border-radius: .2em; background: #0C5A50; min-width: 2px; }
-.tvc-trilho.ritmo span { background: #2F7D6B; }
-.tvc-trilho i { position: absolute; top: -.28em; bottom: -.28em; width: .2em; margin-left: -.1em; border-radius: .1em; background: #DB8A08; box-shadow: 0 0 0 1.5px #fff; }
-.tvc-prev { gap: .45em; justify-content: flex-end; white-space: nowrap; }
-.tvc-prev b { font-size: .86em; }
-.tvc-prev small { font-size: .7em; color: var(--texto-suave); }
-.tvc-prev .chip { font-size: .68em; }
 
 .tv-fazendas { height: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5em, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: .6em; }
 .tv-fazenda { border: 1px solid var(--linha); border-radius: .6em; padding: .5em .6em; background: #FBFCFB; display: flex; flex-direction: column; gap: .3em; min-height: 0; }

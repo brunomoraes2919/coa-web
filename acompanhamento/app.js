@@ -889,85 +889,22 @@
     set('talhao-sub', 'hectares por dia, empilhados por fazenda');
     legenda('leg-talhao', m.unidades.map(function (u) { return { nome: titulo(u), cor: COR_FAZENDA[u] || COR.fraco }; }));
     if (!m.serie.length) return vazio(el, 'Ainda não há apontamentos nesta safra.');
-    chart(el).setOption(opcoesPorFazendaDia(m, 1), true);
-  }
-
-  /**
-   * Hectares por dia empilhados por fazenda (painel e TV de "Todas"). Na TV (ultimosDias) entram também
-   * o total em cima de cada coluna e a meta diária somada das fazendas.
-   */
-  function opcoesPorFazendaDia(m, k, ultimosDias) {
-    var serie = ultimosDias ? m.serie.slice(-ultimosDias) : m.serie, tv = !!ultimosDias;
     var por = {};
     m.ops.forEach(function (a) { var f = por[a.u] = por[a.u] || {}; f[a.d] = (f[a.d] || 0) + a.a; });
-    var us = m.unidades.filter(function (u) { return por[u]; });
-    var series = us.map(function (u) {
-      return { name: titulo(u), type: 'bar', stack: 'd', barMaxWidth: 28 * k, barCategoryGap: '26%', itemStyle: { color: COR_FAZENDA[u] || COR.fraco, borderColor: '#fff', borderWidth: k },
-        data: serie.map(function (x) { return Math.round((por[u] || {})[paraIso(x.d)] || 0); }) };
-    });
-    if (tv) {
-      // total do dia em cima da coluna (série invisível no topo da pilha)
-      series.push({ name: 'Total', type: 'bar', stack: 'd', silent: true, data: serie.map(function () { return 0; }), itemStyle: { color: 'transparent' },
-        label: { show: true, position: 'top', fontSize: 10.5 * k, color: COR.suave, textBorderColor: '#FFFFFF', textBorderWidth: 4.5 * k, formatter: function (p) { var a = serie[p.dataIndex].a; return a >= 1 ? fmtN(a) : ''; } },
-        labelLayout: { hideOverlap: true } });
-      if (serie.some(function (x) { return x.meta !== null; })) series.push({ name: 'Meta', type: 'line', step: 'middle', silent: true, data: serie.map(function (x) { return x.meta; }), symbol: 'none', lineStyle: { color: COR.dourado, width: 2 * k, type: [6 * k, 4 * k] }, z: 5 });
-    }
-    return opt({
-      grid: { left: 4 * k, right: 8 * k, top: (tv ? 20 : 16) * k, bottom: 4 * k, containLabel: true },
+    chart(el).setOption(opt({
+      grid: { left: 4, right: 8, top: 16, bottom: 4, containLabel: true },
       tooltip: tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.05)' } }, formatter: function (ps) {
-        var x = serie[ps[0].dataIndex], s = '<b>' + x.d.toLocaleDateString('pt-BR') + '</b>', tot = 0;
-        ps.slice().reverse().forEach(function (p) { if (p.value && p.seriesType === 'bar') { tot += p.value; s += '<br>' + p.marker + p.seriesName + ': ' + fmtN(p.value) + ' ha'; } });
-        return s + '<br><b>Total: ' + fmtN(tot) + ' ha</b>' + (tv && x.meta !== null ? '<br>Meta: ' + fmtN(x.meta) + ' ha' : '');
+        var s = '<b>' + m.serie[ps[0].dataIndex].d.toLocaleDateString('pt-BR') + '</b>', tot = 0;
+        ps.slice().reverse().forEach(function (p) { if (p.value) { tot += p.value; s += '<br>' + p.marker + p.seriesName + ': ' + fmtN(p.value) + ' ha'; } });
+        return s + '<br><b>Total: ' + fmtN(tot) + ' ha</b>';
       } }),
-      xAxis: Object.assign({}, eixoX, { type: 'category',
-        data: serie.map(function (x) { return tv ? (x.d.getDate() === 1 || x === serie[0] ? fmtData(x.d, true) : String(x.d.getDate())) : fmtData(x.d, true); }),
-        axisLabel: { color: COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: COR.linha, width: k } } }),
-      yAxis: Object.assign({}, eixoY, { type: 'value', axisLabel: { color: COR.fraco, fontSize: 11 * k, formatter: function (v) { return fmtN(v); } }, splitLine: { lineStyle: { color: COR.grade, width: k } } }),
-      series: series
-    });
-  }
-
-  /** Hectares que as metas previam até o dia d (soma das metas diárias desde o início do 1º período); null sem metas. */
-  function planejadoAte(x, d) {
-    if (!x.planos.length) return null;
-    var ini = null;
-    x.planos.forEach(function (p) { p.periodos.forEach(function (q) { if (q.inicio && (!ini || q.inicio < ini)) ini = q.inicio; }); });
-    if (!ini) return null;
-    var tot = 0;
-    for (var t = +iso(ini); t <= +d; t += DIA) { var dd = new Date(t); tot += x.metaDia(new Date(dd.getFullYear(), dd.getMonth(), dd.getDate())) || 0; }
-    return Math.min(tot, x.areaTotal);
-  }
-
-  /**
-   * TV de "Todas as fazendas": uma linha por fazenda, da mais adiantada para a mais atrasada, com
-   * avanço × planejado até hoje, ritmo dos últimos 7 dias × necessário e a previsão de término.
-   */
-  function htmlComparativoFazendas(m) {
-    var h = hoje();
-    var linhas = m.unidades.map(function (u) { return { u: u, nome: titulo(u), x: calcula([u], m.s, m.o) }; })
-      .sort(function (a, b) { return b.x.pct - a.x.pct; });
-    var maxRitmo = Math.max.apply(null, linhas.map(function (l) { return Math.max(l.x.media7 || 0, l.x.necessario || 0); }).concat([1]));
-    var pc = function (v) { return Math.max(0, Math.min(100, v * 100)).toFixed(1) + '%'; };
-    var linha = function (l, geral) {
-      var x = l.x, plan = planejadoAte(x, h), pPlan = plan !== null && x.areaTotal ? plan / x.areaTotal : null;
-      var desvio = pPlan !== null ? Math.round((x.pct - pPlan) * 100) : null;
-      var avanco = '<div class="tvc-barra"><div class="tvc-trilho"><span style="width:' + pc(x.pct) + '"></span>' + (pPlan !== null ? '<i style="left:' + pc(pPlan) + '"></i>' : '') + '</div>' +
-        '<b>' + fmtPct(x.pct) + '</b><small class="' + (desvio === null ? '' : desvio >= 0 ? 'bom' : desvio > -5 ? 'atencao' : 'ruim') + '">' + (desvio !== null ? (desvio >= 0 ? '+' : '\u2212') + Math.abs(desvio) + ' p.p.' : '') + '</small></div>';
-      var txtRitmo = '<b>' + (x.media7 ? fmtN(x.media7) : '\u2014') + '</b><small class="' + (x.necessario && x.media7 ? (x.necessario <= x.media7 ? 'bom' : x.necessario <= x.media7 * 1.1 ? 'atencao' : 'ruim') : '') + '">' + (x.necessario ? 'nec. ' + fmtN(x.necessario) : '') + '</small>';
-      var ritmo = geral ? '<div class="tvc-barra tvc-so-texto">' + txtRitmo + '</div>'
-        : '<div class="tvc-barra"><div class="tvc-trilho ritmo"><span style="width:' + pc((x.media7 || 0) / maxRitmo) + '"></span>' + (x.necessario ? '<i style="left:' + pc(x.necessario / maxRitmo) + '"></i>' : '') + '</div>' + txtRitmo + '</div>';
-      var prev;
-      if (x.restante === 0 && x.ult) prev = '<b>concluído</b>';
-      else if (!x.previsao) prev = '<small>' + (x.ini ? 'sem ritmo' : 'não iniciado') + '</small>';
-      else {
-        var d = x.termino ? dif(x.termino, x.previsao) : null;
-        prev = '<b>' + fmtData(x.previsao, true) + '</b>' + (d === null ? '' : d <= 0 ? chip('bom', d === 0 ? 'no prazo' : '\u2212' + Math.abs(d) + ' d') : chip(d <= 3 ? 'atencao' : 'ruim', '+' + d + ' d'));
-      }
-      return '<div class="tvc-l' + (geral ? ' geral' : '') + '"><span class="tvc-nome">' + (geral ? '' : '<i style="background:' + (COR_FAZENDA[l.u] || COR.fraco) + '"></i>') + esc(l.nome) + '</span>' + avanco + ritmo + '<span class="tvc-prev">' + prev + '</span></div>';
-    };
-    var pl = m.o === 'PLANTIO';
-    return '<div class="tv-comp"><div class="tvc-l cab"><span>Fazenda</span><span>' + (pl ? 'Plantado' : 'Colhido') + ' × planejado até hoje</span><span>Ritmo 7 dias × necessário (ha/dia)</span><span>Previsão × prazo</span></div>' +
-      linhas.map(function (l) { return linha(l, false); }).join('') + linha({ u: TODAS, nome: 'Geral', x: m }, true) + '</div>';
+      xAxis: Object.assign({}, eixoX, { type: 'category', data: m.serie.map(function (x) { return fmtData(x.d, true); }), axisLabel: { color: COR.suave, fontSize: 11, hideOverlap: true } }),
+      yAxis: Object.assign({}, eixoY, { type: 'value' }),
+      series: m.unidades.filter(function (u) { return por[u]; }).map(function (u) {
+        return { name: titulo(u), type: 'bar', stack: 'd', barMaxWidth: 28, itemStyle: { color: COR_FAZENDA[u] || COR.fraco, borderColor: '#fff', borderWidth: 1 },
+          data: m.serie.map(function (x) { return Math.round((por[u] || {})[paraIso(x.d)] || 0); }) };
+      })
+    }), true);
   }
 
   // ---- mapa: fazenda (adaptativo) ou quadro de fazendas (Todas) ----
@@ -1378,26 +1315,12 @@
       if (u === TODAS) tvFazendas(m);
       else if (comp) desenharMapaFazenda(elMapa, u, m, comp, { semZoom: true, rotulos: true, fonte: 8.5 * k, fonteTitulo: 11 * k });
       else vazio(elMapa, MAPAS ? 'Sem limites de talhões para esta fazenda.' : 'Carregando os limites dos talhões…');
-      // os dois gráficos lado a lado num cartão largo; um sobre o outro num cartão alto
-      var caixaG = document.querySelector('.tv-graficos');
-      caixaG.className = 'tv-graficos ' + (caixaG.clientWidth > caixaG.clientHeight * 1.7 ? 'lado' : 'pilha') + (u === TODAS ? ' todas' : '');
-      var eg = $('tv-grafico'), ea = $('tv-acum');
-      eg.innerHTML = '';
-      if (u === TODAS) {
-        // "Todas": o cartão compara as fazendas entre si (tabela) e mostra quem operou em cada dia
-        set('tv-t-meta', 'Comparativo entre fazendas');
-        set('tv-t-acum', 'Área por dia e fazenda');
-        legenda('tv-leg-meta', [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Planejado / necessário', cor: COR.dourado, tipo: 'marca' }]);
-        legenda('tv-leg-acum', m.serie.some(function (x) { return x.meta !== null; }) ? [{ nome: 'Meta diária (soma)', cor: COR.dourado, tipo: 'tracejada' }] : []);
-        eg.innerHTML = htmlComparativoFazendas(m);
-        if (m.serie.length) chart(ea).setOption(opcoesPorFazendaDia(m, k, 21), true);
-        else vazio(ea, 'Ainda não há apontamentos nesta safra.');
-        return;
-      }
-      set('tv-t-meta', 'Realizado × meta por dia');
-      set('tv-t-acum', 'Evolução acumulada');
       legenda('tv-leg-meta', itensLegendaMeta(m));
       legenda('tv-leg-acum', itensLegendaAcum(m));
+      // os dois gráficos lado a lado num cartão largo; um sobre o outro num cartão alto
+      var caixaG = document.querySelector('.tv-graficos');
+      caixaG.className = 'tv-graficos ' + (caixaG.clientWidth > caixaG.clientHeight * 1.7 ? 'lado' : 'pilha');
+      var eg = $('tv-grafico'), ea = $('tv-acum');
       if (m.serie.length) {
         chart(eg).setOption(opcoesMeta(m, k, 21), true);
         chart(ea).setOption(opcoesAcumulado(m, k), true);
