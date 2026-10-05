@@ -6,6 +6,7 @@
 import { hexToRgb } from '../lib/palettes';
 import { lonLatToMerc, mercToLonLat, projetorUtm, type Projetor } from '../lib/projection';
 import type { Grid, GridSpec, Palette } from '../lib/types';
+import { modoRasterDoNavegador, type ModoRaster } from '../lib/aparelho';
 import type { Vista } from './types';
 
 const PASSO = 8;
@@ -73,13 +74,17 @@ function tabelaCores(p: Palette): Uint8ClampedArray {
   return lut;
 }
 
-/** Desenha o raster classificado (`classes` = buildClassIndex do grid) dentro do quadro. */
+/**
+ * Desenha o raster classificado (`classes` = buildClassIndex do grid) dentro do quadro. `modo`: 'imagem'
+ * (padrão: pixels escritos numa imagem, faixa a faixa) ou 'retangulos' (Safari; ver o comentário no código).
+ */
 export function desenharRaster(
   ctx: CanvasRenderingContext2D,
   v: Vista,
   grid: Grid,
   classes: Uint8Array,
   palette: Palette,
+  modo: ModoRaster = modoRasterDoNavegador(),
 ): void {
   if (grid.cols <= 0 || grid.rows <= 0 || classes.length !== grid.cols * grid.rows) return;
   const proj = projetorUtm(grid.epsg);
@@ -104,51 +109,95 @@ export function desenharRaster(
     return [xs, ys];
   };
 
-  const tmp = document.createElement('canvas');
-  tmp.width = W;
-  tmp.height = Math.min(FAIXA, H);
-  const tctx = tmp.getContext('2d');
-  if (!tctx) return;
-
   const linhaX = new Float64Array(nx);
   const linhaY = new Float64Array(nx);
   let jAtual = 0;
   let A = linhaMalha(0);
   let B = linhaMalha(1);
 
-  // um único ImageData (W × FAIXA) reaproveitado em todas as faixas
-  const img = tctx.createImageData(W, tmp.height);
-  const d = img.data;
+  /** Classe de cada pixel da linha yy da região (255 = sem dado). As linhas são pedidas em ordem crescente. */
+  const classificarLinha = (yy: number, ks: Uint8Array): void => {
+    const j = Math.floor(yy / PASSO);
+    if (j !== jAtual) {
+      A = j === jAtual + 1 ? B : linhaMalha(j);
+      B = linhaMalha(j + 1);
+      jAtual = j;
+    }
+    const t = (yy - j * PASSO) / PASSO;
+    const [ax, ay] = A;
+    const [bx, by] = B;
+    for (let i = 0; i < nx; i++) {
+      linhaX[i] = ax[i] + (bx[i] - ax[i]) * t;
+      linhaY[i] = ay[i] + (by[i] - ay[i]) * t;
+    }
+    for (let xx = 0; xx < W; xx++) {
+      const i = (xx / PASSO) | 0;
+      const u = (xx - i * PASSO) / PASSO;
+      const ux = linhaX[i] + (linhaX[i + 1] - linhaX[i]) * u;
+      const uy = linhaY[i] + (linhaY[i + 1] - linhaY[i]) * u;
+      const celula = celulaDoPonto(grid, ux, uy);
+      ks[xx] = celula < 0 ? 255 : classes[celula];
+    }
+  };
+  const ks = new Uint8Array(W);
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
+  if (modo === 'retangulos') {
+    // Safari (iPhone, iPad e Mac): desenhar o raster por imagem (putImageData num canvas auxiliar +
+    // drawImage, faixa a faixa) sai com faixas trocadas e vermelho/azul invertidos. Aqui cada trecho de
+    // pixels da mesma classe vira um retângulo de 1 px de altura, preenchido com a cor da classe: o
+    // resultado é o mesmo, pixel a pixel, só com operações básicas de desenho.
+    const cores = palette.classes.map((c) => c.color);
+    let caminhos = new Map<number, Path2D>();
+    const descarregar = () => {
+      for (const [k, caminho] of caminhos) {
+        ctx.fillStyle = cores[k];
+        ctx.fill(caminho);
+      }
+      caminhos = new Map();
+    };
+    for (let yy = 0; yy < H; yy++) {
+      classificarLinha(yy, ks);
+      let ini = 0;
+      let atual = ks[0];
+      for (let xx = 1; xx <= W; xx++) {
+        const k = xx < W ? ks[xx] : 256; // 256 fecha o último trecho da linha
+        if (k === atual) continue;
+        if (atual !== 255 && atual < cores.length) {
+          let caminho = caminhos.get(atual);
+          if (!caminho) caminhos.set(atual, (caminho = new Path2D()));
+          caminho.rect(x0 + ini, y0 + yy, xx - ini, 1);
+        }
+        ini = xx;
+        atual = k;
+      }
+      if ((yy + 1) % FAIXA === 0) descarregar();
+    }
+    descarregar();
+    ctx.restore();
+    return;
+  }
+
+  const tmp = document.createElement('canvas');
+  tmp.width = W;
+  tmp.height = Math.min(FAIXA, H);
+  const tctx = tmp.getContext('2d');
+  if (!tctx) {
+    ctx.restore();
+    return;
+  }
+  // um único ImageData (W × FAIXA) reaproveitado em todas as faixas
+  const img = tctx.createImageData(W, tmp.height);
+  const d = img.data;
   for (let f0 = 0; f0 < H; f0 += FAIXA) {
     const fh = Math.min(FAIXA, H - f0);
     d.fill(0, 0, fh * W * 4); // transparente = sem dado
     for (let r = 0; r < fh; r++) {
-      const yy = f0 + r;
-      const j = Math.floor(yy / PASSO);
-      if (j !== jAtual) {
-        A = j === jAtual + 1 ? B : linhaMalha(j);
-        B = linhaMalha(j + 1);
-        jAtual = j;
-      }
-      const t = (yy - j * PASSO) / PASSO;
-      const [ax, ay] = A;
-      const [bx, by] = B;
-      for (let i = 0; i < nx; i++) {
-        linhaX[i] = ax[i] + (bx[i] - ax[i]) * t;
-        linhaY[i] = ay[i] + (by[i] - ay[i]) * t;
-      }
+      classificarLinha(f0 + r, ks);
       let o = r * W * 4;
       for (let xx = 0; xx < W; xx++, o += 4) {
-        const i = (xx / PASSO) | 0;
-        const u = (xx - i * PASSO) / PASSO;
-        const ux = linhaX[i] + (linhaX[i + 1] - linhaX[i]) * u;
-        const uy = linhaY[i] + (linhaY[i + 1] - linhaY[i]) * u;
-        const celula = celulaDoPonto(grid, ux, uy);
-        if (celula < 0) continue;
-        const k = classes[celula];
+        const k = ks[xx];
         if (k === 255) continue;
         const q = k * 4;
         d[o] = lut[q];

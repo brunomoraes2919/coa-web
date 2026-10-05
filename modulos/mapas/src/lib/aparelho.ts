@@ -57,3 +57,22 @@ export function pixelParaCaber(pixel: number, celulas: number, maxCelulas: numbe
   if (!(celulas > maxCelulas)) return pixel;
   return Math.ceil(pixel * Math.sqrt(celulas / maxCelulas));
 }
+
+/** Como o raster da chuva é desenhado no canvas (src/render/raster.ts). */
+export type ModoRaster = 'imagem' | 'retangulos';
+
+/**
+ * Navegador com o motor do Safari (WebKit): todos os do iPhone/iPad e o Safari do Mac. Neles o desenho
+ * do raster por imagem sai corrompido (faixas fora do lugar e cores trocadas), então o raster é
+ * desenhado por retângulos.
+ */
+export function ehWebKit(nav: NavegadorLike | undefined = typeof navigator === 'undefined' ? undefined : navigator): boolean {
+  if (!nav) return false;
+  if (tipoDeAparelho(nav) === 'ios') return true;
+  const ua = nav.userAgent ?? '';
+  return /Safari\//.test(ua) && !/Chrom(e|ium)|Edg|OPR|Android/.test(ua);
+}
+
+export function modoRasterDoNavegador(nav?: NavegadorLike): ModoRaster {
+  return ehWebKit(nav ?? (typeof navigator === 'undefined' ? undefined : navigator)) ? 'retangulos' : 'imagem';
+}

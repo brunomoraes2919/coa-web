@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dpiPermitido, limitesDoAparelho, pixelParaCaber, tipoDeAparelho } from '../src/lib/aparelho';
+import { dpiPermitido, ehWebKit, limitesDoAparelho, modoRasterDoNavegador, pixelParaCaber, tipoDeAparelho } from '../src/lib/aparelho';
 import { runPipeline, type PipelineInput } from '../src/lib/pipeline';
 import { IDW_PADRAO } from '../src/lib/types';
 
@@ -42,6 +42,22 @@ describe('limites do aparelho (gerar o mapa no celular)', () => {
     expect(pixelParaCaber(5, 6_000_000, 8_000_000)).toBe(5);
     expect(pixelParaCaber(5, 46_000_000, 8_000_000)).toBe(12);
     expect(46_000_000 * (5 / 12) ** 2).toBeLessThanOrEqual(8_000_000);
+  });
+});
+
+describe('desenho do raster no Safari (WebKit)', () => {
+  const iphone = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1' };
+  const chromeNoIphone = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/126.0 Mobile/15E148 Safari/604.1' };
+  const safariMac = { userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15', platform: 'MacIntel', maxTouchPoints: 0 };
+  const chromeWindows = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36' };
+  const edge = { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36 Edg/126.0' };
+  const chromeAndroid = { userAgent: 'Mozilla/5.0 (Linux; Android 14; SM-S911B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36' };
+
+  it('iPhone (qualquer navegador) e Safari do Mac desenham por retângulos; Chrome, Edge e Android por imagem', () => {
+    expect([iphone, chromeNoIphone, safariMac].map((n) => ehWebKit(n))).toEqual([true, true, true]);
+    expect([chromeWindows, edge, chromeAndroid].map((n) => ehWebKit(n))).toEqual([false, false, false]);
+    expect(modoRasterDoNavegador(iphone)).toBe('retangulos');
+    expect(modoRasterDoNavegador(chromeWindows)).toBe('imagem');
   });
 });
 
