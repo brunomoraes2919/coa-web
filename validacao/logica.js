@@ -33,6 +33,20 @@
     return (mes >= 8 ? ano : ano - 1) + '-08-01';
   }
 
+  /** Primeiro dia do mês de `hoje` ('YYYY-MM-01'): o começo do período que a tela abre por padrão. */
+  function inicioDoMes(hoje) {
+    return String(hoje).slice(0, 8) + '01';
+  }
+  /**
+   * O dia cai no período do filtro? `f.de` e `f.ate` são 'YYYY-MM-DD' (os dois inclusive); vazio = sem
+   * limite daquele lado. Sem dia, só entra quando não há data inicial.
+   */
+  function noPeriodo(dia, f) {
+    if (f.de && (!dia || dia < f.de)) return false;
+    if (f.ate && dia && dia > f.ate) return false;
+    return true;
+  }
+
   /** Dias corridos desde a abertura (0 = aberta hoje); sem data de abertura → null. */
   function diasEmAberto(abertura, hoje) {
     const a = numeroDoDia(abertura), h = numeroDoDia(hoje);
@@ -62,7 +76,6 @@
       pl: pl, ex: ex, ev: o.ev || [], semArea: semArea,
       dias: dias, falta: dias === null ? null : PRAZO_DIAS - dias, prazo: classificarPrazo(dias),
       aRealizar: aRealizar, excedeu: !semArea && ex > pl + FOLGA_HA, pct: pl > 0 ? ex / pl : (ex > 0 ? 1 : 0),
-      antiga: !o.ab || o.ab < inicioSafra(hoje),
     };
   }
 
@@ -92,19 +105,24 @@
   /**
    * Ordens abertas agrupadas por coordenador (unidade + equipe), com os totais de cada um. Ordem: quem
    * tem mais ordens atrasadas primeiro; dentro do coordenador, da mais antiga para a mais nova.
-   * `filtro`: { unidade, equipe, antigas } — unidade/equipe vazias = todas; antigas = incluir as abertas
-   * antes da safra atual.
+   * `filtro`: { unidade, equipe, de, ate } — unidade/equipe vazias = todas; de/ate = período da data de
+   * ABERTURA. Devolve também quantas ordens abertas ficaram fora do período (`escondidas`) e a abertura
+   * mais antiga entre elas (`maisAntiga`).
    */
   function abertasPorCoordenador(linhas, hoje, filtro) {
     const f = filtro || {};
     const grupos = new Map();
-    let escondidas = 0;
+    let escondidas = 0, maisAntiga = null;
     todasAsOrdens(linhas).forEach(function (bruta) {
       if (bruta.s !== 'A') return;
       if (f.unidade && bruta.unidade !== f.unidade) return;
       if (f.equipe && bruta.eq !== f.equipe) return;
+      if (!noPeriodo(bruta.ab, f)) {
+        escondidas += 1;
+        if (bruta.ab && (!maisAntiga || bruta.ab < maisAntiga)) maisAntiga = bruta.ab;
+        return;
+      }
       const o = ordemAberta(bruta, hoje);
-      if (o.antiga && !f.antigas) { escondidas += 1; return; }
       const chave = o.unidade + '|' + o.eq;
       if (!grupos.has(chave)) grupos.set(chave, { unidade: o.unidade, eq: o.eq, ordens: [], ok: 0, atencao: 0, atraso: 0, excedidas: 0, pl: 0, ex: 0 });
       const g = grupos.get(chave);
@@ -121,7 +139,7 @@
       return b.atraso - a.atraso || b.excedidas - a.excedidas || b.atencao - a.atencao || b.ordens.length - a.ordens.length ||
         (a.unidade < b.unidade ? -1 : a.unidade > b.unidade ? 1 : 0) || (a.eq < b.eq ? -1 : a.eq > b.eq ? 1 : 0);
     });
-    return { grupos: lista, escondidas: escondidas };
+    return { grupos: lista, escondidas: escondidas, maisAntiga: maisAntiga };
   }
 
   /** Totais do painel a partir dos grupos de abertasPorCoordenador. */
@@ -137,6 +155,7 @@
    * Ordens FECHADAS com diferença de área (o servidor já manda só as que passam de 1 ha):
    * faltando = fechou sem apontar toda a área planejada; sobrando = apontou mais do que o planejado.
    * Cada uma com `dif` = apontado − planejado. Da maior diferença para a menor.
+   * `filtro.de` / `filtro.ate` = período da data de ENCERRAMENTO.
    */
   function fechadasComDiferenca(linhas, filtro) {
     const f = filtro || {};
@@ -145,6 +164,7 @@
       if (o.s !== 'F' || o.sa === 1) return;
       if (f.unidade && o.unidade !== f.unidade) return;
       if (f.equipe && o.eq !== f.equipe) return;
+      if (!noPeriodo(o.enc, f)) return;
       const pl = Number(o.pl) || 0, ex = Number(o.ex) || 0;
       const dif = Math.round((ex - pl) * 100) / 100;
       if (dif === 0) return;
@@ -222,7 +242,7 @@
 
   return {
     PRAZO_DIAS: PRAZO_DIAS, ATENCAO_DIAS: ATENCAO_DIAS,
-    hojeIso: hojeIso, inicioSafra: inicioSafra, diasEmAberto: diasEmAberto, classificarPrazo: classificarPrazo, ordemAberta: ordemAberta,
+    hojeIso: hojeIso, inicioSafra: inicioSafra, inicioDoMes: inicioDoMes, noPeriodo: noPeriodo, diasEmAberto: diasEmAberto, classificarPrazo: classificarPrazo, ordemAberta: ordemAberta,
     textoFalta: textoFalta, textoDias: textoDias, abertasPorCoordenador: abertasPorCoordenador, resumoAbertas: resumoAbertas,
     fechadasComDiferenca: fechadasComDiferenca, coordenadoresComVinculo: coordenadoresComVinculo, saldoDoCoordenador: saldoDoCoordenador,
     unidadeDaFazenda: unidadeDaFazenda, titulo: titulo,

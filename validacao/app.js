@@ -30,7 +30,8 @@
   const fmtDataCurta = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—');
 
   const vistaDoEndereco = () => { const v = location.hash.replace(/^#/, ''); return VISTAS.indexOf(v) >= 0 ? v : 'abertas'; };
-  const estado = { vista: vistaDoEndereco(), unidade: TODAS, equipe: TODAS, antigas: false };
+  // período: por padrão, do primeiro dia do mês até hoje (abertura das ordens abertas; encerramento das fechadas)
+  const estado = { vista: vistaDoEndereco(), unidade: TODAS, equipe: TODAS, de: L.inicioDoMes(L.hojeIso()), ate: L.hojeIso() };
   let linhas = [];        // valid_pims: uma linha por unidade do PIMS
   let vinculos = [];      // valid_vinculos
   let fazendasCoa = [];   // [{ unidade, coaId }] — de que fazenda do COA WEB é cada unidade
@@ -106,7 +107,11 @@
   const unidades = () => linhas.map((l) => l.unidade);
   const linhaDa = (unidade) => linhas.find((l) => l.unidade === unidade) || null;
   const vinculoDe = (unidade, eq) => vinculos.find((v) => v.unidade === unidade && v.equipe === eq) || null;
-  const filtro = () => ({ unidade: estado.unidade, equipe: estado.equipe, antigas: estado.antigas });
+  const filtro = () => ({ unidade: estado.unidade, equipe: estado.equipe, de: estado.de, ate: estado.ate });
+  const ehData = (t) => /^\d{4}-\d{2}-\d{2}$/.test(String(t || ''));
+  /** "de 01/10/2026 a 06/10/2026" / "desde …" / "até …" / "" (sem período). */
+  const textoPeriodo = () => (estado.de && estado.ate ? 'de ' + fmtData(estado.de) + ' a ' + fmtData(estado.ate)
+    : estado.de ? 'desde ' + fmtData(estado.de) : estado.ate ? 'até ' + fmtData(estado.ate) : '');
 
   function preencherUnidades() {
     const sel = $('sel-unidade');
@@ -212,15 +217,15 @@
       cartaoResumo('Atenção', t.atencao, 'atencao', 'de 3 a 5 dias em aberto') +
       cartaoResumo('Em alerta', t.atraso, 'atraso', 'mais de 5 dias em aberto') +
       cartaoResumo('Área excedida', t.excedidas, t.excedidas ? 'alerta' : '', 'apontado maior que o planejado');
-    // as ordens abertas antes da safra atual ficam fora até o usuário pedir
-    const semFiltroAntigas = L.abertasPorCoordenador(linhas, hoje, Object.assign({}, filtro(), { antigas: false }));
-    const antigas = semFiltroAntigas.escondidas;
-    $('chave-antigas').hidden = !antigas;
-    $('txt-antigas').textContent = 'Mostrar também as ' + antigas + ' abertas antes de ' + fmtData(L.inicioSafra(hoje));
-    $('chk-antigas').checked = estado.antigas;
+    // quem abriu a ordem fora do período escolhido não some sem aviso: a linha diz quantas ficaram de fora
+    $('fora-periodo').hidden = !r.escondidas;
+    $('fora-periodo').innerHTML = r.escondidas
+      ? 'Fora do período: <b>' + r.escondidas + '</b> ' + (r.escondidas === 1 ? 'ordem aberta' : 'ordens abertas') +
+        (r.maisAntiga ? ' (a mais antiga é de ' + fmtData(r.maisAntiga) + ')' : '') + '. <button type="button" class="link" data-periodo="tudo">Mostrar todas</button>'
+      : '';
     $('coordenadores').innerHTML = r.grupos.length
       ? r.grupos.map((g) => cartaoCoordenador(g, hoje)).join('')
-      : '<p class="vazio">Nenhuma ordem aberta' + (estado.unidade || estado.equipe ? ' com este filtro' : '') + (antigas && !estado.antigas ? ' nesta safra' : '') + '.</p>';
+      : '<p class="vazio">Nenhuma ordem aberta' + (textoPeriodo() ? ' com abertura ' + textoPeriodo() : '') + (estado.equipe ? ' para este coordenador' : '') + '.</p>';
   }
 
   /* ------------------------------ fechadas com diferença ------------------------------ */
@@ -234,6 +239,9 @@
   }
   function desenharFechadas() {
     const r = L.fechadasComDiferenca(linhas, filtro());
+    const safra = L.inicioSafra(L.hojeIso());
+    $('explica-fechadas').innerHTML = 'Ordens <b>fechadas</b> ' + (textoPeriodo() || 'nesta safra') + ' em que a área apontada difere da planejada em mais de 1 ha.' +
+      (!estado.de || estado.de < safra ? ' O painel guarda as fechadas desde ' + fmtData(safra) + '.' : '');
     $('n-faltando').textContent = r.faltando.length === 1 ? '1 ordem' : r.faltando.length + ' ordens';
     $('n-sobrando').textContent = r.sobrando.length === 1 ? '1 ordem' : r.sobrando.length + ' ordens';
     $('tab-faltando').innerHTML = tabelaFechadas(r.faltando, 'Nenhuma ordem fechada faltando área.');
@@ -393,7 +401,23 @@
   });
   $('sel-unidade').addEventListener('change', (e) => { estado.unidade = e.target.value; estado.equipe = TODAS; desenhar(); avisarPai(); });
   $('sel-equipe').addEventListener('change', (e) => { estado.equipe = e.target.value; desenhar(); });
-  $('chk-antigas').addEventListener('change', (e) => { estado.antigas = e.target.checked; desenhar(); });
+  // período: data vazia = sem limite daquele lado; se as datas se cruzarem, a outra acompanha
+  function mostrarPeriodo() { $('dt-de').value = estado.de; $('dt-ate').value = estado.ate; }
+  $('dt-de').addEventListener('change', (e) => {
+    estado.de = ehData(e.target.value) ? e.target.value : '';
+    if (estado.de && estado.ate && estado.de > estado.ate) estado.ate = estado.de;
+    mostrarPeriodo(); desenhar();
+  });
+  $('dt-ate').addEventListener('change', (e) => {
+    estado.ate = ehData(e.target.value) ? e.target.value : '';
+    if (estado.de && estado.ate && estado.ate < estado.de) estado.de = estado.ate;
+    mostrarPeriodo(); desenhar();
+  });
+  $('fora-periodo').addEventListener('click', (e) => {
+    if (!e.target.closest('[data-periodo="tudo"]')) return;
+    estado.de = ''; estado.ate = L.hojeIso();
+    mostrarPeriodo(); desenhar();
+  });
   $('btn-atualizar').addEventListener('click', atualizar);
   $('coordenadores').addEventListener('click', (e) => {
     const b = e.target.closest('[data-ir="depositos"]');
@@ -435,7 +459,9 @@
     // ?unidade=…&equipe=… abre já filtrado (atalho para um coordenador)
     if (PARAMS.get('unidade') && unidades().indexOf(PARAMS.get('unidade')) >= 0) estado.unidade = PARAMS.get('unidade');
     if (PARAMS.get('equipe')) estado.equipe = PARAMS.get('equipe');
-    if (PARAMS.get('antigas') === '1') estado.antigas = true;
+    if (PARAMS.has('de')) estado.de = ehData(PARAMS.get('de')) ? PARAMS.get('de') : '';
+    if (PARAMS.has('ate')) estado.ate = ehData(PARAMS.get('ate')) ? PARAMS.get('ate') : '';
+    mostrarPeriodo();
     desenhar();
     avisarPai();
   })();
