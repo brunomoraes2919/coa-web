@@ -69,6 +69,18 @@ function dadosFicticios() {
         ],
         coordenadores: [{ eq: 'COORDENADOR UM', ab: 3, n: 20 }, { eq: 'COORDENADOR DOIS', ab: 2, n: 14 }, { eq: 'COORDENADOR TRES', ab: 0, n: 5 }],
         depositos: [{ c: '9001', n: 'APLICACAO TERRESTRE' }, { c: '9002', n: 'PLANTIO EQUIPE 1' }, { c: '9003', n: 'DEFENSIVOS - TESTE NORTE' }, { c: '9004', n: 'DEPOSITO ANTIGO', i: 1 }],
+        boletins: [
+          { o: 'P', n: '700101', d: dia(4), os: 102, eq: 'COORDENADOR UM', sit: 'F', em: `${dia(3)} 16:57`, t: 6, p1: dia(3), ul: dia(0),
+            m: ['Error -10 - Quantity falls into negative inventory [IGE1.ItemCode][line: 2]'],
+            it: [{ c: '000011', nm: 'SEMENTE TESTE', q: 8322, u: 'KG', dp: '9003', s: 1200, pr: ['sem-estoque'] }, { c: '000012', nm: 'INOCULANTE TESTE', q: 46, u: 'LT', dp: '9003', s: 300 }] },
+          { o: 'I', n: '700102', d: dia(9), os: 103, eq: 'COORDENADOR UM', sit: 'F', em: `${dia(8)} 09:10`, t: 14, p1: dia(8), ul: dia(0),
+            m: ['Error -5002 - (1) Centro de custo não definido para a Fazenda Teste Norte'], it: [{ c: '000001', nm: 'HERBICIDA TESTE', q: 120, u: 'LT', dp: '9001', s: 40, pr: ['sem-estoque'] }] },
+          { o: 'I', n: '700103', d: dia(2), os: 101, eq: 'COORDENADOR UM', sit: 'P', em: `${dia(1)} 07:15`,
+            it: [{ c: '000002', nm: 'ADJUVANTE TESTE', q: 30, u: 'LT', dp: '9001', s: 12.5, pr: ['sem-estoque'] }, { c: '000013', nm: 'PRODUTO NOVO', q: 5, u: 'KG', dp: '9004', pr: ['deposito-inativo', 'item-fora-deposito'] }] },
+          { o: 'P', n: '700104', d: dia(1), os: 104, eq: 'COORDENADOR DOIS', sit: 'P', em: null, it: [{ c: '000011', nm: 'SEMENTE TESTE', q: 100, u: 'KG', dp: '9003', s: 1200, ant: 8322, pr: ['sem-estoque'] }] },
+          { o: 'I', n: '700105', d: dia(20), os: null, eq: null, sit: 'P', em: `${dia(19)} 06:40`, si: 1, it: [] },
+          { o: 'T', n: '700106', d: dia(0), os: null, eq: null, sit: 'P', em: `${dia(0)} 10:30`, it: [{ c: '000014', nm: 'TRATAMENTO TESTE', q: 8, u: 'LT', dp: '9003', s: 90 }] },
+        ],
         estoque: {
           9001: [
             { c: '000001', n: 'HERBICIDA TESTE', q: 40, u: 'LT', o: '9003', on: 'DEFENSIVOS - TESTE NORTE', oq: 1200, od: '2026-10-02' },

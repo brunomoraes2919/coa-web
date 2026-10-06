@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { atenderPedidosValidacao } from '../scripts/atender-pedidos.mjs';
 import {
-  depositosVinculados, inicioSafraValidacao, itemDoSaldoSap, linhasValidacao, montarSqlApontamentosValidacao, montarSqlCoordenadoresValidacao, montarSqlEstoqueSap,
+  depositosVinculados, inicioSafraValidacao, itemDoSaldoSap, linhasBoletins, linhasValidacao, montarSqlApontamentosValidacao, montarSqlBoletinsFalha,
+  montarSqlBoletinsPendentes, montarSqlLogIntegracaoSap, montarSqlSaldoItensSap, montarSqlCoordenadoresValidacao, montarSqlEstoqueSap,
   montarSqlOrdensValidacao, montarSqlTalhoesValidacao,
 } from '../scripts/sincronizar-plantio.mjs';
 
@@ -133,6 +134,66 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
     expect(d.depositos).toEqual([{ c: '1001', n: 'NOME NO SAP' }, { c: '1000', n: 'CENTRAL SAP', i: 1 }]);
     expect(d.estoque).toEqual({ 1001: [{ c: 'I1', n: 'PRODUTO UM', q: 12, u: 'L' }] });
     expect(linhas[1].ordens[0].eq).toBe('(sem equipe)');
+  });
+
+  it('boletins: as consultas pegam os recusados pelo SAP e os ainda não enviados, com listas limpas', () => {
+    const falhas = montarSqlBoletinsFalha('2026-08-01');
+    expect(falhas).toContain("WHERE e.DT_CONSUMO >= '2026-08-01' AND LTRIM(RTRIM(e.NO_DOC_ERP)) = '-1' AND e.FG_STATUS <> '12'");
+    expect(falhas).toContain('CONVERT(varchar(30), e.ID_BOLETIM_DE) AS id_item'); // id grande demais para número do JavaScript
+    const pend = montarSqlBoletinsPendentes('2026-08-01');
+    expect(pend.match(/a\.FG_STATUS_EAI = '0' AND a\.FG_INTEGRAR = 'S'/g)).toHaveLength(3);
+    expect(pend).toContain('l.QT_CONS_TOTAL AS qtd');
+    expect(pend).toContain('l.QT_TOTAL AS qtd');
+    const log = montarSqlLogIntegracaoSap(['10001283', 8853, "1'); DROP TABLE X --"], '2026-08-01');
+    expect(log).toContain(`"U_NO_BOLETIM" IN ('10001283', '8853') AND "U_Date" >= '2026-08-01'`);
+    expect(() => montarSqlLogIntegracaoSap(['abc'], '2026-08-01')).toThrow('Nenhum boletim válido');
+    const saldo = montarSqlSaldoItensSap(['000040', '000040', "x' OR '1'='1"], ['1718', null]);
+    expect(saldo).toContain(`w."WhsCode" IN ('1718')`);
+    expect(saldo).toContain(`WHERE i."ItemCode" IN ('000040')`);
+    expect(montarSqlSaldoItensSap(['000040'], [])).toContain(`w."WhsCode" IN ('')`);
+  });
+
+  it('boletins: junta os itens, explica com o log do SAP e confere saldo e cadastro', () => {
+    const falha = (o: Record<string, unknown>) => ({ unidade: 'DOURADO', origem: 'P', boletim: 501, dia: '2026-10-02', id_item: '9000000000000000001', material: 'I1', qtd: 500, un: 'KG', deposito: '1001', os: 10, equipe: 'COORD A', em: '2026-10-03 16:57', ...o });
+    const pend = (o: Record<string, unknown>) => ({ unidade: 'DOURADO', origem: 'I', boletim: 601, dia: '2026-10-05', id_item: '7', material: 'I1', nome: 'NOME DO PIMS', qtd: 60, deposito: '1001', os: 12, equipe: 'COORD A', em: '2026-10-06 07:15', ...o });
+    const r = linhasBoletins({
+      falhas: [
+        falha({}),
+        falha({ id_item: '9000000000000000002', qtd: 300 }), // o mesmo item em outro talhão: soma
+        falha({ id_item: '9000000000000000003', material: 'I2', qtd: 4, un: 'LT' }),
+        falha({ unidade: null, boletim: 999 }), // boletim que não existe mais no PIMS: fora
+      ],
+      pendentes: [
+        pend({}),
+        pend({ boletim: 602, material: 'I9', deposito: '1009' }),
+        pend({ boletim: 603, material: 'I3', deposito: '1001' }),
+        pend({ boletim: 604, id_item: null, material: null, nome: null, qtd: null, deposito: null }),
+        pend({ unidade: 'SM3', boletim: 701 }), // empresa sem dados do SAP nesta rodada: sem diagnóstico
+      ],
+      logs: { SBOAGROPECUARIALOCKS: new Map([
+        ['9000000000000000001', { msg: 'Error -10 - Quantity falls into negative inventory  [IGE1.ItemCode][line: 1]', n: 6, primeira: '2026-10-03', ultima: '2026-10-06' }],
+        ['9000000000000000002', { msg: 'Error -10 - Quantity falls into negative inventory  [IGE1.ItemCode][line: 1]', n: 4, primeira: '2026-10-04', ultima: '2026-10-05' }],
+        ['9000000000000000003', { msg: 'Adicionado  579188', n: 1, primeira: '2026-10-03', ultima: '2026-10-03' }],
+      ]) },
+      sap: { SBOAGROPECUARIALOCKS: {
+        itens: new Map([['I1', { nome: 'SEMENTE', un: 'KG', inativo: false }], ['I2', { nome: 'INOCULANTE', un: 'LT', inativo: true }], ['I3', { nome: 'ADUBO', un: 'KG', inativo: false }]]),
+        saldo: new Map([['I1|1001', 820], ['I2|1001', 30]]),
+      } },
+      depositosSap: { SBOAGROPECUARIALOCKS: new Map([['1001', { nome: 'DEP', inativo: false }], ['1009', { nome: 'VELHO', inativo: true }]]) },
+    });
+    expect(Object.keys(r)).toEqual(['DOURADO', 'SM3']);
+    const [f, p1, p2, p3, p4] = r.DOURADO;
+    expect(f).toEqual({
+      o: 'P', n: '501', d: '2026-10-02', os: 10, eq: 'COORD A', sit: 'F', em: '2026-10-03 16:57', t: 6, p1: '2026-10-03', ul: '2026-10-06',
+      m: ['Error -10 - Quantity falls into negative inventory [IGE1.ItemCode][line: 1]'],
+      it: [{ c: 'I2', nm: 'INOCULANTE', q: 4, u: 'LT', dp: '1001', s: 30, pr: ['item-inativo'] }, { c: 'I1', nm: 'SEMENTE', q: 800, u: 'KG', dp: '1001', s: 820 }],
+    });
+    // o boletim recusado já compromete 800 dos 820: o pendente seguinte não cabe mais
+    expect(p1.it).toEqual([{ c: 'I1', nm: 'SEMENTE', q: 60, u: 'KG', dp: '1001', s: 820, ant: 800, pr: ['sem-estoque'] }]);
+    expect(p2.it[0].pr).toEqual(['deposito-inativo', 'item-inexistente']);
+    expect(p3.it[0].pr).toEqual(['item-fora-deposito']);
+    expect(p4).toMatchObject({ n: '604', sit: 'P', si: 1, it: [] });
+    expect(r.SM3[0].it).toEqual([{ c: 'I1', nm: 'NOME DO PIMS', q: 60, u: '', dp: '1001' }]);
   });
 
   it('sem pedido pendente (ou sem a tabela) não consulta o PIMS', async () => {

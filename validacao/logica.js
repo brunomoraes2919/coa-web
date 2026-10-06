@@ -260,6 +260,85 @@
     return { pendente: false, talhoes: talhoes, apontamentos: apontamentos };
   }
 
+  /* ---- boletins recusados pelo SAP e boletins ainda não integrados ---- */
+  const ORIGENS_BOLETIM = { I: 'Aplicação de insumo', P: 'Plantio', T: 'Tratamento de sementes', C: 'Abastecimento', L: 'Lubrificação' };
+  /** Problemas que a conferência no SAP encontra num item antes (ou depois) da integração. */
+  const PROBLEMAS_ITEM = {
+    'sem-estoque': 'Saldo insuficiente no depósito',
+    'item-fora-deposito': 'Item não cadastrado no depósito',
+    'item-inexistente': 'Item não existe no SAP',
+    'item-inativo': 'Item inativo no SAP',
+    'deposito-inativo': 'Depósito inativo no SAP',
+    'sem-deposito': 'Item lançado sem depósito',
+  };
+
+  /**
+   * Mensagem de recusa do SAP em português: { titulo, texto, tecnica }. `tecnica` = a falha é da integração
+   * (não do boletim). Mensagem desconhecida volta como veio, com o título "Recusado pelo SAP".
+   */
+  function explicarFalha(msg) {
+    const m = String(msg || '').replace(/\s+/g, ' ').trim();
+    const linha = /\[line: (\d+)\]/.exec(m);
+    const naLinha = linha ? ' (item da linha ' + linha[1] + ' do boletim)' : '';
+    let r;
+    if (/negative inventory/i.test(m)) r = { titulo: 'Estoque insuficiente no SAP', texto: 'A baixa deixaria o saldo do depósito negativo' + naLinha + '. Falta entrada ou transferência do produto para o depósito de saída.' };
+    else if ((r = /Centro de custo n[aã]o definido[^\[]*/i.exec(m))) r = { titulo: 'Centro de custo não definido', texto: r[0].trim() + '. O cadastro do centro de custo dessa fazenda precisa ser feito no SAP.' };
+    else if ((r = /Item (\S+) not found in Warehouse (\S+)/i.exec(m))) r = { titulo: 'Item fora do depósito', texto: 'O item ' + r[1] + ' não está cadastrado no depósito ' + r[2] + ' no SAP.' };
+    else if (/Inventory account is not defined/i.test(m)) r = { titulo: 'Conta de estoque não definida', texto: 'O item (ou o grupo dele) está sem conta contábil de estoque no SAP para esse depósito' + naLinha + '.' };
+    else if (/Enter valid code.*OcrCode/i.test(m)) r = { titulo: 'Centro de custo inválido no SAP', texto: 'O centro de custo do boletim não existe, ou está inativo, nas regras de distribuição do SAP' + naLinha + '.' };
+    else if ((r = /Fully allocate item "?([^" ]+)"? to bin locations in warehouse "?([^" ]+)"?/i.exec(m))) r = { titulo: 'Falta alocar o item numa posição do depósito', texto: 'O depósito ' + r[2] + ' controla posições e o item ' + r[1] + ' não tem saldo alocado em posição para a baixa.' };
+    else if (/is frozen/i.test(m)) r = { titulo: 'Item bloqueado no depósito', texto: 'O item está congelado no SAP nesse depósito ou posição (costuma ser inventário em andamento).' };
+    else if (/Invalid XML|remote database|General error|ODBC|timeout|connection/i.test(m)) r = { titulo: 'Falha técnica da integração', texto: 'O erro não é do boletim: a integração não conseguiu concluir a operação no SAP. Costuma passar na tentativa seguinte; se continuar, acione a TI.', tecnica: true };
+    else r = { titulo: 'Recusado pelo SAP', texto: m || 'O SAP recusou o boletim sem informar o motivo.' };
+    r.tecnica = !!r.tecnica;
+    return r;
+  }
+
+  /**
+   * Boletins com problema de integração, do retrato do servidor (linha.boletins):
+   *   falhas     = o SAP recusou (com o motivo explicado e a conferência de saldo e cadastro de cada item);
+   *   vaoFalhar  = ainda não integrados em que a conferência já encontrou um problema;
+   *   aguardando = ainda não integrados, sem problema previsto.
+   * Cada boletim leva: unidade, tipo, causas [{ titulo, texto, tecnica }], problemas (títulos distintos dos itens),
+   * comProblema (quantos itens), dias (desde a primeira tentativa, ou desde o lançamento). Mais antigos primeiro.
+   * `filtro`: { unidade, equipe }.
+   */
+  function boletinsComProblema(linhas, hoje, filtro) {
+    const f = filtro || {};
+    const r = { falhas: [], vaoFalhar: [], aguardando: [] };
+    (linhas || []).forEach(function (l) {
+      if (f.unidade && l.unidade !== f.unidade) return;
+      (l.boletins || []).forEach(function (b) {
+        if (f.equipe && b.eq !== f.equipe) return;
+        const itens = b.it || [];
+        const titulos = [];
+        let comProblema = 0;
+        itens.forEach(function (i) {
+          if (!(i.pr || []).length) return;
+          comProblema += 1;
+          i.pr.forEach(function (p) { const t = PROBLEMAS_ITEM[p] || p; if (titulos.indexOf(t) < 0) titulos.push(t); });
+        });
+        if (b.si === 1) titulos.push('Boletim sem item lançado');
+        const causas = [];
+        (b.m || []).forEach(function (m) {
+          const e = explicarFalha(m);
+          if (!causas.some(function (c) { return c.titulo === e.titulo && c.texto === e.texto; })) causas.push(e);
+        });
+        const desde = b.p1 || (b.em ? String(b.em).slice(0, 10) : null) || b.d;
+        const item = Object.assign({}, b, {
+          unidade: l.unidade, tipo: ORIGENS_BOLETIM[b.o] || b.o, it: itens, causas: causas, problemas: titulos, comProblema: comProblema,
+          dias: diasEmAberto(desde, hoje), chave: b.sit + '|' + l.unidade + '|' + b.o + '|' + b.n,
+        });
+        if (b.sit === 'F') r.falhas.push(item);
+        else if (titulos.length) r.vaoFalhar.push(item);
+        else r.aguardando.push(item);
+      });
+    });
+    const porIdade = function (a, b) { return (b.dias === null ? -1 : b.dias) - (a.dias === null ? -1 : a.dias) || (a.n < b.n ? -1 : a.n > b.n ? 1 : 0); };
+    r.falhas.sort(porIdade); r.vaoFalhar.sort(porIdade); r.aguardando.sort(porIdade);
+    return r;
+  }
+
   /** Unidade do PIMS de uma fazenda do COA WEB pelo nome ("Fazenda Três Flechas" → "TRES FLECHAS"); sem igual → null. */
   function unidadeDaFazenda(nomeFazenda, unidades) {
     const alvo = semAcento(nomeFazenda).replace(/^(FAZENDA|FAZ\.?)\s+/, '');
@@ -279,6 +358,7 @@
     hojeIso: hojeIso, inicioSafra: inicioSafra, inicioDoMes: inicioDoMes, noPeriodo: noPeriodo, diasEmAberto: diasEmAberto, classificarPrazo: classificarPrazo, ordemAberta: ordemAberta,
     textoFalta: textoFalta, textoDias: textoDias, abertasPorCoordenador: abertasPorCoordenador, resumoAbertas: resumoAbertas,
     fechadasComDiferenca: fechadasComDiferenca, coordenadoresComVinculo: coordenadoresComVinculo, saldoDoCoordenador: saldoDoCoordenador,
-    detalheDaOrdem: detalheDaOrdem, unidadeDaFazenda: unidadeDaFazenda, titulo: titulo,
+    detalheDaOrdem: detalheDaOrdem, explicarFalha: explicarFalha, boletinsComProblema: boletinsComProblema, PROBLEMAS_ITEM: PROBLEMAS_ITEM,
+    unidadeDaFazenda: unidadeDaFazenda, titulo: titulo,
   };
 });

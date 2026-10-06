@@ -209,10 +209,27 @@ export interface LinhaValidScript {
   coordenadores: { eq: string; ab: number; n: number }[];
   depositos: { c: string; n: string; i?: number }[];
   estoque: Record<string, ItemSaldoScript[]>;
+  boletins: BoletimValidScript[];
   avisos: string[];
 }
 export interface ItemSaldoScript { c: string | null; n: string; q: number; u: string; o?: string; on?: string; oq?: number; od?: string }
 export function itemDoSaldoSap(r: Record<string, unknown>): ItemSaldoScript;
+export interface ItemBoletimScript { c: string; nm: string; q: number; u: string; dp: string | null; s?: number; ant?: number; pr?: string[] }
+export interface BoletimValidScript {
+  o: string; n: string; d: string | null; os: number | null; eq: string | null; sit: 'F' | 'P'; em: string | null;
+  t?: number; p1?: string; ul?: string; m?: string[]; si?: 1; it: ItemBoletimScript[];
+}
+export function montarSqlBoletinsFalha(desde: string): string;
+export function montarSqlBoletinsPendentes(desde: string): string;
+export function montarSqlLogIntegracaoSap(boletins: unknown[], desde: string): string;
+export function montarSqlSaldoItensSap(itens: unknown[], depositos: unknown[]): string;
+export function linhasBoletins(dados: {
+  falhas?: Record<string, unknown>[];
+  pendentes?: Record<string, unknown>[];
+  logs?: Record<string, Map<string, { msg: string | null; n: number; primeira: string | null; ultima: string | null }>>;
+  sap?: Record<string, { itens: Map<string, { nome: string; un: string; inativo: boolean }>; saldo: Map<string, number> }>;
+  depositosSap?: Record<string, Map<string, { nome: string | null; inativo: boolean }>>;
+}): Record<string, BoletimValidScript[]>;
 export const VALID_TOLERANCIA_HA: number;
 export const SAP_EMPRESA_DA_UNIDADE: Record<string, string>;
 export const SQL_EVOLUCAO_VALIDACAO: string;
@@ -234,6 +251,7 @@ export function linhasValidacao(
     apontamentos?: Record<string, unknown>[];
     depositosSap?: Record<string, Map<string, { nome: string | null; inativo: boolean }>>;
     estoque?: Record<string, Record<string, ItemSaldoScript[]>>;
+    boletins?: Record<string, BoletimValidScript[]>;
     avisos?: string[];
   },
   geradoEm: string,

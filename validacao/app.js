@@ -14,7 +14,7 @@
   const CFG = window.VALIDACAO_CONFIG || {};
   const PARAMS = new URLSearchParams(location.search);
   const EMBED = PARAMS.get('embed') === '1';
-  const VISTAS = ['abertas', 'fechadas', 'depositos'];
+  const VISTAS = ['abertas', 'fechadas', 'boletins', 'depositos'];
   const TODAS = '';
   /** A fazenda do menu lateral não tem unidade no PIMS: nada a mostrar (em vez de mostrar todas). */
   const SEM_UNIDADE = '\u0001';
@@ -40,6 +40,7 @@
   let admin = false;
   let coaFazenda;         // fazenda escolhida no COA WEB, quando o módulo está no iframe
   let coaFazendaNome = '';
+  let semColunaBoletins = false; // o banco ainda não tem a coluna dos boletins (script 0008)
   let fonte = null;
   let atualizando = false;
 
@@ -59,8 +60,13 @@
         if (!s.data || !s.data.session) throw new Error(EMBED ? 'Sua sessão expirou. Entre de novo no COA WEB.' : 'Entre no COA WEB para ver a Validação PIMS.');
       },
       ler: async function () {
+        // a coluna dos boletins entra com o script 0008: sem ela, o resto da tela continua funcionando
+        const COLUNAS = 'unidade,gerado_em,ordens,coordenadores,depositos,estoque,avisos';
+        let pims = await sb.from('valid_pims').select(COLUNAS + ',boletins').order('unidade');
+        const semBoletins = !!pims.error && (pims.error.code === '42703' || /boletins/.test(pims.error.message || ''));
+        if (semBoletins) pims = await sb.from('valid_pims').select(COLUNAS).order('unidade');
         const r = await Promise.all([
-          sb.from('valid_pims').select('unidade,gerado_em,ordens,coordenadores,depositos,estoque,avisos').order('unidade'),
+          pims,
           sb.from('valid_vinculos').select('unidade,equipe,deposito'),
           sb.from('mapas_fazendas').select('unidade_pims,coa_fazenda_id'),
           sb.rpc('mapas_eh_admin'),
@@ -70,6 +76,7 @@
           vinculos: conferir(r[1], 'ler os depósitos dos coordenadores') || [],
           fazendas: r[2].error ? [] : (r[2].data || []),
           admin: !r[3].error && r[3].data === true,
+          semBoletins: semBoletins,
         };
       },
       salvarVinculo: async function (v) {
@@ -304,6 +311,81 @@
     return r.faltando.length + r.sobrando.length;
   }
 
+  /* ------------------------------ boletins com falha de integração ------------------------------ */
+  const abertosBol = new Set();  // chaves dos boletins com o detalhe aberto
+  let boletinsNaTela = new Map(); // chave → boletim (do último desenho), para abrir o detalhe sem refazer as contas
+  const textoHa = (dias) => (dias === null ? '—' : dias === 0 ? 'hoje' : dias === 1 ? 'há 1 dia' : 'há ' + dias + ' dias');
+  /** O que há de errado no item, com os números: "precisa de 8.322 KG, tem 1.200 KG". */
+  function situacaoItem(i) {
+    const pr = i.pr || [];
+    if (!pr.length) return '<span class="bom">sem problema</span>';
+    return pr.map((p) => {
+      if (p === 'sem-estoque') {
+        return 'Saldo insuficiente: precisa de <b>' + fmtQtd(i.q) + ' ' + esc(i.u) + '</b>, tem <b>' + fmtQtd(i.s || 0) + ' ' + esc(i.u) + '</b>' +
+          (i.ant ? ' (e outros boletins na frente tiram ' + fmtQtd(i.ant) + ' ' + esc(i.u) + ' do mesmo saldo)' : '');
+      }
+      return esc(L.PROBLEMAS_ITEM[p] || p);
+    }).join('<br>');
+  }
+  function detalheBoletim(b) {
+    const causas = b.causas.length
+      ? '<ul class="bol-causas">' + b.causas.map((c) => '<li' + (c.tecnica ? ' class="tecnica"' : '') + '><b>' + esc(c.titulo) + '.</b> ' + esc(c.texto) + '</li>').join('') + '</ul>'
+      : '';
+    const previsto = b.sit === 'P' && b.problemas.length
+      ? '<p class="det-nota">Quando o PIMS enviar este boletim, o SAP deve recusar por: <b>' + b.problemas.map(esc).join('; ') + '</b>.</p>' : '';
+    const bruto = (b.m || []).length ? '<p class="bol-bruto">Mensagem do SAP: ' + b.m.map((m) => '<code>' + esc(m) + '</code>').join(' ') + '</p>' : '';
+    const itens = b.it.length
+      ? '<div class="det-grade det-itens"><div class="det-linha cab"><span>Produto</span><span>Depósito</span><span class="n">Quantidade</span><span class="n">Saldo no SAP</span><span>Situação</span></div>' +
+        b.it.map((i) => '<div class="det-linha' + ((i.pr || []).length ? ' ruim' : '') + '"><span><small>' + esc(i.c) + '</small> ' + esc(L.titulo(i.nm || '')) + '</span><span>' + esc(i.dp || '—') + '</span>' +
+          '<span class="n">' + fmtQtd(i.q) + ' ' + esc(i.u) + '</span><span class="n">' + (typeof i.s === 'number' ? fmtQtd(i.s) + ' ' + esc(i.u) : '—') + '</span><span class="c-sit">' + situacaoItem(i) + '</span></div>').join('') + '</div>'
+      : '<p class="det-nota">' + (b.si === 1 ? 'Este boletim não tem nenhum item lançado: não há o que integrar. Confira se o lançamento ficou incompleto.' : 'Sem itens.') + '</p>';
+    return '<tr class="detalhe"><td colspan="5"><div class="bol-det">' + causas + previsto + bruto + '<h3>Itens do boletim</h3>' + itens + '</div></td></tr>';
+  }
+  function tabelaBoletins(lista, vazio) {
+    if (!lista.length) return '<p class="vazio">' + esc(vazio) + '</p>';
+    return '<table class="tabela tabela-boletins"><thead><tr><th>Boletim</th><th class="n">Data</th><th>Ordem e coordenador</th><th>O que aconteceu</th><th>Desde</th></tr></thead><tbody>' +
+      lista.map((b) => {
+        const titulos = b.sit === 'F' ? (b.causas.length ? b.causas.map((c) => c.titulo) : ['Recusado pelo SAP']) : (b.problemas.length ? b.problemas : ['Aguardando envio ao SAP']);
+        const resumo = b.sit === 'F'
+          ? (b.comProblema ? b.comProblema + (b.comProblema === 1 ? ' item com problema na conferência' : ' itens com problema na conferência') : 'conferência de saldo e cadastro sem problema')
+          : (b.it.length === 1 ? '1 item' : b.it.length + ' itens') + (b.comProblema ? ' · ' + b.comProblema + ' com problema' : '');
+        return '<tr class="clicavel boletim"' + ' data-boletim="' + esc(b.chave) + '" tabindex="0" aria-expanded="' + (abertosBol.has(b.chave) ? 'true' : 'false') + '" title="Clique para ver os itens e o motivo">' +
+          '<td class="os"><span class="seta" aria-hidden="true"></span><b>' + esc(b.n) + '</b><small>' + esc(b.tipo) + '</small></td>' +
+          '<td class="n dia">' + fmtData(b.d) + '</td>' +
+          '<td class="quem">' + (b.os === null ? '<span class="fraco">sem ordem</span>' : 'OS <b>' + esc(b.os) + '</b>') + '<small>' + (b.eq ? esc(L.titulo(b.eq)) : '—') + (estado.unidade ? '' : ' · ' + esc(L.titulo(b.unidade))) + '</small></td>' +
+          '<td class="motivo"><b>' + titulos.map(esc).join(' · ') + '</b><small>' + esc(resumo) + '</small></td>' +
+          '<td class="desde">' + textoHa(b.dias) + (b.sit === 'F' && b.t ? '<small>' + (b.t === 1 ? '1 tentativa' : b.t + ' tentativas') + (b.ul ? ' · última em ' + fmtDataCurta(b.ul) : '') + '</small>' : b.em ? '<small>lançado em ' + fmtDataHora(b.em) + '</small>' : '') + '</td></tr>' +
+          (abertosBol.has(b.chave) ? detalheBoletim(b) : '');
+      }).join('') + '</tbody></table>';
+  }
+  function desenharBoletins(r) {
+    boletinsNaTela = new Map([].concat(r.falhas, r.vaoFalhar, r.aguardando).map((b) => [b.chave, b]));
+    $('explica-boletins').innerHTML = semColunaBoletins
+      ? '<b>Esta aba ainda não foi ativada no banco</b> (falta rodar o script 0008 no Supabase).'
+      : 'Boletins lançados desde ' + fmtData(L.inicioSafra(L.hojeIso())) + ' que o SAP recusou ou que ainda não foram integrados. O motivo vem do log de integração do SAP; o saldo e o cadastro dos itens são conferidos a cada atualização. Clique num boletim para ver os itens. O filtro de período não vale nesta aba.';
+    $('resumo-boletins').innerHTML =
+      cartaoResumo('Recusados pelo SAP', r.falhas.length, r.falhas.length ? 'atraso' : '', 'tentou integrar e voltou com erro') +
+      cartaoResumo('Vão falhar', r.vaoFalhar.length, r.vaoFalhar.length ? 'atencao' : '', 'ainda não enviados, com problema previsto') +
+      cartaoResumo('Aguardando envio', r.aguardando.length, 'ok', 'ainda não enviados, sem problema previsto');
+    const n = (lista) => (lista.length === 1 ? '1 boletim' : lista.length + ' boletins');
+    $('n-bol-falhas').textContent = n(r.falhas);
+    $('n-bol-vao').textContent = n(r.vaoFalhar);
+    $('n-bol-aguardando').textContent = n(r.aguardando);
+    $('tab-bol-falhas').innerHTML = tabelaBoletins(r.falhas, 'Nenhum boletim recusado pelo SAP.');
+    $('tab-bol-vao').innerHTML = tabelaBoletins(r.vaoFalhar, 'Nenhum boletim pendente com problema previsto.');
+    $('tab-bol-aguardando').innerHTML = tabelaBoletins(r.aguardando, 'Nenhum boletim aguardando envio.');
+  }
+  function alternarBoletim(tr) {
+    const k = tr.dataset.boletim;
+    const prox = tr.nextElementSibling;
+    if (prox && prox.classList.contains('detalhe')) { prox.remove(); abertosBol.delete(k); tr.setAttribute('aria-expanded', 'false'); return; }
+    const b = boletinsNaTela.get(k);
+    if (!b) return;
+    tr.insertAdjacentHTML('afterend', detalheBoletim(b));
+    abertosBol.add(k);
+    tr.setAttribute('aria-expanded', 'true');
+  }
+
   /* ------------------------------ depósitos dos coordenadores ------------------------------ */
   function opcoesDeposito(linha, escolhido) {
     const lista = (linha.depositos || []).filter((d) => !d.i || d.c === escolhido);
@@ -360,14 +442,17 @@
     preencherUnidades();
     preencherEquipes();
     document.querySelectorAll('#abas [data-vista]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.vista === estado.vista)));
-    ['abertas', 'fechadas', 'depositos'].forEach((v) => { $('vista-' + v).hidden = v !== estado.vista; });
+    VISTAS.forEach((v) => { $('vista-' + v).hidden = v !== estado.vista; });
     const hoje = L.hojeIso();
     // os números das abas valem para o filtro escolhido
     $('conta-abertas').textContent = L.resumoAbertas(L.abertasPorCoordenador(linhas, hoje, filtro()).grupos).ordens;
     const f = L.fechadasComDiferenca(linhas, filtro());
     $('conta-fechadas').textContent = f.faltando.length + f.sobrando.length;
+    const bol = L.boletinsComProblema(linhas, hoje, filtro());
+    $('conta-boletins').textContent = bol.falhas.length + bol.vaoFalhar.length;
     if (estado.vista === 'abertas') desenharAbertas();
     else if (estado.vista === 'fechadas') desenharFechadas();
+    else if (estado.vista === 'boletins') desenharBoletins(bol);
     else desenharDepositos();
     const mais = linhas.reduce((m, l) => (l.gerado_em > m ? l.gerado_em : m), '');
     $('atualizado').innerHTML = mais ? 'PIMS · <b>' + new Date(mais).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</b>' : '';
@@ -397,7 +482,8 @@
 
   async function carregar() {
     const d = await fonte.ler();
-    linhas = (d.linhas || []).map((l) => Object.assign({ ordens: [], coordenadores: [], depositos: [], estoque: {}, avisos: [] }, l));
+    linhas = (d.linhas || []).map((l) => Object.assign({ ordens: [], coordenadores: [], depositos: [], estoque: {}, boletins: [], avisos: [] }, l));
+    semColunaBoletins = !!d.semBoletins;
     vinculos = d.vinculos || [];
     admin = !!d.admin;
     fazendasCoa = (d.fazendas || []).filter((f) => f.unidade_pims && typeof f.coa_fazenda_id === 'number')
@@ -474,15 +560,15 @@
   $('btn-atualizar').addEventListener('click', atualizar);
   // clicar (ou Enter/Espaço) numa ordem abre os apontamentos dela logo abaixo
   document.addEventListener('click', (e) => {
-    const tr = e.target.closest('tr[data-ordem]');
+    const tr = e.target.closest('tr[data-ordem], tr[data-boletim]');
     if (!tr || e.target.closest('button, a, select, input, summary')) return;
     if (String(window.getSelection && window.getSelection()) !== '') return; // estava selecionando texto para copiar
-    alternarDetalhe(tr);
+    if (tr.dataset.boletim) alternarBoletim(tr); else alternarDetalhe(tr);
   });
   document.addEventListener('keydown', (e) => {
-    if ((e.key !== 'Enter' && e.key !== ' ') || !e.target.matches || !e.target.matches('tr[data-ordem]')) return;
+    if ((e.key !== 'Enter' && e.key !== ' ') || !e.target.matches || !e.target.matches('tr[data-ordem], tr[data-boletim]')) return;
     e.preventDefault();
-    alternarDetalhe(e.target);
+    if (e.target.dataset.boletim) alternarBoletim(e.target); else alternarDetalhe(e.target);
   });
   $('coordenadores').addEventListener('click', (e) => {
     const b = e.target.closest('[data-ir="depositos"]');
@@ -525,7 +611,7 @@
     if (PARAMS.get('unidade') && unidades().indexOf(PARAMS.get('unidade')) >= 0) estado.unidade = PARAMS.get('unidade');
     if (PARAMS.get('equipe')) estado.equipe = PARAMS.get('equipe');
     // ?abrir=UNIDADE|ordem (várias separadas por vírgula) já abre os apontamentos dessas ordens
-    if (PARAMS.get('abrir')) PARAMS.get('abrir').split(',').forEach((k) => { if (ordemBruta(k)) abertos.add(k); });
+    if (PARAMS.get('abrir')) PARAMS.get('abrir').split(',').forEach((k) => { if (/^[FP]\|/.test(k)) abertosBol.add(k); else if (ordemBruta(k)) abertos.add(k); });
     if (PARAMS.has('de')) estado.de = ehData(PARAMS.get('de')) ? PARAMS.get('de') : '';
     if (PARAMS.has('ate')) estado.ate = ehData(PARAMS.get('ate')) ? PARAMS.get('ate') : '';
     mostrarPeriodo();

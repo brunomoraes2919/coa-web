@@ -208,6 +208,53 @@ test('detalhe da ordem: planejado × apontado por talhão e os apontamentos um a
   assert.equal(L.detalheDaOrdem(null).pendente, true);
 });
 
+test('falha de integração: a mensagem do SAP vira explicação em português', () => {
+  const e = L.explicarFalha('Error -10 - Quantity falls into negative inventory  [IGE1.ItemCode][line: 2]');
+  assert.equal(e.titulo, 'Estoque insuficiente no SAP');
+  assert.match(e.texto, /item da linha 2 do boletim/);
+  assert.equal(e.tecnica, false);
+  assert.equal(L.explicarFalha('Error -5002 - (1) Centro de custo não definido para a Fazenda Teste').titulo, 'Centro de custo não definido');
+  assert.match(L.explicarFalha('Error -5002 - (1) Centro de custo não definido para a Fazenda Teste').texto, /^Centro de custo não definido para a Fazenda Teste\./);
+  assert.equal(L.explicarFalha('Error -5002 - 10000515 - Item 057371 not found in Warehouse 1824').texto, 'O item 057371 não está cadastrado no depósito 1824 no SAP.');
+  assert.equal(L.explicarFalha('Error -5002 - Inventory account is not defined  [IGE1.AcctCode][line: 1]').titulo, 'Conta de estoque não definida');
+  assert.equal(L.explicarFalha('Error -5002 - Enter valid code  [IGE1.OcrCode][line: 16]').titulo, 'Centro de custo inválido no SAP');
+  assert.equal(L.explicarFalha('Error -10 - 1470000341 - Fully allocate item "012345" to bin locations in warehouse "1801"').titulo, 'Falta alocar o item numa posição do depósito');
+  assert.equal(L.explicarFalha('Error -10 - 131 - Item 000111 is frozen in warehouse 1801 and bin location 1801-BARRACAO-01').titulo, 'Item bloqueado no depósito');
+  assert.equal(L.explicarFalha('Error -10 - Invalid XML file -    at SAPbobsCOM.CompanyClass.GetXMLelementCount(String FileName)').tecnica, true);
+  // mensagem que a tela não conhece volta como veio
+  assert.deepEqual(L.explicarFalha('Error -99 - Algo novo'), { titulo: 'Recusado pelo SAP', texto: 'Error -99 - Algo novo', tecnica: false });
+});
+
+test('boletins com problema: recusados, pendentes que vão falhar e pendentes sem problema', () => {
+  const linhas = [{
+    unidade: 'FAZENDA X',
+    boletins: [
+      { o: 'P', n: '501', d: '2026-10-02', os: 10, eq: 'COORD A', sit: 'F', em: '2026-10-03 16:57', t: 6, p1: '2026-10-03', ul: '2026-10-06',
+        m: ['Error -10 - Quantity falls into negative inventory [IGE1.ItemCode][line: 2]', 'Error -10 - Quantity falls into negative inventory [IGE1.ItemCode][line: 2]'],
+        it: [{ c: 'I1', nm: 'SEMENTE', q: 800, u: 'KG', dp: '1001', s: 100, pr: ['sem-estoque'] }, { c: 'I2', nm: 'INOCULANTE', q: 4, u: 'LT', dp: '1001', s: 30 }] },
+      { o: 'I', n: '502', d: '2026-09-20', os: 11, eq: 'COORD B', sit: 'F', em: '2026-09-21 08:00', t: 40, p1: '2026-09-21', ul: '2026-10-06', m: ['Error -5002 - Enter valid code [IGE1.OcrCode][line: 1]'], it: [{ c: 'I3', nm: 'HERBICIDA', q: 10, u: 'LT', dp: '1002', s: 90 }] },
+      { o: 'I', n: '503', d: '2026-10-05', os: 12, eq: 'COORD A', sit: 'P', em: '2026-10-06 07:15', it: [{ c: 'I3', nm: 'HERBICIDA', q: 10, u: 'LT', dp: '1009', pr: ['deposito-inativo', 'item-fora-deposito'] }] },
+      { o: 'I', n: '504', d: '2026-09-01', os: null, eq: null, sit: 'P', em: '2026-09-02 06:40', si: 1, it: [] },
+      { o: 'T', n: '505', d: '2026-10-06', os: null, eq: null, sit: 'P', em: null, it: [{ c: 'I4', nm: 'TRATAMENTO', q: 8, u: 'LT', dp: '1001', s: 50 }] },
+    ],
+  }, { unidade: 'OUTRA', boletins: [{ o: 'C', n: '900', d: '2026-10-01', os: null, eq: null, sit: 'F', em: null, m: [], it: [] }] }];
+  const r = L.boletinsComProblema(linhas, HOJE, { unidade: 'FAZENDA X' });
+  assert.deepEqual(r.falhas.map((b) => [b.n, b.tipo, b.dias, b.comProblema]), [['502', 'Aplicação de insumo', 15, 0], ['501', 'Plantio', 3, 1]]); // mais antigo primeiro
+  assert.deepEqual(r.falhas[1].causas.map((c) => c.titulo), ['Estoque insuficiente no SAP']); // a mesma mensagem não repete
+  assert.deepEqual(r.falhas[1].problemas, ['Saldo insuficiente no depósito']);
+  assert.equal(r.falhas[1].chave, 'F|FAZENDA X|P|501');
+  assert.deepEqual(r.vaoFalhar.map((b) => [b.n, b.problemas]), [
+    ['504', ['Boletim sem item lançado']],
+    ['503', ['Depósito inativo no SAP', 'Item não cadastrado no depósito']],
+  ]);
+  assert.deepEqual(r.aguardando.map((b) => b.n), ['505']);
+  // filtro de coordenador e todas as fazendas
+  assert.deepEqual(L.boletinsComProblema(linhas, HOJE, { equipe: 'COORD A' }).falhas.map((b) => b.n), ['501']);
+  assert.equal(L.boletinsComProblema(linhas, HOJE, {}).falhas.length, 3);
+  // retrato antigo, sem a lista de boletins
+  assert.deepEqual(L.boletinsComProblema([{ unidade: 'X' }], HOJE, {}), { falhas: [], vaoFalhar: [], aguardando: [] });
+});
+
 test('início da safra, unidade da fazenda e título', () => {
   assert.equal(L.inicioSafra('2026-10-06'), '2026-08-01');
   assert.equal(L.inicioSafra('2026-07-31'), '2025-08-01');

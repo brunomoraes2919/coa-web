@@ -212,6 +212,32 @@ tr[aria-expanded="true"] .seta { transform: rotate(45deg); border-color: var(--v
 .det-nota { font-size: 12.5px; color: var(--texto-suave); }
 @media (max-width: 1100px) { .det { grid-template-columns: 1fr; } }
 
+/* ---- boletins com falha de integração ---- */
+.resumo.resumo-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 14px; }
+#vista-boletins .cartao { margin-bottom: 14px; }
+#vista-boletins .cartao-cab { justify-content: flex-start; align-items: center; }
+#vista-boletins .cartao-cab p { flex: 1 1 100%; }
+.tabela-boletins { table-layout: fixed; }
+.tabela-boletins th:nth-child(1) { width: 17%; }
+.tabela-boletins th:nth-child(2) { width: 10%; }
+.tabela-boletins th:nth-child(3) { width: 22%; }
+.tabela-boletins th:nth-child(4) { width: 35%; }
+.tabela-boletins th:nth-child(5) { width: 16%; }
+.tabela-boletins td.os small { margin-left: 15px; }
+.tabela-boletins .motivo b { font-weight: 600; }
+.tabela-boletins .fraco { color: var(--texto-fraco); }
+.bol-det h3 { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); margin: 12px 0 4px; }
+.bol-causas { list-style: none; display: grid; gap: 6px; margin-bottom: 8px; font-size: 13px; }
+.bol-causas li { padding: 8px 12px; border-left: 3px solid var(--ruim); background: #fff; border-radius: 0 var(--raio-p) var(--raio-p) 0; }
+.bol-causas li.tecnica { border-left-color: var(--texto-fraco); }
+.bol-bruto { font-size: 11.5px; color: var(--texto-suave); margin-top: 4px; }
+.bol-bruto code { font-family: ui-monospace, Consolas, monospace; font-size: 11px; background: #EEF2EF; padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+.det-itens .det-linha { grid-template-columns: minmax(160px, 2fr) 76px 110px 110px minmax(180px, 2.4fr); }
+.det-itens .det-linha small { color: var(--texto-fraco); font-variant-numeric: tabular-nums; }
+.det-itens .c-sit .bom { color: var(--bom); }
+.det-itens .det-linha.ruim { color: var(--texto); }
+.det-itens .det-linha.ruim .c-sit { color: var(--ruim); }
+
 /* ---- saldo do depósito do coordenador ---- */
 .saldo { border-top: 1px solid var(--linha); background: #FAFBFA; }
 .saldo-cab { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 11px 18px; font-size: 13px; }
@@ -329,6 +355,29 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
   .det-apont .det-linha .c-lanc { grid-column: 1 / 3; font-size: 11.5px; }
   .det-apont .det-linha .c-lanc i { display: inline; }
   .det-apont .det-linha .c-por { grid-column: 3 / -1; text-align: right; font-size: 11.5px; }
+
+  /* boletins: cada um vira um bloco, com o motivo sempre à vista */
+  .resumo.resumo-3 { grid-template-columns: 1fr; }
+  .tabela-boletins, .tabela-boletins tbody { display: block; }
+  .tabela-boletins thead { display: none; }
+  .tabela-boletins tr.boletim { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 10px; padding: 12px 14px; border-bottom: 1px solid var(--linha-suave); }
+  .tabela-boletins tr.boletim > td { display: block; padding: 0 !important; border: 0; text-align: left; }
+  .tabela-boletins td.os { grid-column: 1; grid-row: 1; font-size: 15px; }
+  .tabela-boletins td.os small { display: inline; margin-left: 6px; }
+  .tabela-boletins td.dia { grid-column: 2; grid-row: 1; text-align: right !important; font-size: 12.5px; color: var(--texto-suave); }
+  .tabela-boletins td.motivo { grid-column: 1 / -1; grid-row: 2; }
+  .tabela-boletins td.quem { grid-column: 1; grid-row: 3; font-size: 12.5px; }
+  .tabela-boletins td.quem small { display: inline; margin-left: 6px; }
+  .tabela-boletins td.desde { grid-column: 2; grid-row: 3; text-align: right; font-size: 12.5px; }
+  .tabela-boletins tr.detalhe { display: block; }
+  .tabela-boletins tr.detalhe > td { display: block; padding: 10px 14px 14px !important; }
+  .det-itens .det-linha { grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; }
+  .det-itens .det-linha.cab { display: none; }
+  .det-itens .det-linha > span:nth-child(2)::before { content: "depósito "; color: var(--texto-fraco); }
+  .det-itens .det-linha > span:nth-child(3) { grid-column: 1; text-align: left; }
+  .det-itens .det-linha > span:nth-child(3)::before { content: "precisa "; color: var(--texto-fraco); }
+  .det-itens .det-linha > span:nth-child(4)::before { content: "saldo "; color: var(--texto-fraco); }
+  .det-itens .det-linha > span.c-sit { grid-column: 1 / -1; }
 
   .tabela-vinculos, .tabela-vinculos tbody { display: block; }
   .tabela-vinculos thead { display: none; }

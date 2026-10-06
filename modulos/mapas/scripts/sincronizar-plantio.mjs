@@ -898,12 +898,12 @@ const arred = (v, casas = 2) => {
  * diferença), coordenadores, depósitos (nome do SAP quando houver; inativos ficam marcados) e o saldo
  * dos depósitos vinculados. Chaves curtas: a tela lê isso inteiro a cada abertura.
  */
-export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes = [], apontamentos = [], depositosSap = {}, estoque = {}, avisos = [] }, geradoEm) {
+export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes = [], apontamentos = [], depositosSap = {}, estoque = {}, boletins = {}, avisos = [] }, geradoEm) {
   const linhas = new Map();
   const linha = (unidade) => {
     const u = txt(unidade);
     if (!u) return null;
-    if (!linhas.has(u)) linhas.set(u, { unidade: u, gerado_em: geradoEm, ordens: [], coordenadores: [], depositos: [], estoque: {}, avisos });
+    if (!linhas.has(u)) linhas.set(u, { unidade: u, gerado_em: geradoEm, ordens: [], coordenadores: [], depositos: [], estoque: {}, boletins: [], avisos });
     return linhas.get(u);
   };
   const porOrdem = new Map();
@@ -953,8 +953,179 @@ export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, ta
     const l = linhas.get(unidade);
     if (l) l.estoque = porDeposito;
   }
+  // boletins com falha de integração (ou ainda não integrados): a unidade aparece mesmo sem ordem no retrato
+  for (const [unidade, lista] of Object.entries(boletins)) {
+    const l = linha(unidade);
+    if (l) l.boletins = lista;
+  }
   for (const l of linhas.values()) l.ordens.sort((a, b) => comparar(a.ab ?? '', b.ab ?? '') || a.os - b.os);
   return [...linhas.values()].sort((a, b) => comparar(a.unidade, b.unidade));
+}
+
+/* ---- boletins que falharam na integração com o SAP e boletins que ainda não foram integrados ----
+   A fila de baixa de material do PIMS (BRG_BXMATERIAL_EMS) marca com documento "-1" o item que o SAP
+   recusou; o motivo fica no SAP, na tabela "@GA_PIMS_LOG" (uma linha por tentativa). O boletim que ainda
+   não foi enviado tem FG_STATUS_EAI = '0' no cabeçalho: para ele, conferimos no SAP o que faria a baixa
+   falhar (saldo, cadastro do item no depósito, item ou depósito inativo). */
+const ORIGEM_BOLETIM = ['I', 'P', 'T', 'C', 'L']; // insumo, plantio, tratamento de sementes, abastecimento, lubrificação
+
+/** Itens que o SAP recusou (documento -1 na fila), com a unidade, a ordem e o coordenador de cada boletim. */
+export function montarSqlBoletinsFalha(desde) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  return `SELECT COALESCE(ui.DE_UNI_ADM, up.DE_UNI_ADM, ut.DE_UNI_ADM, uc.DE_UNI_ADM, ul.DE_UNI_ADM) AS unidade, e.FG_ORIGEM AS origem, e.NO_BOLETIM AS boletim,
+  CONVERT(varchar(10), e.DT_CONSUMO, 23) AS dia, CONVERT(varchar(30), e.ID_BOLETIM_DE) AS id_item, e.CD_MATERIAL_ERP AS material, e.QT_CONSUMO AS qtd, e.CD_UNI_MEDIDA AS un,
+  e.CD_DEPOSITO AS deposito, os.NO_BOLETIM AS os, COALESCE(eqo.DE_EQUIPE, eqi.DE_EQUIPE, eqp.DE_EQUIPE) AS equipe, CONVERT(varchar(16), e.DTHR_GERACAO, 120) AS em
+FROM ${PIMS}BRG_BXMATERIAL_EMS e
+LEFT JOIN ${PIMS}APAPLINSUMO ai ON e.FG_ORIGEM = 'I' AND ai.ID_APAPLINSUMO = e.ID_BOLETIM
+LEFT JOIN ${PIMS}APPLANTIO ap ON e.FG_ORIGEM = 'P' AND ap.ID_APPLANTIO = e.ID_BOLETIM
+LEFT JOIN ${PIMS}APTRATSEMENT ats ON e.FG_ORIGEM = 'T' AND ats.ID_APTRATSEMENT = e.ID_BOLETIM
+LEFT JOIN ${PIMS}APABASTEC ac ON e.FG_ORIGEM = 'C' AND ac.ID_APABASTEC = e.ID_BOLETIM
+LEFT JOIN ${PIMS}APLUBRIF al ON e.FG_ORIGEM = 'L' AND al.ID_APLUBRIF = e.ID_BOLETIM
+LEFT JOIN ${PIMS}UNIDADEADM ui ON ui.ID_UNIDADEADM = ai.ID_UNIDADEADM
+LEFT JOIN ${PIMS}UNIDADEADM up ON up.ID_UNIDADEADM = ap.ID_UNIDADEADM
+LEFT JOIN ${PIMS}UNIDADEADM ut ON ut.ID_UNIDADEADM = ats.ID_UNIDADEADM
+LEFT JOIN ${PIMS}UNIDADEADM uc ON uc.ID_UNIDADEADM = ac.ID_UNIDADEADM
+LEFT JOIN ${PIMS}UNIDADEADM ul ON ul.ID_UNIDADEADM = al.ID_UNIDADEADM
+LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = COALESCE(ai.ID_APORDSERVICO, ap.ID_APORDSERVICO, ats.ID_APORDSERVICO)
+LEFT JOIN ${PIMS}EQUIPE eqo ON eqo.ID_EQUIPE = os.ID_EQUIPE
+LEFT JOIN ${PIMS}EQUIPE eqi ON eqi.ID_EQUIPE = ai.ID_EQUIPE
+LEFT JOIN ${PIMS}EQUIPE eqp ON eqp.ID_EQUIPE = ap.ID_EQUIPE
+WHERE e.DT_CONSUMO >= '${d}' AND LTRIM(RTRIM(e.NO_DOC_ERP)) = '-1' AND e.FG_STATUS <> '12'
+ORDER BY 1, 3, 5`;
+}
+
+/** Boletins ainda não enviados ao SAP (FG_STATUS_EAI = '0'), um por item; boletim sem item vem com o item nulo. */
+export function montarSqlBoletinsPendentes(desde) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  const parte = (origem, cab, id, itens, idItem, qtd, equipe) => `SELECT u.DE_UNI_ADM AS unidade, '${origem}' AS origem, a.NO_BOLETIM AS boletim, CONVERT(varchar(10), a.DT_OPERACAO, 23) AS dia,
+  CONVERT(varchar(30), l.${idItem}) AS id_item, i.CD_INT_ERP AS material, i.DE_INSUMO AS nome, l.${qtd} AS qtd, dp.CD_INT_ERP AS deposito, os.NO_BOLETIM AS os,
+  ${equipe ? 'COALESCE(eqo.DE_EQUIPE, eqa.DE_EQUIPE)' : 'eqo.DE_EQUIPE'} AS equipe, CONVERT(varchar(16), a.LAST_UPDATE, 120) AS em
+FROM ${PIMS}${cab} a
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = a.ID_UNIDADEADM
+LEFT JOIN ${PIMS}${itens} l ON l.${id} = a.${id}
+LEFT JOIN ${PIMS}INSUMO i ON i.ID_INSUMO = l.ID_INSUMO
+LEFT JOIN ${PIMS}DEPOSITO dp ON dp.ID_DEPOSITO = l.ID_DEPOSITO
+LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO
+LEFT JOIN ${PIMS}EQUIPE eqo ON eqo.ID_EQUIPE = os.ID_EQUIPE${equipe ? `\nLEFT JOIN ${PIMS}EQUIPE eqa ON eqa.ID_EQUIPE = a.ID_EQUIPE` : ''}
+WHERE a.DT_OPERACAO >= '${d}' AND a.FG_STATUS_EAI = '0' AND a.FG_INTEGRAR = 'S'`;
+  return `${parte('I', 'APAPLINSUMO', 'ID_APAPLINSUMO', 'APAPLINS_INSLC', 'ID_APAPLINS_INSLC', 'QT_CONS_TOTAL', true)}
+UNION ALL
+${parte('P', 'APPLANTIO', 'ID_APPLANTIO', 'APPLANTIO_IN', 'ID_APPLANTIO_IN', 'QT_TOTAL', true)}
+UNION ALL
+${parte('T', 'APTRATSEMENT', 'ID_APTRATSEMENT', 'APTRATSEMENT_IN', 'ID_APTRATSEMENT_IN', 'QT_TOTAL', false)}
+ORDER BY 1, 4, 3`;
+}
+
+const listaSap = (valores, teste) => [...new Set(valores.map((v) => String(v ?? '')).filter(teste))].map((v) => `'${v}'`).join(', ');
+
+/** Última mensagem do SAP para cada item dos boletins pedidos, com quantas tentativas houve e de quando a quando. */
+export function montarSqlLogIntegracaoSap(boletins, desde) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  const lista = listaSap(boletins, (b) => /^\d{1,18}$/.test(b));
+  if (!lista) throw new Error('Nenhum boletim válido para consultar o log de integração.');
+  return `SELECT l."U_ID_BOLETIM_DE" AS id_item, l."U_Message" AS msg, t.n AS tentativas, t.primeira, t.ultima
+FROM "@GA_PIMS_LOG" l
+JOIN (SELECT MAX("Code") AS codigo, COUNT(*) AS n, TO_VARCHAR(MIN("U_Date"), 'YYYY-MM-DD') AS primeira, TO_VARCHAR(MAX("U_Date"), 'YYYY-MM-DD') AS ultima
+  FROM "@GA_PIMS_LOG" WHERE "U_NO_BOLETIM" IN (${lista}) AND "U_Date" >= '${d}' GROUP BY "U_ID_BOLETIM_DE") t ON t.codigo = l."Code"`;
+}
+
+/** Cadastro e saldo, no SAP, dos itens dos boletins nos depósitos de onde eles vão sair. */
+export function montarSqlSaldoItensSap(itens, depositos) {
+  const listaItens = listaSap(itens, ehCodigoSap);
+  if (!listaItens) throw new Error('Nenhum item válido para consultar o saldo.');
+  const listaDeps = listaSap(depositos, ehCodigoSap) || "''";
+  return `SELECT i."ItemCode" AS item, i."ItemName" AS nome, i."InvntryUom" AS unidade, i."frozenFor" AS congelado, w."WhsCode" AS deposito, w."OnHand" AS saldo
+FROM OITM i LEFT JOIN OITW w ON w."ItemCode" = i."ItemCode" AND w."WhsCode" IN (${listaDeps})
+WHERE i."ItemCode" IN (${listaItens})`;
+}
+
+const empresaDa = (unidade) => SAP_EMPRESA_DA_UNIDADE[txt(unidade) ?? ''] ?? null;
+
+/**
+ * Monta, por unidade, a lista de boletins com problema de integração:
+ *   { o origem, n boletim, d dia, os, eq coordenador, sit 'F' falhou | 'P' ainda não integrado, em (quando entrou na fila
+ *     ou foi lançado), t tentativas, p1/ul primeira e última tentativa, m [mensagens do SAP], si 1 = sem item,
+ *     it [{ c item, nm nome, q quantidade, u unidade, dp depósito, s saldo no SAP, pr [problemas previstos] }] }
+ * Problemas previstos em cada item: 'sem-deposito', 'deposito-inativo', 'item-inexistente', 'item-inativo',
+ * 'item-fora-deposito' e 'sem-estoque' (o saldo é consumido na ordem: primeiro os que já falharam, depois por data).
+ * `logs` = { empresa: Map(id do item → { msg, n, primeira, ultima }) }; `sap` = { empresa: { itens: Map(item → { nome,
+ * un, inativo }), saldo: Map('item|depósito' → número) } }. Empresa sem dados do SAP → sem diagnóstico.
+ */
+export function linhasBoletins({ falhas = [], pendentes = [], logs = {}, sap = {}, depositosSap = {} }) {
+  const grupos = new Map();
+  const juntar = (r, sit) => {
+    const unidade = txt(r.unidade);
+    const origem = txt(r.origem);
+    if (!unidade || !ORIGEM_BOLETIM.includes(origem) || r.boletim === null || r.boletim === undefined) return;
+    const chave = `${sit}|${unidade}|${origem}|${r.boletim}`;
+    if (!grupos.has(chave)) {
+      grupos.set(chave, { unidade, b: { o: origem, n: String(r.boletim), d: txt(r.dia), os: r.os === null || r.os === undefined ? null : Number(r.os), eq: txt(r.equipe), sit, em: txt(r.em), it: [] }, itens: new Map(), msgs: new Set() });
+    }
+    const g = grupos.get(chave);
+    const em = txt(r.em);
+    if (em && (!g.b.em || em < g.b.em)) g.b.em = em;
+    const material = txt(r.material);
+    if (!material && !txt(r.id_item)) return; // boletim sem item
+    const dep = txt(r.deposito);
+    const k = `${material ?? '?'}|${dep ?? ''}`;
+    if (!g.itens.has(k)) g.itens.set(k, { c: material ?? '?', nm: txt(r.nome) ?? '', q: 0, u: txt(r.un) ?? '', dp: dep });
+    g.itens.get(k).q += Number(r.qtd) || 0;
+    if (sit !== 'F') return;
+    const log = logs[empresaDa(unidade)]?.get(String(r.id_item));
+    if (!log) return;
+    g.b.t = Math.max(g.b.t ?? 0, Number(log.n) || 0);
+    if (log.primeira && (!g.b.p1 || log.primeira < g.b.p1)) g.b.p1 = log.primeira;
+    if (log.ultima && (!g.b.ul || log.ultima > g.b.ul)) g.b.ul = log.ultima;
+    const msg = String(log.msg ?? '').replace(/\s+/g, ' ').trim();
+    if (msg && !/^adicionado/i.test(msg)) g.msgs.add(msg.slice(0, 260));
+  };
+  for (const r of falhas) juntar(r, 'F');
+  for (const r of pendentes) juntar(r, 'P');
+
+  const ordenados = [...grupos.values()].sort((a, b) => comparar(a.b.sit, b.b.sit) || comparar(a.b.d ?? '', b.b.d ?? '') || comparar(a.b.n, b.b.n));
+  const consumido = new Map(); // 'empresa|item|depósito' → quanto os boletins anteriores já vão tirar
+  const porUnidade = new Map();
+  for (const g of ordenados) {
+    const empresa = empresaDa(g.unidade);
+    const dados = sap[empresa];
+    for (const item of g.itens.values()) {
+      item.q = arred(item.q, 3);
+      const cadastro = dados?.itens.get(item.c);
+      if (cadastro) {
+        item.nm = cadastro.nome || item.nm;
+        item.u = item.u || cadastro.un || '';
+      }
+      const problemas = [];
+      if (!item.dp) problemas.push('sem-deposito');
+      else if (depositosSap[empresa]?.get(item.dp)?.inativo) problemas.push('deposito-inativo');
+      if (dados) {
+        if (!cadastro) problemas.push('item-inexistente');
+        else {
+          if (cadastro.inativo) problemas.push('item-inativo');
+          if (item.dp) {
+            const k = `${item.c}|${item.dp}`;
+            const saldo = dados.saldo.get(k);
+            if (saldo === undefined) problemas.push('item-fora-deposito');
+            else {
+              item.s = arred(saldo, 3);
+              const antes = consumido.get(`${empresa}|${k}`) ?? 0;
+              if (antes + item.q > saldo + 1e-6) problemas.push('sem-estoque');
+              if (antes) item.ant = arred(antes, 3); // outros boletins, antes deste, tiram do mesmo saldo
+              consumido.set(`${empresa}|${k}`, antes + item.q);
+            }
+          }
+        }
+      }
+      if (problemas.length) item.pr = problemas;
+      g.b.it.push(item);
+    }
+    g.b.it.sort((a, b) => comparar(a.nm || a.c, b.nm || b.c));
+    if (g.msgs.size) g.b.m = [...g.msgs];
+    if (g.b.sit === 'P' && !g.b.it.length) g.b.si = 1;
+    if (!porUnidade.has(g.unidade)) porUnidade.set(g.unidade, []);
+    porUnidade.get(g.unidade).push(g.b);
+  }
+  return Object.fromEntries(porUnidade);
 }
 
 /** Vínculos coordenador ↔ depósito cadastrados na tela (valid_vinculos); sem a tabela → []. */
@@ -1011,6 +1182,10 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
     const evolucao = objetosDe(await cliente.consultar(SQL_EVOLUCAO_VALIDACAO, 'área apontada por dia nas ordens abertas (validação)', 'evolução das ordens'));
     const coordenadores = objetosDe(await cliente.consultar(montarSqlCoordenadoresValidacao(desde), 'coordenadores com ordem de serviço na safra (validação)', 'coordenadores'));
     const depositos = objetosDe(await cliente.consultar(SQL_DEPOSITOS_PIMS, 'depósitos do PIMS com código do SAP (validação)', 'depósitos'));
+    const falhas = objetosDe(await cliente.consultar(montarSqlBoletinsFalha(desde), 'itens de boletim recusados pelo SAP na integração (validação)', 'boletins com falha'));
+    const pendentes = objetosDe(await cliente.consultar(montarSqlBoletinsPendentes(desde), 'boletins ainda não enviados ao SAP (validação)', 'boletins pendentes'));
+    const logs = {};
+    const sapItens = {};
 
     const avisos = [];
     const depositosSap = {};
@@ -1024,6 +1199,25 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
           if (txt(r.codigo)) mapa.set(txt(r.codigo), { nome: txt(r.nome), inativo: txt(r.inativo) === 'Y' });
         }
         depositosSap[empresa] = mapa;
+        // boletins desta empresa: o motivo da recusa (log do SAP) e o saldo dos itens nos depósitos de saída
+        const daEmpresa = (r) => SAP_EMPRESA_DA_UNIDADE[txt(r.unidade) ?? ''] === empresa;
+        const numeros = falhas.filter(daEmpresa).map((r) => String(r.boletim ?? ''));
+        if (numeros.some((b) => /^\d{1,18}$/.test(b))) {
+          logs[empresa] = new Map(objetosDe(await cliente.consultar(montarSqlLogIntegracaoSap(numeros, desde), 'mensagens do SAP para os boletins recusados (validação)', `log de integração ${empresa}`, fonte))
+            .map((r) => [String(r.id_item), { msg: txt(r.msg), n: Number(r.tentativas) || 0, primeira: txt(r.primeira), ultima: txt(r.ultima) }]));
+        }
+        const doSap = [...falhas, ...pendentes].filter(daEmpresa);
+        if (doSap.some((r) => ehCodigoSap(r.material))) {
+          const itens = new Map();
+          const saldo = new Map();
+          for (const r of objetosDe(await cliente.consultar(montarSqlSaldoItensSap(doSap.map((r) => r.material), doSap.map((r) => r.deposito)), 'cadastro e saldo dos itens dos boletins (validação)', `itens ${empresa}`, fonte))) {
+            const item = txt(r.item);
+            if (!item) continue;
+            itens.set(item, { nome: txt(r.nome) ?? '', un: txt(r.unidade) ?? '', inativo: txt(r.congelado) === 'Y' });
+            if (txt(r.deposito)) saldo.set(`${item}|${txt(r.deposito)}`, Number(r.saldo) || 0);
+          }
+          sapItens[empresa] = { itens, saldo };
+        }
         const porUnidade = vinculados[empresa];
         if (!porUnidade) continue;
         const res = objetosDe(await cliente.consultar(montarSqlEstoqueSap(Object.values(porUnidade).flat()), 'saldo dos depósitos dos coordenadores e origem de cada produto pelas transferências (validação)', `saldo ${empresa}`, fonte));
@@ -1042,7 +1236,8 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
       }
     }
     const geradoEm = agora.toISOString();
-    return { geradoEm, linhas: linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes, apontamentos, depositosSap, estoque, avisos }, geradoEm), avisos };
+    const boletins = linhasBoletins({ falhas, pendentes, logs, sap: sapItens, depositosSap });
+    return { geradoEm, linhas: linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes, apontamentos, depositosSap, estoque, boletins, avisos }, geradoEm), avisos };
   } finally {
     await cliente.fechar();
   }
@@ -1054,11 +1249,17 @@ export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchI
     console.warn('Validação: o PIMS não retornou nenhuma ordem; valid_pims não foi alterada.');
     return 'vazio';
   }
-  const resp = await fetchImpl(`${url}/rest/v1/valid_pims?on_conflict=unidade`, {
+  const enviar = (linhas) => fetchImpl(`${url}/rest/v1/valid_pims?on_conflict=unidade`, {
     method: 'POST',
     headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify(dados.linhas),
+    body: JSON.stringify(linhas),
   });
+  let resp = await enviar(dados.linhas);
+  if (!resp.ok && /PGRST204/.test(await resp.clone().text().catch(() => ''))) {
+    // banco ainda sem a coluna dos boletins (script 0008): grava o resto, para as ordens não pararem
+    console.warn('Validação: a coluna valid_pims.boletins ainda não existe (rode supabase/0008_validacao_boletins.sql); gravando sem os boletins.');
+    resp = await enviar(dados.linhas.map(({ boletins: _fora, ...resto }) => resto));
+  }
   if (!resp.ok) {
     const texto = await resp.clone().text().catch(() => '');
     if (resp.status === 404 || /PGRST205|42P01/.test(texto)) {

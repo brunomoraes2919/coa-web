@@ -990,6 +990,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <nav>
         <button class="nav-btn" data-page="validacao" data-valid="abertas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Ordens em aberto</button>
         <button class="nav-btn" data-page="validacao" data-valid="fechadas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 10v4M12 17.5v.5"/></svg>Fechadas com diferença</button>
+        <button class="nav-btn" data-page="validacao" data-valid="boletins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="m10.5 12.5 4 4M14.5 12.5l-4 4"/></svg>Boletins com falha</button>
         <button class="nav-btn" data-page="validacao" data-valid="depositos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8 12 3.5 20.5 8v8L12 20.5 3.5 16V8Z"/><path d="M3.5 8 12 12.5 20.5 8M12 12.5v8"/></svg>Vínculo de depósitos</button>
       </nav>
     </div>
@@ -4420,11 +4421,11 @@ window.addEventListener('message', ev=>{
 /* =====================================================================
    VALIDAÇÃO PIMS — módulo num iframe da mesma origem
    (validacao/index.html?embed=1#<vista>; a sessão do Supabase é a mesma do COA WEB)
-   - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'validacao-vista', vista:'abertas'|'fechadas'|'depositos' }
+   - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'validacao-vista', vista:'abertas'|'fechadas'|'boletins'|'depositos' }
    - módulo → COA: { tipo:'validacao-rota', vista, coaFazenda }
    Sempre com targetOrigin = location.origin; só aceita mensagens do próprio iframe.
 ===================================================================== */
-const VALID_VISTAS = ['abertas', 'fechadas', 'depositos'];
+const VALID_VISTAS = ['abertas', 'fechadas', 'boletins', 'depositos'];
 let validFrame = null;      // iframe #validacao-frame (criado na primeira entrada; removido ao sair)
 let validCarregado = false;
 let validVista = 'abertas';
