@@ -23,6 +23,13 @@ describe('lerRecebida', () => {
     expect(lerRecebida({ key: { remoteJid: '123456789012345@lid', remoteJidAlt: JID_A }, message: { conversation: 'ATIVAR' } })).toEqual({ jid: JID_A, texto: 'ATIVAR' })
     expect(lerRecebida({ key: { remoteJid: '123456789012345@lid' }, message: { conversation: 'ATIVAR' } })).toBeNull()
   })
+
+  it('descarta número estrangeiro, canal (newsletter) e @lid com alternativa que não é de telefone', () => {
+    expect(lerRecebida({ key: { remoteJid: '14155550100@s.whatsapp.net' }, message: { conversation: 'ATIVAR' } })).toBeNull()
+    expect(lerRecebida({ key: { remoteJid: '120363000000000001@newsletter' }, message: { conversation: 'ATIVAR' } })).toBeNull()
+    expect(lerRecebida({ key: { remoteJid: '123456789012345@lid', remoteJidAlt: '120363000000000001@g.us' }, message: { conversation: 'ATIVAR' } })).toBeNull()
+    expect(lerRecebida({ key: { remoteJid: '123456789012345@lid', remoteJidAlt: '987654321098765@lid' }, message: { conversation: 'ATIVAR' } })).toBeNull()
+  })
 })
 
 type Config = Record<string, unknown>
@@ -223,5 +230,144 @@ describe('conectarWhatsapp', () => {
     sockets[0].emit('connection.update', queda(428))
     await proximoCiclo()
     expect(sockets).toHaveLength(1)
+  })
+
+  it('creds.update de socket já trocado ou depois de encerrar() ainda grava', async () => {
+    const { opcoes, sockets, saveCreds } = montar()
+    const w = await conectarWhatsapp(opcoes)
+    sockets[0].emit('connection.update', queda(428))
+    await proximoCiclo()
+    expect(sockets).toHaveLength(2)
+    sockets[0].emit('creds.update', {})
+    expect(saveCreds).toHaveBeenCalledTimes(1)
+    await w.encerrar()
+    saveCreds.mockClear()
+    sockets[1].emit('creds.update', {})
+    expect(saveCreds).toHaveBeenCalledTimes(1)
+  })
+
+  it('falha ao gravar a sessão é registrada, sem rejeição solta e sem dados', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const { opcoes, sockets, saveCreds } = montar()
+      const w = await conectarWhatsapp(opcoes)
+      saveCreds.mockRejectedValue(new Error('disco cheio'))
+      sockets[0].emit('creds.update', {})
+      await proximoCiclo()
+      expect(log).toHaveBeenCalledWith('[whatsapp] falha ao gravar a sessão: disco cheio')
+      saveCreds.mockRejectedValue('estranho')
+      await expect(w.encerrar()).resolves.toBeUndefined()
+      expect(log).toHaveBeenCalledWith('[whatsapp] falha ao gravar a sessão: erro')
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('encerrar() grava as credenciais uma vez no fim, depois de fechar o socket', async () => {
+    const { opcoes, sockets, saveCreds } = montar()
+    const w = await conectarWhatsapp(opcoes)
+    const ordem: string[] = []
+    sockets[0].end.mockImplementation(() => { ordem.push('end') })
+    saveCreds.mockImplementation(async () => { ordem.push('saveCreds') })
+    await w.encerrar()
+    expect(ordem).toEqual(['end', 'saveCreds'])
+  })
+
+  it('eventos de um socket já substituído não valem', async () => {
+    const { opcoes, sockets, aoReceber } = montar()
+    const w = await conectarWhatsapp(opcoes)
+    sockets[0].emit('connection.update', queda(428))
+    await proximoCiclo()
+    expect(sockets).toHaveLength(2)
+    sockets[0].emit('connection.update', { connection: 'open' })
+    expect(w.conectado).toBe(false)
+    sockets[0].emit('connection.update', queda(428))
+    await proximoCiclo()
+    sockets[0].emit('messages.upsert', { type: 'notify', messages: [{ key: { remoteJid: JID_A }, message: { conversation: 'ATIVAR' } }] })
+    expect(aoReceber).not.toHaveBeenCalled()
+    expect(w.conectado).toBe(false)
+    expect(sockets).toHaveLength(2)
+  })
+
+  it('dois close seguidos no mesmo socket criam um socket só', async () => {
+    const { opcoes, sockets, esperas } = montar()
+    await conectarWhatsapp(opcoes)
+    sockets[0].emit('connection.update', queda(428))
+    sockets[0].emit('connection.update', queda(428))
+    await proximoCiclo()
+    expect(sockets).toHaveLength(2)
+    expect(esperas).toEqual([5_000])
+  })
+
+  it('enviar: manda "paused" mesmo se o envio falhar, e o erro original sobe', async () => {
+    const { opcoes, sockets } = montar()
+    const w = await conectarWhatsapp(opcoes)
+    const s = sockets[0]
+    s.emit('connection.update', { connection: 'open' })
+    s.sendMessage.mockRejectedValueOnce(new Error('sem rede'))
+    await expect(w.enviar(JID_A, 'Olá')).rejects.toThrow('sem rede')
+    expect(s.sendPresenceUpdate.mock.calls.map((c) => c[0])).toEqual(['composing', 'paused'])
+  })
+
+  it('enviar: manda "paused" mesmo se a espera falhar', async () => {
+    const m = montar()
+    m.opcoes.dependencias!.dormir = async () => { throw new Error('interrompido') }
+    const w = await conectarWhatsapp(m.opcoes)
+    const s = m.sockets[0]
+    s.emit('connection.update', { connection: 'open' })
+    await expect(w.enviar(JID_A, 'Olá')).rejects.toThrow('interrompido')
+    expect(s.sendPresenceUpdate.mock.calls.map((c) => c[0])).toEqual(['composing', 'paused'])
+    expect(s.sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('messages.upsert: uma mensagem que lança não derruba as outras, e o registro não leva o texto', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const { opcoes, sockets, aoReceber } = montar()
+      await conectarWhatsapp(opcoes)
+      aoReceber.mockImplementationOnce(() => { throw new Error('quebrou com TEXTO-SECRETO') })
+      const msg = (texto: string) => ({ key: { remoteJid: JID_A }, message: { conversation: texto } })
+      expect(() => sockets[0].emit('messages.upsert', { type: 'notify', messages: [msg('primeira'), msg('segunda')] })).not.toThrow()
+      expect(aoReceber).toHaveBeenCalledTimes(2)
+      expect(aoReceber).toHaveBeenLastCalledWith({ jid: JID_A, texto: 'segunda' })
+      const registrado = JSON.stringify(log.mock.calls)
+      expect(log).toHaveBeenCalled()
+      expect(registrado).not.toContain('primeira')
+      expect(registrado).not.toContain('segunda')
+      expect(registrado).not.toContain('TEXTO-SECRETO')
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it('messages.upsert: aoReceber que devolve Promise rejeitada é tratado', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    try {
+      const { opcoes, sockets, aoReceber } = montar()
+      await conectarWhatsapp(opcoes)
+      aoReceber.mockRejectedValueOnce(new Error('falhou com TEXTO-SECRETO'))
+      sockets[0].emit('messages.upsert', { type: 'notify', messages: [{ key: { remoteJid: JID_A }, message: { conversation: 'ATIVAR' } }] })
+      await proximoCiclo()
+      expect(log).toHaveBeenCalled()
+      expect(JSON.stringify(log.mock.calls)).not.toContain('TEXTO-SECRETO')
+    } finally {
+      log.mockRestore()
+    }
+  })
+
+  it.each([
+    [440, 'sessão em uso em outro lugar'],
+    [403, 'acesso recusado pelo WhatsApp'],
+  ])('close %i: para a reconexão e pede atenção', async (codigo, motivo) => {
+    const { opcoes, sockets, aoMudarConexao, esperas } = montar()
+    const w = await conectarWhatsapp(opcoes)
+    sockets[0].emit('connection.update', { connection: 'open' })
+    sockets[0].emit('connection.update', queda(codigo))
+    await proximoCiclo()
+    expect(w.precisaParear).toBe(true)
+    expect(w.conectado).toBe(false)
+    expect(aoMudarConexao).toHaveBeenLastCalledWith(false, motivo)
+    expect(sockets).toHaveLength(1)
+    expect(esperas).toEqual([])
   })
 })

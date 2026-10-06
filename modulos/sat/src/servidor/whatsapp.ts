@@ -29,7 +29,7 @@ export interface SocketMinimo {
 
 export interface OpcoesWhatsapp {
   pastaSessao: string
-  aoReceber: (m: MensagemRecebida) => void
+  aoReceber: (m: MensagemRecebida) => void | Promise<void>
   aoMudarConexao: (conectado: boolean, motivo?: string) => void
   /** Só no pareamento: mostra o QR (texto para desenhar) ou o código de 8 dígitos. */
   aoPedirQr?: (qr: string) => void
@@ -50,6 +50,16 @@ interface MensagemBruta {
 
 const ESPERA_MINIMA = 5_000
 const ESPERA_MAXIMA = 5 * 60_000
+
+// Quedas em que tentar de novo só piora: o número precisa de atenção de uma pessoa.
+// Dois lugares se derrubando em laço prejudicam a reputação do número.
+const MOTIVO_SEM_RECONEXAO: Record<number, string> = {
+  [DisconnectReason.loggedOut]: 'sessão encerrada no celular',
+  [DisconnectReason.connectionReplaced]: 'sessão em uso em outro lugar',
+  [DisconnectReason.forbidden]: 'acesso recusado pelo WhatsApp',
+}
+
+const textoDoErro = (e: unknown) => (e instanceof Error ? e.message : 'erro')
 
 /** Só o texto de uma mensagem de conversa individual vinda de outra pessoa; o resto vira `null`. */
 export function lerRecebida(m: MensagemBruta): MensagemRecebida | null {
@@ -90,8 +100,20 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
   let conectado = false
   let precisaParear = false
   let encerrado = false
+  let reconectando = false
   let espera = ESPERA_MINIMA
   const numeroParaCodigo = opcoes.numeroParaCodigo?.replace(/\D/g, '')
+
+  async function gravarSessao(): Promise<void> {
+    try {
+      await saveCreds()
+    } catch (e) {
+      console.log(`[whatsapp] falha ao gravar a sessão: ${textoDoErro(e)}`)
+    }
+  }
+
+  // Sem o texto da mensagem: o registro só diz que uma falhou.
+  const falhouAoReceber = (e: unknown) => console.log(`[whatsapp] falha ao tratar uma mensagem recebida: ${e instanceof Error ? e.name : 'erro'}`)
 
   function abrir(): void {
     const s = criarSocket({
@@ -108,7 +130,8 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
     // Eventos de um socket já substituído (ou de depois do encerramento) não valem.
     const atual = () => socket === s && !encerrado
 
-    s.ev.on('creds.update', () => { if (atual()) void saveCreds() })
+    // Sem o guarda: credencial emitida por um socket já trocado ou depois de encerrar() ainda tem de ser gravada.
+    s.ev.on('creds.update', () => { void gravarSessao() })
 
     s.ev.on('connection.update', ((u: { connection?: string; lastDisconnect?: { error?: unknown }; qr?: string }) => {
       if (!atual()) return
@@ -118,7 +141,7 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
           codigoPedido = true
           s.requestPairingCode(numeroParaCodigo)
             .then((codigo) => opcoes.aoReceberCodigo?.(codigo))
-            .catch((e) => console.log(`[whatsapp] não consegui pedir o código de pareamento (${mascarar(numeroParaCodigo)}): ${e instanceof Error ? e.message : 'erro'}`))
+            .catch((e) => console.log(`[whatsapp] não consegui pedir o código de pareamento (${mascarar(numeroParaCodigo)}): ${textoDoErro(e)}`))
         }
       }
       if (u.connection === 'open') {
@@ -129,9 +152,10 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
       } else if (u.connection === 'close') {
         conectado = false
         const codigo = (u.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode
-        if (codigo === DisconnectReason.loggedOut) {
+        const motivoFixo = codigo === undefined ? undefined : MOTIVO_SEM_RECONEXAO[codigo]
+        if (motivoFixo) {
           precisaParear = true
-          opcoes.aoMudarConexao(false, 'sessão encerrada no celular')
+          opcoes.aoMudarConexao(false, motivoFixo)
           return
         }
         opcoes.aoMudarConexao(false, `conexão perdida${codigo ? ` (${codigo})` : ''}`)
@@ -141,24 +165,38 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
 
     s.ev.on('messages.upsert', ((e: { messages: MensagemBruta[]; type: string }) => {
       if (!atual() || e.type !== 'notify') return
+      // Uma mensagem que dá problema não derruba as outras nem volta para a biblioteca.
       for (const m of e.messages) {
-        const recebida = lerRecebida(m)
-        if (recebida) opcoes.aoReceber(recebida)
+        try {
+          const recebida = lerRecebida(m)
+          if (recebida) Promise.resolve(opcoes.aoReceber(recebida)).catch(falhouAoReceber)
+        } catch (erro) {
+          falhouAoReceber(erro)
+        }
       }
     }) as (d: never) => void)
   }
 
+  // Nunca dois sockets: não depende de a biblioteca emitir um só `close`.
   async function reconectar(): Promise<void> {
-    const ms = espera
-    espera = Math.min(espera * 2, ESPERA_MAXIMA)
-    console.log(`[whatsapp] nova tentativa de conexão em ${Math.round(ms / 1000)} s`)
-    await dormir(ms)
-    if (encerrado) return
+    if (reconectando) return
+    reconectando = true
     try {
-      abrir()
-    } catch (e) {
-      console.log(`[whatsapp] falha ao reabrir a conexão: ${e instanceof Error ? e.message : 'erro'}`)
-      void reconectar()
+      while (!encerrado) {
+        const ms = espera
+        espera = Math.min(espera * 2, ESPERA_MAXIMA)
+        console.log(`[whatsapp] nova tentativa de conexão em ${Math.round(ms / 1000)} s`)
+        await dormir(ms)
+        if (encerrado) return
+        try {
+          abrir()
+          return
+        } catch (e) {
+          console.log(`[whatsapp] falha ao reabrir a conexão: ${textoDoErro(e)}`)
+        }
+      }
+    } finally {
+      reconectando = false
     }
   }
 
@@ -172,8 +210,12 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
       if (!conectado || !socket) throw new Error('WhatsApp desconectado')
       const s = socket
       await s.sendPresenceUpdate('composing', jid)
-      await dormir(tempoDigitando())
-      await s.sendPresenceUpdate('paused', jid)
+      try {
+        await dormir(tempoDigitando())
+      } finally {
+        // Não deixa "digitando" preso; se este aviso falhar, o erro original é que importa.
+        await s.sendPresenceUpdate('paused', jid).catch(() => {})
+      }
       await s.sendMessage(jid, { text: texto })
     },
 
@@ -188,6 +230,7 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
       encerrado = true
       conectado = false
       await socket?.end(undefined)
+      await gravarSessao()
     },
   }
 }
