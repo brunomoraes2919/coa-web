@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { buscarSerie, cabecalhosDaPonte, definirFonteDoToken, ErroGnss, isoTrimble, TEMPO_LIMITE_MS, urlOverlay } from './gnssApi'
+import { buscarSerie, cabecalhosDaPonte, converterSerieTrimble, definirFonteDoToken, ErroGnss, isoTrimble, TEMPO_LIMITE_MS, urlOverlay } from './gnssApi'
 
 const fetchFalso = vi.fn()
 
@@ -88,6 +88,21 @@ describe('buscarSerie', () => {
   it('corpo que não é lista é indisponível', async () => {
     responder(200, { erro: 'x' })
     await expect(buscarSerie({ lat: 0, lon: 0 }, 0, 1)).rejects.toMatchObject({ tipo: 'indisponivel' })
+  })
+})
+
+describe('converterSerieTrimble', () => {
+  it('converte a lista da Trimble em pontos', () => {
+    const serie = converterSerieTrimble([
+      { value: 3, timeOfEstimation: '2026-10-06T10:00:00Z', tecValue: 20, scintiValue: 40, predicted: false },
+    ])
+    expect(serie).toHaveLength(1)
+    expect(serie[0].cintilacao).toBe(40)
+  })
+
+  it('o que não é lista é erro de indisponibilidade', () => {
+    expect(() => converterSerieTrimble({})).toThrow(ErroGnss)
+    expect(() => converterSerieTrimble({})).toThrow(expect.objectContaining({ tipo: 'indisponivel', status: 200 }))
   })
 })
 

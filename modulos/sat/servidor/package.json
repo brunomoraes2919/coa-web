@@ -1,0 +1,11 @@
+{
+  "name": "locks-sat-whatsapp",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "baileys": "7.0.0-rc14",
+    "qrcode-terminal": "0.12.0"
+  }
+}

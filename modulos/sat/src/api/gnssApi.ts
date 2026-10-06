@@ -104,6 +104,14 @@ async function buscarJson(caminho: string): Promise<unknown> {
   }
 }
 
+/** A lista da Trimble já em `PontoIono`; resposta fora do formato vira erro. */
+export function converterSerieTrimble(dados: unknown): PontoIono[] {
+  if (!Array.isArray(dados)) {
+    throw new ErroGnss('indisponivel', 200, 'Resposta da Trimble fora do formato esperado.')
+  }
+  return (dados as ItemTrimble[]).map(converterItem).filter((p) => Number.isFinite(p.instante))
+}
+
 /** Série de `horas` horas a partir de `inicio`, no ponto (lat, lon) em graus. */
 export async function buscarSerie(
   ponto: { lat: number; lon: number },
@@ -112,10 +120,7 @@ export async function buscarSerie(
   passoSeg = 600,
 ): Promise<PontoIono[]> {
   const dados = await buscarJson(`ionoindex/${ponto.lon}/${ponto.lat}/${isoTrimble(inicio)}/${horas}/${passoSeg}`)
-  if (!Array.isArray(dados)) {
-    throw new ErroGnss('indisponivel', 200, 'Resposta da Trimble fora do formato esperado.')
-  }
-  return (dados as ItemTrimble[]).map(converterItem).filter((p) => Number.isFinite(p.instante))
+  return converterSerieTrimble(dados)
 }
 
 /** PNG 256×256 do mundo — um tile Web Mercator de zoom 0 — num passo de 10 min. */
