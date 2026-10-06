@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610062300">
+<link rel="stylesheet" href="estilo.css?v=202610070900">
 <script src="config.js?v=202610051700"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -48,6 +48,7 @@
           <button data-vista="painel" aria-pressed="true">Painel</button>
           <button data-vista="metas" aria-pressed="false">Metas</button>
           <button data-vista="safras" aria-pressed="false">Safras</button>
+          <button data-vista="relatorio" aria-pressed="false">Relatórios</button>
         </nav>
       </div>
     </div>
@@ -231,6 +232,56 @@
     </article>
   </div>
 </main>
+
+  <!-- ============================ RELATÓRIOS (consolidado da operação até a data) ============================ -->
+<main id="relatorio" class="vista app-relatorio" hidden>
+  <section class="rel-cab faixa-marca rl-cab" id="rl-cab">
+    <div class="rel-cab-texto">
+      <p class="destaque-eyebrow" id="rl-eyebrow">Relatório consolidado</p>
+      <h1 class="destaque-titulo" id="rl-titulo">—</h1>
+      <p class="rel-cab-sub" id="rl-sub"></p>
+    </div>
+    <div class="rl-pct"><b id="rl-pct">—</b><span id="rl-pct-rot"></span></div>
+    <button class="botao rel-botao" id="rl-exportar" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Exportar PNG ou PDF
+    </button>
+  </section>
+  <section class="cartao rl-sec rl-leitura">
+    <header class="cartao-cab"><div><h2>Leitura da operação</h2><p class="cartao-sub" id="rl-leitura-sub"></p></div></header>
+    <div id="rl-frases"></div>
+  </section>
+  <div id="rl-resto">
+    <section class="kpis rl-kpis" id="rl-kpis" aria-label="Indicadores"></section>
+    <section class="cartao rl-sec">
+      <header class="cartao-cab"><div><h2>Esta safra × anteriores</h2><p class="cartao-sub" id="rl-comp-sub"></p></div></header>
+      <div class="tabela-rolagem" id="rl-comp"></div>
+    </section>
+    <section class="cartao rl-sec">
+      <header class="cartao-cab"><div><h2 id="rl-diario-t">Hectares por dia</h2><p class="cartao-sub">safra atual</p></div><ul class="legenda" id="rl-leg-diario"></ul></header>
+      <div class="grafico alto-260" id="rl-g-diario"></div>
+    </section>
+    <div class="rl-duo">
+      <section class="cartao">
+        <header class="cartao-cab"><div><h2>Acumulado pela data do ano</h2><p class="cartao-sub">hectares acumulados</p></div><ul class="legenda" id="rl-leg-acum"></ul></header>
+        <div class="grafico alto-260" id="rl-g-acum"></div>
+      </section>
+      <section class="cartao" id="rl-c-talhoes">
+        <header class="cartao-cab"><div><h2 id="rl-tal-t">% plantado por talhão</h2><p class="cartao-sub" id="rl-tal-sub"></p></div></header>
+        <div class="grafico alto-260" id="rl-g-talhoes"></div>
+      </section>
+    </div>
+    <section class="cartao rl-sec" id="rl-c-fazendas" hidden>
+      <header class="cartao-cab"><div><h2>Fazendas</h2><p class="cartao-sub">da mais adiantada à mais atrasada</p></div></header>
+      <div class="tabela-rolagem" id="rl-fazendas"></div>
+    </section>
+    <div class="rl-trio">
+      <section class="cartao"><header class="cartao-cab"><div><h2>Situação dos talhões</h2></div></header><div id="rl-situacao"></div></section>
+      <section class="cartao"><header class="cartao-cab"><div><h2>Equipes</h2><p class="cartao-sub">últimos 7 dias de operação de cada equipe</p></div></header><div id="rl-equipes"></div></section>
+      <section class="cartao"><header class="cartao-cab"><div><h2>Variedades</h2><p class="cartao-sub">plantado / previsto</p></div></header><div id="rl-variedades"></div></section>
+    </div>
+    <p class="nota-rodape" id="rl-nota"></p>
+  </div>
+</main>
 </div>
 
 <dialog class="dialogo" id="dlg-rel" aria-labelledby="rel-exp-titulo">
@@ -245,6 +296,20 @@
   <div class="previa"><img id="rel-exp-previa" alt="Prévia do relatório"></div>
   <p class="dica" id="rel-exp-status"></p>
   <div class="botoes"><button type="button" class="botao" id="rel-exp-baixar">Baixar</button></div>
+</dialog>
+
+<dialog class="dialogo" id="dlg-relatorio" aria-labelledby="rl-exp-titulo">
+  <header class="cartao-cab">
+    <div><h2 id="rl-exp-titulo">Exportar o relatório consolidado</h2><p class="cartao-sub">A operação até a data, numa página</p></div>
+    <button type="button" class="botao-icone" id="rl-exp-fechar" aria-label="Fechar">×</button>
+  </header>
+  <div class="formatos dois" role="radiogroup" aria-label="Formato">
+    <label class="formato"><input type="radio" name="rl-fmt" value="png"><span class="fmt-forma v"></span><b>PNG</b><small>Uma imagem só, para WhatsApp ou e-mail</small></label>
+    <label class="formato"><input type="radio" name="rl-fmt" value="pdf"><span class="fmt-forma v"></span><b>PDF</b><small>A4 em pé, para imprimir ou arquivar</small></label>
+  </div>
+  <div class="previa"><img id="rl-exp-previa" alt="Prévia do relatório"></div>
+  <p class="dica" id="rl-exp-status"></p>
+  <div class="botoes"><button type="button" class="botao" id="rl-exp-baixar">Baixar</button></div>
 </dialog>
 
 <!-- ============================ MODO TV ============================ -->
@@ -310,6 +375,8 @@
 
 <div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Carregando os dados do PIMS</span><i>.</i><i>.</i><i>.</i></p></div></div>
 <script src="safras.js?v=202610051700"></script>
-<script src="app.js?v=202610062300"></script>
+<script src="relatorio-logica.js?v=202610070900"></script>
+<script src="relatorio.js?v=202610070900"></script>
+<script src="app.js?v=202610070900"></script>
 </body>
 </html>

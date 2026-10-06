@@ -444,6 +444,42 @@ button, input, select { font: inherit; color: inherit; }
 .alternador.pequeno button { font-size: 12.5px; padding: 5px 10px; }
 @media (max-width: 760px) { .rel-cab { flex-direction: column; align-items: flex-start; } .rel-g { height: 260px; } #rel-comp { height: 340px; } }
 
+/* ============================ RELATÓRIOS (consolidado) ============================ */
+.app-relatorio { padding-bottom: 12px; }
+.rl-cab .rel-cab-texto { flex: 1 1 auto; }
+.rl-pct { text-align: right; white-space: nowrap; }
+.rl-pct b { display: block; font-size: 44px; line-height: 1; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+.rl-pct span { display: block; margin-top: 6px; font-size: 12.5px; color: #D7E8E2; }
+.rl-sec { margin-top: 14px; }
+.rl-kpis { margin-top: 14px; }
+.kpi-sub.tom-bom { color: var(--bom); } .kpi-sub.tom-atencao { color: var(--atencao); } .kpi-sub.tom-ruim { color: var(--ruim); }
+.rl-leitura p { margin: 0 0 9px; font-size: 14px; line-height: 1.55; color: var(--texto); }
+.rl-leitura p:last-child { margin-bottom: 0; }
+.rl-leitura b { color: var(--verde-teal); font-weight: 650; }
+.rl-duo { display: grid; grid-template-columns: 1.3fr 1fr; gap: 14px; margin-top: 14px; }
+.rl-duo:has(#rl-c-talhoes[hidden]) { grid-template-columns: minmax(0, 1fr); } /* em "Todas" não há gráfico de talhões: o acumulado ocupa a linha */
+.rl-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.rl-tabela { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.rl-tabela th { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); font-weight: 600; text-align: right; padding: 4px 10px; border-bottom: 1px solid var(--linha); white-space: nowrap; }
+.rl-tabela td { padding: 9px 10px; text-align: right; border-bottom: 1px solid #EEF2EE; white-space: nowrap; }
+.rl-tabela .e { text-align: left; }
+.rl-tabela tr.atual td { background: #F0F6F3; }
+.rl-tabela td small { font-size: 11px; color: var(--texto-fraco); margin-left: 6px; }
+.rl-tabela small.rl-dif { font-weight: 600; }
+.rl-dif.ok { color: var(--bom); } .rl-dif.ruim { color: var(--ruim); }
+.rl-cor { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; flex: none; }
+.rl-lista { list-style: none; margin: 0; padding: 0; }
+.rl-lista li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid #EEF2EE; font-size: 13px; }
+.rl-lista li > span { display: flex; align-items: center; min-width: 0; }
+.rl-lista b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rl-lista b small { font-weight: 500; color: var(--texto-fraco); font-size: 11.5px; }
+.rl-lista.barras li { display: block; }
+.rl-lista.barras li > div:first-child { display: flex; justify-content: space-between; gap: 10px; }
+.rl-barra { height: 5px; background: var(--s-0); border-radius: 3px; overflow: hidden; margin-top: 5px; }
+.rl-barra i { display: block; height: 100%; background: var(--verde-teal); }
+@media (max-width: 1000px) { .rl-duo { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .rl-trio { grid-template-columns: minmax(0, 1fr); } .rl-pct { text-align: left; } .rl-pct b { font-size: 36px; } }
+
 /* ============================ MODO TV ============================
    Uma tela só, sem rolagem. A fonte base acompanha a tela (vmin/vmax) e todo o
    resto é em "em": o mesmo layout serve para TV HD, Full HD, 4K, ultrawide e vertical. */

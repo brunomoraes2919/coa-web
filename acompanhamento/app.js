@@ -2106,8 +2106,10 @@
     $('painel').hidden = estado.vista !== 'painel';
     $('metas').hidden = estado.vista !== 'metas';
     $('safras').hidden = estado.vista !== 'safras';
+    $('relatorio').hidden = estado.vista !== 'relatorio';
     document.documentElement.classList.toggle('vista-safras', estado.vista === 'safras');
     if (estado.vista === 'painel') renderPainel();
+    else if (estado.vista === 'relatorio') { mostrarAviso(''); window.AcompRelatorio.render(NUCLEO); }
     else if (estado.vista === 'safras') {
       // a análise é por fazenda: sem "Todas"
       if (estado.u === TODAS && us.length) { estado.u = us[0]; desenharTopo(); }
@@ -2158,7 +2160,7 @@
   }
 
   // ---- eventos ----
-  $('abas').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; fecharAmpliado(true); estado.u = b.dataset.u; if (estado.vista !== 'safras') estado.vista = 'painel'; render(); window.scrollTo({ top: 0 }); });
+  $('abas').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; fecharAmpliado(true); estado.u = b.dataset.u; if (estado.vista !== 'safras' && estado.vista !== 'relatorio') estado.vista = 'painel'; render(); window.scrollTo({ top: 0 }); });
   $('sel-safra').addEventListener('change', function () { estado.s = this.value; render(); });
   $('sel-op').addEventListener('change', function () { estado.o = this.value; render(); });
   document.querySelectorAll('.alternador button').forEach(function (b) { b.addEventListener('click', function () { estado.vista = b.dataset.vista; render(); }); });
@@ -2197,7 +2199,11 @@
   });
 
   // exportar e modo TV
-  $('btn-exportar').addEventListener('click', function () { if (estado.vista === 'safras') window.AcompSafras.exportar(); else abrirExportar(); });
+  $('btn-exportar').addEventListener('click', function () {
+    if (estado.vista === 'safras') window.AcompSafras.exportar();
+    else if (estado.vista === 'relatorio') window.AcompRelatorio.exportar();
+    else abrirExportar();
+  });
   $('btn-tv').addEventListener('click', abrirTv);
   document.querySelectorAll('#dlg-exportar input[name="fmt"]').forEach(function (r) {
     r.addEventListener('change', function () { exp.formato = this.value; ls('formatoPng', this.value); atualizarPrevia(); });
@@ -2251,7 +2257,7 @@
     clearTimeout(tRes);
     tRes = setTimeout(function () {
       if (tv.ativo) return tvDesenhar();
-      if (estado.vista === 'safras') return render(); // o eixo de dias depende da largura
+      if (estado.vista === 'safras' || estado.vista === 'relatorio') return render(); // o eixo de dias depende da largura
       if (estado.vista === 'painel' && mUltimo) renderMapa(mUltimo);
       Object.keys(charts).forEach(function (k) { charts[k].resize(); });
     }, 150);
@@ -2270,13 +2276,14 @@
     var d = ev.data;
     if (!d || typeof d !== 'object') return;
     if (d.tipo === 'coa-fazenda') { coaFazenda = typeof d.id === 'number' ? d.id : null; aplicarFazendaCoa(); }
-    if (d.tipo === 'acomp-vista' && (d.vista === 'painel' || d.vista === 'metas' || d.vista === 'safras') && d.vista !== estado.vista) { estado.vista = d.vista; render(); }
+    if (d.tipo === 'acomp-vista' && (d.vista === 'painel' || d.vista === 'metas' || d.vista === 'safras' || d.vista === 'relatorio') && d.vista !== estado.vista) { estado.vista = d.vista; render(); }
   });
 
-  // núcleo compartilhado com a aba "Safras" (safras.js)
+  // núcleo compartilhado com as abas "Safras" (safras.js) e "Relatórios" (relatorio.js)
   var NUCLEO = {
-    dados: function () { return DADOS; }, estado: function () { return estado; },
+    dados: function () { return DADOS; }, estado: function () { return estado; }, TODAS: TODAS, unidadesDaSafra: unidadesDaSafra,
     calcula: calcula, culturaDaSafra: culturaDaSafra, anoDaSafra: anoDaSafra, anosAntes: anosAntes,
+    opcoesAcumulado: opcoesAcumulado, rotulosClasse: rotulosClasse, COR_FAZENDA: COR_FAZENDA, COR_COMPARATIVO: COR_COMPARATIVO, paragrafo: paragrafo, fonteCv: fonteCv,
     iso: iso, paraIso: paraIso, dif: dif, hoje: hoje, DIA: DIA, COR: COR,
     fmtN: fmtN, fmtPct: fmtPct, fmtData: fmtData, titulo: titulo, nomeSafra: nomeSafra, esc: esc,
     opt: opt, tt: tt, eixoX: eixoX, eixoY: eixoY, chart: chart, vazio: vazio,
@@ -2289,7 +2296,7 @@
   if (EMBED) document.documentElement.classList.add('embed');
   if (!window.echarts) { set('carregando-texto', 'Não foi possível carregar a biblioteca de gráficos. Verifique a conexão com a internet.'); return; }
   var h0 = location.hash.slice(1).split('/').map(decodeURIComponent);
-  if (h0[0] === 'painel' || h0[0] === 'metas' || h0[0] === 'safras') { estado.vista = h0[0]; estado.u = h0[1] || TODAS; estado.s = h0[2] || null; estado.o = h0[3] === 'COLHEITA' ? 'COLHEITA' : 'PLANTIO'; }
+  if (h0[0] === 'painel' || h0[0] === 'metas' || h0[0] === 'safras' || h0[0] === 'relatorio') { estado.vista = h0[0]; estado.u = h0[1] || TODAS; estado.s = h0[2] || null; estado.o = h0[3] === 'COLHEITA' ? 'COLHEITA' : 'PLANTIO'; }
 
   (async function iniciar() {
     try {
