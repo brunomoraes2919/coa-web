@@ -44,7 +44,8 @@ create policy whatsapp_contato_fazendas_super on public.whatsapp_contato_fazenda
   using (public.is_super())
   with check (public.is_super());
 
-revoke all on public.whatsapp_contatos from anon;
-revoke all on public.whatsapp_contato_fazendas from anon;
+-- o Supabase dá tudo a anon e authenticated em tabela nova: aqui fica só o que o site usa
+revoke all on public.whatsapp_contatos from anon, authenticated;
+revoke all on public.whatsapp_contato_fazendas from anon, authenticated;
 grant select, insert, update, delete on public.whatsapp_contatos to authenticated;
 grant select, insert, update, delete on public.whatsapp_contato_fazendas to authenticated;
