@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, semChave, sincronizar } from './sincronizar-plantio.mjs';
+import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, semChave, sincronizar, ultimoDiaZeus } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -99,11 +99,24 @@ async function semTabela(resp) {
   return corpo?.code === 'PGRST205' || corpo?.code === '42P01';
 }
 
-/** Pedidos de chuva pendentes ({ id, fazenda, de, ate }), do mais antigo para o mais novo; sem a tabela → []. */
+/** O banco ainda não tem as colunas de hora do pedido (script 0004_situacao_zeus.sql não aplicado)? */
+async function semColunaDeHora(resp) {
+  if (resp.status !== 400) return false;
+  const corpo = await resp.clone().json().catch(() => null);
+  return corpo?.code === '42703';
+}
+
+/**
+ * Pedidos de chuva pendentes ({ id, fazenda, de, ate, de_hora, ate_hora }), do mais antigo para o mais
+ * novo; sem a tabela → []. Num banco sem as colunas de hora, lê só as datas (os pedidos por data seguem
+ * funcionando).
+ */
 export async function pedidosChuvaPendentes({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
-  const resp = await fetchImpl(`${url}/rest/v1/${TABELA_CHUVA}?select=id,fazenda,de,ate&atendido_em=is.null&order=id.asc&limit=${MAX_CHUVA_POR_RODADA}`, {
+  const ler = (colunas) => fetchImpl(`${url}/rest/v1/${TABELA_CHUVA}?select=${colunas}&atendido_em=is.null&order=id.asc&limit=${MAX_CHUVA_POR_RODADA}`, {
     headers: cabecalhosSupabase(chave),
   });
+  let resp = await ler('id,fazenda,de,ate,de_hora,ate_hora');
+  if (!resp.ok && (await semColunaDeHora(resp))) resp = await ler('id,fazenda,de,ate');
   if (!resp.ok) {
     if (await semTabela(resp)) return [];
     await erroRest(resp, chave, 'a leitura dos pedidos de chuva');
@@ -132,7 +145,7 @@ export async function atenderPedidosChuva({ supabase, agrovex, fetch: fetchImpl 
   const pedidos = await pedidosChuvaPendentes(ctx);
   for (const p of pedidos) {
     try {
-      const dados = await chuvaPorPicZeus({ url: agrovex.url, token: agrovex.token, fazenda: p.fazenda, de: p.de, ate: p.ate, fetchImpl });
+      const dados = await chuvaPorPicZeus({ url: agrovex.url, token: agrovex.token, fazenda: p.fazenda, de: p.de, ate: p.ate, deHora: p.de_hora ?? null, ateHora: p.ate_hora ?? null, fetchImpl });
       await responderPedidoChuva(ctx, p.id, 'ok', dados, agora());
       console.log(`== ${agora().toISOString()} chuva por PIC: ${dados.fazenda} ${dados.de} a ${dados.ate}, ${dados.pics.length} PICs.`);
     } catch (e) {
@@ -210,6 +223,45 @@ export async function atenderPedidosMec({ supabase, agrovex, fetch: fetchImpl = 
   return pedidos.length;
 }
 
+// ---------- último dia da ZEUS no banco (aviso ao lado de "Inserir dados via integração") ----------
+
+const TABELA_SITUACAO_ZEUS = 'mapas_zeus_situacao';
+/** a conferência vale por este tempo; depois, a próxima verificação consulta a ZEUS de novo */
+export const SITUACAO_ZEUS_MINUTOS = 15;
+/** só tenta nos minutos múltiplos deste: com o Agrovex fora do ar, não vira uma consulta a cada 30 s */
+const SITUACAO_ZEUS_PASSO_MIN = 5;
+
+/**
+ * Mantém mapas_zeus_situacao em dia: o último dia com leitura de chuva de cada fazenda da ZEUS, para a tela
+ * avisar até onde dá para puxar antes de alguém pedir um período que ainda não chegou. Roda junto da
+ * verificação dos pedidos, mas só consulta a ZEUS quando a última conferência tem mais de 15 min.
+ * Devolve 'recente', 'fora-do-passo', 'sem-tabela' (script 0004 não aplicado), 'vazio' ou 'ok'.
+ */
+export async function atualizarSituacaoZeus({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+  const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?select=conferido_em&order=conferido_em.desc&limit=1`, {
+    headers: cabecalhosSupabase(supabase.chave),
+  });
+  if (!resp.ok) {
+    if (await semTabela(resp)) return 'sem-tabela';
+    await erroRest(resp, supabase.chave, 'a leitura da situação da ZEUS');
+  }
+  const linhas = await resp.json();
+  const momento = agora();
+  const ultima = Array.isArray(linhas) && linhas[0]?.conferido_em ? Date.parse(linhas[0].conferido_em) : NaN;
+  if (Number.isFinite(ultima) && momento.getTime() - ultima < SITUACAO_ZEUS_MINUTOS * 60_000) return 'recente';
+  if (momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
+  const novas = await ultimoDiaZeus({ url: agrovex.url, token: agrovex.token, fetchImpl, agora: momento });
+  if (!novas.length) return 'vazio';
+  const gravar = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?on_conflict=fazenda`, {
+    method: 'POST',
+    headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(novas),
+  });
+  if (!gravar.ok) await erroRest(gravar, supabase.chave, 'a gravação da situação da ZEUS');
+  console.log(`== ${momento.toISOString()} situação da ZEUS: ${novas.length} fazendas, dados até ${novas.reduce((m, l) => (l.ultimo_dia > m ? l.ultimo_dia : m), '')}.`);
+  return 'ok';
+}
+
 async function main() {
   const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const config = JSON.parse(readFileSync(join(raiz, 'scripts', 'plantio.config.json'), 'utf8'));
@@ -226,7 +278,7 @@ async function main() {
   };
   // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
   let erroConsulta = null;
-  for (const atender of [atenderPedidosChuva, atenderPedidosMec]) {
+  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atualizarSituacaoZeus]) {
     try {
       await atender({ supabase, agrovex });
     } catch (e) {

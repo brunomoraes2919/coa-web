@@ -3,6 +3,7 @@ import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PedidoChuva, ResultadoIntegracao, SituacaoPedidoChuva } from '../src/lib/chuvaZeus';
+import type { SituacaoZeus } from '../src/lib/situacaoZeus';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -18,6 +19,11 @@ const falso = {
   async situacaoPedidoChuva() {
     return falso.resposta;
   },
+  /** último dia de cada fazenda da ZEUS no banco (vazio = o servidor ainda não gravou) */
+  situacao: [] as SituacaoZeus[],
+  async situacaoZeus() {
+    return falso.situacao;
+  },
 };
 vi.mock('../src/data', () => ({ repo: () => falso }));
 
@@ -30,6 +36,7 @@ beforeEach(() => {
   falso.podeBuscarChuva = true;
   falso.pedidos = [];
   falso.resposta = null;
+  falso.situacao = [];
 });
 afterEach(() => {
   act(() => raiz?.unmount());
@@ -114,5 +121,106 @@ describe('botão "Inserir dados via integração"', () => {
     expect(recebidos).toEqual([]);
     expect(document.querySelector('[role="alert"]')?.textContent).toContain('O servidor não conseguiu buscar a chuva: A ZEUS não tem PICs para a fazenda "X".');
     expect(botao('Buscar dados')?.disabled).toBe(false);
+  });
+});
+
+describe('opção de informar a hora do período', () => {
+  const horas = () => [...document.querySelectorAll<HTMLInputElement>('input[type="time"]')];
+  const caixaHora = () => [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find((c) => c.closest('label')?.textContent?.includes('Informar também a hora'));
+
+  it('por padrão a janela pede só as datas; marcando a opção aparecem a hora inicial e a final', () => {
+    montar('SM3');
+    act(() => botao('Inserir dados via integração')!.click());
+    expect(caixaHora()?.checked).toBe(false);
+    expect(horas()).toHaveLength(0);
+    act(() => caixaHora()!.click());
+    expect(horas().map((h) => h.value)).toEqual(['00:00', '23:59']);
+  });
+
+  it('com a opção marcada o pedido leva as horas; a resposta entra com o período em data e hora', async () => {
+    falso.resposta = {
+      atendidoEm: '2026-10-05T12:00:20.000Z',
+      resultado: 'ok',
+      dados: { fazenda: 'SM3', de: '2026-10-03', ate: '2026-10-04', deHora: '06:00', ateHora: '07:00', ultimoDia: '2026-10-04', ultimaLeitura: '2026-10-04T07:00', pics: [{ id: '4700', nome: 'PIC 27 SM3', lat: -17.38, lon: -54.74, chuva: 2.4, leituras: 26 }] },
+    };
+    const recebidos = montar('SM3');
+    act(() => botao('Inserir dados via integração')!.click());
+    act(() => caixaHora()!.click());
+    digitar(datas()[0], '2026-10-03');
+    digitar(datas()[1], '2026-10-04');
+    digitar(horas()[0], '06:00');
+    digitar(horas()[1], '07:00');
+    act(() => botao('Buscar dados')!.click());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4100);
+    });
+    expect(falso.pedidos).toEqual([{ fazenda: 'SM3', de: '2026-10-03', ate: '2026-10-04', deHora: '06:00', ateHora: '07:00' }]);
+    expect(recebidos[0].nome).toBe('Integração ZEUS · 03/10/2026 06:00 a 04/10/2026 07:00');
+    expect(recebidos[0].comHora).toBe(true);
+  });
+
+  it('hora inicial depois da final no mesmo dia é recusada sem pedir nada', () => {
+    montar('SM3');
+    act(() => botao('Inserir dados via integração')!.click());
+    act(() => caixaHora()!.click());
+    digitar(horas()[0], '18:00');
+    digitar(horas()[1], '06:00');
+    act(() => botao('Buscar dados')!.click());
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('A hora inicial é depois da final.');
+    expect(falso.pedidos).toEqual([]);
+  });
+});
+
+describe('último dia da ZEUS no banco, ao lado do botão', () => {
+  /** conferido em 05/10/2026 às 08:17, horário local */
+  const CONFERIDO = new Date(2026, 9, 5, 8, 17, 0).toISOString();
+  const situacao = () => document.querySelector('.integracao-situacao')?.textContent ?? null;
+  const esperar = () => act(async () => { await vi.advanceTimersByTimeAsync(10); });
+
+  it('mostra até que dia a fazenda escolhida tem dados e quando isso foi conferido', async () => {
+    falso.situacao = [
+      { fazenda: 'SM3', ultimoDia: '2026-10-04', ultimaHora: '23:45', conferidoEm: CONFERIDO },
+      { fazenda: 'GLOBO', ultimoDia: '2026-10-02', ultimaHora: '23:00', conferidoEm: CONFERIDO },
+    ];
+    montar('Fazenda SM3');
+    await esperar();
+    expect(situacao()).toBe('ZEUS no banco até 04/10/2026 às 23:45 (ontem) · conferido hoje às 08:17');
+  });
+
+  it('sem nada gravado pelo servidor (ou fazenda fora da ZEUS), não mostra a linha', async () => {
+    montar('SM3');
+    await esperar();
+    expect(situacao()).toBeNull();
+    expect(botao('Inserir dados via integração')).toBeDefined();
+  });
+
+  it('a janela sugere o último dia com dados quando ele é anterior a ontem', async () => {
+    falso.situacao = [{ fazenda: 'SM3', ultimoDia: '2026-10-02', ultimaHora: '23:00', conferidoEm: CONFERIDO }];
+    montar('SM3');
+    await esperar();
+    act(() => botao('Inserir dados via integração')!.click());
+    expect(datas().map((d) => d.value)).toEqual(['2026-10-02', '2026-10-02']);
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('ZEUS no banco até 02/10/2026 às 23:00');
+  });
+
+  it('avisa, sem impedir a busca, quando o "até" passa do último dia com dados', async () => {
+    falso.situacao = [{ fazenda: 'SM3', ultimoDia: '2026-10-04', ultimaHora: '23:00', conferidoEm: CONFERIDO }];
+    montar('SM3');
+    await esperar();
+    act(() => botao('Inserir dados via integração')!.click());
+    expect(document.querySelector('.integracao-aviso')).toBeNull();
+    digitar(datas()[1], '2026-10-05');
+    expect(document.querySelector('.integracao-aviso')?.textContent).toBe('A ZEUS só tem dados no banco até 04/10/2026: a chuva de 05/10/2026 ainda não chegou e não entra no total.');
+    expect(botao('Buscar dados')?.disabled).toBe(false);
+  });
+
+  it('dia de hoje ainda pela metade na ZEUS: a janela diz até que horas há leituras', async () => {
+    falso.situacao = [{ fazenda: 'SM3', ultimoDia: '2026-10-05', ultimaHora: '07:00', conferidoEm: CONFERIDO }];
+    montar('SM3');
+    await esperar();
+    expect(situacao()).toBe('ZEUS no banco até 05/10/2026 às 07:00 (hoje) · conferido hoje às 08:17');
+    act(() => botao('Inserir dados via integração')!.click());
+    digitar(datas()[1], '2026-10-05');
+    expect(document.querySelector('.integracao-aviso')?.textContent).toBe('A ZEUS só tem leituras de 05/10/2026 até as 07:00: o total desse dia ainda está incompleto.');
   });
 });

@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { repo } from '../../data';
 import { buscarChuvaZeus, validarPeriodo, type ResultadoIntegracao } from '../../lib/chuvaZeus';
 import { isoData } from '../../lib/format';
+import { avisoDoPeriodo, dataSugerida, situacaoDaFazenda, textoSituacao, type SituacaoZeus } from '../../lib/situacaoZeus';
 import Aviso, { mensagemDeErro } from '../Aviso';
 import Modal from '../Modal';
 
@@ -35,15 +36,46 @@ export default function IntegracaoZeus({ fazendaNome, onDados }: Props) {
   const [aberto, setAberto] = useState(false);
   const [de, setDe] = useState(ontem);
   const [ate, setAte] = useState(ontem);
+  /** opção de informar também a hora inicial e a final (padrão: só as datas, dias inteiros) */
+  const [comHora, setComHora] = useState(false);
+  const [deHora, setDeHora] = useState('00:00');
+  const [ateHora, setAteHora] = useState('23:59');
   /** texto da etapa em andamento; null = parado */
   const [etapa, setEtapa] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   /** busca em andamento que ainda vale (fechar a janela descarta a resposta) */
   const busca = useRef(0);
+  /** último dia de cada fazenda da ZEUS no banco (vazio = o servidor ainda não gravou: sem aviso) */
+  const [situacoes, setSituacoes] = useState<SituacaoZeus[]>([]);
+  /** quem mexeu nas datas fica com as que escolheu; senão a janela sugere o último dia com dados */
+  const mexeuNasDatas = useRef(false);
+
+  const lerSituacao = useCallback(() => {
+    if (!podeBuscar()) return;
+    let vivo = true;
+    void repo()
+      .situacaoZeus()
+      .then((l) => vivo && setSituacoes(l))
+      .catch(() => undefined);
+    return () => {
+      vivo = false;
+    };
+  }, []);
+  useEffect(() => lerSituacao(), [lerSituacao]);
 
   if (!podeBuscar()) return null;
 
   const hoje = isoData(new Date());
+  const situacao = situacaoDaFazenda(situacoes, fazendaNome);
+  const texto = situacao ? textoSituacao(situacao) : null;
+  const linhaSituacao = texto && (
+    <>
+      ZEUS no banco até <strong>{texto.dia}</strong> ({texto.quando}) · {texto.conferido}
+    </>
+  );
+  // com hora, pedir até um instante que a ZEUS já tem não merece aviso, mesmo com o dia pela metade
+  const horaJaChegou = comHora && !!situacao?.ultimaHora && ate === situacao.ultimoDia && ateHora <= situacao.ultimaHora;
+  const avisoPeriodo = horaJaChegou ? null : avisoDoPeriodo(ate, situacao?.ultimoDia, situacao?.ultimaHora);
   const fechar = () => {
     busca.current += 1;
     setEtapa(null);
@@ -53,7 +85,7 @@ export default function IntegracaoZeus({ fazendaNome, onDados }: Props) {
 
   const buscar = async () => {
     if (etapa !== null || !fazendaNome) return;
-    const invalido = validarPeriodo(de, ate, hoje);
+    const invalido = comHora ? validarPeriodo(de, ate, hoje, deHora, ateHora) : validarPeriodo(de, ate, hoje);
     if (invalido) {
       setErro(invalido);
       return;
@@ -63,7 +95,7 @@ export default function IntegracaoZeus({ fazendaNome, onDados }: Props) {
     try {
       const r = repo();
       const fim = await buscarChuvaZeus({
-        pedir: () => r.pedirChuvaZeus({ fazenda: fazendaNome, de, ate }),
+        pedir: () => r.pedirChuvaZeus(comHora ? { fazenda: fazendaNome, de, ate, deHora, ateHora } : { fazenda: fazendaNome, de, ate }),
         situacao: (id) => r.situacaoPedidoChuva(id),
         aoEtapa: (t) => busca.current === esta && setEtapa(t),
       });
@@ -92,11 +124,25 @@ export default function IntegracaoZeus({ fazendaNome, onDados }: Props) {
           title={fazendaNome ? 'Busca na ZEUS a chuva de cada PIC da fazenda no período que você escolher' : 'Escolha a fazenda primeiro (passo 1)'}
           onClick={() => {
             setErro(null);
+            if (!mexeuNasDatas.current) {
+              const sugerida = dataSugerida(ontem(), situacao?.ultimoDia);
+              setDe(sugerida);
+              setAte(sugerida);
+            }
             setAberto(true);
+            lerSituacao(); // a carga da ZEUS pode ter chegado desde que a página abriu
           }}
         >
           Inserir dados via integração
         </button>
+        {linhaSituacao && (
+          <span
+            className={`integracao-situacao suave${texto?.atrasado ? ' atrasado' : ''}`}
+            title="Última leitura de chuva desta fazenda no banco da ZEUS. Pedir um período depois dela traz o total incompleto."
+          >
+            {linhaSituacao}
+          </span>
+        )}
       </div>
       <Modal
         aberto={aberto}
@@ -120,14 +166,54 @@ export default function IntegracaoZeus({ fazendaNome, onDados }: Props) {
           <div className="linha integracao-periodo">
             <label className="campo">
               <span>De</span>
-              <input type="date" value={de} max={hoje} disabled={etapa !== null} onChange={(e) => setDe(e.target.value)} />
+              <input
+                type="date"
+                value={de}
+                max={hoje}
+                disabled={etapa !== null}
+                onChange={(e) => {
+                  mexeuNasDatas.current = true;
+                  setDe(e.target.value);
+                }}
+              />
             </label>
+            {comHora && (
+              <label className="campo">
+                <span>Hora inicial</span>
+                <input type="time" value={deHora} disabled={etapa !== null} onChange={(e) => setDeHora(e.target.value)} />
+              </label>
+            )}
             <label className="campo">
               <span>Até</span>
-              <input type="date" value={ate} max={hoje} disabled={etapa !== null} onChange={(e) => setAte(e.target.value)} />
+              <input
+                type="date"
+                value={ate}
+                max={hoje}
+                disabled={etapa !== null}
+                onChange={(e) => {
+                  mexeuNasDatas.current = true;
+                  setAte(e.target.value);
+                }}
+              />
             </label>
+            {comHora && (
+              <label className="campo">
+                <span>Hora final</span>
+                <input type="time" value={ateHora} disabled={etapa !== null} onChange={(e) => setAteHora(e.target.value)} />
+              </label>
+            )}
           </div>
-          <p className="suave">As duas datas entram no total. Para a chuva de um dia só, repita a mesma data.</p>
+          <label className="integracao-opcao">
+            <input type="checkbox" checked={comHora} disabled={etapa !== null} onChange={(e) => setComHora(e.target.checked)} />
+            <span>Informar também a hora inicial e a final</span>
+          </label>
+          <p className="suave">
+            {comHora
+              ? 'Entram as leituras entre a data e hora inicial e a data e hora final, as duas inclusive. As leituras da ZEUS são de hora em hora.'
+              : 'As duas datas entram no total, com o dia inteiro. Para a chuva de um dia só, repita a mesma data.'}
+          </p>
+          {linhaSituacao && <p className={`integracao-situacao suave${texto?.atrasado ? ' atrasado' : ''}`}>{linhaSituacao}</p>}
+          {avisoPeriodo && <p className="integracao-aviso">{avisoPeriodo}</p>}
           {etapa !== null && (
             <p className="suave" aria-live="polite">
               {etapa}

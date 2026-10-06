@@ -11,7 +11,7 @@ export function atenderPedidos(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<boolean>;
-export interface PedidoChuvaPendente { id: number; fazenda: string; de: string; ate: string }
+export interface PedidoChuvaPendente { id: number; fazenda: string; de: string; ate: string; /** 'hh:mm:ss' ou null (dias inteiros) */ de_hora?: string | null; ate_hora?: string | null }
 export function pedidosChuvaPendentes(ctx: Ctx): Promise<PedidoChuvaPendente[]>;
 export function responderPedidoChuva(ctx: Ctx, id: number, resultado: string, dados: unknown, agora?: Date): Promise<void>;
 export function atenderPedidosChuva(opcoes: {
@@ -20,6 +20,14 @@ export function atenderPedidosChuva(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<number>;
+export const SITUACAO_ZEUS_MINUTOS: number;
+/** Mantém mapas_zeus_situacao em dia (último dia com leitura de cada fazenda da ZEUS). */
+export function atualizarSituacaoZeus(opcoes: {
+  supabase: { url: string; chave: string };
+  agrovex: { url: string; token: string };
+  fetch?: FetchLike;
+  agora?: () => Date;
+}): Promise<'recente' | 'fora-do-passo' | 'sem-tabela' | 'vazio' | 'ok'>;
 export interface PedidoMecPendente { id: number; unidade: string; de: string; ate: string }
 export function pedidosMecPendentes(ctx: Ctx): Promise<PedidoMecPendente[]>;
 export function responderPedidoMec(ctx: Ctx, id: number, resultado: string, dados: unknown, agora?: Date): Promise<void>;

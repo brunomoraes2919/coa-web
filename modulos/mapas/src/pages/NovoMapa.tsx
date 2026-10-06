@@ -95,6 +95,7 @@ export default function NovoMapa() {
         safra,
         periodoInicio: csv?.inicio ?? null,
         periodoFim: csv?.fim ?? null,
+        periodoComHora: csv?.comHora ?? false,
         setores,
         hoje: new Date(),
       }),
@@ -188,7 +189,7 @@ export default function NovoMapa() {
   const receberIntegracao = (r: ResultadoIntegracao) => {
     setErro(null);
     setPics(r.pics);
-    setCsv({ nome: r.nome, inicio: r.inicio, fim: r.fim, avisos: r.avisos });
+    setCsv({ nome: r.nome, inicio: r.inicio, fim: r.fim, comHora: r.comHora, avisos: r.avisos });
   };
 
   const nomeArquivo = nomeArquivoMapa(textos.fazenda || 'fazenda', textos.periodo);

@@ -7,7 +7,7 @@
  */
 
 import { mensagemDeErro } from './erros';
-import { fmtData, fmtPeriodo, isoData, parseIsoData } from './format';
+import { fmtData, fmtPeriodo, fmtPeriodoHora, isoData, parseIsoData } from './format';
 import { aguardarPedido, type OpcoesAguardar, type SituacaoPedidoPlantio } from './pedidoPlantio';
 import type { Pic } from './types';
 
@@ -21,6 +21,9 @@ export interface PedidoChuva {
   de: string;
   /** 'yyyy-mm-dd', inclusive */
   ate: string;
+  /** 'hh:mm': só com a opção de informar a hora (as duas ou nenhuma); sem elas, dias inteiros */
+  deHora?: string;
+  ateHora?: string;
 }
 
 export interface PicIntegracao {
@@ -38,8 +41,13 @@ export interface DadosChuvaZeus {
   fazenda: string;
   de: string;
   ate: string;
+  /** 'hh:mm' do pedido com hora (ausentes = dias inteiros) */
+  deHora?: string;
+  ateHora?: string;
   /** último dia com leitura dentro do período (null = nenhuma leitura) */
   ultimoDia: string | null;
+  /** 'yyyy-mm-ddThh:mm' da última leitura do período (hora da fazenda); ausente em respostas antigas */
+  ultimaLeitura?: string | null;
   pics: PicIntegracao[];
 }
 
@@ -49,9 +57,13 @@ export interface SituacaoPedidoChuva extends SituacaoPedidoPlantio {
 }
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** Mensagem de erro do período (null = pode pedir). `hoje` em 'yyyy-mm-dd'. */
-export function validarPeriodo(de: string, ate: string, hoje: string = isoData(new Date())): string | null {
+/**
+ * Mensagem de erro do período (null = pode pedir). `hoje` em 'yyyy-mm-dd'. `deHora` e `ateHora` ('hh:mm')
+ * só com a opção de informar a hora: undefined = dias inteiros.
+ */
+export function validarPeriodo(de: string, ate: string, hoje: string = isoData(new Date()), deHora?: string, ateHora?: string): string | null {
   const d = ISO.test(de) ? parseIsoData(de) : null;
   const a = ISO.test(ate) ? parseIsoData(ate) : null;
   if (!d || !a) return 'Informe as duas datas do período.';
@@ -59,6 +71,9 @@ export function validarPeriodo(de: string, ate: string, hoje: string = isoData(n
   if (ate > hoje) return 'O período não pode passar de hoje.';
   const dias = Math.round((a.getTime() - d.getTime()) / 86_400_000) + 1;
   if (dias > CHUVA_MAX_DIAS) return `Período muito longo (${dias} dias): o máximo é ${CHUVA_MAX_DIAS} dias.`;
+  if (deHora === undefined && ateHora === undefined) return null;
+  if (!HORA.test(deHora ?? '') || !HORA.test(ateHora ?? '')) return 'Informe a hora inicial e a final.';
+  if (de === ate && (deHora as string) > (ateHora as string)) return 'A hora inicial é depois da final.';
   return null;
 }
 
@@ -83,7 +98,13 @@ export function lerDadosChuva(bruto: unknown): DadosChuvaZeus {
       leituras: ehNumero(x.leituras) ? x.leituras : 0,
     });
   }
-  return { fazenda: String(o.fazenda ?? ''), de: o.de, ate: o.ate, ultimoDia: typeof o.ultimoDia === 'string' ? o.ultimoDia : null, pics };
+  const dados: DadosChuvaZeus = { fazenda: String(o.fazenda ?? ''), de: o.de, ate: o.ate, ultimoDia: typeof o.ultimoDia === 'string' ? o.ultimoDia : null, pics };
+  if (typeof o.deHora === 'string' && typeof o.ateHora === 'string' && HORA.test(o.deHora) && HORA.test(o.ateHora)) {
+    dados.deHora = o.deHora;
+    dados.ateHora = o.ateHora;
+  }
+  if (typeof o.ultimaLeitura === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(o.ultimaLeitura)) dados.ultimaLeitura = o.ultimaLeitura.slice(0, 16);
+  return dados;
 }
 
 export interface ResultadoIntegracao {
@@ -92,7 +113,16 @@ export interface ResultadoIntegracao {
   pics: Pic[];
   inicio: Date | null;
   fim: Date | null;
+  /** o período veio com hora (opção de informar a hora): o mapa mostra data e hora */
+  comHora: boolean;
   avisos: string[];
+}
+
+/** 'yyyy-mm-dd' + 'hh:mm' → Date local */
+function dataComHora(dia: string, hora: string): Date | null {
+  const d = parseIsoData(dia);
+  const m = HORA.test(hora) ? hora.split(':').map(Number) : null;
+  return d && m ? new Date(d.getFullYear(), d.getMonth(), d.getDate(), m[0], m[1]) : null;
 }
 
 const plural = (n: number, um: string, varios: string) => (n === 1 ? `1 ${um}` : `${n} ${varios}`);
@@ -102,8 +132,9 @@ const plural = (n: number, um: string, varios: string) => (n === 1 ? `1 ${um}` :
  * fica desmarcado). Nenhum PIC com leitura → Error (não há o que interpolar).
  */
 export function picsDaIntegracao(dados: DadosChuvaZeus): ResultadoIntegracao {
-  const inicio = parseIsoData(dados.de);
-  const fim = parseIsoData(dados.ate);
+  const comHora = Boolean(dados.deHora && dados.ateHora);
+  const inicio = comHora ? dataComHora(dados.de, dados.deHora as string) : parseIsoData(dados.de);
+  const fim = comHora ? dataComHora(dados.ate, dados.ateHora as string) : parseIsoData(dados.ate);
   const pics: Pic[] = dados.pics.map((p) => ({
     id: p.id,
     nome: p.nome,
@@ -115,7 +146,7 @@ export function picsDaIntegracao(dados: DadosChuvaZeus): ResultadoIntegracao {
     fim,
     incluir: p.chuva !== null,
   }));
-  const periodo = fmtPeriodo(inicio, fim);
+  const periodo = comHora ? fmtPeriodoHora(inicio, fim) : fmtPeriodo(inicio, fim);
   if (!pics.length) throw new Error('A ZEUS não devolveu nenhum PIC para esta fazenda.');
   const semLeitura = pics.filter((p) => p.chuva === null).length;
   if (semLeitura === pics.length) {
@@ -124,10 +155,16 @@ export function picsDaIntegracao(dados: DadosChuvaZeus): ResultadoIntegracao {
   const avisos: string[] = [];
   if (semLeitura > 0) avisos.push(plural(semLeitura, 'PIC sem leitura no período foi desmarcado', 'PICs sem leitura no período foram desmarcados'));
   const ultimo = parseIsoData(dados.ultimoDia);
-  if (ultimo && fim && dados.ultimoDia! < dados.ate) {
+  if (comHora) {
+    // com hora, o que conta é o instante da última leitura
+    const lida = dados.ultimaLeitura ?? null;
+    if (lida && lida < `${dados.ate}T${dados.ateHora}`) {
+      avisos.push(`A ZEUS só tem leituras até ${fmtData(parseIsoData(lida) as Date)} ${lida.slice(11, 16)}: o que choveu depois disso ainda não entrou no total.`);
+    }
+  } else if (ultimo && fim && dados.ultimoDia! < dados.ate) {
     avisos.push(`A ZEUS só tem leituras até ${fmtData(ultimo)}: a chuva de ${fmtData(new Date(ultimo.getFullYear(), ultimo.getMonth(), ultimo.getDate() + 1))} em diante ainda não entrou no total.`);
   }
-  return { nome: `Integração ZEUS · ${periodo}`, pics, inicio, fim, avisos };
+  return { nome: `Integração ZEUS · ${periodo}`, pics, inicio, fim, comHora, avisos };
 }
 
 export const ETAPA_PEDINDO_CHUVA = 'Pedindo ao servidor…';

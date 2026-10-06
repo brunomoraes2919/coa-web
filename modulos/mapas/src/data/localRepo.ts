@@ -164,6 +164,10 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
       return null;
     },
 
+    async situacaoZeus() {
+      return [];
+    },
+
     async listarFazendas() {
       const db = await dbPromise;
       const fazendas = (await db.getAll('fazendas')).map(completarFazenda);

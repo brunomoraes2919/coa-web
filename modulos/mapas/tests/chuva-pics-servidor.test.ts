@@ -87,7 +87,7 @@ describe('pedidos de chuva (mapas_chuva_pedidos)', () => {
   it('lê os pendentes; sem a tabela (0003 não aplicado) não é erro', async () => {
     const a = servidores([{ id: 3, fazenda: 'SM3', de: '2026-10-01', ate: '2026-10-01' }], []);
     expect(await pedidosChuvaPendentes(ctx(a.impl))).toEqual([{ id: 3, fazenda: 'SM3', de: '2026-10-01', ate: '2026-10-01' }]);
-    expect(a.chamadas[0].url).toBe(`${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,fazenda,de,ate&atendido_em=is.null&order=id.asc&limit=5`);
+    expect(a.chamadas[0].url).toBe(`${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,fazenda,de,ate,de_hora,ate_hora&atendido_em=is.null&order=id.asc&limit=5`);
     const b = servidores([], [], 404);
     expect(await pedidosChuvaPendentes(ctx(b.impl))).toEqual([]);
   });

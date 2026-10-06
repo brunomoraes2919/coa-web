@@ -1,5 +1,5 @@
 /** Regras do editor de mapas que não dependem da interface. */
-import { fmtData, fmtPeriodo, parseIsoData } from './format';
+import { fmtData, fmtPeriodo, fmtPeriodoHora, parseIsoData } from './format';
 import { projetorUtm, utmEpsgFor } from './projection';
 import { ROTULO_STATUS } from './situacaoPlantio';
 import { IDW_PADRAO, type LayoutConfig, type LayoutTextos, type Pic, type Safra, type StatusPlantio, type Talhao, type TalhaoStats } from './types';
@@ -9,6 +9,8 @@ export interface EntradaTextos {
   safra: Safra | null;
   periodoInicio: Date | null;
   periodoFim: Date | null;
+  /** o período veio com hora (integração com a opção de informar a hora): mostra data e hora */
+  periodoComHora?: boolean;
   /** null = todos os setores */
   setores: string[] | null;
   hoje: Date;
@@ -19,7 +21,7 @@ export function textosAutomaticos(e: EntradaTextos): LayoutTextos {
     titulo: 'MAPA DE PRECIPITAÇÃO',
     fazenda: e.fazenda.toUpperCase(),
     safra: e.safra?.nome ?? '',
-    periodo: fmtPeriodo(e.periodoInicio, e.periodoFim),
+    periodo: e.periodoComHora ? fmtPeriodoHora(e.periodoInicio, e.periodoFim) : fmtPeriodo(e.periodoInicio, e.periodoFim),
     fonte: 'ZEUS',
     talhoes: 'TODOS',
     setor: e.setores && e.setores.length ? e.setores.join(', ') : 'TODOS',

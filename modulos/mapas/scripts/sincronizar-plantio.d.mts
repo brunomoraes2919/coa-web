@@ -157,15 +157,41 @@ export function gravarAcompanhamentoSupabase(
 export function logAcompanhamento(dados: AcompanhamentoScript, situacao: string): string;
 export interface PicZeusScript { id: string; nome: string; lat: number; lon: number }
 export interface PicChuvaScript extends PicZeusScript { chuva: number | null; leituras: number }
-export interface ChuvaPicsScript { fazenda: string; de: string; ate: string; ultimoDia: string | null; pics: PicChuvaScript[] }
+export interface ChuvaPicsScript {
+  fazenda: string;
+  de: string;
+  ate: string;
+  /** 'hh:mm'; só no pedido com hora */
+  deHora?: string;
+  ateHora?: string;
+  ultimoDia: string | null;
+  /** 'aaaa-mm-ddThh:mm' da última leitura do período (hora da fazenda) */
+  ultimaLeitura: string | null;
+  pics: PicChuvaScript[];
+}
 export const CHUVA_PICS_MAX_DIAS: number;
 export const SQL_PICS_ZEUS: string;
-export function validarPeriodoChuva(de: unknown, ate: unknown): { de: string; ate: string; dias: number };
+export function validarPeriodoChuva(de: unknown, ate: unknown, deHora?: unknown, ateHora?: unknown): { de: string; ate: string; dias: number; deHora?: string; ateHora?: string };
 export function picsDaFazendaZeus(r: Resultado, fazenda: string): PicZeusScript[];
 export function fazendasDaZeus(r: Resultado): string[];
-export function montarSqlChuvaPics(ids: string[], de: string, ate: string): string;
-export function montarChuvaPics(pics: PicZeusScript[], r: Resultado): { pics: PicChuvaScript[]; ultimoDia: string | null };
-export function chuvaPorPicZeus(opcoes: { url: string; token: string; fazenda: string; de: string; ate: string; fetchImpl?: FetchLike }): Promise<ChuvaPicsScript>;
+export function montarSqlChuvaPics(ids: string[], de: string, ate: string, deHora?: string | null, ateHora?: string | null): string;
+export function montarChuvaPics(pics: PicZeusScript[], r: Resultado): { pics: PicChuvaScript[]; ultimoDia: string | null; ultimaLeitura: string | null };
+export const ZEUS_ULTIMO_DIA_JANELA: number;
+export const SQL_ULTIMO_DIA_ZEUS: string;
+/** linha de mapas_zeus_situacao (supabase/coa-web/0004_situacao_zeus.sql) */
+export interface LinhaSituacaoZeus { fazenda: string; ultimo_dia: string; /** 'aaaa-mm-ddThh:mm:ss' (hora da fazenda) */ ultima_leitura: string | null; conferido_em: string }
+export function linhasSituacaoZeus(res: { columns: string[]; rows: unknown[][] }, agora?: Date): LinhaSituacaoZeus[];
+export function ultimoDiaZeus(opcoes: { url: string; token: string; fetchImpl?: FetchLike; agora?: Date }): Promise<LinhaSituacaoZeus[]>;
+export function chuvaPorPicZeus(opcoes: {
+  url: string;
+  token: string;
+  fazenda: string;
+  de: string;
+  ate: string;
+  deHora?: string | null;
+  ateHora?: string | null;
+  fetchImpl?: FetchLike;
+}): Promise<ChuvaPicsScript>;
 export interface BoletinsMecScript { unidade: string; de: string; ate: string; cabecalho: string[]; linhas: string[][] }
 export const MEC_MAX_DIAS: number;
 export const MEC_CABECALHO: string[];

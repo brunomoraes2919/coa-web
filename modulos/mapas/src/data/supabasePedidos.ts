@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PedidoChuva } from '../lib/chuvaZeus';
+import type { SituacaoZeus } from '../lib/situacaoZeus';
 import type { Repositorio } from './repo';
 import { TABELAS } from './supabaseLinhas';
 
@@ -17,6 +18,9 @@ export function erroPedido(acao: string, e: ErroSupabase, script = '0002_pedidos
   const msg = e.message ?? '';
   if (codigo === '42501' || /row-level security|permission denied/i.test(msg)) {
     return new Error(`Sem permissão para ${acao}: é preciso ter pelo menos uma fazenda liberada no COA WEB.`);
+  }
+  if (codigo === 'PGRST204' && /de_hora|ate_hora/.test(msg)) {
+    return new Error(`Não foi possível ${acao}: o pedido com hora ainda não foi habilitado no Supabase (rode supabase/coa-web/0004_situacao_zeus.sql). Enquanto isso, peça só pelas datas.`);
   }
   if (codigo === 'PGRST205' || codigo === '42P01') {
     return new Error(`Não foi possível ${acao}: falta a tabela de pedidos no Supabase (rode supabase/coa-web/${script}).`);
@@ -74,14 +78,41 @@ const SCRIPT_CHUVA = '0003_pedidos_chuva.sql';
  * servidor do COA WEB (scripts/atender-pedidos.mjs). O RLS deixa cada usuário do módulo inserir e ler
  * só os próprios pedidos.
  */
-export function pedidosChuvaSupabase(client: SupabaseClient): Pick<Repositorio, 'podeBuscarChuva' | 'pedirChuvaZeus' | 'situacaoPedidoChuva'> {
+export function pedidosChuvaSupabase(
+  client: SupabaseClient,
+): Pick<Repositorio, 'podeBuscarChuva' | 'pedirChuvaZeus' | 'situacaoPedidoChuva' | 'situacaoZeus'> {
   return {
     podeBuscarChuva: true,
 
-    async pedirChuvaZeus({ fazenda, de, ate }: PedidoChuva) {
+    async situacaoZeus() {
+      // é só um aviso ao lado do botão: tabela ausente (0004 não aplicado), rede ou permissão → sem aviso
+      try {
+        const { data, error } = await client
+          .from(TABELAS.situacaoZeus)
+          .select('fazenda, ultimo_dia, ultima_leitura, conferido_em')
+          .abortSignal(AbortSignal.timeout(TEMPO_LIMITE_MS));
+        if (error || !Array.isArray(data)) return [];
+        const linhas: SituacaoZeus[] = [];
+        for (const l of data as { fazenda?: unknown; ultimo_dia?: unknown; ultima_leitura?: unknown; conferido_em?: unknown }[]) {
+          if (typeof l.fazenda !== 'string' || typeof l.ultimo_dia !== 'string' || typeof l.conferido_em !== 'string') continue;
+          if (!/^\d{4}-\d{2}-\d{2}/.test(l.ultimo_dia) || Number.isNaN(Date.parse(l.conferido_em))) continue;
+          const dia = l.ultimo_dia.slice(0, 10);
+          // 'aaaa-mm-ddThh:mm:ss' sem fuso (hora da fazenda): só vale se for do último dia
+          const hora = typeof l.ultima_leitura === 'string' ? /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(l.ultima_leitura) : null;
+          linhas.push({ fazenda: l.fazenda, ultimoDia: dia, ultimaHora: hora && hora[1] === dia ? hora[2] : null, conferidoEm: l.conferido_em });
+        }
+        return linhas;
+      } catch {
+        return [];
+      }
+    },
+
+    async pedirChuvaZeus({ fazenda, de, ate, deHora, ateHora }: PedidoChuva) {
+      // as horas só vão quando informadas: o pedido por data não depende das colunas novas (script 0004)
+      const horas = deHora && ateHora ? { de_hora: deHora, ate_hora: ateHora } : {};
       const { data, error } = await client
         .from(TABELAS.pedidosChuva)
-        .insert({ fazenda: fazenda.trim().slice(0, 80), de, ate })
+        .insert({ fazenda: fazenda.trim().slice(0, 80), de, ate, ...horas })
         .select('id')
         .abortSignal(AbortSignal.timeout(TEMPO_LIMITE_MS))
         .single();

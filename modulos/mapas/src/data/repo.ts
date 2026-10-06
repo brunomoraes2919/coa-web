@@ -1,4 +1,5 @@
 import type { PedidoChuva, SituacaoPedidoChuva } from '../lib/chuvaZeus';
+import type { SituacaoZeus } from '../lib/situacaoZeus';
 import type { SituacaoPedidoPlantio } from '../lib/pedidoPlantio';
 import type { AreaCultura, Fazenda, FazendaCoa, MapaSalvo, PerfilUsuario, Plantio, PlantioPimsArquivo, Safra, Talhao } from '../lib/types';
 
@@ -53,6 +54,11 @@ export interface Repositorio {
   pedirChuvaZeus(pedido: PedidoChuva): Promise<number>;
   /** Situação do pedido de chuva (atendido? resultado e dados); não encontrado → null. Local: null. */
   situacaoPedidoChuva(id: number): Promise<SituacaoPedidoChuva | null>;
+  /**
+   * Último dia com leitura de chuva de cada fazenda da ZEUS no banco (mapas_zeus_situacao, gravada pelo
+   * servidor). É só um aviso na tela: sem a tabela, sem linhas ou com erro devolve [] (nunca lança). Local: [].
+   */
+  situacaoZeus(): Promise<SituacaoZeus[]>;
 
   listarFazendas(): Promise<Fazenda[]>;
   obterTalhoes(fazendaId: string): Promise<Talhao[]>;

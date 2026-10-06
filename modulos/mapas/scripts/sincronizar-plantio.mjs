@@ -825,14 +825,30 @@ export async function boletinsMecanizadas({ url, token, unidade, de, ate, fetchI
 /** período máximo de um pedido de chuva (dias) */
 export const CHUVA_PICS_MAX_DIAS = 366;
 
-/** Confere as datas do pedido ('YYYY-MM-DD', de ≤ até, no máximo CHUVA_PICS_MAX_DIAS dias); lança Error legível. */
-export function validarPeriodoChuva(de, ate) {
+/** 'hh:mm' (ou 'hh:mm:ss', como o Postgres devolve a coluna time) → 'hh:mm'; fora do formato → null. */
+function horaDoPedido(h) {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/.exec(String(h ?? '').trim());
+  return m ? `${m[1]}:${m[2]}` : null;
+}
+
+/**
+ * Confere as datas do pedido ('YYYY-MM-DD', de ≤ até, no máximo CHUVA_PICS_MAX_DIAS dias) e, se vierem, a
+ * hora inicial e a final ('hh:mm', as duas ou nenhuma); lança Error legível. Sem hora devolve { de, ate, dias }.
+ */
+export function validarPeriodoChuva(de, ate, deHora = null, ateHora = null) {
   const ehData = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
   if (!ehData(de) || !ehData(ate)) throw new Error('Período inválido: informe as duas datas.');
   if (de > ate) throw new Error('Período inválido: a data inicial é depois da final.');
   const dias = Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000) + 1;
   if (dias > CHUVA_PICS_MAX_DIAS) throw new Error(`Período muito longo (${dias} dias): o máximo é ${CHUVA_PICS_MAX_DIAS} dias.`);
-  return { de, ate, dias };
+  const vazia = (h) => h === null || h === undefined || h === '';
+  if (vazia(deHora) && vazia(ateHora)) return { de, ate, dias };
+  if (vazia(deHora) || vazia(ateHora)) throw new Error('Período inválido: informe a hora inicial e a final.');
+  const h1 = horaDoPedido(deHora);
+  const h2 = horaDoPedido(ateHora);
+  if (!h1 || !h2) throw new Error('Período inválido: informe as horas no formato hh:mm.');
+  if (de === ate && h1 > h2) throw new Error('Período inválido: a hora inicial é depois da final.');
+  return { de, ate, dias, deHora: h1, ateHora: h2 };
 }
 
 /** Cadastro dos PICs da ZEUS (um por picid; a tabela repete o PIC a cada talhão que ele cobre). */
@@ -864,15 +880,27 @@ export function fazendasDaZeus(res) {
   return [...new Set(objetosDe(res).map((r) => unidadeDaFazendaZeus(r.farm)).filter(Boolean))].sort(comparar);
 }
 
-/** Chuva somada de cada PIC no período (de e até inclusive), com a quantidade de leituras e o último dia lido. */
-export function montarSqlChuvaPics(ids, de, ate) {
+/** instante de cada leitura: os 14 últimos dígitos do identificador (picid + aaaammddhhmmss); a coluna data só tem o dia */
+const INSTANTE_LEITURA = 'right(c.idprecipitation, 14)';
+
+/**
+ * Chuva somada de cada PIC no período (de e até inclusive), com a quantidade de leituras, o último dia lido
+ * e a hora da última leitura. Com `deHora` e `ateHora` ('hh:mm'), entram só as leituras entre os dois
+ * instantes, inclusive.
+ */
+export function montarSqlChuvaPics(ids, de, ate, deHora = null, ateHora = null) {
   const lista = ids.filter((i) => /^[A-Za-z0-9_-]+$/.test(String(i))).map((i) => `'${i}'`).join(', ');
   const d = String(de).replace(/[^0-9-]/g, '');
   const a = String(ate).replace(/[^0-9-]/g, '');
+  const h1 = horaDoPedido(deHora);
+  const h2 = horaDoPedido(ateHora);
+  const digitos = (s) => s.replace(/\D/g, '');
+  const porHora = h1 && h2 ? ` AND ${INSTANTE_LEITURA} >= '${digitos(d)}${digitos(h1)}00' AND ${INSTANTE_LEITURA} <= '${digitos(a)}${digitos(h2)}59'` : '';
   return `SELECT c.picid, round(sum(c.pluviometria)::numeric, 1) AS mm, count(c.pluviometria) AS leituras,
-  to_char(max(c.data), 'YYYY-MM-DD') AS ultimo
+  to_char(max(c.data), 'YYYY-MM-DD') AS ultimo,
+  max(CASE WHEN ${INSTANTE_LEITURA} ~ '^[0-9]{14}$' THEN ${INSTANTE_LEITURA} END) AS leitura
 FROM "DATABASE".stg_climatemonitoring2 c
-WHERE c.picid IN (${lista}) AND c.data >= DATE '${d}' AND c.data < DATE '${a}' + INTERVAL '1 day'
+WHERE c.picid IN (${lista}) AND c.data >= DATE '${d}' AND c.data < DATE '${a}' + INTERVAL '1 day'${porHora}
 GROUP BY c.picid`;
 }
 
@@ -880,23 +908,30 @@ GROUP BY c.picid`;
 export function montarChuvaPics(pics, res) {
   const porId = new Map(objetosDe(res).map((r) => [txt(r.picid), r]));
   let ultimoDia = null;
+  /** 'aaaammddhhmmss' da leitura mais recente entre os PICs */
+  let leitura = null;
   const lista = pics.map((p) => {
     const r = porId.get(p.id);
     const leituras = r ? Number(r.leituras) || 0 : 0;
     const ultimo = r ? txt(r.ultimo) : null;
     if (ultimo && (!ultimoDia || ultimo > ultimoDia)) ultimoDia = ultimo;
+    const l = r ? txt(r.leitura) : null;
+    if (l && /^\d{14}$/.test(l) && (!leitura || l > leitura)) leitura = l;
     const mm = r && leituras > 0 ? Number(r.mm) : null;
     return { ...p, chuva: mm !== null && Number.isFinite(mm) ? Math.round(mm * 10) / 10 : null, leituras };
   });
-  return { pics: lista, ultimoDia };
+  // 'aaaa-mm-ddThh:mm' (hora da fazenda); só vale se for do último dia lido
+  const completa = leitura && ultimoDia ? leituraDoDia(leitura, ultimoDia) : null;
+  return { pics: lista, ultimoDia, ultimaLeitura: completa ? completa.slice(0, 16) : null };
 }
 
 /**
- * Consulta a ZEUS pelo Agrovex: PICs da fazenda e a chuva de cada um no período. Devolve
- * { fazenda, de, ate, ultimoDia, pics: [{ id, nome, lat, lon, chuva, leituras }] } (não grava nada).
+ * Consulta a ZEUS pelo Agrovex: PICs da fazenda e a chuva de cada um no período (com `deHora` e `ateHora`,
+ * só entre os dois instantes). Devolve { fazenda, de, ate, [deHora, ateHora,] ultimoDia, ultimaLeitura,
+ * pics: [{ id, nome, lat, lon, chuva, leituras }] } (não grava nada).
  */
-export async function chuvaPorPicZeus({ url, token, fazenda, de, ate, fetchImpl = fetch }) {
-  validarPeriodoChuva(de, ate);
+export async function chuvaPorPicZeus({ url, token, fazenda, de, ate, deHora = null, ateHora = null, fetchImpl = fetch }) {
+  const periodo = validarPeriodoChuva(de, ate, deHora, ateHora);
   const cliente = await abrirSessao(url, token, fetchImpl);
   try {
     const cadastro = await cliente.consultar(SQL_PICS_ZEUS, 'cadastro dos PICs da ZEUS (mapa de chuva)', 'PICs da ZEUS', FONTES.zeus);
@@ -905,8 +940,65 @@ export async function chuvaPorPicZeus({ url, token, fazenda, de, ate, fetchImpl 
       const conhecidas = fazendasDaZeus(cadastro);
       throw new Error(`A ZEUS não tem PICs para a fazenda "${String(fazenda).slice(0, 60)}"${conhecidas.length ? ` (fazendas na ZEUS: ${conhecidas.join(', ')})` : ''}.`);
     }
-    const chuva = await cliente.consultar(montarSqlChuvaPics(pics.map((p) => p.id), de, ate), 'chuva por PIC no período (mapa de chuva)', 'chuva por PIC', FONTES.zeus);
-    return { fazenda: unidadeDaFazendaZeus(fazenda), de, ate, ...montarChuvaPics(pics, chuva) };
+    const chuva = await cliente.consultar(montarSqlChuvaPics(pics.map((p) => p.id), de, ate, periodo.deHora, periodo.ateHora), 'chuva por PIC no período (mapa de chuva)', 'chuva por PIC', FONTES.zeus);
+    const horas = periodo.deHora ? { deHora: periodo.deHora, ateHora: periodo.ateHora } : {};
+    return { fazenda: unidadeDaFazendaZeus(fazenda), de, ate, ...horas, ...montarChuvaPics(pics, chuva) };
+  } finally {
+    await cliente.fechar();
+  }
+}
+
+// ---------- último dia da ZEUS no banco (aviso ao lado de "Inserir dados via integração") ----------
+
+/** Dias para trás em que se procura a última leitura de cada fazenda (fazenda parada há mais que isso some do aviso). */
+export const ZEUS_ULTIMO_DIA_JANELA = 45;
+
+/**
+ * Última leitura de chuva de cada fazenda da ZEUS no banco. A tabela não guarda quando a carga rodou: a
+ * leitura mais recente é o que diz até onde ela chegou. A coluna data vem truncada no dia; a hora da
+ * leitura está nos 14 últimos dígitos do identificador (picid + aaaammddhhmmss).
+ */
+export const SQL_ULTIMO_DIA_ZEUS = `WITH pa AS (SELECT DISTINCT ON (picid) picid, farm FROM "DATABASE".stg_zeus_picarea ORDER BY picid, farm)
+SELECT pa.farm AS fazenda, to_char(max(c.data), 'YYYY-MM-DD') AS ultimo,
+  max(CASE WHEN right(c.idprecipitation, 14) ~ '^[0-9]{14}$' THEN right(c.idprecipitation, 14) END) AS leitura
+FROM "DATABASE".stg_climatemonitoring2 c JOIN pa ON pa.picid = c.picid
+WHERE c.data >= CURRENT_DATE - ${ZEUS_ULTIMO_DIA_JANELA} AND c.pluviometria IS NOT NULL
+GROUP BY pa.farm
+ORDER BY 1`;
+
+/** 'aaaammddhhmmss' do último dia → 'aaaa-mm-ddThh:mm:ss'; de outro dia ou hora impossível → null (fica só o dia). */
+function leituraDoDia(leitura, dia) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(String(leitura ?? ''));
+  if (!m || `${m[1]}-${m[2]}-${m[3]}` !== dia || Number(m[4]) > 23 || Number(m[5]) > 59 || Number(m[6]) > 59) return null;
+  return `${dia}T${m[4]}:${m[5]}:${m[6]}`;
+}
+
+/**
+ * Linhas de mapas_zeus_situacao: uma por fazenda, com o nome normalizado como no pedido de chuva
+ * ("Faz_SM3" → "SM3"). A mesma fazenda escrita de dois jeitos fica com a leitura mais recente.
+ */
+export function linhasSituacaoZeus(res, agora = new Date()) {
+  const conferidoEm = agora.toISOString();
+  const porFazenda = new Map();
+  for (const r of objetosDe(res)) {
+    const fazenda = unidadeDaFazendaZeus(r.fazenda);
+    const dia = txt(r.ultimo);
+    if (!fazenda || !dia || !/^\d{4}-\d{2}-\d{2}$/.test(dia)) continue;
+    const nova = { dia, leitura: leituraDoDia(r.leitura, dia) };
+    const atual = porFazenda.get(fazenda);
+    if (!atual || nova.dia > atual.dia || (nova.dia === atual.dia && (nova.leitura ?? '') > (atual.leitura ?? ''))) porFazenda.set(fazenda, nova);
+  }
+  return [...porFazenda]
+    .sort((a, b) => comparar(a[0], b[0]))
+    .map(([fazenda, u]) => ({ fazenda: fazenda.slice(0, 80), ultimo_dia: u.dia, ultima_leitura: u.leitura, conferido_em: conferidoEm }));
+}
+
+/** Consulta a ZEUS pelo Agrovex e devolve as linhas de mapas_zeus_situacao (não grava nada). */
+export async function ultimoDiaZeus({ url, token, fetchImpl = fetch, agora = new Date() }) {
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    const res = await cliente.consultar(SQL_ULTIMO_DIA_ZEUS, 'último dia com leitura de chuva por fazenda (mapa de chuva)', 'último dia da ZEUS', FONTES.zeus);
+    return linhasSituacaoZeus(res, agora);
   } finally {
     await cliente.fechar();
   }

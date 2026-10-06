@@ -42,6 +42,7 @@ const CHAVES: Record<string, string[]> = {
   mapas_plantio_pims: ['safra', 'unidade'],
   mapas_plantio_pedidos: ['id'],
   mapas_chuva_pedidos: ['id'],
+  mapas_zeus_situacao: ['fazenda'],
   fazendas: ['id'],
   perfis: ['id'],
 };

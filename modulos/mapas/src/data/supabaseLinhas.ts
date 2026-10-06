@@ -25,6 +25,8 @@ export const TABELAS = {
   pedidosPlantio: 'mapas_plantio_pedidos',
   /** pedidos do botão "Inserir dados via integração" (supabase/coa-web/0003_pedidos_chuva.sql) */
   pedidosChuva: 'mapas_chuva_pedidos',
+  /** último dia da ZEUS no banco, por fazenda (supabase/coa-web/0004_situacao_zeus.sql) */
+  situacaoZeus: 'mapas_zeus_situacao',
 } as const;
 
 /** Bucket privado com a imagem e a miniatura dos mapas salvos. */

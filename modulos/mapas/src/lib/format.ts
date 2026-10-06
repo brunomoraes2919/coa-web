@@ -42,6 +42,14 @@ export function fmtPeriodo(ini: Date | null, fim: Date | null): string {
   return `${fmtData(ini)} a ${fmtData(fim)}`;
 }
 
+/** "05/10/2026 06:00 a 06/10/2026 07:00"; no mesmo dia, "05/10/2026 06:00 a 18:30" (período com hora da integração) */
+export function fmtPeriodoHora(ini: Date | null, fim: Date | null): string {
+  if (!ini || !fim) return fmtPeriodo(ini, fim);
+  const hora = (d: Date) => `${dois(d.getHours())}:${dois(d.getMinutes())}`;
+  const mesmoDia = isoData(ini) === isoData(fim);
+  return `${fmtData(ini)} ${hora(ini)} a ${mesmoDia ? '' : `${fmtData(fim)} `}${hora(fim)}`;
+}
+
 /** Date → "yyyy-mm-dd" (data local) */
 export function isoData(d: Date): string {
   return `${d.getFullYear()}-${dois(d.getMonth() + 1)}-${dois(d.getDate())}`;

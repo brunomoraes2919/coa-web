@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import type { ResultadoIntegracao } from '../../lib/chuvaZeus';
-import { fmtPeriodo } from '../../lib/format';
+import { fmtPeriodo, fmtPeriodoHora } from '../../lib/format';
 import type { Pic } from '../../lib/types';
 import IntegracaoZeus from './IntegracaoZeus';
 import TabelaPics from './TabelaPics';
@@ -9,6 +9,8 @@ export interface CsvInfo {
   nome: string;
   inicio: Date | null;
   fim: Date | null;
+  /** período com hora (integração com a opção de informar a hora) */
+  comHora?: boolean;
   avisos: string[];
 }
 
@@ -58,7 +60,7 @@ export default function SecaoCsv({ csv, onArquivo, pics, onPics, foraDaRegiao, f
       >
         <strong>{csv ? csv.nome : 'Arraste o CSV exportado da ZEUS'}</strong>
         <span className="suave">
-          {csv ? `Período: ${fmtPeriodo(csv.inicio, csv.fim) || 'não informado'} · clique para trocar` : 'ou clique para escolher'}
+          {csv ? `Período: ${(csv.comHora ? fmtPeriodoHora(csv.inicio, csv.fim) : fmtPeriodo(csv.inicio, csv.fim)) || 'não informado'} · clique para trocar` : 'ou clique para escolher'}
         </span>
         <input
           ref={arquivoRef}
