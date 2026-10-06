@@ -5,10 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Previsão do Tempo · COA</title>
 <link rel="icon" href="../mapas/favicon.png">
-<link rel="stylesheet" href="estilo.css?v=202610060100">
-<script src="config.js?v=202610060100"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="estilo.css?v=202610060300">
+<script src="config.js?v=202610060300"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="logica.js?v=202610060100"></script>
+<script src="logica.js?v=202610060300"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -17,7 +20,7 @@
   <header class="barra">
     <div class="marca">
       <span class="marca-titulo">Previsão do Tempo</span>
-      <span class="marca-sub">Centro de Operações Agrícolas</span>
+      <span class="marca-sub">Mapa do Windy com os limites das fazendas</span>
     </div>
     <div class="filtros">
       <label class="campo-select"><span>Fazenda</span><select id="sel-fazenda"></select></label>
@@ -45,6 +48,6 @@
 </div>
 
 <div class="carregando" id="carregando"><div class="spinner" aria-hidden="true"></div><p id="carregando-texto">Carregando as fazendas…</p></div>
-<script src="app.js?v=202610060100"></script>
+<script src="app.js?v=202610060300"></script>
 </body>
 </html>
