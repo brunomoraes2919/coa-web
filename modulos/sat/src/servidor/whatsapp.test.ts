@@ -65,6 +65,8 @@ function montar(extra: Partial<OpcoesWhatsapp> = {}) {
   const aoRestringir = vi.fn()
   const aoFalharEntrega = vi.fn()
   const relogio = { agora: new Date(2026, 9, 6, 9, 0).getTime() }
+  /** Com `segurar`, a pausa longa (1 h) só termina quando o teste chama `liberar()`. */
+  const pausa = { segurar: false, liberar: () => {} }
   const opcoes: OpcoesWhatsapp = {
     pastaSessao: 'sessao-falsa',
     aoReceber,
@@ -79,12 +81,15 @@ function montar(extra: Partial<OpcoesWhatsapp> = {}) {
         return s as unknown as SocketMinimo
       },
       estadoDaSessao: async () => ({ state: { falso: true }, saveCreds }),
-      dormir: async (ms) => { esperas.push(ms) },
+      dormir: async (ms) => {
+        esperas.push(ms)
+        if (pausa.segurar && ms >= HORA) await new Promise<void>((r) => { pausa.liberar = r })
+      },
       agora: () => relogio.agora,
     },
     ...extra,
   }
-  return { opcoes, sockets, configs, esperas, saveCreds, aoReceber, aoMudarConexao, aoRestringir, aoFalharEntrega, relogio }
+  return { opcoes, sockets, configs, esperas, saveCreds, aoReceber, aoMudarConexao, aoRestringir, aoFalharEntrega, relogio, pausa }
 }
 
 const MINUTO = 60_000
@@ -175,24 +180,70 @@ describe('conectarWhatsapp', () => {
     expect(esperas).toEqual([5_000, 10_000, 20_000, 5_000, 10_000, 20_000])
   })
 
-  it('mais de 10 quedas dentro de uma hora: para de tentar sozinho e avisa', async () => {
-    const { opcoes, sockets, esperas, aoMudarConexao, relogio } = montar()
-    const w = await conectarWhatsapp(opcoes)
+  /** Dez quedas em 50 min (ainda tenta) e a 11ª, que dispara a pausa de uma hora (segurada até `pausa.liberar()`). */
+  async function ateAPausaLonga(m: ReturnType<typeof montar>) {
+    m.pausa.segurar = true
     for (let i = 0; i < 10; i++) {
-      sockets[i].emit('connection.update', queda(428))
+      m.sockets[i].emit('connection.update', queda(428))
       await proximoCiclo()
-      relogio.agora += 5 * MINUTO
+      m.relogio.agora += 5 * MINUTO
     }
-    // dez quedas em 50 min: ainda tenta
-    expect(sockets).toHaveLength(11)
-    expect(w.precisaParear).toBe(false)
-    sockets[10].emit('connection.update', queda(428))
+    expect(m.sockets).toHaveLength(11)
+    m.sockets[10].emit('connection.update', queda(428))
     await proximoCiclo()
-    expect(w.precisaParear).toBe(true)
+  }
+
+  it('mais de 10 quedas dentro de uma hora: avisa, espera 1 hora (sem pedir pareamento) e só então tenta de novo', async () => {
+    const m = montar()
+    const w = await conectarWhatsapp(m.opcoes)
+    await ateAPausaLonga(m)
     expect(w.conectado).toBe(false)
-    expect(aoMudarConexao).toHaveBeenLastCalledWith(false, 'muitas quedas seguidas')
-    expect(sockets).toHaveLength(11)
-    expect(esperas).toHaveLength(10)
+    expect(m.aoMudarConexao).toHaveBeenLastCalledWith(false, 'muitas quedas seguidas: nova tentativa em 1 hora')
+    // alguém precisar olhar é só para o que não se resolve sozinho: aqui o serviço volta por conta própria
+    expect(w.precisaParear).toBe(false)
+    expect(m.esperas).toHaveLength(11)
+    expect(m.esperas[10]).toBe(60 * MINUTO)
+    // durante a pausa não nasce socket novo
+    expect(m.sockets).toHaveLength(11)
+    m.pausa.liberar()
+    await proximoCiclo()
+    expect(m.sockets).toHaveLength(12)
+    expect(w.precisaParear).toBe(false)
+  })
+
+  it('depois da pausa de 1 hora a contagem de quedas zera e a espera volta a 5 s', async () => {
+    const m = montar()
+    const w = await conectarWhatsapp(m.opcoes)
+    await ateAPausaLonga(m)
+    m.pausa.liberar()
+    await proximoCiclo()
+    // a espera crescente (já em 5 min antes da pausa) recomeça de 5 s
+    m.sockets[11].emit('connection.update', queda(428))
+    await proximoCiclo()
+    expect(m.esperas.at(-1)).toBe(5_000)
+    expect(m.sockets).toHaveLength(13)
+    // dez quedas dentro de uma hora voltam a ser toleradas: só a 11ª pára de novo
+    for (let i = 12; i < 21; i++) {
+      m.sockets[i].emit('connection.update', queda(428))
+      await proximoCiclo()
+      m.relogio.agora += 5 * MINUTO
+    }
+    expect(m.sockets).toHaveLength(22)
+    expect(m.esperas.filter((ms) => ms === 60 * MINUTO)).toHaveLength(1)
+    m.sockets[21].emit('connection.update', queda(428))
+    await proximoCiclo()
+    expect(m.esperas.filter((ms) => ms === 60 * MINUTO)).toHaveLength(2)
+    expect(w.precisaParear).toBe(false)
+  })
+
+  it('encerrar() durante a pausa de 1 hora: terminada a pausa, nenhum socket novo nasce', async () => {
+    const m = montar()
+    const w = await conectarWhatsapp(m.opcoes)
+    await ateAPausaLonga(m)
+    await w.encerrar()
+    m.pausa.liberar()
+    await proximoCiclo()
+    expect(m.sockets).toHaveLength(11)
   })
 
   it('quedas espalhadas (menos de 11 em qualquer hora) não param a reconexão; close repetido do mesmo socket conta uma vez', async () => {

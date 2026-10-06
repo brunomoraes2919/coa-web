@@ -3,6 +3,7 @@
  * da tela, com as fazendas da pessoa; o lembrete do meio-dia tem outras palavras de propósito
  * (duas mensagens iguais no mesmo dia parecem robô para o WhatsApp).
  */
+import { EFEITO_DA_JANELA } from '../componentes/ajudaTextos'
 import { listarFazendas, montarAlertas, type Ocorrencia } from '../logic/alertas'
 import { janelaAindaPorVir } from '../logic/janelaRisco'
 import { minutoDoDia, rotuloHora } from '../logic/tempo'
@@ -59,8 +60,14 @@ function saudacao(agora: number): string {
   return h < 12 ? 'Bom dia' : h < 18 ? 'Boa tarde' : 'Boa noite'
 }
 
-export function montarMensagem(contato: ContatoWpp, texto: string, agora: number, comSair: boolean): string {
-  const linhas = [TITULO, `${saudacao(agora)}, ${primeiroNome(contato)}.`, texto]
+/** O que o aviso afeta na operação: cada tipo com as suas palavras (o mesmo texto repetido no dia parece robô). */
+function efeitoNaOperacao(tipo: TipoEvento): string[] {
+  if (tipo === 'resumo-07') return ['', `*Na operação:* ${EFEITO_DA_JANELA.naOperacao}`, `*O que fazer:* ${EFEITO_DA_JANELA.oQueFazer}`]
+  return [tipo === 'lembrete-12' ? EFEITO_DA_JANELA.lembrete : EFEITO_DA_JANELA.antes]
+}
+
+export function montarMensagem(tipo: TipoEvento, contato: ContatoWpp, texto: string, agora: number, comSair: boolean): string {
+  const linhas = [TITULO, `${saudacao(agora)}, ${primeiroNome(contato)}.`, texto, ...efeitoNaOperacao(tipo)]
   if (comSair) linhas.push('Para parar de receber, responda SAIR.')
   return linhas.join('\n')
 }

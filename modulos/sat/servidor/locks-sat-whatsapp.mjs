@@ -433,6 +433,46 @@ function janelaDoAntes(janelas, agora) {
 	return perto.length ? perto.reduce((a, b) => b.inicio < a.inicio ? b : a) : null;
 }
 //#endregion
+//#region src/componentes/ajudaTextos.ts
+var AJUDA = {
+	cintilacao: {
+		titulo: "Cintilação ionosférica",
+		oQueE: "Oscilação rápida na força e na fase do sinal dos satélites quando ele atravessa bolhas de irregularidade na ionosfera. A Trimble mede isso na rede de estações dela e dá uma nota de 0 a 100: mínima (até 32), média (33 a 65) e forte (66 ou mais).",
+		quando: "Perto do equador, logo depois do pôr do sol, por algumas horas — com mais força entre setembro e março. É o caso das fazendas do Mato Grosso.",
+		fazer: "Média: acompanhe o status da correção no monitor e evite abrir linhas AB novas. Forte: adie o que precisa de precisão de centímetro — plantio, pulverização com corte de seção, voo de drone em RTK. Usar duas frequências (L1/L2) não resolve cintilação.",
+		rtk: "Mínima: operação normal, RTK fixo estável. Média: o receptor perde alguns satélites e o RTK pode cair de fixo (cerca de 2 cm) para flutuante (decímetros) por alguns minutos, e demora mais para fixar de novo. Forte: perde o fixo com frequência; o piloto automático pode desarmar ou desviar da linha, deixando falha e sobreposição entre passadas."
+	},
+	indice: {
+		titulo: "Índice ionosférico",
+		oQueE: "Nota de 0 a 10 que a Trimble calcula para a atividade da ionosfera no ponto. Diferente da cintilação, ela vem com PREVISÃO para as próximas horas. Verde até 4, amarelo de 5 a 7, vermelho de 8 a 10.",
+		quando: "Sobe com o sol (pico no começo da tarde), nos anos de sol mais ativo e perto dos equinócios (março e setembro).",
+		fazer: "Use a previsão para programar o turno: com amarelo, acompanhe o status da correção; com vermelho, deixe plantio, pulverização com corte de seção e voo em RTK para fora desse horário.",
+		rtk: "Verde: sem efeito no RTK. Amarelo: o RTK demora mais para fixar e a precisão piora quanto mais longe estiver a base. Vermelho: quedas de fixo para flutuante ficam prováveis, principalmente com a base distante."
+	},
+	tec: {
+		titulo: "TEC (conteúdo total de elétrons)",
+		oQueE: "Quantidade de elétrons no caminho do sinal, em TECU. Cada 1 TECU atrasa o sinal L1 em cerca de 16 cm — é o erro que o receptor de duas frequências e o RTK corrigem.",
+		quando: "Maior no começo da tarde e na faixa equatorial.",
+		fazer: "Use como contexto do índice ionosférico. Se o TEC estiver alto e a base for distante, confira o status da correção antes de começar.",
+		rtk: "O RTK cancela quase todo esse atraso porque a base enxerga praticamente a mesma ionosfera que a máquina. Quanto mais longe a base (rádio ou rede via celular), mais erro sobra e mais o RTK demora para fixar com TEC alto. Com a base perto, TEC alto quase não muda a operação."
+	},
+	janela: {
+		titulo: "Janela de risco pelo histórico",
+		oQueE: "Horários de hoje em que, nos últimos 7 dias, houve cintilação média ou forte em pelo menos 3 dias naquela fazenda. É estimativa pelo que vem acontecendo — a Trimble não prevê cintilação. Horários a menos de 30 minutos um do outro contam como uma janela só.",
+		quando: "Costuma aparecer à noite, entre o pôr do sol e a madrugada.",
+		fazer: "Use para programar: deixe fora dessa janela o que depende de RTK fixo (plantio, pulverização em faixa, voo). O resumo do dia chega de manhã, e um aviso 30 minutos antes da primeira janela da noite.",
+		rtk: "É nesse horário que o RTK mais costuma cair de fixo para flutuante e o piloto automático desarmar. Plantio ou pulverização à noite dentro da janela tem mais chance de falha e sobreposição entre passadas."
+	}
+};
+/** O efeito na operação que acompanha cada aviso de janela de risco no WhatsApp: três redações, uma por aviso. */
+var EFEITO_DA_JANELA = {
+	/** No resumo: a frase do "?" da janela (o mesmo texto da tela). */
+	naOperacao: AJUDA.janela.rtk.charAt(0).toLowerCase() + AJUDA.janela.rtk.slice(1),
+	oQueFazer: "deixe fora dessa janela o que depende de RTK fixo: plantio, pulverização com corte de seção e voo de drone em RTK.",
+	lembrete: "Programe para antes ou depois o que depende de RTK fixo (plantio, pulverização com corte de seção, voo de drone).",
+	antes: "A partir de agora o RTK pode cair de fixo para flutuante e o piloto automático desarmar. Acompanhe o status da correção no monitor e evite abrir linhas AB novas."
+};
+//#endregion
 //#region src/servidor/mensagens.ts
 /**
 * O que cada pessoa lê. O texto do resumo e do "começa em breve" sai de `montarAlertas`, o mesmo
@@ -485,11 +525,21 @@ function saudacao(agora) {
 	const h = new Date(agora).getHours();
 	return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
 }
-function montarMensagem(contato, texto, agora, comSair) {
+/** O que o aviso afeta na operação: cada tipo com as suas palavras (o mesmo texto repetido no dia parece robô). */
+function efeitoNaOperacao(tipo) {
+	if (tipo === "resumo-07") return [
+		"",
+		`*Na operação:* ${EFEITO_DA_JANELA.naOperacao}`,
+		`*O que fazer:* ${EFEITO_DA_JANELA.oQueFazer}`
+	];
+	return [tipo === "lembrete-12" ? EFEITO_DA_JANELA.lembrete : EFEITO_DA_JANELA.antes];
+}
+function montarMensagem(tipo, contato, texto, agora, comSair) {
 	const linhas = [
 		TITULO,
 		`${saudacao(agora)}, ${primeiroNome(contato)}.`,
-		texto
+		texto,
+		...efeitoNaOperacao(tipo)
 	];
 	if (comSair) linhas.push("Para parar de receber, responda SAIR.");
 	return linhas.join("\n");
@@ -1144,7 +1194,7 @@ var Servico = class {
 			return false;
 		}
 		try {
-			await this.enviar(jid, montarMensagem(contato, texto, this.d.agora(), comSair));
+			await this.enviar(jid, montarMensagem(tipo, contato, texto, this.d.agora(), comSair));
 		} catch (e) {
 			this.registrar(`${quem}: falha ao enviar ${tipo}: ${mensagemDe$1(e)}`);
 			entrada.situacao = "falhou";
@@ -1178,7 +1228,7 @@ var Servico = class {
 		const prefixoDoDia = `${contato.id}|${chave.split(":")[0]}:`;
 		const comSair = !jaReservadas.some((r) => r.contatoId === contato.id && r.situacao === "enviado") && ![...this.ensaiados].some((m) => m.startsWith(prefixoDoDia));
 		this.ensaiados.add(marca);
-		const mensagem = montarMensagem(contato, texto, this.d.agora(), comSair).replaceAll("\n", " / ");
+		const mensagem = montarMensagem(tipo, contato, texto, this.d.agora(), comSair).replaceAll("\n", " / ");
 		this.registrar(`ensaio: enviaria ${tipo} a ${mascarar(contato.telefone)}: ${mensagem}`);
 	}
 	/**
@@ -1252,7 +1302,9 @@ var ABERTA_PARA_ZERAR_A_ESPERA_MS = 3e5;
 var HORA_MS = 36e5;
 /** Mais quedas que isto dentro de uma hora: reconectar em laço só piora a reputação do número. */
 var MAXIMO_DE_QUEDAS_POR_HORA = 10;
-var MOTIVO_MUITAS_QUEDAS = "muitas quedas seguidas";
+/** Com quedas demais o serviço espera isto e tenta de novo sozinho: uma queda de internet da VM não pede ninguém. */
+var PAUSA_POR_MUITAS_QUEDAS_MS = HORA_MS;
+var MOTIVO_MUITAS_QUEDAS = "muitas quedas seguidas: nova tentativa em 1 hora";
 /** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido. */
 var VALIDADE_DA_FILA_MS = 48 * HORA_MS;
 var PRAZO_DA_VERSAO_MS = 1e4;
@@ -1437,8 +1489,10 @@ async function conectarWhatsapp(opcoes) {
 					quedas = [...quedas.filter((t) => quando - t < HORA_MS), quando];
 					if (quedas.length > MAXIMO_DE_QUEDAS_POR_HORA) {
 						abertaEm = null;
-						precisaParear = true;
+						quedas = [];
+						espera = ESPERA_MINIMA;
 						opcoes.aoMudarConexao(false, MOTIVO_MUITAS_QUEDAS);
+						reconectar(PAUSA_POR_MUITAS_QUEDAS_MS);
 						return;
 					}
 				}
@@ -1471,13 +1525,16 @@ async function conectarWhatsapp(opcoes) {
 			}
 		}));
 	}
-	async function reconectar() {
+	async function reconectar(primeiraEspera) {
 		if (reconectando) return;
 		reconectando = true;
 		try {
 			while (!encerrado) {
-				const ms = espera;
-				espera = Math.min(espera * 2, ESPERA_MAXIMA);
+				let ms = espera;
+				if (primeiraEspera !== void 0) {
+					ms = primeiraEspera;
+					primeiraEspera = void 0;
+				} else espera = Math.min(espera * 2, ESPERA_MAXIMA);
 				console.log(`[whatsapp] nova tentativa de conexão em ${Math.round(ms / 1e3)} s`);
 				await dormir(ms);
 				if (encerrado) return;

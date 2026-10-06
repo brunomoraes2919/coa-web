@@ -575,7 +575,7 @@ export class Servico {
     }
 
     try {
-      await this.enviar(jid, montarMensagem(contato, texto, this.d.agora(), comSair))
+      await this.enviar(jid, montarMensagem(tipo, contato, texto, this.d.agora(), comSair))
     } catch (e) {
       this.registrar(`${quem}: falha ao enviar ${tipo}: ${mensagemDe(e)}`)
       entrada.situacao = 'falhou'
@@ -609,7 +609,7 @@ export class Servico {
     const prefixoDoDia = `${contato.id}|${chave.split(':')[0]}:`
     const comSair = !jaReservadas.some((r) => r.contatoId === contato.id && r.situacao === 'enviado') && ![...this.ensaiados].some((m) => m.startsWith(prefixoDoDia))
     this.ensaiados.add(marca)
-    const mensagem = montarMensagem(contato, texto, this.d.agora(), comSair).replaceAll('\n', ' / ')
+    const mensagem = montarMensagem(tipo, contato, texto, this.d.agora(), comSair).replaceAll('\n', ' / ')
     this.registrar(`ensaio: enviaria ${tipo} a ${mascarar(contato.telefone)}: ${mensagem}`)
   }
 

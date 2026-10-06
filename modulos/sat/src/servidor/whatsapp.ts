@@ -9,7 +9,7 @@ export interface MensagemRecebida { jid: string; texto: string }
 
 export interface Whatsapp {
   readonly conectado: boolean
-  /** `true` quando a conexão não é mais tentada sozinha (sessão encerrada, recusada, quedas demais): alguém precisa olhar. */
+  /** `true` quando a conexão não é mais tentada sozinha (sessão encerrada, recusada, versão incompatível): alguém precisa olhar. */
   readonly precisaParear: boolean
   /** Até quando o WhatsApp restringiu os envios da conta, em ms (`Infinity` = sem prazo informado); `null` = sem restrição. */
   readonly restritoAte: number | null
@@ -76,7 +76,9 @@ const ABERTA_PARA_ZERAR_A_ESPERA_MS = 5 * 60_000
 const HORA_MS = 60 * 60_000
 /** Mais quedas que isto dentro de uma hora: reconectar em laço só piora a reputação do número. */
 const MAXIMO_DE_QUEDAS_POR_HORA = 10
-const MOTIVO_MUITAS_QUEDAS = 'muitas quedas seguidas'
+/** Com quedas demais o serviço espera isto e tenta de novo sozinho: uma queda de internet da VM não pede ninguém. */
+const PAUSA_POR_MUITAS_QUEDAS_MS = HORA_MS
+const MOTIVO_MUITAS_QUEDAS = 'muitas quedas seguidas: nova tentativa em 1 hora'
 /** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido. */
 const VALIDADE_DA_FILA_MS = 48 * HORA_MS
 const PRAZO_DA_VERSAO_MS = 10_000
@@ -284,9 +286,12 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
           if (abertaEm !== null && quando - abertaEm >= ABERTA_PARA_ZERAR_A_ESPERA_MS) espera = ESPERA_MINIMA
           quedas = [...quedas.filter((t) => quando - t < HORA_MS), quando]
           if (quedas.length > MAXIMO_DE_QUEDAS_POR_HORA) {
+            // sem `precisaParear`: a sessão está boa, o que caiu foi a rede; depois da pausa recomeça do zero
             abertaEm = null
-            precisaParear = true
+            quedas = []
+            espera = ESPERA_MINIMA
             opcoes.aoMudarConexao(false, MOTIVO_MUITAS_QUEDAS)
+            void reconectar(PAUSA_POR_MUITAS_QUEDAS_MS)
             return
           }
         }
@@ -326,13 +331,19 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
   }
 
   // Nunca dois sockets: não depende de a biblioteca emitir um só `close`.
-  async function reconectar(): Promise<void> {
+  // `primeiraEspera` (ms) troca só a espera da 1ª tentativa; as seguintes seguem a espera crescente.
+  async function reconectar(primeiraEspera?: number): Promise<void> {
     if (reconectando) return
     reconectando = true
     try {
       while (!encerrado) {
-        const ms = espera
-        espera = Math.min(espera * 2, ESPERA_MAXIMA)
+        let ms = espera
+        if (primeiraEspera !== undefined) {
+          ms = primeiraEspera
+          primeiraEspera = undefined
+        } else {
+          espera = Math.min(espera * 2, ESPERA_MAXIMA)
+        }
         console.log(`[whatsapp] nova tentativa de conexão em ${Math.round(ms / 1000)} s`)
         await dormir(ms)
         if (encerrado) return
