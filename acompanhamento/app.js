@@ -1089,24 +1089,15 @@
           : campo) + '</td>' +
         '<td><input type="date" data-k="fim" value="' + esc(p.fim) + '" aria-label="Fim do período ' + (i + 1) + '"></td>' +
         '<td class="n"><input type="number" data-k="meta" min="0" step="1" value="' + esc(p.meta) + '" placeholder="ha/dia" aria-label="Meta diária do período ' + (i + 1) + '"></td>' +
-        '<td class="n" data-dias></td><td class="n" data-area></td>' +
         '<td><button type="button" class="remover" aria-label="Remover período ' + (i + 1) + '" title="Remover período">×</button></td></tr>';
     }).join('');
     atualizarResumo();
   }
 
+  /** Redesenha o "planejado x realizado" ao mexer nos períodos ou no término (a soma dos períodos aparece só no gráfico). */
   function atualizarResumo() {
-    var linhas = $('m-periodos').querySelectorAll('tr'), total = 0;
-    form.periodos.forEach(function (p, i) {
-      var d = diasPeriodo(p), a = d * (Number(p.meta) || 0); total += a;
-      linhas[i].querySelector('[data-dias]').textContent = d ? fmtN(d) : '—';
-      linhas[i].querySelector('[data-area]').textContent = a ? fmtN(a) : '—';
-    });
-    var f = formAtual(), m = calcula([f.u], f.s, f.o);
-    var cobre = total >= m.areaTotal - 0.5;
-    $('m-resumo').innerHTML = 'Os períodos somam <b>' + fmtN(total) + ' ha</b> para uma área total de <b>' + fmtN(m.areaTotal) + ' ha</b>' +
-      (cobre ? '.' : ' · <span class="alerta">cobrem ' + fmtPct(m.areaTotal ? total / m.areaTotal : 0) + ' da área</span>');
-    desenharPrevia(m);
+    var f = formAtual();
+    desenharPrevia(calcula([f.u], f.s, f.o));
   }
 
   function atualizarContexto() {

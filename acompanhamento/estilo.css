@@ -310,9 +310,6 @@ button, input, select { font: inherit; color: inherit; }
 .tabela-periodos td { padding: 5px 6px; }
 .remover { border: 0; background: none; color: var(--texto-fraco); font-size: 18px; line-height: 1; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
 .remover:hover { color: var(--ruim); background: #FBE6E4; }
-.resumo-metas { margin: 8px 0 0; font-size: 12.5px; color: var(--texto-suave); }
-.resumo-metas b { color: var(--texto); }
-.resumo-metas .alerta { color: var(--atencao); font-weight: 600; }
 .linha-termino { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .dica { margin: 6px 0 0; font-size: 12.5px; color: var(--texto-suave); min-height: 18px; }
 .mensagem { margin: 0; min-height: 18px; font-size: 13px; }
@@ -607,13 +604,8 @@ button, input, select { font: inherit; color: inherit; }
   .tabela-periodos td:nth-child(1)::before { content: "Início"; }
   .tabela-periodos td:nth-child(2)::before { content: "Fim"; }
   .tabela-periodos td:nth-child(3)::before { content: "Meta (ha/dia)"; }
-  .tabela-periodos td:nth-child(4)::before { content: "Dias"; }
-  .tabela-periodos td:nth-child(5)::before { content: "Área (ha)"; }
-  .tabela-periodos td:nth-child(3) { grid-column: 1; }
-  .tabela-periodos td:nth-child(4) { grid-column: 2; }
-  .tabela-periodos td:nth-child(5) { grid-column: 1 / 3; grid-row: 3; display: flex; align-items: baseline; gap: 8px; }
-  .tabela-periodos td:nth-child(5)::before { margin-bottom: 0; }
-  .tabela-periodos td:nth-child(6) { grid-column: 3; grid-row: 1; align-self: center; }
+  .tabela-periodos td:nth-child(3) { grid-column: 1 / 3; text-align: left; }
+  .tabela-periodos td:nth-child(4) { grid-column: 3; grid-row: 1; align-self: center; }
   .tabela-periodos input[type="number"] { text-align: left; }
   .ajuda::after { width: min(300px, calc(100vw - 72px)); }
   .linha-termino { flex-wrap: wrap; }
