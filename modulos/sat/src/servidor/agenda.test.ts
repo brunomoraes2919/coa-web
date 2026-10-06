@@ -1,7 +1,7 @@
 // @vitest-environment node
 process.env.TZ = 'America/Cuiaba'
 import { describe, expect, it } from 'vitest'
-import { chaveEvento, eventosFixosNaHora, janelaDoAntes, precisaCalcular } from './agenda'
+import { chaveDoAntes, chaveEvento, eventosFixosNaHora, janelaDoAntes, precisaCalcular } from './agenda'
 
 const em = (h: number, m = 0, dia = 6) => new Date(2026, 9, dia, h, m).getTime()
 
@@ -9,6 +9,11 @@ describe('agenda', () => {
   it('chave do evento leva o dia local', () => {
     expect(chaveEvento(em(7), 'resumo-07')).toBe('2026-10-06:resumo-07')
     expect(chaveEvento(em(23, 59), 'antes')).toBe('2026-10-06:antes')
+  })
+  it('o "antes" conta por noite: de madrugada é a chave da noite que começou no dia anterior', () => {
+    expect(chaveDoAntes(em(18, 30))).toBe('2026-10-06:antes')
+    expect(chaveDoAntes(em(0, 10, 7))).toBe('2026-10-06:antes')
+    expect(chaveDoAntes(em(12, 0, 7))).toBe('2026-10-07:antes')
   })
   it('resumo vale das 07:00 às 08:00; lembrete das 12:00 às 13:00', () => {
     expect(eventosFixosNaHora(em(6, 59))).toEqual([])

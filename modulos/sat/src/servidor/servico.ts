@@ -3,14 +3,14 @@
  * não) para uma pessoa, então a ordem das coisas importa: o envio é reservado no banco ANTES de
  * mandar, e se a reserva não vale (já existia, ou o banco falhou) a mensagem não sai.
  */
-import { chaveData, minutoDoDia } from '../logic/tempo'
+import { chaveData, DIA_MS, minutoDoDia } from '../logic/tempo'
 import type { Janela, PontoIono } from '../tipos'
-import { chaveEvento, eventosFixosNaHora, janelaDoAntes, MINUTOS_DE_CALCULO, precisaCalcular } from './agenda'
+import { chaveDoAntes, chaveEvento, eventosFixosNaHora, janelaDoAntes, MINUTOS_DE_CALCULO, precisaCalcular } from './agenda'
 import type { Banco } from './banco'
-import { lerComando, mascarar, mesmoNumero } from './comandos'
+import { chaveDoNumero, lerComando, mascarar, mesmoNumero } from './comandos'
 import { fazendasDoContato, montarMensagem, textoAtivado, textoDoEvento, textoSaiu } from './mensagens'
 import { ContadorDoDia, pausaEntrePessoas } from './ritmo'
-import type { ContatoWpp, FazendaServidor, JanelasCalculadas, TipoEvento } from './tipos'
+import type { ContatoWpp, FazendaServidor, JanelasCalculadas, SituacaoEnvio, TipoEvento } from './tipos'
 import { janelasDeHoje } from './trimble'
 import type { MensagemRecebida, Whatsapp } from './whatsapp'
 
@@ -30,28 +30,64 @@ const BATIMENTO_MS = 5 * 60_000
 /** A Trimble recusa quem insiste: depois de uma falha, só tenta de novo passado este tempo. */
 const NOVA_TENTATIVA_TRIMBLE_MS = 5 * 60_000
 const PAUSA_ENTRE_QUADRADOS_MS = 2_000
+/** `enviar` e `resolverJid` podem ficar pendurados; sem prazo travariam o laço para sempre. */
+export const PRAZO_DO_WHATSAPP_MS = 60_000
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 const MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0]
+const MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2
 const ERRO_TETO_DO_DIA = 'teto diário de mensagens atingido'
 const ERRO_SEM_WHATSAPP = 'número sem WhatsApp'
+const ESTOUROU = Symbol('prazo estourado')
+
+class PrazoEstourado extends Error {
+  constructor() {
+    super(`sem resposta do WhatsApp em ${PRAZO_DO_WHATSAPP_MS / 1000} s`)
+  }
+}
+
+interface Reservada { contatoId: string; chave: string; situacao: SituacaoEnvio }
+
+/** Um cálculo das janelas, que pode levar mais de uma tentativa: o que já respondeu não se consulta de novo. */
+interface Rodada {
+  dia: string
+  fazendas: FazendaServidor[]
+  quadrados: Map<string, { lat: number; lon: number }>
+  respondidos: Record<string, Janela[]>
+}
 
 const mensagemDe = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** Os dígitos do número que vem num endereço do WhatsApp (sem servidor nem aparelho). */
 const numeroDoJid = (jid: string) => jid.split('@')[0].split(':')[0]
 
+/** Troca todo número de telefone inteiro (55 + DDD + número, 12 ou 13 dígitos) pelos 4 últimos dígitos. */
+export function semNumeros(texto: string): string {
+  return texto.replace(/(?<!\d)55\d{10,11}(?!\d)/g, (n) => `…${n.slice(-4)}`)
+}
+
 export class Servico {
   private readonly d: Dependencias
   private readonly contador: ContadorDoDia
   private janelas: JanelasCalculadas | null = null
+  /** As fazendas lidas junto do cálculo das janelas: a geometria dos talhões é pesada demais para reler a cada minuto. */
+  private fazendas: FazendaServidor[] | null = null
+  private rodada: Rodada | null = null
   private falhaDoCalculoEm: number | null = null
   private ultimoBatimento: number | null = null
   private diaDaLimpeza = ''
   private diaDoAvisoDeTeto = ''
   private emVolta = false
-  /** Quem mandou SAIR enquanto uma volta rodava: a lista de contatos dela já estava lida. */
+  private semeado = false
+  /**
+   * Números (`chaveDoNumero`) de quem mandou SAIR e cuja pausa o banco ainda não mostrou: ninguém
+   * marcado recebe nada. A marca só sai quando a leitura do banco já traz `ativo === false` ou
+   * quando a mesma pessoa manda ATIVAR.
+   */
   private readonly pausados = new Set<string>()
   /** Só no ensaio: o que já foi registrado, para não repetir a cada minuto. */
   private readonly ensaiados = new Set<string>()
+  /** Números que o WhatsApp disse não existir, no dia: perguntar de novo todo minuto parece robô. */
+  private semWhatsapp = { dia: '', telefones: new Set<string>() }
+  private readonly respostas = new Map<string, { dia: string; n: number }>()
 
   constructor(d: Dependencias) {
     this.d = d
@@ -65,16 +101,24 @@ export class Servico {
     try {
       const agora = this.d.agora()
       await this.bater(agora)
+      await this.limparAvisoDeTeto(agora)
       await this.limparUmaVezPorDia(agora)
       await this.calcularSePreciso(agora)
-      if (!this.janelas) return
+      const janelas = this.janelas
+      // Janelas de outro dia não valem: dizem "hoje" sobre o que foi medido antes. As calculadas
+      // às 00:05 servem para o resumo das 07:00 mesmo que o cálculo das 07:00 falhe, porque a
+      // consulta cobre sempre os mesmos 7 dias inteiros antes de hoje. A nova tentativa segue a
+      // cada 5 min, sem limite, para o evento seguinte poder sair.
+      const valida = janelas !== null && chaveData(janelas.calculadoEm) === chaveData(agora)
       // Sem conexão não se reserva nada: o evento continua valendo, dentro da tolerância, quando voltar.
-      if (!this.d.ensaio && !this.d.whatsapp.conectado) return
-      const tipos: TipoEvento[] = [...eventosFixosNaHora(agora), 'antes']
-      if (!this.algoNaHora(agora, this.janelas)) return
-      await this.enviarEventos(agora, tipos, this.janelas)
+      const podeEnviar = this.d.ensaio || this.d.whatsapp.conectado
+      if (valida && podeEnviar && this.algoNaHora(agora, janelas)) {
+        await this.enviarEventos(agora, janelas)
+      } else if (this.pausados.size && !this.d.ensaio) {
+        await this.reconciliarPausados(await this.d.banco.contatos())
+      }
     } catch (e) {
-      this.d.registrar(`falha na volta: ${mensagemDe(e)}`)
+      this.registrar(`falha na volta: ${mensagemDe(e)}`)
     } finally {
       this.emVolta = false
     }
@@ -87,50 +131,66 @@ export class Servico {
     if (!comando) return
     const quem = mascarar(numeroDoJid(m.jid))
     if (this.d.ensaio) {
-      this.d.registrar(`ensaio: comando de ${quem} ignorado`)
+      this.registrar(`ensaio: comando de ${quem} ignorado`)
       return
+    }
+    // Marcado de forma síncrona, antes de qualquer espera: uma volta que comece agora, ou uma
+    // falha ao gravar, não pode deixar quem pediu para parar receber mais um alerta.
+    const numero = chaveDoNumero(m.jid)
+    if (numero) {
+      if (comando === 'sair') this.pausados.add(numero)
+      else this.pausados.delete(numero)
     }
     try {
       const contato = (await this.d.banco.contatos()).find((c) => mesmoNumero(c.telefone, m.jid))
       if (!contato) {
-        this.d.registrar(`comando de número não cadastrado (${quem}) ignorado`)
+        if (numero) this.pausados.delete(numero)
+        this.registrar(`comando de número não cadastrado (${quem}) ignorado`)
         return
       }
       let resposta: string
       if (comando === 'ativar') {
         await this.d.banco.confirmar(contato.id, m.jid)
-        this.pausados.delete(contato.id)
         let nomes: string[] = []
         try {
-          nomes = [...new Set(fazendasDoContato(contato, await this.d.banco.fazendas()).map((f) => f.nome))]
+          const fazendas = this.fazendas ?? await this.d.banco.fazendas()
+          nomes = [...new Set(fazendasDoContato(contato, fazendas).map((f) => f.nome))]
         } catch (e) {
           // o contato já está confirmado; a resposta só fica sem a lista de fazendas
-          this.d.registrar(`${quem}: não li as fazendas para a resposta: ${mensagemDe(e)}`)
+          this.registrar(`${quem}: não li as fazendas para a resposta: ${mensagemDe(e)}`)
         }
         resposta = textoAtivado(contato, nomes)
-        this.d.registrar(`ativado: ${mascarar(contato.telefone)}`)
+        this.registrar(`ativado: ${mascarar(contato.telefone)}`)
       } else {
-        // marcado antes de gravar: uma volta em andamento não pode mandar mais nada a quem pediu para parar
-        this.pausados.add(contato.id)
         await this.d.banco.pausar(contato.id)
         resposta = textoSaiu(contato)
-        this.d.registrar(`pausado: ${mascarar(contato.telefone)}`)
+        this.registrar(`pausado: ${mascarar(contato.telefone)}`)
       }
-      await this.responder(m.jid, quem, resposta)
+      await this.responder(contato, m.jid, quem, resposta)
     } catch (e) {
-      this.d.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe(e)}`)
+      // se foi SAIR, a marca fica: a próxima volta tenta gravar a pausa de novo
+      this.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe(e)}`)
     }
   }
 
   /** Estado da conexão mudou. */
   async conexao(conectado: boolean, motivo?: string): Promise<void> {
-    this.d.registrar(`WhatsApp ${conectado ? 'conectado' : 'desconectado'}${motivo ? `: ${motivo}` : ''}`)
+    this.registrar(`WhatsApp ${conectado ? 'conectado' : 'desconectado'}${motivo ? `: ${motivo}` : ''}`)
     if (this.d.ensaio) return
     try {
-      await this.d.banco.gravarEstado({ conectado, desde: new Date(this.d.agora()).toISOString(), ultimoErro: conectado ? null : (motivo ?? null) })
+      await this.d.banco.gravarEstado({
+        conectado,
+        desde: new Date(this.d.agora()).toISOString(),
+        ultimoErro: conectado || !motivo ? null : semNumeros(motivo),
+      })
     } catch (e) {
-      this.d.registrar(`não gravei o estado da conexão: ${mensagemDe(e)}`)
+      this.registrar(`não gravei o estado da conexão: ${mensagemDe(e)}`)
     }
+  }
+
+  /** Todo registro passa por aqui: nunca sai número de telefone inteiro. */
+  private registrar(linha: string): void {
+    this.d.registrar(semNumeros(linha))
   }
 
   private async bater(agora: number): Promise<void> {
@@ -140,7 +200,20 @@ export class Servico {
       await this.d.banco.gravarEstado({ conectado: this.d.whatsapp.conectado })
       this.ultimoBatimento = agora
     } catch (e) {
-      this.d.registrar(`não gravei o batimento: ${mensagemDe(e)}`)
+      this.registrar(`não gravei o batimento: ${mensagemDe(e)}`)
+    }
+  }
+
+  /** O aviso de teto de um dia não pode ficar no estado no dia seguinte. */
+  private async limparAvisoDeTeto(agora: number): Promise<void> {
+    if (this.d.ensaio || !this.diaDoAvisoDeTeto || this.diaDoAvisoDeTeto === chaveData(agora)) return
+    // desconectado, o `ultimoErro` já é outro (o motivo da queda): fica para quando voltar
+    if (!this.d.whatsapp.conectado) return
+    try {
+      await this.d.banco.gravarEstado({ conectado: true, ultimoErro: null })
+      this.diaDoAvisoDeTeto = ''
+    } catch (e) {
+      this.registrar(`não limpei o aviso de teto: ${mensagemDe(e)}`)
     }
   }
 
@@ -151,54 +224,71 @@ export class Servico {
     try {
       await this.d.banco.limparEnviosAntigos()
     } catch (e) {
-      this.d.registrar(`não limpei os envios antigos: ${mensagemDe(e)}`)
+      this.registrar(`não limpei os envios antigos: ${mensagemDe(e)}`)
     }
   }
 
   private async calcularSePreciso(agora: number): Promise<void> {
     if (!precisaCalcular(agora, this.janelas?.calculadoEm ?? null)) return
     if (this.falhaDoCalculoEm !== null && agora - this.falhaDoCalculoEm < NOVA_TENTATIVA_TRIMBLE_MS) return
-    const fazendas = await this.d.banco.fazendas()
-    const quadrados = new Map<string, { lat: number; lon: number }>()
-    for (const f of fazendas) if (f.celulaId && f.lat != null && f.lon != null) quadrados.set(f.celulaId, { lat: f.lat, lon: f.lon })
-    const porCelula: Record<string, Janela[]> = {}
+    const dia = chaveData(agora)
+    // A consulta cobre os 7 dias inteiros antes de hoje: dentro do mesmo dia, o que já respondeu vale.
+    if (!this.rodada || this.rodada.dia !== dia) {
+      const fazendas = await this.d.banco.fazendas()
+      const quadrados = new Map<string, { lat: number; lon: number }>()
+      for (const f of fazendas) if (f.celulaId && f.lat != null && f.lon != null) quadrados.set(f.celulaId, { lat: f.lat, lon: f.lon })
+      this.rodada = { dia, fazendas, quadrados, respondidos: {} }
+    }
+    const rodada = this.rodada
     try {
       let primeiro = true
-      for (const [id, celula] of quadrados) {
+      for (const [id, celula] of rodada.quadrados) {
+        if (id in rodada.respondidos) continue
         if (!primeiro) await this.d.dormir(PAUSA_ENTRE_QUADRADOS_MS)
         primeiro = false
-        porCelula[id] = janelasDeHoje(await this.d.trimble.historico(celula, agora))
+        rodada.respondidos[id] = janelasDeHoje(await this.d.trimble.historico(celula, agora))
       }
     } catch (e) {
-      // as janelas boas que já temos ficam como estão
+      // as janelas que já temos ficam como estão, e os quadrados que responderam não se consultam de novo
       this.falhaDoCalculoEm = agora
-      this.d.registrar(`Trimble: ${mensagemDe(e)}`)
+      this.registrar(`Trimble: ${mensagemDe(e)}`)
       return
     }
-    this.janelas = { calculadoEm: agora, porCelula }
+    this.janelas = { calculadoEm: agora, porCelula: rodada.respondidos }
+    this.fazendas = rodada.fazendas
+    this.rodada = null
     this.falhaDoCalculoEm = null
-    this.d.registrar(`janelas calculadas para ${quadrados.size} quadrado(s)`)
+    this.registrar(`janelas calculadas para ${rodada.quadrados.size} quadrado(s)`)
   }
 
-  /** Evita ler contatos e fazendas (o banco) a cada minuto do dia: só quando há um evento a considerar. */
+  /** Evita ler contatos e envios (o banco) a cada minuto do dia: só quando há um evento a considerar. */
   private algoNaHora(agora: number, janelas: JanelasCalculadas): boolean {
     if (eventosFixosNaHora(agora).length) return true
     return Object.values(janelas.porCelula).some((js) => janelaDoAntes(js, agora) !== null)
   }
 
-  private async enviarEventos(agora: number, tipos: TipoEvento[], janelas: JanelasCalculadas): Promise<void> {
-    this.pausados.clear()
-    const [contatos, fazendas, jaReservadas] = await Promise.all([
+  private async enviarEventos(agora: number, janelas: JanelasCalculadas): Promise<void> {
+    const fazendas = this.fazendas ?? []
+    // O "antes" de madrugada tem a chave da noite anterior: as de ontem também contam.
+    const [contatos, deOntem, deHoje] = await Promise.all([
       this.d.banco.contatos(),
-      this.d.banco.fazendas(),
+      this.d.banco.chavesDoDia(chaveData(agora - DIA_MS)),
       this.d.banco.chavesDoDia(chaveData(agora)),
     ])
+    if (!this.semeado) {
+      // depois de um reinício o teto do dia não pode zerar: conta o que já foi reservado hoje
+      for (const r of deHoje) this.contador.contar(r.contatoId)
+      this.semeado = true
+    }
+    const jaReservadas: Reservada[] = [...deOntem, ...deHoje]
+    await this.reconciliarPausados(contatos)
     const aptos = contatos
       .filter((c) => c.ativo && c.alertaJanela && c.confirmadoEm)
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    const tipos: TipoEvento[] = [...eventosFixosNaHora(agora), 'antes']
     let tentouAlgum = false
     for (const tipo of tipos) {
-      const chave = chaveEvento(agora, tipo)
+      const chave = tipo === 'antes' ? chaveDoAntes(agora) : chaveEvento(agora, tipo)
       for (const contato of aptos) {
         if (jaReservadas.some((r) => r.contatoId === contato.id && r.chave === chave)) continue
         let pronto = await this.preparar(tipo, contato, fazendas, janelas)
@@ -217,10 +307,35 @@ export class Servico {
     }
   }
 
+  /**
+   * Quem mandou SAIR e o banco ainda mostra ativo: tenta gravar a pausa de novo (uma vez por volta).
+   * Quem o banco já mostra inativo: a marca cumpriu o papel e sai.
+   */
+  private async reconciliarPausados(contatos: ContatoWpp[]): Promise<void> {
+    for (const c of contatos) {
+      const numero = chaveDoNumero(c.telefone)
+      if (!numero || !this.pausados.has(numero)) continue
+      if (!c.ativo) {
+        this.pausados.delete(numero)
+        continue
+      }
+      try {
+        await this.d.banco.pausar(c.id)
+      } catch (e) {
+        this.registrar(`${mascarar(c.telefone)}: não gravei a pausa: ${mensagemDe(e)}`)
+      }
+    }
+  }
+
+  private estaPausado(contato: ContatoWpp): boolean {
+    const numero = chaveDoNumero(contato.telefone)
+    return numero !== null && this.pausados.has(numero)
+  }
+
   /** O texto a mandar a este contato agora; `null` = nada para ele; `'parar'` = nada mais sai nesta volta. */
   private async preparar(tipo: TipoEvento, contato: ContatoWpp, fazendas: FazendaServidor[], janelas: JanelasCalculadas): Promise<string | null | 'parar'> {
     if (!this.d.ensaio && !this.d.whatsapp.conectado) return 'parar'
-    if (this.pausados.has(contato.id)) return null
+    if (this.estaPausado(contato)) return null
     // o "antes" depende da hora de agora, não da de quando a volta começou
     const texto = textoDoEvento(tipo, contato, fazendas, janelas.porCelula, this.d.agora())
     if (!texto) return null
@@ -234,29 +349,63 @@ export class Servico {
     const dia = chaveData(this.d.agora())
     if (this.diaDoAvisoDeTeto === dia) return
     this.diaDoAvisoDeTeto = dia
-    this.d.registrar(`${ERRO_TETO_DO_DIA}: nada mais sai hoje`)
+    this.registrar(`${ERRO_TETO_DO_DIA}: nada mais sai hoje`)
     if (this.d.ensaio) return
     try {
       await this.d.banco.gravarEstado({ conectado: this.d.whatsapp.conectado, ultimoErro: ERRO_TETO_DO_DIA })
     } catch (e) {
-      this.d.registrar(`não gravei o aviso de teto: ${mensagemDe(e)}`)
+      this.registrar(`não gravei o aviso de teto: ${mensagemDe(e)}`)
     }
   }
 
+  /** Espera a chamada ao WhatsApp, no máximo `PRAZO_DO_WHATSAPP_MS` (o relógio é o `dormir` injetado). */
+  private async comPrazo<T>(chamada: Promise<T>): Promise<T> {
+    chamada.catch(() => {}) // se o prazo vencer e ela falhar depois, ninguém mais espera por ela
+    const r = await Promise.race([chamada, this.d.dormir(PRAZO_DO_WHATSAPP_MS).then(() => ESTOUROU)])
+    if (r === ESTOUROU) throw new PrazoEstourado()
+    return r as T
+  }
+
+  private numerosSemWhatsapp(): Set<string> {
+    const dia = chaveData(this.d.agora())
+    if (this.semWhatsapp.dia !== dia) this.semWhatsapp = { dia, telefones: new Set() }
+    return this.semWhatsapp.telefones
+  }
+
   /** `true` se tentou mandar (deu certo ou não): é o que pede a pausa antes da próxima pessoa. */
-  private async mandar(contato: ContatoWpp, tipo: TipoEvento, chave: string, texto: string, jaReservadas: { contatoId: string; chave: string }[]): Promise<boolean> {
+  private async mandar(contato: ContatoWpp, tipo: TipoEvento, chave: string, texto: string, jaReservadas: Reservada[]): Promise<boolean> {
     const quem = mascarar(contato.telefone)
-    const comSair = !jaReservadas.some((r) => r.contatoId === contato.id)
+    const hoje = chaveData(this.d.agora())
+    // a linha do SAIR vai na primeira mensagem que a pessoa de fato recebe no dia
+    const comSair = !jaReservadas.some((r) => r.contatoId === contato.id && r.situacao === 'enviado' && r.chave.startsWith(`${hoje}:`))
     let jid = contato.jid
+    let entrada: Reservada
     try {
       if (!jid) {
-        const achado = await this.d.whatsapp.resolverJid(contato.telefone)
-        if (achado === null) {
-          // o número não tem WhatsApp: fica registrado para hoje e não se pergunta de novo a cada minuto
+        const semWhatsapp = this.numerosSemWhatsapp()
+        let achado: string | null = null
+        let falhou: string | null = null
+        if (semWhatsapp.has(contato.telefone)) {
+          falhou = ERRO_SEM_WHATSAPP
+        } else {
+          try {
+            achado = await this.comPrazo(this.d.whatsapp.resolverJid(contato.telefone))
+          } catch (e) {
+            if (!(e instanceof PrazoEstourado)) throw e
+            falhou = e.message
+          }
+          if (achado === null && falhou === null) {
+            semWhatsapp.add(contato.telefone)
+            falhou = ERRO_SEM_WHATSAPP
+          }
+        }
+        if (falhou !== null || achado === null) {
+          // fica registrado para este evento (e não se pergunta de novo ao WhatsApp)
+          const erro = falhou ?? ERRO_SEM_WHATSAPP
           if (await this.d.banco.reservarEnvio(contato.id, chave, tipo)) {
-            jaReservadas.push({ contatoId: contato.id, chave })
-            await this.d.banco.fecharEnvio(contato.id, chave, 'falhou', ERRO_SEM_WHATSAPP)
-            this.d.registrar(`${quem}: ${ERRO_SEM_WHATSAPP}`)
+            jaReservadas.push({ contatoId: contato.id, chave, situacao: 'falhou' })
+            await this.fechar(contato.id, chave, quem, 'falhou', erro)
+            this.registrar(`${quem}: ${erro}`)
           }
           return false
         }
@@ -264,65 +413,78 @@ export class Servico {
         try {
           await this.d.banco.guardarJid(contato.id, jid)
         } catch (e) {
-          this.d.registrar(`${quem}: não guardei o endereço: ${mensagemDe(e)}`) // só atalho: manda assim mesmo
+          this.registrar(`${quem}: não guardei o endereço: ${mensagemDe(e)}`) // só atalho: manda assim mesmo
         }
       }
       // reservar ANTES de mandar: se não reservou, não manda
       const reservou = await this.d.banco.reservarEnvio(contato.id, chave, tipo)
-      jaReservadas.push({ contatoId: contato.id, chave })
+      entrada = { contatoId: contato.id, chave, situacao: 'enviando' }
+      jaReservadas.push(entrada)
       if (!reservou) return false
     } catch (e) {
-      this.d.registrar(`${quem}: não mandei ${tipo}: ${mensagemDe(e)}`)
+      this.registrar(`${quem}: não mandei ${tipo}: ${mensagemDe(e)}`)
       return false
     }
 
     try {
-      await this.d.whatsapp.enviar(jid, montarMensagem(contato, texto, this.d.agora(), comSair))
+      await this.comPrazo(this.d.whatsapp.enviar(jid, montarMensagem(contato, texto, this.d.agora(), comSair)))
     } catch (e) {
-      this.d.registrar(`${quem}: falha ao enviar ${tipo}: ${mensagemDe(e)}`)
+      this.registrar(`${quem}: falha ao enviar ${tipo}: ${mensagemDe(e)}`)
+      entrada.situacao = 'falhou'
       await this.fechar(contato.id, chave, quem, 'falhou', mensagemDe(e))
       return true
     }
+    // contado e anotado antes das chamadas ao banco, que podem lançar
     this.contador.contar(contato.id)
-    this.d.registrar(`enviado ${tipo} a ${quem}`)
+    entrada.situacao = 'enviado'
+    this.registrar(`enviado ${tipo} a ${quem}`)
     await this.fechar(contato.id, chave, quem, 'enviado')
     try {
-      await this.d.banco.gravarEstado({ conectado: true, ultimoEnvioEm: new Date(this.d.agora()).toISOString() })
+      await this.d.banco.gravarEstado({ conectado: this.d.whatsapp.conectado, ultimoEnvioEm: new Date(this.d.agora()).toISOString() })
     } catch (e) {
-      this.d.registrar(`não gravei o último envio: ${mensagemDe(e)}`)
+      this.registrar(`não gravei o último envio: ${mensagemDe(e)}`)
     }
     return true
   }
 
   private async fechar(contatoId: string, chave: string, quem: string, situacao: 'enviado' | 'falhou', erro?: string): Promise<void> {
     try {
-      await this.d.banco.fecharEnvio(contatoId, chave, situacao, erro)
+      await this.d.banco.fecharEnvio(contatoId, chave, situacao, erro === undefined ? undefined : semNumeros(erro))
     } catch (e) {
-      this.d.registrar(`${quem}: não fechei o envio: ${mensagemDe(e)}`)
+      this.registrar(`${quem}: não fechei o envio: ${mensagemDe(e)}`)
     }
   }
 
-  private ensaiar(contato: ContatoWpp, tipo: TipoEvento, chave: string, texto: string, jaReservadas: { contatoId: string }[]): void {
+  private ensaiar(contato: ContatoWpp, tipo: TipoEvento, chave: string, texto: string, jaReservadas: Reservada[]): void {
     const marca = `${contato.id}|${chave}`
     if (this.ensaiados.has(marca)) return
     const prefixoDoDia = `${contato.id}|${chave.split(':')[0]}:`
-    const comSair = !jaReservadas.some((r) => r.contatoId === contato.id) && ![...this.ensaiados].some((m) => m.startsWith(prefixoDoDia))
+    const comSair = !jaReservadas.some((r) => r.contatoId === contato.id && r.situacao === 'enviado') && ![...this.ensaiados].some((m) => m.startsWith(prefixoDoDia))
     this.ensaiados.add(marca)
     const mensagem = montarMensagem(contato, texto, this.d.agora(), comSair).replaceAll('\n', ' / ')
-    this.d.registrar(`ensaio: enviaria ${tipo} a ${mascarar(contato.telefone)}: ${mensagem}`)
+    this.registrar(`ensaio: enviaria ${tipo} a ${mascarar(contato.telefone)}: ${mensagem}`)
   }
 
-  /** Resposta a ATIVAR/SAIR: respeita o teto do dia e conta nele. */
-  private async responder(jid: string, quem: string, texto: string): Promise<void> {
+  /** Resposta a ATIVAR/SAIR: no máximo 2 por pessoa por dia, respeita o teto do dia e conta nele. */
+  private async responder(contato: ContatoWpp, jid: string, quem: string, texto: string): Promise<void> {
+    const dia = chaveData(this.d.agora())
+    const anterior = this.respostas.get(contato.id)
+    const feitas = anterior && anterior.dia === dia ? anterior.n : 0
+    if (feitas >= MAX_RESPOSTAS_POR_PESSOA_POR_DIA) {
+      // o comando já valeu; só a resposta fica de fora (mensagens repetidas ou reentregues esgotariam o teto)
+      this.registrar(`${quem}: limite de respostas do dia, não respondi`)
+      return
+    }
     if (!this.contador.podeMensagem()) {
       await this.avisarTetoDoDia()
       return
     }
+    this.respostas.set(contato.id, { dia, n: feitas + 1 })
     try {
-      await this.d.whatsapp.enviar(jid, texto)
+      await this.comPrazo(this.d.whatsapp.enviar(jid, texto))
       this.contador.contar(null)
     } catch (e) {
-      this.d.registrar(`${quem}: não consegui responder: ${mensagemDe(e)}`)
+      this.registrar(`${quem}: não consegui responder: ${mensagemDe(e)}`)
     }
   }
 }

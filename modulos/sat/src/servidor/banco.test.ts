@@ -72,11 +72,12 @@ describe('banco', () => {
     for (const c of r.chamadas) expect(c.signal).toBeInstanceOf(AbortSignal)
   })
   it('chaves do dia: pede só as do dia, em ordem estável, e converte', async () => {
-    const r = rede({ whatsapp_envios: { corpo: [{ contato_id: 'a', chave: '2026-10-06:antes' }] } })
-    expect(await banco(r).chavesDoDia('2026-10-06')).toEqual([{ contatoId: 'a', chave: '2026-10-06:antes' }])
+    const r = rede({ whatsapp_envios: { corpo: [{ contato_id: 'a', chave: '2026-10-06:antes', situacao: 'falhou' }] } })
+    expect(await banco(r).chavesDoDia('2026-10-06')).toEqual([{ contatoId: 'a', chave: '2026-10-06:antes', situacao: 'falhou' }])
     expect(r.chamadas[0].method).toBe('GET')
     expect(r.chamadas[0].url).toContain('chave=like.2026-10-06:*')
     expect(r.chamadas[0].url).toContain('order=contato_id,chave')
+    expect(r.chamadas[0].url).toContain('select=contato_id,chave,situacao')
   })
   it('guardar jid e pausar mexem só no contato indicado', async () => {
     const r = rede({ whatsapp_contatos: { status: 204 } })

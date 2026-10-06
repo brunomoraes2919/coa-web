@@ -5,7 +5,7 @@
 import { celulaDe } from '../fazendasGnss'
 import { centroDoLimite, limitesPorFazenda } from '../logic/limites'
 import { DIA_MS } from '../logic/tempo'
-import type { ContatoWpp, FazendaServidor, TipoEvento } from './tipos'
+import type { ContatoWpp, FazendaServidor, SituacaoEnvio, TipoEvento } from './tipos'
 
 export interface Banco {
   contatos(): Promise<ContatoWpp[]>
@@ -14,7 +14,7 @@ export interface Banco {
   reservarEnvio(contatoId: string, chave: string, tipo: TipoEvento): Promise<boolean>
   fecharEnvio(contatoId: string, chave: string, situacao: 'enviado' | 'falhou' | 'pulado', erro?: string): Promise<void>
   /** Chaves de evento já reservadas no dia, de todos os contatos (para a linha do SAIR e para não repetir). */
-  chavesDoDia(dia: string): Promise<{ contatoId: string; chave: string }[]>
+  chavesDoDia(dia: string): Promise<{ contatoId: string; chave: string; situacao: SituacaoEnvio }[]>
   confirmar(contatoId: string, jid: string): Promise<void>
   guardarJid(contatoId: string, jid: string): Promise<void>
   pausar(contatoId: string): Promise<void>
@@ -140,8 +140,8 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
     },
 
     async chavesDoDia(dia) {
-      const linhas = await lerTudo<{ contato_id: string; chave: string }>('ler os envios do dia', 'whatsapp_envios', `select=contato_id,chave&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)
-      return linhas.map((l) => ({ contatoId: l.contato_id, chave: l.chave }))
+      const linhas = await lerTudo<{ contato_id: string; chave: string; situacao: SituacaoEnvio }>('ler os envios do dia', 'whatsapp_envios', `select=contato_id,chave,situacao&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)
+      return linhas.map((l) => ({ contatoId: l.contato_id, chave: l.chave, situacao: l.situacao }))
     },
 
     confirmar(contatoId, jid) {

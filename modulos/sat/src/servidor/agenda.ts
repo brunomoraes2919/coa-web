@@ -3,7 +3,7 @@
  * TZ=America/Cuiaba), como a tela usa o fuso do navegador.
  */
 import { ANTECEDENCIA_JANELA_MIN } from '../logic/alertas'
-import { chaveData, DIA_MS, inicioDoDiaLocal, minutoDoDia } from '../logic/tempo'
+import { chaveData, DIA_MS, HORA_MS, inicioDoDiaLocal, minutoDoDia } from '../logic/tempo'
 import type { Janela } from '../tipos'
 import type { TipoEvento } from './tipos'
 
@@ -16,6 +16,11 @@ export const TOLERANCIA_ATRASO_MIN = 60
 
 export function chaveEvento(agora: number, tipo: TipoEvento): string {
   return `${chaveData(agora)}:${tipo}`
+}
+
+/** O "começa em breve" é no máximo um por noite: a janela depois da meia-noite pertence à noite anterior. */
+export function chaveDoAntes(agora: number): string {
+  return chaveEvento(agora - 12 * HORA_MS, 'antes')
 }
 
 export function eventosFixosNaHora(agora: number): ('resumo-07' | 'lembrete-12')[] {
