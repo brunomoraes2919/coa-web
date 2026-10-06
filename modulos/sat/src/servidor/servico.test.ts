@@ -264,7 +264,7 @@ function trava() {
 
 const semNumerosNoRegistro = (registro: string[]) => expect(registro.join('\n')).not.toMatch(/55\d{8,}/)
 const alertasPara = (c: ReturnType<typeof montar>, telefone: string) =>
-  c.wpp.enviados.filter((e) => e.jid === jidDe(telefone) && e.texto.includes('Janela'))
+  c.wpp.enviados.filter((e) => e.jid === jidDe(telefone) && e.texto.includes('LOCKS SAT ·'))
 
 describe('servico: o que sai a cada minuto', () => {
   it('1. às 07:00 reserva o resumo, envia e fecha como enviado; a primeira do dia leva a linha do SAIR', async () => {
@@ -274,9 +274,9 @@ describe('servico: o que sai a cada minuto', () => {
     expect(c.wpp.enviados).toHaveLength(1)
     const { jid, texto } = c.wpp.enviados[0]
     expect(jid).toBe(jidDe('5565999990001'))
-    expect(texto).toContain('Bom dia, Ana.')
-    expect(texto).toContain('Janelas de risco de cintilação hoje entre 19:00 e 20:00 em Nebraska.')
-    expect(texto).toContain('Para parar de receber, responda SAIR.')
+    expect(texto).toContain('☀️ Bom dia, *Ana*!')
+    expect(texto).toContain('🕗 Das *19:00* às *20:00*\n📍 Nebraska\n')
+    expect(texto).toContain('_Para parar de receber, responda SAIR._')
     expect(c.banco.fechamentos).toEqual([{ contatoId: 'c-ana', chave: `${HOJE}:resumo-07`, situacao: 'enviado' }])
     // a reserva vem antes do envio, e o envio antes de fechar
     expect(c.ordem).toEqual(['reservar', 'enviar', 'fechar'])
@@ -307,8 +307,8 @@ describe('servico: o que sai a cada minuto', () => {
     expect(c.wpp.enviados).toHaveLength(2)
     expect(c.banco.reservas[1]).toEqual(['c-ana', `${HOJE}:lembrete-12`, 'lembrete-12'])
     const { texto } = c.wpp.enviados[1]
-    expect(texto).toContain('Lembrete: janela de risco de cintilação hoje a partir de 19:00 em Nebraska.')
-    expect(texto).toContain('Boa tarde, Ana.')
+    expect(texto).toContain('⏰ A janela de risco de hoje começa às *19:00*\n📍 Nebraska')
+    expect(texto).toContain('🌤️ Boa tarde, *Ana*!')
     expect(texto).not.toContain('SAIR')
   })
 
@@ -319,9 +319,9 @@ describe('servico: o que sai a cada minuto', () => {
     await c.volta(18, 45)
     expect(c.wpp.enviados).toHaveLength(1)
     expect(c.banco.reservas).toEqual([['c-ana', `${HOJE}:antes`, 'antes']])
-    expect(c.wpp.enviados[0].texto).toContain('Janela de risco de cintilação começa em breve: 19:00–20:00')
-    expect(c.wpp.enviados[0].texto).toContain('Boa noite, Ana.')
-    expect(c.wpp.enviados[0].texto).toContain('Para parar de receber, responda SAIR.')
+    expect(c.wpp.enviados[0].texto).toContain('🕗 *19:00–20:00*')
+    expect(c.wpp.enviados[0].texto).toContain('🌙 Boa noite, *Ana*!')
+    expect(c.wpp.enviados[0].texto).toContain('_Para parar de receber, responda SAIR._')
 
     // quando já houve mensagem no dia, o "antes" vai sem a linha
     const d = montar()
@@ -523,7 +523,7 @@ describe('servico: janelas e Trimble', () => {
     c.trimble.sempreFalha = true
     await c.volta(7)
     expect(c.wpp.enviados).toHaveLength(1)
-    expect(c.wpp.enviados[0].texto).toContain('Janelas de risco de cintilação hoje')
+    expect(c.wpp.enviados[0].texto).toContain('⚠️ *Hoje tem risco de cintilação*')
   })
 
   it('5. as fazendas são lidas junto do cálculo, não a cada minuto', async () => {
@@ -745,8 +745,8 @@ describe('servico: ritmo, estado e prazo', () => {
     c.wpp.falhaEnvio.clear()
     await c.volta(12)
     expect(c.wpp.enviados).toHaveLength(1)
-    expect(c.wpp.enviados[0].texto).toContain('Lembrete:')
-    expect(c.wpp.enviados[0].texto).toContain('Para parar de receber, responda SAIR.')
+    expect(c.wpp.enviados[0].texto).toContain('LOCKS SAT · LEMBRETE')
+    expect(c.wpp.enviados[0].texto).toContain('_Para parar de receber, responda SAIR._')
   })
 
   it('10. enviar pendurado: estoura em 60 s, fecha como falhou e segue para o próximo', async () => {
@@ -1444,7 +1444,7 @@ describe('servico: estado, batimento e limpeza', () => {
     c.wpp.conectado = false
     await c.volta(7)
     await c.volta(7, 1)
-    const linhas = c.registro.filter((l) => l.includes('Janelas de risco de cintilação hoje entre 19:00 e 20:00 em Nebraska.'))
+    const linhas = c.registro.filter((l) => l.includes('🕗 Das *19:00* às *20:00* / 📍 Nebraska / '))
     expect(linhas).toHaveLength(2) // uma por contato, sem repetir na volta seguinte
     expect(linhas[0]).toContain(mascarar('5565999990001'))
     expect(linhas[1]).toContain(mascarar('5565999990002'))
@@ -1490,7 +1490,7 @@ describe('servico: estado, batimento e limpeza', () => {
 
 describe('servico: resumo de hoje a pedido', () => {
   const RESUMO_HOJE = `${HOJE}:resumo-07`
-  const resumos = (c: ReturnType<typeof montar>) => c.wpp.enviados.filter((e) => e.texto.includes('*Na operação:*'))
+  const resumos = (c: ReturnType<typeof montar>) => c.wpp.enviados.filter((e) => e.texto.includes('*Na operação*'))
   const linhaDoPedido = (c: ReturnType<typeof montar>) => c.registro.filter((l) => l.startsWith('resumo de hoje (a pedido):'))
   /** Põe o relógio na hora e faz o pedido (o que o sinal faz na VM). */
   const pedir = (c: ReturnType<typeof montar>, h: number, m = 0, dia = 6) => {
@@ -1506,7 +1506,7 @@ describe('servico: resumo de hoje a pedido', () => {
     await c.volta(11, 40)
     expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990001'), jidDe('5565999990002')])
     expect(c.banco.reservas).toEqual([['c-ana', RESUMO_HOJE, 'resumo-07'], ['c-bruno', RESUMO_HOJE, 'resumo-07']])
-    expect(c.wpp.enviados[0].texto).toContain('Janelas de risco de cintilação hoje entre 19:00 e 20:00 em Nebraska.')
+    expect(c.wpp.enviados[0].texto).toContain('🕗 Das *19:00* às *20:00*\n📍 Nebraska\n')
     expect(c.pausasEntrePessoas()).toHaveLength(1)
     expect(c.ordem.filter((o) => o !== 'fechar')).toEqual(['reservar', 'enviar', 'pausa', 'reservar', 'enviar'])
     expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 2 enviado(s), 0 já tinham recebido, 0 sem janela hoje'])
@@ -1675,12 +1675,12 @@ describe('servico: resumo de hoje a pedido', () => {
     const c = montar({ contatos: [ANA] })
     await c.volta(12)
     expect(c.wpp.enviados).toHaveLength(1)
-    expect(c.wpp.enviados[0].texto).toContain('Lembrete: janela de risco')
+    expect(c.wpp.enviados[0].texto).toContain('LOCKS SAT · LEMBRETE')
     pedir(c, 12, 10)
     await c.volta(12, 10)
     expect(c.banco.reservas.map((r) => r[1])).toEqual([`${HOJE}:lembrete-12`, RESUMO_HOJE])
     expect(c.wpp.enviados).toHaveLength(2)
-    expect(c.wpp.enviados[1].texto).toContain('*Na operação:*')
+    expect(c.wpp.enviados[1].texto).toContain('*Na operação*')
     expect(c.wpp.enviados[1].texto).not.toContain('SAIR')
     expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 1 enviado(s), 0 já tinham recebido, 0 sem janela hoje'])
   })
@@ -1731,7 +1731,7 @@ describe('servico: resumo de hoje a pedido', () => {
     await c.volta(11, 50, 7)
     expect(c.wpp.enviados).toHaveLength(2)
     expect(c.banco.reservas[1]).toEqual(['c-ana', `${AMANHA}:resumo-07`, 'resumo-07'])
-    expect(c.wpp.enviados[1].texto).toContain('*Na operação:*')
+    expect(c.wpp.enviados[1].texto).toContain('*Na operação*')
   })
 
   it('no ensaio o pedido não muda nada: não registra, não reserva e não envia', async () => {

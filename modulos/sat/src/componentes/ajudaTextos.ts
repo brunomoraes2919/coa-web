@@ -61,13 +61,20 @@ export const AJUDA: Record<TemaAjuda, TextoAjuda> = {
   },
 }
 
-/** O efeito na operação que acompanha cada aviso de janela de risco no WhatsApp: três redações, uma por aviso. */
+/**
+ * O efeito na operação que acompanha cada aviso de janela de risco no WhatsApp: uma redação por aviso
+ * (o mesmo texto repetido no dia parece robô). O "Na operação" do resumo é `AJUDA.janela.rtk`, o texto da tela.
+ */
 export const EFEITO_DA_JANELA = {
-  /** No resumo: a frase do "?" da janela (o mesmo texto da tela). */
-  naOperacao: AJUDA.janela.rtk.charAt(0).toLowerCase() + AJUDA.janela.rtk.slice(1),
-  oQueFazer: 'deixe fora dessa janela o que depende de RTK fixo: plantio, pulverização com corte de seção e voo de drone em RTK.',
-  lembrete: 'Programe para antes ou depois o que depende de RTK fixo (plantio, pulverização com corte de seção, voo de drone).',
-  antes: 'A partir de agora o RTK pode cair de fixo para flutuante e o piloto automático desarmar. Acompanhe o status da correção no monitor e evite abrir linhas AB novas.',
+  oQueFazer: {
+    intro: 'Deixe fora dessa janela o que depende de RTK fixo:',
+    itens: ['Plantio', 'Pulverização com corte de seção', 'Voo de drone em RTK'],
+  },
+  lembrete: 'Programe para antes ou depois o que depende de RTK fixo: plantio, pulverização com corte de seção e voo de drone.',
+  antes: {
+    efeito: 'A partir de agora o RTK pode cair de fixo para flutuante e o piloto automático desarmar.',
+    acao: 'Acompanhe o status da correção no monitor e evite abrir linhas AB novas.',
+  },
 } as const
 
 export const FONTE_AJUDA = 'Fonte: rede de monitoramento da Trimble (GNSS Planning). Dado não oficial.'

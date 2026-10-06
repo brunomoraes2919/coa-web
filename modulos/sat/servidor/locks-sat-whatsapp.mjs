@@ -104,49 +104,6 @@ function listarFazendas(nomes) {
 	const resto = n.length > 3 ? ` e mais ${n.length - 3}` : "";
 	return `${n.length} fazendas: ${n.slice(0, 3).join(", ")}${resto}`;
 }
-function chaveGrupo(o) {
-	if (o.tipo === "janela") return o.momento === "antes" ? `janela:antes:${o.janela?.inicio}:${o.janela?.fim}` : "janela:dia";
-	return `${o.tipo}:${o.severidade}`;
-}
-function textoGrupo(grupo, nomes) {
-	const o = grupo[0];
-	const onde = listarFazendas(nomes);
-	const pico = Math.max(...grupo.map((x) => x.valor));
-	if (o.tipo === "cintilacao") return `Cintilação ${o.severidade === "critico" ? "forte" : "média"} agora em ${onde} (até ${Math.round(pico)} de 100).`;
-	if (o.tipo === "previsao") return `Previsão: índice ionosférico ${pico} a partir de ${horaDe(Math.min(...grupo.map((x) => x.instante)))} em ${onde}.`;
-	if (o.momento !== "antes") {
-		const inicio = Math.min(...grupo.map((x) => x.janela?.inicio ?? 0));
-		const fim = Math.max(...grupo.map((x) => x.janela?.fim ?? 0));
-		const pior = grupo.reduce((a, b) => (b.janela?.dias ?? 0) > (a.janela?.dias ?? 0) ? b : a);
-		return `Janelas de risco de cintilação hoje entre ${rotuloHora(inicio)} e ${rotuloHora(fim)} em ${onde}. Pior horário: ${pior.janela ? textoJanela(pior.janela) : ""}.`;
-	}
-	return `Janela de risco de cintilação começa em breve: ${o.janela ? textoJanela(o.janela) : ""} em ${onde}.`;
-}
-var ORDEM_SEVERIDADE = {
-	critico: 0,
-	aviso: 1
-};
-function montarAlertas(ocorrencias, fazendasPorCelula, agora) {
-	const grupos = /* @__PURE__ */ new Map();
-	for (const o of ocorrencias) {
-		const k = chaveGrupo(o);
-		grupos.set(k, [...grupos.get(k) ?? [], o]);
-	}
-	const alertas = [];
-	for (const [k, grupo] of grupos) {
-		const nomes = [...new Set(grupo.flatMap((o) => fazendasPorCelula[o.celulaId] ?? []))].sort((a, b) => a.localeCompare(b, "pt-BR"));
-		if (!nomes.length) continue;
-		alertas.push({
-			id: `${agora}:${k}`,
-			instante: agora,
-			tipo: grupo[0].tipo,
-			severidade: grupo[0].severidade,
-			fazendas: nomes,
-			texto: textoGrupo(grupo, nomes)
-		});
-	}
-	return alertas.sort((a, b) => ORDEM_SEVERIDADE[a.severidade] - ORDEM_SEVERIDADE[b.severidade]);
-}
 //#endregion
 //#region src/fazendasGnss.ts
 function celulaDe(lat, lon) {
@@ -465,92 +422,119 @@ var AJUDA = {
 		rtk: "É nesse horário que o RTK mais costuma cair de fixo para flutuante e o piloto automático desarmar. Plantio ou pulverização à noite dentro da janela tem mais chance de falha e sobreposição entre passadas."
 	}
 };
-/** O efeito na operação que acompanha cada aviso de janela de risco no WhatsApp: três redações, uma por aviso. */
+/**
+* O efeito na operação que acompanha cada aviso de janela de risco no WhatsApp: uma redação por aviso
+* (o mesmo texto repetido no dia parece robô). O "Na operação" do resumo é `AJUDA.janela.rtk`, o texto da tela.
+*/
 var EFEITO_DA_JANELA = {
-	/** No resumo: a frase do "?" da janela (o mesmo texto da tela). */
-	naOperacao: AJUDA.janela.rtk.charAt(0).toLowerCase() + AJUDA.janela.rtk.slice(1),
-	oQueFazer: "deixe fora dessa janela o que depende de RTK fixo: plantio, pulverização com corte de seção e voo de drone em RTK.",
-	lembrete: "Programe para antes ou depois o que depende de RTK fixo (plantio, pulverização com corte de seção, voo de drone).",
-	antes: "A partir de agora o RTK pode cair de fixo para flutuante e o piloto automático desarmar. Acompanhe o status da correção no monitor e evite abrir linhas AB novas."
+	oQueFazer: {
+		intro: "Deixe fora dessa janela o que depende de RTK fixo:",
+		itens: [
+			"Plantio",
+			"Pulverização com corte de seção",
+			"Voo de drone em RTK"
+		]
+	},
+	lembrete: "Programe para antes ou depois o que depende de RTK fixo: plantio, pulverização com corte de seção e voo de drone.",
+	antes: {
+		efeito: "A partir de agora o RTK pode cair de fixo para flutuante e o piloto automático desarmar.",
+		acao: "Acompanhe o status da correção no monitor e evite abrir linhas AB novas."
+	}
 };
 //#endregion
 //#region src/servidor/mensagens.ts
 /**
-* O que cada pessoa lê. O texto do resumo e do "começa em breve" sai de `montarAlertas`, o mesmo
-* da tela, com as fazendas da pessoa; o lembrete do meio-dia tem outras palavras de propósito
+* O que cada pessoa lê. Os dados do resumo e do "começa em breve" (horários, fazendas, pior horário)
+* são os mesmos da tela: saem das funções de `logic/alertas` e `logic/janelaRisco`, só que em linhas
+* com emoji em vez de uma frase. O lembrete do meio-dia tem outras palavras de propósito
 * (duas mensagens iguais no mesmo dia parecem robô para o WhatsApp).
 */
-var TITULO = "*Locks SAT · Janela de risco*";
+var TITULOS = {
+	"resumo-07": "🛰️ *LOCKS SAT · JANELA DE RISCO*",
+	"lembrete-12": "🛰️ *LOCKS SAT · LEMBRETE*",
+	antes: "🚨 *LOCKS SAT · COMEÇA EM BREVE*"
+};
+var LINHA_SAIR = "_Para parar de receber, responda SAIR._";
 function fazendasDoContato(contato, fazendas) {
 	return fazendas.filter((f) => f.celulaId && (contato.todasFazendas || f.coaId != null && contato.fazendas.includes(f.coaId)));
 }
+/** O horário da janela como na tela (`textoJanela`), com o intervalo em negrito. */
+function janelaEmNegrito(j) {
+	return textoJanela(j).replace(/^\S+/, "*$&*");
+}
+/** O bloco de dados da mensagem (entre a saudação e o efeito na operação); `null` quando não há o que avisar. */
 function textoDoEvento(tipo, contato, fazendas, porCelula, agora) {
 	const minhas = fazendasDoContato(contato, fazendas);
 	const minuto = minutoDoDia(agora);
 	const nomesPorCelula = {};
 	for (const f of minhas) (nomesPorCelula[f.celulaId] ??= []).push(f.nome);
 	const celulas = Object.keys(nomesPorCelula);
-	const base = {
-		tipo: "janela",
-		severidade: "aviso",
-		instante: agora
-	};
+	const nomesDe = (cs) => [...new Set(cs.flatMap((c) => nomesPorCelula[c]))];
 	if (tipo === "antes") {
 		const primeira = janelaDoAntes(celulas.flatMap((c) => porCelula[c] ?? []), agora);
 		if (!primeira) return null;
-		return montarAlertas(celulas.filter((c) => (porCelula[c] ?? []).some((j) => j.inicio === primeira.inicio && j.fim === primeira.fim)).map((c) => ({
-			...base,
-			celulaId: c,
-			valor: primeira.dias,
-			janela: primeira,
-			momento: "antes"
-		})), nomesPorCelula, agora)[0]?.texto ?? null;
+		const nomes = nomesDe(celulas.filter((c) => (porCelula[c] ?? []).some((j) => j.inicio === primeira.inicio && j.fim === primeira.fim)));
+		if (!nomes.length) return null;
+		return [
+			"⚠️ *Janela de risco de cintilação*",
+			`🕗 ${janelaEmNegrito(primeira)}`,
+			`📍 ${listarFazendas(nomes)}`
+		].join("\n");
 	}
 	const ocorrencias = celulas.flatMap((c) => (porCelula[c] ?? []).filter((j) => janelaAindaPorVir(j, minuto)).map((j) => ({
-		...base,
 		celulaId: c,
-		valor: j.dias,
-		janela: j,
-		momento: "dia"
+		janela: j
 	})));
 	if (!ocorrencias.length) return null;
-	if (tipo === "resumo-07") return montarAlertas(ocorrencias, nomesPorCelula, agora)[0]?.texto ?? null;
-	const inicio = Math.min(...ocorrencias.map((o) => o.janela?.inicio ?? 0));
-	const nomes = [...new Set(ocorrencias.flatMap((o) => nomesPorCelula[o.celulaId]))];
-	return `Lembrete: janela de risco de cintilação hoje a partir de ${rotuloHora(inicio)} em ${listarFazendas(nomes)}.`;
+	const nomes = nomesDe([...new Set(ocorrencias.map((o) => o.celulaId))]);
+	if (tipo === "lembrete-12") return [`⏰ A janela de risco de hoje começa às *${rotuloHora(Math.min(...ocorrencias.map((o) => o.janela.inicio)))}*`, `📍 ${listarFazendas(nomes)}`].join("\n");
+	const inicio = Math.min(...ocorrencias.map((o) => o.janela.inicio));
+	const fim = Math.max(...ocorrencias.map((o) => o.janela.fim));
+	const pior = ocorrencias.reduce((a, b) => b.janela.dias > a.janela.dias ? b : a).janela;
+	return [
+		"⚠️ *Hoje tem risco de cintilação*",
+		`🕗 Das *${rotuloHora(inicio)}* às *${rotuloHora(fim)}*`,
+		`📍 ${listarFazendas(nomes)}`,
+		`🔴 Pior horário: ${janelaEmNegrito(pior)}`
+	].join("\n");
 }
 function primeiroNome(contato) {
 	return contato.nome.trim().split(/\s+/)[0];
 }
 function saudacao(agora) {
 	const h = new Date(agora).getHours();
-	return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+	return h < 12 ? "☀️ Bom dia" : h < 18 ? "🌤️ Boa tarde" : "🌙 Boa noite";
 }
-/** O que o aviso afeta na operação: cada tipo com as suas palavras (o mesmo texto repetido no dia parece robô). */
+/** O que o aviso afeta na operação, em blocos: cada tipo com as suas palavras (o mesmo texto repetido no dia parece robô). */
 function efeitoNaOperacao(tipo) {
-	if (tipo === "resumo-07") return [
-		"",
-		`*Na operação:* ${EFEITO_DA_JANELA.naOperacao}`,
-		`*O que fazer:* ${EFEITO_DA_JANELA.oQueFazer}`
-	];
-	return [tipo === "lembrete-12" ? EFEITO_DA_JANELA.lembrete : EFEITO_DA_JANELA.antes];
+	if (tipo === "resumo-07") {
+		const { intro, itens } = EFEITO_DA_JANELA.oQueFazer;
+		return [`🚜 *Na operação*\n${AJUDA.janela.rtk}`, [
+			"✅ *O que fazer*",
+			intro,
+			...itens.map((i) => `• ${i}`)
+		].join("\n")];
+	}
+	if (tipo === "lembrete-12") return [`📋 ${EFEITO_DA_JANELA.lembrete}`];
+	return [`📡 ${EFEITO_DA_JANELA.antes.efeito}\n👀 ${EFEITO_DA_JANELA.antes.acao}`];
 }
+/** Blocos separados por uma linha em branco: título, saudação, dados, efeito e (só se pedido) a linha do SAIR. */
 function montarMensagem(tipo, contato, texto, agora, comSair) {
-	const linhas = [
-		TITULO,
-		`${saudacao(agora)}, ${primeiroNome(contato)}.`,
+	const blocos = [
+		TITULOS[tipo],
+		`${saudacao(agora)}, *${primeiroNome(contato)}*!`,
 		texto,
 		...efeitoNaOperacao(tipo)
 	];
-	if (comSair) linhas.push("Para parar de receber, responda SAIR.");
-	return linhas.join("\n");
+	if (comSair) blocos.push(LINHA_SAIR);
+	return blocos.join("\n\n");
 }
 function textoAtivado(contato, nomesFazendas) {
 	const onde = nomesFazendas.length ? [...nomesFazendas].sort((a, b) => a.localeCompare(b, "pt-BR")).join(", ") : "suas fazendas";
-	return `Pronto, ${primeiroNome(contato)}. Você vai receber aqui os alertas de janela de risco do Locks SAT de: ${onde}. Para parar, responda SAIR.`;
+	return `✅ Pronto, ${primeiroNome(contato)}! Você vai receber aqui os alertas de janela de risco do Locks SAT de: ${onde}. Para parar, responda SAIR.`;
 }
 function textoSaiu(contato) {
-	return `Certo, ${primeiroNome(contato)}. Você não vai mais receber os alertas. Para voltar, mande ATIVAR.`;
+	return `👋 Certo, ${primeiroNome(contato)}. Você não vai mais receber os alertas. Para voltar, mande ATIVAR.`;
 }
 var entre = (min, max, sorteio) => Math.floor(min + sorteio() * (max - min));
 function pausaEntrePessoas(sorteio = Math.random) {
