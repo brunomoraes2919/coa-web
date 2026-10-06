@@ -1,0 +1,21 @@
+[Unit]
+Description=Locks SAT - alertas de janela de risco pelo WhatsApp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=locks-sat
+WorkingDirectory=/home/locks-sat/whatsapp
+EnvironmentFile=/home/locks-sat/.locks-sat-whatsapp.env
+Environment=TZ=America/Cuiaba
+Environment=LOCKS_SAT_SESSAO=/home/locks-sat/whatsapp/sessao
+ExecStart=/usr/bin/env node locks-sat-whatsapp.mjs
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/locks-sat/whatsapp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

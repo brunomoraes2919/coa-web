@@ -1,0 +1,12 @@
+[Unit]
+Description=Locks SAT - atualiza o serviço do WhatsApp a partir do main
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=locks-sat
+WorkingDirectory=/home/locks-sat/whatsapp
+ExecStart=/home/locks-sat/whatsapp/atualizar.sh
+# O "+" faz esta linha rodar como root (o reinício precisa): só reinicia se o script deixou o aviso .mudou.
+ExecStartPost=+/bin/sh -c 'if [ -f /home/locks-sat/whatsapp/.mudou ]; then rm -f /home/locks-sat/whatsapp/.mudou; systemctl is-active --quiet locks-sat-whatsapp && systemctl try-restart locks-sat-whatsapp || true; fi'

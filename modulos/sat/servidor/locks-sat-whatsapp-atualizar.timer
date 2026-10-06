@@ -1,0 +1,11 @@
+[Unit]
+Description=Locks SAT - procura atualização do serviço do WhatsApp a cada hora
+
+[Timer]
+# Todo dia, a cada hora, no minuto 23. Se a VM estava desligada na hora, roda ao ligar.
+OnCalendar=*:23
+Persistent=true
+Unit=locks-sat-whatsapp-atualizar.service
+
+[Install]
+WantedBy=timers.target
