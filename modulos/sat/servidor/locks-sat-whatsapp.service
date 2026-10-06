@@ -2,6 +2,10 @@
 Description=Locks SAT - alertas de janela de risco pelo WhatsApp
 After=network-online.target
 Wants=network-online.target
+# Depois de 20 quedas em uma hora o systemd para de tentar (o site passa a mostrar "sem sinal"):
+# melhor do que reconectar ao WhatsApp sem parar, que é o que mais pesa contra o número.
+StartLimitIntervalSec=3600
+StartLimitBurst=20
 
 [Service]
 User=locks-sat
@@ -11,7 +15,7 @@ Environment=TZ=America/Cuiaba
 Environment=LOCKS_SAT_SESSAO=/home/locks-sat/whatsapp/sessao
 ExecStart=/usr/bin/env node locks-sat-whatsapp.mjs
 Restart=always
-RestartSec=30
+RestartSec=60
 NoNewPrivileges=true
 ProtectSystem=strict
 ReadWritePaths=/home/locks-sat/whatsapp

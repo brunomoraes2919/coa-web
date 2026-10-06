@@ -1,3 +1,5 @@
+import { existsSync, realpathSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState } from "baileys";
 //#region src/logic/tempo.ts
@@ -313,9 +315,10 @@ function criarBanco(opcoes) {
 			});
 		},
 		async chavesDoDia(dia) {
-			return (await lerTudo("ler os envios do dia", "whatsapp_envios", `select=contato_id,chave&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)).map((l) => ({
+			return (await lerTudo("ler os envios do dia", "whatsapp_envios", `select=contato_id,chave,situacao&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)).map((l) => ({
 				contatoId: l.contato_id,
-				chave: l.chave
+				chave: l.chave,
+				situacao: l.situacao
 			}));
 		},
 		confirmar(contatoId, jid) {
@@ -391,6 +394,10 @@ var MINUTOS_DE_CALCULO = [
 ];
 function chaveEvento(agora, tipo) {
 	return `${chaveData(agora)}:${tipo}`;
+}
+/** O "começa em breve" é no máximo um por noite: a janela depois da meia-noite pertence à noite anterior. */
+function chaveDoAntes(agora) {
+	return chaveEvento(agora - 12 * HORA_MS, "antes");
 }
 function eventosFixosNaHora(agora) {
 	const m = minutoDoDia(agora);
@@ -612,26 +619,53 @@ var BATIMENTO_MS = 3e5;
 /** A Trimble recusa quem insiste: depois de uma falha, só tenta de novo passado este tempo. */
 var NOVA_TENTATIVA_TRIMBLE_MS = 3e5;
 var PAUSA_ENTRE_QUADRADOS_MS = 2e3;
+/** `enviar` e `resolverJid` podem ficar pendurados; sem prazo travariam o laço para sempre. */
+var PRAZO_DO_WHATSAPP_MS = 6e4;
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 var MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0];
+var MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2;
 var ERRO_TETO_DO_DIA = "teto diário de mensagens atingido";
 var ERRO_SEM_WHATSAPP = "número sem WhatsApp";
+var ESTOUROU = Symbol("prazo estourado");
+var PrazoEstourado = class extends Error {
+	constructor() {
+		super(`sem resposta do WhatsApp em ${PRAZO_DO_WHATSAPP_MS / 1e3} s`);
+	}
+};
 var mensagemDe$1 = (e) => e instanceof Error ? e.message : String(e);
 /** Os dígitos do número que vem num endereço do WhatsApp (sem servidor nem aparelho). */
 var numeroDoJid = (jid) => jid.split("@")[0].split(":")[0];
+/** Troca todo número de telefone inteiro (55 + DDD + número, 12 ou 13 dígitos) pelos 4 últimos dígitos. */
+function semNumeros(texto) {
+	return texto.replace(/(?<!\d)55\d{10,11}(?!\d)/g, (n) => `…${n.slice(-4)}`);
+}
 var Servico = class {
 	d;
 	contador;
 	janelas = null;
+	/** As fazendas lidas junto do cálculo das janelas: a geometria dos talhões é pesada demais para reler a cada minuto. */
+	fazendas = null;
+	rodada = null;
 	falhaDoCalculoEm = null;
 	ultimoBatimento = null;
 	diaDaLimpeza = "";
 	diaDoAvisoDeTeto = "";
 	emVolta = false;
-	/** Quem mandou SAIR enquanto uma volta rodava: a lista de contatos dela já estava lida. */
+	semeado = false;
+	/**
+	* Números (`chaveDoNumero`) de quem mandou SAIR e cuja pausa o banco ainda não mostrou: ninguém
+	* marcado recebe nada. A marca só sai quando a leitura do banco já traz `ativo === false` ou
+	* quando a mesma pessoa manda ATIVAR.
+	*/
 	pausados = /* @__PURE__ */ new Set();
 	/** Só no ensaio: o que já foi registrado, para não repetir a cada minuto. */
 	ensaiados = /* @__PURE__ */ new Set();
+	/** Números que o WhatsApp disse não existir, no dia: perguntar de novo todo minuto parece robô. */
+	semWhatsapp = {
+		dia: "",
+		telefones: /* @__PURE__ */ new Set()
+	};
+	respostas = /* @__PURE__ */ new Map();
 	constructor(d) {
 		this.d = d;
 		this.contador = new ContadorDoDia(d.agora);
@@ -643,15 +677,16 @@ var Servico = class {
 		try {
 			const agora = this.d.agora();
 			await this.bater(agora);
+			await this.limparAvisoDeTeto(agora);
 			await this.limparUmaVezPorDia(agora);
 			await this.calcularSePreciso(agora);
-			if (!this.janelas) return;
-			if (!this.d.ensaio && !this.d.whatsapp.conectado) return;
-			const tipos = [...eventosFixosNaHora(agora), "antes"];
-			if (!this.algoNaHora(agora, this.janelas)) return;
-			await this.enviarEventos(agora, tipos, this.janelas);
+			const janelas = this.janelas;
+			const valida = janelas !== null && chaveData(janelas.calculadoEm) === chaveData(agora);
+			const podeEnviar = this.d.ensaio || this.d.whatsapp.conectado;
+			if (valida && podeEnviar && this.algoNaHora(agora, janelas)) await this.enviarEventos(agora, janelas);
+			else if (this.pausados.size && !this.d.ensaio) await this.reconciliarPausados(await this.d.banco.contatos());
 		} catch (e) {
-			this.d.registrar(`falha na volta: ${mensagemDe$1(e)}`);
+			this.registrar(`falha na volta: ${mensagemDe$1(e)}`);
 		} finally {
 			this.emVolta = false;
 		}
@@ -662,51 +697,60 @@ var Servico = class {
 		if (!comando) return;
 		const quem = mascarar(numeroDoJid(m.jid));
 		if (this.d.ensaio) {
-			this.d.registrar(`ensaio: comando de ${quem} ignorado`);
+			this.registrar(`ensaio: comando de ${quem} ignorado`);
 			return;
+		}
+		const numero = chaveDoNumero(m.jid);
+		if (numero) {
+			if (comando === "sair") this.pausados.add(numero);
+			else this.pausados.delete(numero);
 		}
 		try {
 			const contato = (await this.d.banco.contatos()).find((c) => mesmoNumero(c.telefone, m.jid));
 			if (!contato) {
-				this.d.registrar(`comando de número não cadastrado (${quem}) ignorado`);
+				if (numero) this.pausados.delete(numero);
+				this.registrar(`comando de número não cadastrado (${quem}) ignorado`);
 				return;
 			}
 			let resposta;
 			if (comando === "ativar") {
 				await this.d.banco.confirmar(contato.id, m.jid);
-				this.pausados.delete(contato.id);
 				let nomes = [];
 				try {
-					nomes = [...new Set(fazendasDoContato(contato, await this.d.banco.fazendas()).map((f) => f.nome))];
+					const fazendas = this.fazendas ?? await this.d.banco.fazendas();
+					nomes = [...new Set(fazendasDoContato(contato, fazendas).map((f) => f.nome))];
 				} catch (e) {
-					this.d.registrar(`${quem}: não li as fazendas para a resposta: ${mensagemDe$1(e)}`);
+					this.registrar(`${quem}: não li as fazendas para a resposta: ${mensagemDe$1(e)}`);
 				}
 				resposta = textoAtivado(contato, nomes);
-				this.d.registrar(`ativado: ${mascarar(contato.telefone)}`);
+				this.registrar(`ativado: ${mascarar(contato.telefone)}`);
 			} else {
-				this.pausados.add(contato.id);
 				await this.d.banco.pausar(contato.id);
 				resposta = textoSaiu(contato);
-				this.d.registrar(`pausado: ${mascarar(contato.telefone)}`);
+				this.registrar(`pausado: ${mascarar(contato.telefone)}`);
 			}
-			await this.responder(m.jid, quem, resposta);
+			await this.responder(contato, m.jid, quem, resposta);
 		} catch (e) {
-			this.d.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe$1(e)}`);
+			this.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe$1(e)}`);
 		}
 	}
 	/** Estado da conexão mudou. */
 	async conexao(conectado, motivo) {
-		this.d.registrar(`WhatsApp ${conectado ? "conectado" : "desconectado"}${motivo ? `: ${motivo}` : ""}`);
+		this.registrar(`WhatsApp ${conectado ? "conectado" : "desconectado"}${motivo ? `: ${motivo}` : ""}`);
 		if (this.d.ensaio) return;
 		try {
 			await this.d.banco.gravarEstado({
 				conectado,
 				desde: new Date(this.d.agora()).toISOString(),
-				ultimoErro: conectado ? null : motivo ?? null
+				ultimoErro: conectado || !motivo ? null : semNumeros(motivo)
 			});
 		} catch (e) {
-			this.d.registrar(`não gravei o estado da conexão: ${mensagemDe$1(e)}`);
+			this.registrar(`não gravei o estado da conexão: ${mensagemDe$1(e)}`);
 		}
+	}
+	/** Todo registro passa por aqui: nunca sai número de telefone inteiro. */
+	registrar(linha) {
+		this.d.registrar(semNumeros(linha));
 	}
 	async bater(agora) {
 		if (this.d.ensaio) return;
@@ -715,7 +759,21 @@ var Servico = class {
 			await this.d.banco.gravarEstado({ conectado: this.d.whatsapp.conectado });
 			this.ultimoBatimento = agora;
 		} catch (e) {
-			this.d.registrar(`não gravei o batimento: ${mensagemDe$1(e)}`);
+			this.registrar(`não gravei o batimento: ${mensagemDe$1(e)}`);
+		}
+	}
+	/** O aviso de teto de um dia não pode ficar no estado no dia seguinte. */
+	async limparAvisoDeTeto(agora) {
+		if (this.d.ensaio || !this.diaDoAvisoDeTeto || this.diaDoAvisoDeTeto === chaveData(agora)) return;
+		if (!this.d.whatsapp.conectado) return;
+		try {
+			await this.d.banco.gravarEstado({
+				conectado: true,
+				ultimoErro: null
+			});
+			this.diaDoAvisoDeTeto = "";
+		} catch (e) {
+			this.registrar(`não limpei o aviso de teto: ${mensagemDe$1(e)}`);
 		}
 	}
 	async limparUmaVezPorDia(agora) {
@@ -725,54 +783,73 @@ var Servico = class {
 		try {
 			await this.d.banco.limparEnviosAntigos();
 		} catch (e) {
-			this.d.registrar(`não limpei os envios antigos: ${mensagemDe$1(e)}`);
+			this.registrar(`não limpei os envios antigos: ${mensagemDe$1(e)}`);
 		}
 	}
 	async calcularSePreciso(agora) {
 		if (!precisaCalcular(agora, this.janelas?.calculadoEm ?? null)) return;
 		if (this.falhaDoCalculoEm !== null && agora - this.falhaDoCalculoEm < NOVA_TENTATIVA_TRIMBLE_MS) return;
-		const fazendas = await this.d.banco.fazendas();
-		const quadrados = /* @__PURE__ */ new Map();
-		for (const f of fazendas) if (f.celulaId && f.lat != null && f.lon != null) quadrados.set(f.celulaId, {
-			lat: f.lat,
-			lon: f.lon
-		});
-		const porCelula = {};
+		const dia = chaveData(agora);
+		if (!this.rodada || this.rodada.dia !== dia) {
+			const fazendas = await this.d.banco.fazendas();
+			const quadrados = /* @__PURE__ */ new Map();
+			for (const f of fazendas) if (f.celulaId && f.lat != null && f.lon != null) quadrados.set(f.celulaId, {
+				lat: f.lat,
+				lon: f.lon
+			});
+			this.rodada = {
+				dia,
+				fazendas,
+				quadrados,
+				respondidos: {}
+			};
+		}
+		const rodada = this.rodada;
 		try {
 			let primeiro = true;
-			for (const [id, celula] of quadrados) {
+			for (const [id, celula] of rodada.quadrados) {
+				if (id in rodada.respondidos) continue;
 				if (!primeiro) await this.d.dormir(PAUSA_ENTRE_QUADRADOS_MS);
 				primeiro = false;
-				porCelula[id] = janelasDeHoje(await this.d.trimble.historico(celula, agora));
+				rodada.respondidos[id] = janelasDeHoje(await this.d.trimble.historico(celula, agora));
 			}
 		} catch (e) {
 			this.falhaDoCalculoEm = agora;
-			this.d.registrar(`Trimble: ${mensagemDe$1(e)}`);
+			this.registrar(`Trimble: ${mensagemDe$1(e)}`);
 			return;
 		}
 		this.janelas = {
 			calculadoEm: agora,
-			porCelula
+			porCelula: rodada.respondidos
 		};
+		this.fazendas = rodada.fazendas;
+		this.rodada = null;
 		this.falhaDoCalculoEm = null;
-		this.d.registrar(`janelas calculadas para ${quadrados.size} quadrado(s)`);
+		this.registrar(`janelas calculadas para ${rodada.quadrados.size} quadrado(s)`);
 	}
-	/** Evita ler contatos e fazendas (o banco) a cada minuto do dia: só quando há um evento a considerar. */
+	/** Evita ler contatos e envios (o banco) a cada minuto do dia: só quando há um evento a considerar. */
 	algoNaHora(agora, janelas) {
 		if (eventosFixosNaHora(agora).length) return true;
 		return Object.values(janelas.porCelula).some((js) => janelaDoAntes(js, agora) !== null);
 	}
-	async enviarEventos(agora, tipos, janelas) {
-		this.pausados.clear();
-		const [contatos, fazendas, jaReservadas] = await Promise.all([
+	async enviarEventos(agora, janelas) {
+		const fazendas = this.fazendas ?? [];
+		const [contatos, deOntem, deHoje] = await Promise.all([
 			this.d.banco.contatos(),
-			this.d.banco.fazendas(),
+			this.d.banco.chavesDoDia(chaveData(agora - DIA_MS)),
 			this.d.banco.chavesDoDia(chaveData(agora))
 		]);
+		if (!this.semeado) {
+			for (const r of deHoje) this.contador.contar(r.contatoId);
+			this.semeado = true;
+		}
+		const jaReservadas = [...deOntem, ...deHoje];
+		await this.reconciliarPausados(contatos);
 		const aptos = contatos.filter((c) => c.ativo && c.alertaJanela && c.confirmadoEm).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+		const tipos = [...eventosFixosNaHora(agora), "antes"];
 		let tentouAlgum = false;
 		for (const tipo of tipos) {
-			const chave = chaveEvento(agora, tipo);
+			const chave = tipo === "antes" ? chaveDoAntes(agora) : chaveEvento(agora, tipo);
 			for (const contato of aptos) {
 				if (jaReservadas.some((r) => r.contatoId === contato.id && r.chave === chave)) continue;
 				let pronto = await this.preparar(tipo, contato, fazendas, janelas);
@@ -789,10 +866,33 @@ var Servico = class {
 			}
 		}
 	}
+	/**
+	* Quem mandou SAIR e o banco ainda mostra ativo: tenta gravar a pausa de novo (uma vez por volta).
+	* Quem o banco já mostra inativo: a marca cumpriu o papel e sai.
+	*/
+	async reconciliarPausados(contatos) {
+		for (const c of contatos) {
+			const numero = chaveDoNumero(c.telefone);
+			if (!numero || !this.pausados.has(numero)) continue;
+			if (!c.ativo) {
+				this.pausados.delete(numero);
+				continue;
+			}
+			try {
+				await this.d.banco.pausar(c.id);
+			} catch (e) {
+				this.registrar(`${mascarar(c.telefone)}: não gravei a pausa: ${mensagemDe$1(e)}`);
+			}
+		}
+	}
+	estaPausado(contato) {
+		const numero = chaveDoNumero(contato.telefone);
+		return numero !== null && this.pausados.has(numero);
+	}
 	/** O texto a mandar a este contato agora; `null` = nada para ele; `'parar'` = nada mais sai nesta volta. */
 	async preparar(tipo, contato, fazendas, janelas) {
 		if (!this.d.ensaio && !this.d.whatsapp.conectado) return "parar";
-		if (this.pausados.has(contato.id)) return null;
+		if (this.estaPausado(contato)) return null;
 		const texto = textoDoEvento(tipo, contato, fazendas, janelas.porCelula, this.d.agora());
 		if (!texto) return null;
 		if (this.contador.podeAlerta(contato.id)) return texto;
@@ -804,7 +904,7 @@ var Servico = class {
 		const dia = chaveData(this.d.agora());
 		if (this.diaDoAvisoDeTeto === dia) return;
 		this.diaDoAvisoDeTeto = dia;
-		this.d.registrar(`${ERRO_TETO_DO_DIA}: nada mais sai hoje`);
+		this.registrar(`${ERRO_TETO_DO_DIA}: nada mais sai hoje`);
 		if (this.d.ensaio) return;
 		try {
 			await this.d.banco.gravarEstado({
@@ -812,25 +912,59 @@ var Servico = class {
 				ultimoErro: ERRO_TETO_DO_DIA
 			});
 		} catch (e) {
-			this.d.registrar(`não gravei o aviso de teto: ${mensagemDe$1(e)}`);
+			this.registrar(`não gravei o aviso de teto: ${mensagemDe$1(e)}`);
 		}
+	}
+	/** Espera a chamada ao WhatsApp, no máximo `PRAZO_DO_WHATSAPP_MS` (o relógio é o `dormir` injetado). */
+	async comPrazo(chamada) {
+		chamada.catch(() => {});
+		const r = await Promise.race([chamada, this.d.dormir(PRAZO_DO_WHATSAPP_MS).then(() => ESTOUROU)]);
+		if (r === ESTOUROU) throw new PrazoEstourado();
+		return r;
+	}
+	numerosSemWhatsapp() {
+		const dia = chaveData(this.d.agora());
+		if (this.semWhatsapp.dia !== dia) this.semWhatsapp = {
+			dia,
+			telefones: /* @__PURE__ */ new Set()
+		};
+		return this.semWhatsapp.telefones;
 	}
 	/** `true` se tentou mandar (deu certo ou não): é o que pede a pausa antes da próxima pessoa. */
 	async mandar(contato, tipo, chave, texto, jaReservadas) {
 		const quem = mascarar(contato.telefone);
-		const comSair = !jaReservadas.some((r) => r.contatoId === contato.id);
+		const hoje = chaveData(this.d.agora());
+		const comSair = !jaReservadas.some((r) => r.contatoId === contato.id && r.situacao === "enviado" && r.chave.startsWith(`${hoje}:`));
 		let jid = contato.jid;
+		let entrada;
 		try {
 			if (!jid) {
-				const achado = await this.d.whatsapp.resolverJid(contato.telefone);
-				if (achado === null) {
+				const semWhatsapp = this.numerosSemWhatsapp();
+				let achado = null;
+				let falhou = null;
+				if (semWhatsapp.has(contato.telefone)) falhou = ERRO_SEM_WHATSAPP;
+				else {
+					try {
+						achado = await this.comPrazo(this.d.whatsapp.resolverJid(contato.telefone));
+					} catch (e) {
+						if (!(e instanceof PrazoEstourado)) throw e;
+						falhou = e.message;
+					}
+					if (achado === null && falhou === null) {
+						semWhatsapp.add(contato.telefone);
+						falhou = ERRO_SEM_WHATSAPP;
+					}
+				}
+				if (falhou !== null || achado === null) {
+					const erro = falhou ?? ERRO_SEM_WHATSAPP;
 					if (await this.d.banco.reservarEnvio(contato.id, chave, tipo)) {
 						jaReservadas.push({
 							contatoId: contato.id,
-							chave
+							chave,
+							situacao: "falhou"
 						});
-						await this.d.banco.fecharEnvio(contato.id, chave, "falhou", ERRO_SEM_WHATSAPP);
-						this.d.registrar(`${quem}: ${ERRO_SEM_WHATSAPP}`);
+						await this.fechar(contato.id, chave, quem, "falhou", erro);
+						this.registrar(`${quem}: ${erro}`);
 					}
 					return false;
 				}
@@ -838,66 +972,81 @@ var Servico = class {
 				try {
 					await this.d.banco.guardarJid(contato.id, jid);
 				} catch (e) {
-					this.d.registrar(`${quem}: não guardei o endereço: ${mensagemDe$1(e)}`);
+					this.registrar(`${quem}: não guardei o endereço: ${mensagemDe$1(e)}`);
 				}
 			}
 			const reservou = await this.d.banco.reservarEnvio(contato.id, chave, tipo);
-			jaReservadas.push({
+			entrada = {
 				contatoId: contato.id,
-				chave
-			});
+				chave,
+				situacao: "enviando"
+			};
+			jaReservadas.push(entrada);
 			if (!reservou) return false;
 		} catch (e) {
-			this.d.registrar(`${quem}: não mandei ${tipo}: ${mensagemDe$1(e)}`);
+			this.registrar(`${quem}: não mandei ${tipo}: ${mensagemDe$1(e)}`);
 			return false;
 		}
 		try {
-			await this.d.whatsapp.enviar(jid, montarMensagem(contato, texto, this.d.agora(), comSair));
+			await this.comPrazo(this.d.whatsapp.enviar(jid, montarMensagem(contato, texto, this.d.agora(), comSair)));
 		} catch (e) {
-			this.d.registrar(`${quem}: falha ao enviar ${tipo}: ${mensagemDe$1(e)}`);
+			this.registrar(`${quem}: falha ao enviar ${tipo}: ${mensagemDe$1(e)}`);
+			entrada.situacao = "falhou";
 			await this.fechar(contato.id, chave, quem, "falhou", mensagemDe$1(e));
 			return true;
 		}
 		this.contador.contar(contato.id);
-		this.d.registrar(`enviado ${tipo} a ${quem}`);
+		entrada.situacao = "enviado";
+		this.registrar(`enviado ${tipo} a ${quem}`);
 		await this.fechar(contato.id, chave, quem, "enviado");
 		try {
 			await this.d.banco.gravarEstado({
-				conectado: true,
+				conectado: this.d.whatsapp.conectado,
 				ultimoEnvioEm: new Date(this.d.agora()).toISOString()
 			});
 		} catch (e) {
-			this.d.registrar(`não gravei o último envio: ${mensagemDe$1(e)}`);
+			this.registrar(`não gravei o último envio: ${mensagemDe$1(e)}`);
 		}
 		return true;
 	}
 	async fechar(contatoId, chave, quem, situacao, erro) {
 		try {
-			await this.d.banco.fecharEnvio(contatoId, chave, situacao, erro);
+			await this.d.banco.fecharEnvio(contatoId, chave, situacao, erro === void 0 ? void 0 : semNumeros(erro));
 		} catch (e) {
-			this.d.registrar(`${quem}: não fechei o envio: ${mensagemDe$1(e)}`);
+			this.registrar(`${quem}: não fechei o envio: ${mensagemDe$1(e)}`);
 		}
 	}
 	ensaiar(contato, tipo, chave, texto, jaReservadas) {
 		const marca = `${contato.id}|${chave}`;
 		if (this.ensaiados.has(marca)) return;
 		const prefixoDoDia = `${contato.id}|${chave.split(":")[0]}:`;
-		const comSair = !jaReservadas.some((r) => r.contatoId === contato.id) && ![...this.ensaiados].some((m) => m.startsWith(prefixoDoDia));
+		const comSair = !jaReservadas.some((r) => r.contatoId === contato.id && r.situacao === "enviado") && ![...this.ensaiados].some((m) => m.startsWith(prefixoDoDia));
 		this.ensaiados.add(marca);
 		const mensagem = montarMensagem(contato, texto, this.d.agora(), comSair).replaceAll("\n", " / ");
-		this.d.registrar(`ensaio: enviaria ${tipo} a ${mascarar(contato.telefone)}: ${mensagem}`);
+		this.registrar(`ensaio: enviaria ${tipo} a ${mascarar(contato.telefone)}: ${mensagem}`);
 	}
-	/** Resposta a ATIVAR/SAIR: respeita o teto do dia e conta nele. */
-	async responder(jid, quem, texto) {
+	/** Resposta a ATIVAR/SAIR: no máximo 2 por pessoa por dia, respeita o teto do dia e conta nele. */
+	async responder(contato, jid, quem, texto) {
+		const dia = chaveData(this.d.agora());
+		const anterior = this.respostas.get(contato.id);
+		const feitas = anterior && anterior.dia === dia ? anterior.n : 0;
+		if (feitas >= MAX_RESPOSTAS_POR_PESSOA_POR_DIA) {
+			this.registrar(`${quem}: limite de respostas do dia, não respondi`);
+			return;
+		}
 		if (!this.contador.podeMensagem()) {
 			await this.avisarTetoDoDia();
 			return;
 		}
+		this.respostas.set(contato.id, {
+			dia,
+			n: feitas + 1
+		});
 		try {
-			await this.d.whatsapp.enviar(jid, texto);
+			await this.comPrazo(this.d.whatsapp.enviar(jid, texto));
 			this.contador.contar(null);
 		} catch (e) {
-			this.d.registrar(`${quem}: não consegui responder: ${mensagemDe$1(e)}`);
+			this.registrar(`${quem}: não consegui responder: ${mensagemDe$1(e)}`);
 		}
 	}
 };
@@ -1083,8 +1232,24 @@ var VOLTA_MS = 6e4;
 var ESPERA_PARA_CONECTAR_MS = 9e4;
 /** Depois de abrir ou de mandar, o Baileys ainda grava a sessão e entrega a mensagem: sair já perderia isso. */
 var FOLGA_ANTES_DE_SAIR_MS = 3e3;
-var LIMITE_PARA_PARAR_MS = 15e3;
+/** Parando, o serviço espera a volta em curso (um envio já reservado tem de sair) no máximo isto. */
+var LIMITE_DA_VOLTA_MS = 2e4;
+/** Depois da volta: fechar a conexão e gravar o estado não podem segurar a parada para sempre. */
+var LIMITE_PARA_ENCERRAR_MS = 15e3;
+var PAUSA_DA_TRIMBLE_NO_ENSAIO_MS = 2e3;
+var AINDA_NAO_PAREADO = "Ainda não pareado: rode o pareamento (ver LEIA-ME).";
 var SESSAO_ENCERRADA = "Sessão encerrada: é preciso parear de novo (ver LEIA-ME).";
+/** O motivo que o `whatsapp.ts` dá à única queda que se resolve pareando de novo. */
+var MOTIVO_SESSAO_ENCERRADA = "sessão encerrada no celular";
+var FORMATO_DO_NUMERO = /^55[1-9][1-9]\d{8,9}$/;
+/** O número que o guia e os testes usam de exemplo; a faixa recusada é ele com qualquer último dígito. */
+var NUMERO_DE_EXEMPLO = "5565999990001";
+/** Quem cola o comando do guia sem trocar o número não pode mandar mensagem (nem pedir código) para um estranho. */
+function conferirNumero(numero) {
+	if (numero.slice(0, -1) === NUMERO_DE_EXEMPLO.slice(0, -1)) throw new Error("Esse é o número de exemplo: troque pelo número de verdade.");
+	if (!FORMATO_DO_NUMERO.test(numero)) throw new Error("Número fora do formato: use só dígitos, com 55 e DDD na frente.");
+	return numero;
+}
 function lerArgumentos(argv) {
 	const [primeiro, segundo, ...resto] = argv;
 	const invalido = () => /* @__PURE__ */ new Error(`Argumento não reconhecido. Aceitos: ${ACEITOS}.`);
@@ -1092,32 +1257,35 @@ function lerArgumentos(argv) {
 	if (resto.length > 0) throw invalido();
 	if (primeiro === "--parear") return segundo === void 0 ? { modo: "parear" } : {
 		modo: "parear",
-		numero: segundo
+		numero: conferirNumero(segundo)
 	};
 	if (primeiro === "--teste") {
 		if (segundo === void 0) throw new Error("Falta o número para o teste: --teste <número>.");
 		return {
 			modo: "teste",
-			numero: segundo
+			numero: conferirNumero(segundo)
 		};
 	}
 	if (primeiro === "--ensaio" && segundo === void 0) return { modo: "ensaio" };
 	throw invalido();
 }
-var lerVariavel = (env, nome) => {
-	const valor = env[nome]?.trim();
+var lerVariavel = (env, nome, formato, foraDoFormato) => {
+	const valor = (env[nome] ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
 	if (!valor) throw new Error(`Falta ${nome} no arquivo de ambiente (/home/locks-sat/.locks-sat-whatsapp.env).`);
+	if (!formato.test(valor)) throw new Error(foraDoFormato);
 	return valor;
 };
 /** Pasta da sessão do WhatsApp: o pareamento e o teste só precisam dela, não do Supabase. */
 var pastaDaSessao = (env) => env.LOCKS_SAT_SESSAO?.trim() || "./sessao";
 function lerAmbiente(env) {
 	return {
-		url: lerVariavel(env, "SUPABASE_URL"),
-		chave: lerVariavel(env, "SUPABASE_SERVICE_ROLE_KEY"),
+		url: lerVariavel(env, "SUPABASE_URL", /^https:\/\/[a-z0-9.-]+$/, "SUPABASE_URL não parece um endereço https://… do Supabase"),
+		chave: lerVariavel(env, "SUPABASE_SERVICE_ROLE_KEY", /^[A-Za-z0-9._-]{20,}$/, "SUPABASE_SERVICE_ROLE_KEY tem caracteres que uma chave não tem"),
 		pastaSessao: pastaDaSessao(env)
 	};
 }
+/** A biblioteca do WhatsApp grava o `creds.json` na pasta da sessão; sem ele, conectar só geraria QR que ninguém vê. */
+var sessaoPareada = (pastaSessao) => existsSync(join(pastaSessao, "creds.json"));
 var fusoCerto = (tz) => tz === FUSO;
 /** `AAAA-MM-DDTHH:MM:SS` na hora local do processo, e a linha. */
 function linhaDeRegistro(agora, linha) {
@@ -1134,19 +1302,40 @@ function horariosDoEnsaio(porCelula) {
 var registrar = (linha) => console.log(linhaDeRegistro(Date.now(), linha));
 var dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 var mensagemDe = (e) => e instanceof Error ? e.message : String(e);
+/** Para erro que ninguém previu: a mensagem pode trazer qualquer coisa, o nome não. */
+var nomeDoErro = (e) => e instanceof Error ? e.name : "erro";
+/** O que dizer de uma queda em que a conexão não é tentada de novo: só a sessão encerrada pede novo pareamento. */
+var quedaSemVolta = (motivo, complemento = "") => !motivo || motivo === MOTIVO_SESSAO_ENCERRADA ? SESSAO_ENCERRADA : `O WhatsApp fechou a conexão (${motivo})${complemento}: ver "Se algo der errado" no LEIA-ME.`;
 /** O fuso que o processo realmente usa (vale também se vier do sistema, não só da variável TZ). */
 var fusoDoProcesso = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 function exigirFuso(fuso) {
 	if (!fusoCerto(fuso)) throw new Error(`O fuso do processo precisa ser ${FUSO} (TZ=${FUSO}): as janelas e os horários dos alertas dependem dele. Hoje: ${fuso}.`);
 }
-/** O serviço de verdade: fica ligado, olha o relógio a cada minuto e atende ATIVAR/SAIR. */
-async function servico(env) {
-	exigirFuso(fusoDoProcesso());
-	const { url, chave, pastaSessao } = lerAmbiente(env);
+/** O serviço de verdade: fica ligado, olha o relógio a cada minuto e atende ATIVAR/SAIR. Não termina sozinho. */
+async function ligarServico(p) {
 	let whatsapp = null;
+	let conectando = false;
+	let parando = false;
+	let relogio;
+	let voltaEmCurso = null;
+	/** As esperas do Servico que a parada interrompe (a pausa entre duas pessoas chega a 45 s). */
+	const acordar = /* @__PURE__ */ new Set();
+	const dormirDoServico = (ms) => {
+		if (ms === 6e4) return dormir(ms);
+		if (parando) return Promise.resolve();
+		return new Promise((resolver) => {
+			const fim = () => {
+				clearTimeout(prazo);
+				acordar.delete(fim);
+				resolver();
+			};
+			const prazo = setTimeout(fim, ms);
+			acordar.add(fim);
+		});
+	};
 	const ponte = {
 		get conectado() {
-			return whatsapp?.conectado ?? false;
+			return !parando && (whatsapp?.conectado ?? false);
 		},
 		get precisaParear() {
 			return whatsapp?.precisaParear ?? false;
@@ -1155,66 +1344,107 @@ async function servico(env) {
 		resolverJid: (telefone) => whatsapp ? whatsapp.resolverJid(telefone) : Promise.reject(/* @__PURE__ */ new Error("WhatsApp desconectado"))
 	};
 	const s = new Servico({
+		banco: p.banco,
+		trimble: { historico: (celula, agora) => parando ? Promise.reject(/* @__PURE__ */ new Error("serviço parando")) : p.trimble.historico(celula, agora) },
+		whatsapp: ponte,
+		agora: () => Date.now(),
+		dormir: dormirDoServico,
+		registrar: p.registrar
+	});
+	async function conectar() {
+		conectando = true;
+		try {
+			const nova = await p.conectar({
+				pastaSessao: p.pastaSessao,
+				aoReceber: async (m) => {
+					try {
+						await s.recebida(m);
+					} catch (e) {
+						p.registrar(`falha ao tratar mensagem: ${mensagemDe(e)}`);
+					}
+				},
+				aoMudarConexao: async (conectado, motivo) => {
+					if (parando) return;
+					if (ponte.precisaParear) p.registrar(quedaSemVolta(motivo, " e o serviço não tenta de novo sozinho"));
+					try {
+						await s.conexao(conectado, motivo);
+					} catch (e) {
+						p.registrar(`falha ao tratar a conexão: ${mensagemDe(e)}`);
+					}
+				}
+			});
+			if (parando) await nova.encerrar();
+			else whatsapp = nova;
+		} finally {
+			conectando = false;
+		}
+	}
+	const parar = (sinal) => {
+		if (parando) {
+			p.registrar(`${sinal} de novo: saindo sem esperar`);
+			p.sair(1);
+			return;
+		}
+		parando = true;
+		clearInterval(relogio);
+		p.registrar(`${sinal} recebido: parando o serviço`);
+		for (const fim of [...acordar]) fim();
+		(async () => {
+			if (voltaEmCurso) await Promise.race([voltaEmCurso, dormir(LIMITE_DA_VOLTA_MS)]);
+			const teto = setTimeout(() => p.sair(0), LIMITE_PARA_ENCERRAR_MS);
+			teto.unref();
+			try {
+				await whatsapp?.encerrar();
+			} catch (e) {
+				p.registrar(`falha ao encerrar a conexão: ${mensagemDe(e)}`);
+			}
+			try {
+				await s.conexao(false, "serviço parado");
+			} catch (e) {
+				p.registrar(`não gravei o estado: ${mensagemDe(e)}`);
+			}
+			clearTimeout(teto);
+			p.sair(0);
+		})();
+	};
+	p.processo.on("SIGTERM", () => parar("SIGTERM"));
+	p.processo.on("SIGINT", () => parar("SIGINT"));
+	p.processo.on("unhandledRejection", (e) => p.registrar(`erro não tratado: ${nomeDoErro(e)}`));
+	p.processo.on("uncaughtException", (e) => {
+		p.registrar(`erro não tratado: ${nomeDoErro(e)}`);
+		p.sair(1);
+	});
+	if (p.pareado()) await conectar();
+	else {
+		p.registrar(AINDA_NAO_PAREADO);
+		await s.conexao(false, "ainda não pareado");
+	}
+	if (parando) return;
+	relogio = setInterval(() => {
+		if (!whatsapp && !conectando && p.pareado()) conectar().catch((e) => p.registrar(`falha ao conectar: ${mensagemDe(e)}`));
+		if (voltaEmCurso) return;
+		voltaEmCurso = s.volta().catch((e) => p.registrar(`falha na volta: ${mensagemDe(e)}`)).finally(() => {
+			voltaEmCurso = null;
+		});
+	}, VOLTA_MS);
+	p.registrar("serviço ligado");
+}
+async function servico(env) {
+	exigirFuso(fusoDoProcesso());
+	const { url, chave, pastaSessao } = lerAmbiente(env);
+	await ligarServico({
 		banco: criarBanco({
 			url,
 			chave
 		}),
 		trimble: criarTrimble(),
-		whatsapp: ponte,
-		agora: Date.now,
-		dormir,
-		registrar
-	});
-	whatsapp = await conectarWhatsapp({
+		conectar: conectarWhatsapp,
 		pastaSessao,
-		aoReceber: async (m) => {
-			try {
-				await s.recebida(m);
-			} catch (e) {
-				registrar(`falha ao tratar mensagem: ${mensagemDe(e)}`);
-			}
-		},
-		aoMudarConexao: async (conectado, motivo) => {
-			if (ponte.precisaParear) registrar(SESSAO_ENCERRADA);
-			try {
-				await s.conexao(conectado, motivo);
-			} catch (e) {
-				registrar(`falha ao tratar a conexão: ${mensagemDe(e)}`);
-			}
-		}
+		pareado: () => sessaoPareada(pastaSessao),
+		registrar,
+		sair: (codigo) => process.exit(codigo),
+		processo: process
 	});
-	let emVolta = false;
-	const relogio = setInterval(() => {
-		if (emVolta) return;
-		emVolta = true;
-		s.volta().catch((e) => registrar(`falha na volta: ${mensagemDe(e)}`)).finally(() => {
-			emVolta = false;
-		});
-	}, VOLTA_MS);
-	let parando = false;
-	const parar = (sinal) => {
-		if (parando) return;
-		parando = true;
-		clearInterval(relogio);
-		registrar(`${sinal} recebido: parando o serviço`);
-		setTimeout(() => process.exit(0), LIMITE_PARA_PARAR_MS).unref();
-		(async () => {
-			try {
-				await whatsapp?.encerrar();
-			} catch (e) {
-				registrar(`falha ao encerrar a conexão: ${mensagemDe(e)}`);
-			}
-			try {
-				await s.conexao(false, "serviço parado");
-			} catch (e) {
-				registrar(`não gravei o estado: ${mensagemDe(e)}`);
-			}
-			process.exit(0);
-		})();
-	};
-	process.on("SIGTERM", () => parar("SIGTERM"));
-	process.on("SIGINT", () => parar("SIGINT"));
-	registrar("serviço ligado");
 }
 /** Mostra o QR (ou o código de 8 dígitos, se vier o número) até o celular aceitar; então escreve "Pareado.". */
 async function parear(env, numero) {
@@ -1239,12 +1469,12 @@ async function parear(env, numero) {
 			console.log(`Código de pareamento: ${legivel}`);
 			console.log("No celular: Aparelhos conectados → Conectar um aparelho → Conectar com número de telefone, e digite o código.");
 		},
-		aoMudarConexao: (conectado) => {
+		aoMudarConexao: (conectado, motivo) => {
 			if (conectado) {
 				console.log("Pareado.");
 				terminar(0);
 			} else if (whatsapp?.precisaParear) {
-				console.log("A sessão guardada foi encerrada no celular. Apague a pasta da sessão e pareie de novo (ver LEIA-ME).");
+				console.log(!motivo || motivo === MOTIVO_SESSAO_ENCERRADA ? "A sessão guardada foi encerrada no celular. Apague a pasta da sessão e pareie de novo (ver LEIA-ME)." : quedaSemVolta(motivo));
 				terminar(1);
 			}
 		}
@@ -1255,13 +1485,13 @@ async function parear(env, numero) {
 	return codigo;
 }
 /** Percorre o dia de hoje (07:00, 12:00 e o "antes" das janelas) com dados reais e escreve o que enviaria. Não conecta ao WhatsApp e não grava nada. */
-async function ensaio(env, fuso = fusoDoProcesso()) {
+async function ensaio(env, fuso = fusoDoProcesso(), pausa = dormir) {
 	exigirFuso(fuso);
 	const { url, chave } = lerAmbiente(env);
 	const trimble = criarTrimble();
 	const historicos = /* @__PURE__ */ new Map();
 	const janelasPorCelula = {};
-	let primeiraVoltaFeita = false;
+	let jaConsultou = false;
 	const dia = inicioDoDiaLocal(Date.now());
 	let agora = dia;
 	const servico = new Servico({
@@ -1273,6 +1503,8 @@ async function ensaio(env, fuso = fusoDoProcesso()) {
 			const id = `${celula.lat}_${celula.lon}`;
 			let historico = historicos.get(id);
 			if (!historico) {
+				if (jaConsultou) await pausa(PAUSA_DA_TRIMBLE_NO_ENSAIO_MS);
+				jaConsultou = true;
 				historico = await trimble.historico(celula, quando);
 				historicos.set(id, historico);
 				janelasPorCelula[id] = janelasDeHoje(historico);
@@ -1286,14 +1518,13 @@ async function ensaio(env, fuso = fusoDoProcesso()) {
 			resolverJid: () => Promise.reject(/* @__PURE__ */ new Error("o ensaio não consulta o WhatsApp"))
 		},
 		agora: () => agora,
-		dormir: (ms) => primeiraVoltaFeita ? Promise.resolve() : dormir(ms),
+		dormir: () => Promise.resolve(),
 		registrar,
 		ensaio: true
 	});
 	registrar("ensaio: nada é enviado nem gravado; os horários abaixo são os de hoje");
 	agora = dia + 3e5;
 	await servico.volta();
-	primeiraVoltaFeita = true;
 	for (const minuto of horariosDoEnsaio(janelasPorCelula)) {
 		agora = dia + minuto * 6e4;
 		registrar(`ensaio: ${String(Math.floor(minuto / 60)).padStart(2, "0")}:${String(minuto % 60).padStart(2, "0")}`);
@@ -1317,9 +1548,9 @@ async function teste(env, numero) {
 		whatsapp = await conectarWhatsapp({
 			pastaSessao: pastaDaSessao(env),
 			aoReceber: () => {},
-			aoMudarConexao: (conectado) => {
+			aoMudarConexao: (conectado, motivo) => {
 				if (conectado) abriu();
-				else if (whatsapp?.precisaParear) falhou(/* @__PURE__ */ new Error(SESSAO_ENCERRADA));
+				else if (whatsapp?.precisaParear) falhou(new Error(quedaSemVolta(motivo)));
 			}
 		});
 		await aberta;
@@ -1342,11 +1573,20 @@ async function principal(argv, env = process.env) {
 	if (modo === "teste") return teste(env, numero);
 	await servico(env);
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) principal(process.argv.slice(2)).then((codigo) => {
+/** Este módulo é o arquivo que o `node` foi chamado para rodar? Compara o caminho de verdade: chamado por link simbólico também conta. */
+function rodandoComoPrograma(urlDoModulo, chamado) {
+	if (!chamado) return false;
+	try {
+		return urlDoModulo === pathToFileURL(realpathSync(chamado)).href;
+	} catch {
+		return false;
+	}
+}
+if (rodandoComoPrograma(import.meta.url, process.argv[1])) principal(process.argv.slice(2)).then((codigo) => {
 	if (codigo !== void 0) process.exit(codigo);
 }).catch((e) => {
 	console.error(`Erro: ${mensagemDe(e)}`);
 	process.exit(1);
 });
 //#endregion
-export { ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, linhaDeRegistro, pastaDaSessao, principal };
+export { ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, linhaDeRegistro, pastaDaSessao, principal, rodandoComoPrograma, sessaoPareada };

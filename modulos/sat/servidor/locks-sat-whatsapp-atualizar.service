@@ -7,6 +7,9 @@ Wants=network-online.target
 Type=oneshot
 User=locks-sat
 WorkingDirectory=/home/locks-sat/whatsapp
+# Download ou npm pendurado não pode segurar a atualização para sempre (a próxima hora tenta de novo).
+TimeoutStartSec=15min
 ExecStart=/home/locks-sat/whatsapp/atualizar.sh
 # O "+" faz esta linha rodar como root (o reinício precisa): só reinicia se o script deixou o aviso .mudou.
-ExecStartPost=+/bin/sh -c 'if [ -f /home/locks-sat/whatsapp/.mudou ]; then rm -f /home/locks-sat/whatsapp/.mudou; systemctl is-active --quiet locks-sat-whatsapp && systemctl try-restart locks-sat-whatsapp || true; fi'
+# O try-restart não faz nada se o serviço estiver parado.
+ExecStartPost=+/bin/sh -c 'if [ -f /home/locks-sat/whatsapp/.mudou ]; then rm -f /home/locks-sat/whatsapp/.mudou; systemctl try-restart locks-sat-whatsapp || true; fi'
