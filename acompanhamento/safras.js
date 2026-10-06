@@ -389,7 +389,7 @@
     if (c.letterSpacing !== undefined) c.letterSpacing = '0px';
     N.escrever(c, N.titulo(rel.u), 44, compacto ? 72 : 100, compacto ? 30 : 42, 700, '#FFFFFF', W * 0.6);
     if (!compacto) N.escrever(c, rel.safras.map(function (x) { return N.nomeSafra(x.nome); }).join('  ·  '), 44, 136, 18, 500, '#D7E8E2', W * 0.6);
-    if (imgs.coa) { var lh = compacto ? 42 : 56, lw = imgs.coa.width / imgs.coa.height * lh; c.save(); c.globalAlpha = 0.7; c.drawImage(imgs.coa, W - 40 - lw, (h - lh) / 2, lw, lh); c.restore(); }
+    if (imgs.coa) { var lh = compacto ? 42 : 56, lw = imgs.coa.width / imgs.coa.height * lh; c.drawImage(imgs.coa, W - 40 - lw, (h - lh) / 2, lw, lh); }
   }
   function rodape(c, W, y) {
     var g = N.dados().geradoEm ? new Date(N.dados().geradoEm) : null;

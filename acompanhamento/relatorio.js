@@ -267,8 +267,12 @@
     if (c.letterSpacing !== undefined) c.letterSpacing = '0px';
     N.escrever(c, tituloRelatorio(rel), 44, compacto ? 70 : 96, compacto ? 28 : 40, 700, '#FFFFFF', W * 0.6);
     if (!compacto) N.escrever(c, subtitulo(rel), 44, 130, 15.5, 500, '#D7E8E2', W * 0.62);
-    N.escrever(c, N.fmtPct(rel.m.pct), W - 44, compacto ? 62 : 86, compacto ? 40 : 56, 700, '#FFFFFF', 220, 'right');
-    N.escrever(c, 'da área ' + (rel.o === 'PLANTIO' ? 'plantada' : 'colhida') + ' · ' + N.fmtN(rel.m.exec) + ' de ' + N.fmtN(rel.m.areaTotal) + ' ha', W - 44, compacto ? 84 : 112, 13, 500, '#D7E8E2', 360, 'right');
+    // logo branca do COA à direita; o percentual fica à esquerda dela
+    var lw = 0;
+    if (imgs.coa) { var lh = compacto ? 40 : 56; lw = imgs.coa.width / imgs.coa.height * lh; c.drawImage(imgs.coa, W - 44 - lw, (h - lh) / 2, lw, lh); }
+    var xr = W - 44 - (lw ? lw + 44 : 0);
+    N.escrever(c, N.fmtPct(rel.m.pct), xr, compacto ? 62 : 86, compacto ? 40 : 56, 700, '#FFFFFF', 220, 'right');
+    N.escrever(c, 'da área ' + (rel.o === 'PLANTIO' ? 'plantada' : 'colhida') + ' · ' + N.fmtN(rel.m.exec) + ' de ' + N.fmtN(rel.m.areaTotal) + ' ha', xr, compacto ? 84 : 112, 13, 500, '#D7E8E2', 360, 'right');
   }
   function rodape(c, W, y, rel) {
     N.escrever(c, rodapeTexto(rel), 40, y, 11.5, 500, N.COR.suave, W - 380);

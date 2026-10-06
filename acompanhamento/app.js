@@ -1755,7 +1755,7 @@
     escrever(c, 'ACOMPANHAMENTO OPERACIONAL ' + (pl ? 'PLANTIO' : 'COLHEITA'), x, 72, L.W > 1500 ? 38 : 30, 700, '#FFFFFF', maxW);
     var g = DADOS.geradoEm ? new Date(DADOS.geradoEm) : null;
     escrever(c, 'Atualizado em: ' + (g ? g.toLocaleString('pt-BR').replace(',', '') : '—'), x, 110, 20, 400, '#E3F1EC', maxW);
-    if (imgs.coa) { var lh = L.W > 1500 ? 60 : 48, lw = imgs.coa.width / imgs.coa.height * lh; c.save(); c.globalAlpha = 0.6; c.drawImage(imgs.coa, L.W - 36 - lw, 30, lw, lh); c.restore(); }
+    if (imgs.coa) { var lh = L.W > 1500 ? 60 : 48, lw = imgs.coa.width / imgs.coa.height * lh; c.drawImage(imgs.coa, L.W - 36 - lw, 30, lw, lh); }
   }
   function linhaDourada(c, x, y, w) { c.fillStyle = COR.dourado; c.fillRect(x, y, w, 3); }
   function desenharLogoLocks(c, img, cx, y, maxW, maxH) {
