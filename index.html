@@ -3813,16 +3813,18 @@ function textoEstadoWhatsapp(estado, agoraMs){
   if(isNaN(batimento)) return { texto: 'O serviço de envio ainda não foi ligado na VM.', classe: '' };
   if(agoraMs - batimento > 15 * 60 * 1000)
     return { texto: 'Serviço sem sinal desde ' + formatarDiaHoraWpp(batimento) + '.', classe: 'wc-ruim' };
+  // o que o serviço gravou como erro ou aviso, cortado para não tomar a tela
+  const erro = estado.ultimoErro ? String(estado.ultimoErro).slice(0, 200) : '';
   if(estado.conectado === false)
     return {
       texto: 'WhatsApp desconectado desde ' + formatarDiaHoraWpp(estado.desde || batimento) + '.'
-        + (estado.ultimoErro ? ' Motivo: ' + estado.ultimoErro + '.' : ''),
+        + (erro ? ' Motivo: ' + erro + '.' : ''),
       classe: 'wc-ruim'
     };
-  return {
-    texto: 'WhatsApp conectado.' + (estado.ultimoEnvioEm ? ' Último envio: ' + formatarDiaHoraWpp(estado.ultimoEnvioEm) + '.' : ' Nenhum envio ainda.'),
-    classe: 'wc-bom'
-  };
+  const envio = estado.ultimoEnvioEm ? ' Último envio: ' + formatarDiaHoraWpp(estado.ultimoEnvioEm) + '.' : ' Nenhum envio ainda.';
+  // conectado, mas o serviço avisou de algo (teto do dia, Trimble fora, restrição do WhatsApp): não é "tudo certo"
+  if(erro) return { texto: 'WhatsApp conectado. Aviso: ' + erro + '.' + envio, classe: 'wc-ruim' };
+  return { texto: 'WhatsApp conectado.' + envio, classe: 'wc-bom' };
 }
 function mapearEstadoWhatsapp(l){
   return l ? {
@@ -3830,16 +3832,26 @@ function mapearEstadoWhatsapp(l){
     ultimoEnvioEm: l.ultimo_envio_em, ultimoErro: l.ultimo_erro
   } : null;
 }
+function mapearContatoWpp(c, fazendas){
+  return {
+    id: c.id, nome: c.nome, telefone: c.telefone,
+    todasFazendas: !!c.todas_fazendas, alertaJanela: !!c.alerta_janela, ativo: !!c.ativo,
+    confirmadoEm: c.confirmado_em, confirmadoPor: c.confirmado_por, // undefined enquanto as colunas não existem
+    fazendas
+  };
+}
 function textoAutorizacaoWpp(c){
   if(!c.confirmadoEm) return 'Aguardando ATIVAR';
   if(c.confirmadoPor === 'mensagem') return 'Confirmado em ' + formatarDiaHoraWpp(c.confirmadoEm, false);
   return 'Confirmado à mão';
 }
-async function carregarContatosWhatsapp(){
+/* manterSeFalhar: na releitura de minuto em minuto, uma consulta que falha (rede fora) não apaga a lista da tela.
+   Devolve true se a lista foi atualizada. */
+async function carregarContatosWhatsapp(manterSeFalhar){
   if(!ehSuperDeVerdade()){
     state.contatosWhatsapp = []; state.whatsappDisponivel = null;
     state.whatsappEstado = null; state.whatsappEnvioDisponivel = false;
-    return;
+    return false;
   }
   const id = sessao.id;
   const [ct, cf, es] = await Promise.all([
@@ -3847,23 +3859,20 @@ async function carregarContatosWhatsapp(){
     sb.from('whatsapp_contato_fazendas').select('*'),
     sb.from('whatsapp_estado').select('*').eq('id', 1).maybeSingle()
   ]);
-  if(!sessao || sessao.id !== id) return; // saiu (ou trocou de usuário) durante a consulta
+  if(!sessao || sessao.id !== id) return false; // saiu (ou trocou de usuário) durante a consulta
+  if(manterSeFalhar && (ct.error || cf.error || es.error)) return false;
   if(ct.error || cf.error){
     state.contatosWhatsapp = []; state.whatsappDisponivel = false;
     state.whatsappEstado = null; state.whatsappEnvioDisponivel = false;
-    return;
+    return false;
   }
   const ligacoes = cf.data || [];
   state.whatsappDisponivel = true;
   // erro em whatsapp_estado = script 0006 ainda não aplicado: a tela segue como antes do envio
   state.whatsappEnvioDisponivel = !es.error;
   state.whatsappEstado = es.error ? null : mapearEstadoWhatsapp(es.data);
-  state.contatosWhatsapp = (ct.data || []).map(c=>({
-    id: c.id, nome: c.nome, telefone: c.telefone,
-    todasFazendas: !!c.todas_fazendas, alertaJanela: !!c.alerta_janela, ativo: !!c.ativo,
-    confirmadoEm: c.confirmado_em, confirmadoPor: c.confirmado_por, // undefined enquanto as colunas não existem
-    fazendas: ligacoes.filter(l=>l.contato_id===c.id).map(l=>l.fazenda_id)
-  }));
+  state.contatosWhatsapp = (ct.data || []).map(c=>mapearContatoWpp(c, ligacoes.filter(l=>l.contato_id===c.id).map(l=>l.fazenda_id)));
+  return true;
 }
 /* Só a linha de whatsapp_estado, para o aviso não ficar velho; true se atualizou. */
 async function carregarEstadoWhatsapp(){
@@ -3876,12 +3885,15 @@ async function carregarEstadoWhatsapp(){
 }
 
 let contatoWppEditandoId = null;
+/* O contato como o banco o tinha quando a edição foi aberta: é com ele que o salvar compara. */
+let contatoWppLido = null;
 function ajustarFormContatoWpp(){
   const todas = document.getElementById('wc-todas-fazendas').checked;
   document.getElementById('wc-fazendas-checks').style.display = todas ? 'none' : '';
 }
 function limparFormContatoWpp(){
   contatoWppEditandoId = null;
+  contatoWppLido = null;
   document.getElementById('wc-nome').value = '';
   document.getElementById('wc-telefone').value = '';
   document.getElementById('wc-todas-fazendas').checked = false;
@@ -3892,10 +3904,34 @@ function limparFormContatoWpp(){
   document.getElementById('btn-salvar-contato-wpp').textContent = 'Adicionar contato';
   ajustarFormContatoWpp();
 }
-function editarContatoWpp(id){
-  const c = state.contatosWhatsapp.find(x=>x.id===id);
-  if(!c) return;
+/* A lista da tela pode estar velha: a pessoa pode ter mandado SAIR (ou ATIVAR) depois de ela ser carregada.
+   Por isso a edição abre com o que o banco tem AGORA para aquele contato; se a leitura falhar, não abre. */
+async function editarContatoWpp(id, botao){
+  if(!ehSuperDeVerdade()) return;
+  const quem = sessao.id;
+  if(botao) botao.disabled = true;
+  let ct, cf;
+  try{
+    [ct, cf] = await Promise.all([
+      sb.from('whatsapp_contatos').select('*').eq('id', id).maybeSingle(),
+      sb.from('whatsapp_contato_fazendas').select('fazenda_id').eq('contato_id', id)
+    ]);
+  }catch(e){ ct = { error: e }; cf = {}; }
+  if(botao) botao.disabled = false;
+  if(!sessao || sessao.id !== quem) return; // saiu (ou trocou de usuário) durante a consulta
+  if(ct.error || cf.error){ alert('Não foi possível ler o contato agora. Tente de novo.'); return; }
+  if(!ct.data){
+    alert('Este contato não existe mais.');
+    await carregarContatosWhatsapp();
+    renderContatosWhatsapp();
+    return;
+  }
+  const c = mapearContatoWpp(ct.data, (cf.data || []).map(l=>l.fazenda_id));
+  // a linha da lista passa a mostrar o mesmo que o formulário
+  const posicao = state.contatosWhatsapp.findIndex(x=>x.id===id);
+  if(posicao >= 0){ state.contatosWhatsapp[posicao] = c; renderContatosWhatsapp(); }
   contatoWppEditandoId = id;
+  contatoWppLido = c;
   document.getElementById('wc-nome').value = c.nome;
   document.getElementById('wc-telefone').value = formatarWhatsapp(c.telefone);
   document.getElementById('wc-todas-fazendas').checked = c.todasFazendas;
@@ -3928,6 +3964,9 @@ function renderContatosWhatsapp(){
   if(!ehSuperDeVerdade()){
     secao.style.display = 'none';
     document.getElementById('tbl-contatos-wpp').replaceChildren(); // não deixa números na página de outro usuário
+    const aviso = document.getElementById('wc-aviso');
+    aviso.textContent = ''; aviso.classList.remove('wc-bom', 'wc-ruim');
+    document.getElementById('wc-instrucao').style.display = 'none';
     if(contatoWppEditandoId) limparFormContatoWpp();
     return;
   }
@@ -3971,7 +4010,7 @@ function renderContatosWhatsapp(){
     const fazendas = c.todasFazendas ? [tag('Todas')] : (nomesFaz.length ? nomesFaz.map(tag) : [tag('Nenhuma')]);
     const alertas = c.alertaJanela ? [tag('Janela de risco')] : [tag('Nenhum')];
     const editar = document.createElement('button'); editar.className = 'editar'; editar.textContent = 'editar';
-    editar.addEventListener('click', ()=>editarContatoWpp(c.id));
+    editar.addEventListener('click', ()=>editarContatoWpp(c.id, editar));
     const remover = document.createElement('button'); remover.className = 'remover'; remover.textContent = 'remover';
     remover.addEventListener('click', ()=>removerContatoWpp(c.id, remover));
     const acoes = celula(editar, remover); acoes.className = 'acoes-usuario';
@@ -4004,11 +4043,14 @@ async function salvarContatoWpp(){
   const dados = {
     nome, telefone, todas_fazendas: todasFazendas,
     alerta_janela: document.getElementById('wc-alerta-janela').checked,
-    ativo: document.getElementById('wc-ativo').checked,
     atualizado_em: new Date().toISOString()
   };
+  // Numa edição, "ativo" só vai se a caixa mudou desde que o contato foi lido: se a pessoa mandou SAIR
+  // com o formulário aberto, salvar o nome ou as fazendas não pode pôr ela de volta na lista.
+  const ativoMarcado = document.getElementById('wc-ativo').checked;
+  if(!contatoWppEditandoId || !contatoWppLido || ativoMarcado !== contatoWppLido.ativo) dados.ativo = ativoMarcado;
   if(state.whatsappEnvioDisponivel){
-    const atual = contatoWppEditandoId ? state.contatosWhatsapp.find(x=>x.id===contatoWppEditandoId) : null;
+    const atual = contatoWppEditandoId ? contatoWppLido : null;
     const tinha = !!(atual && atual.confirmadoEm);
     const marcada = document.getElementById('wc-confirmar-mao').checked;
     if(tinha && (atual.telefone !== telefone || !marcada)){
@@ -4046,16 +4088,25 @@ async function salvarContatoWpp(){
 document.getElementById('btn-salvar-contato-wpp').addEventListener('click', salvarContatoWpp);
 document.getElementById('btn-cancelar-contato-wpp').addEventListener('click', limparFormContatoWpp);
 document.getElementById('wc-todas-fazendas').addEventListener('change', ajustarFormContatoWpp);
-/* A lista só recarrega quando o usuário salva; o estado do serviço é relido a cada 60 s com a página Usuários aberta. */
+/* A cada 60 s, com a página Usuários aberta, o estado do serviço é relido; e a lista também, para a Autorização e a
+   Situação mudarem sozinhas depois de um ATIVAR ou SAIR. Com uma edição aberta a lista não é mexida (só o estado). */
 let atualizandoEstadoWpp = false;
-setInterval(async ()=>{
+async function atualizarWhatsappDoMinuto(){
   if(document.hidden || !ehSuperDeVerdade() || atualizandoEstadoWpp) return;
+  if(!state.whatsappEnvioDisponivel) return;
   if(!document.querySelector('.page.active[data-page="usuarios"]')) return;
   atualizandoEstadoWpp = true;
-  try{ if(await carregarEstadoWhatsapp()) mostrarEstadoWhatsapp(); }
+  try{
+    if(contatoWppEditandoId){ if(await carregarEstadoWhatsapp()) mostrarEstadoWhatsapp(); }
+    else if(await carregarContatosWhatsapp(true)){
+      // a edição pode ter sido aberta durante a consulta: aí só o aviso é redesenhado
+      if(contatoWppEditandoId) mostrarEstadoWhatsapp(); else renderContatosWhatsapp();
+    }
+  }
   catch(e){ /* rede fora: tenta de novo no próximo minuto */ }
   finally{ atualizandoEstadoWpp = false; }
-}, 60000);
+}
+setInterval(atualizarWhatsappDoMinuto, 60000);
 
 /* =====================================================================
    MAPAS — módulo Mapa de Chuva num iframe da mesma origem
@@ -4780,6 +4831,10 @@ async function sair(){
   await sb.auth.signOut();
   sessao = null;
   categoriasDoUsuario = null;
+  // números de telefone não ficam na página (nem no formulário) esperando o próximo login
+  limparFormContatoWpp();
+  state.contatosWhatsapp = []; state.whatsappEstado = null;
+  renderContatosWhatsapp();
   document.getElementById('login-usuario').value = '';
   document.getElementById('login-senha').value = '';
   document.getElementById('login-erro').textContent = '';
