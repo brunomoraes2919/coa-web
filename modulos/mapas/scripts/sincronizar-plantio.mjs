@@ -703,6 +703,299 @@ export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globa
   }
 }
 
+// ---------- validação de apontamentos (módulo validacao/ do COA WEB) ----------
+// Ordens de serviço do PIMS (abertas e fechadas com diferença de área), coordenadores (a Equipe da
+// ordem), depósitos e, para os depósitos que o usuário vinculou aos coordenadores, o saldo do SAP.
+
+/** Diferença de área (ha) acima da qual uma ordem FECHADA entra na lista "faltando / sobrando área". */
+export const VALID_TOLERANCIA_HA = 1;
+const VALID_PAGINA = 4000;
+
+/** Empresa do SAP B1 (base SBO*) em que ficam os depósitos de cada unidade do PIMS (DE_UNI_ADM). */
+export const SAP_EMPRESA_DA_UNIDADE = {
+  BACABA: 'SBOAGROPECUARIALOCKS',
+  'COMPLEXO INDUSTRIAL': 'SBOAGROPECUARIALOCKS',
+  DOURADO: 'SBOAGROPECUARIALOCKS',
+  GLOBO: 'SBOAGROPECUARIALOCKS',
+  GUAPIRAMA: 'SBOAGROPECUARIALOCKS',
+  NEBRASKA: 'SBOAGROPECUARIALOCKS',
+  'TRES FLECHAS': 'SBOAGROPECUARIALOCKS',
+  SM3: 'SBOAGROPECUARIASM3',
+  SIRIEMA: 'SBOSAMUELMAGGILOCKS',
+  'PECUARIA LOCKS - DOURADO': 'SBOPECUARIALOCKS',
+  'PECUARIA LOCKS - GLOBO': 'SBOPECUARIALOCKS',
+  'PECUARIA LOCKS - GUAPIRAMA': 'SBOPECUARIALOCKS',
+};
+
+/** Primeiro dia da safra atual para a validação: 1º de agosto (do ano passado, se ainda não chegou agosto). */
+export function inicioSafraValidacao(agora = new Date()) {
+  return `${agora.getFullYear() - (agora.getMonth() >= 7 ? 0 : 1)}-08-01`;
+}
+
+/** Área executada de uma ordem: plantio, produção (colheita/preparo) e aplicação de insumo, por dia. */
+const SQL_EXEC_VALIDACAO = `SELECT ID_APORDSERVICO, DT_OPERACAO AS dia, QT_AREA AS ha FROM ${PIMS}APPLANTIO WHERE ID_APORDSERVICO IS NOT NULL
+  UNION ALL SELECT ID_APORDSERVICO, DT_OPERACAO, QT_AREA_EXEC FROM ${PIMS}APATIVPROD WHERE ID_APORDSERVICO IS NOT NULL
+  UNION ALL SELECT a.ID_APORDSERVICO, a.DT_OPERACAO, l.QT_AREA_EXEC FROM ${PIMS}APAPLINSUMO a
+    JOIN ${PIMS}APAPLINS_LC l ON l.ID_APAPLINSUMO = a.ID_APAPLINSUMO WHERE a.ID_APORDSERVICO IS NOT NULL`;
+
+/**
+ * Ordens de serviço para a validação: todas as ABERTAS e as FECHADAS desde `desde` em que a área
+ * apontada difere da planejada em mais de VALID_TOLERANCIA_HA. Uma página por vez.
+ * Operações que não apontam área (tratamento de sementes, apoio a combate de incêndio, compactação de
+ * silagem…) não são medidas em hectares: as fechadas ficam de fora e as abertas vêm com sem_area = 1.
+ * Entra nessa lista a operação com 3 ou mais ordens fechadas desde a safra anterior em que menos da
+ * metade teve área apontada (no PIMS de hoje as operações ficam ou acima de 65% ou abaixo de 10%).
+ */
+export function montarSqlOrdensValidacao(desde, pular = 0, tamanho = VALID_PAGINA) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  const anterior = `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
+  return `WITH pl AS (SELECT ID_APORDSERVICO, SUM(QT_AREA) AS ha, COUNT(*) AS n FROM ${PIMS}APORDSERVICO_LC GROUP BY ID_APORDSERVICO),
+ex AS (SELECT x.ID_APORDSERVICO, SUM(x.ha) AS ha, MAX(x.dia) AS ultimo FROM (${SQL_EXEC_VALIDACAO}) x GROUP BY x.ID_APORDSERVICO),
+sa AS (SELECT o2.ID_OPERACAO FROM ${PIMS}APORDSERVICO o2 LEFT JOIN ex ON ex.ID_APORDSERVICO = o2.ID_APORDSERVICO
+  WHERE o2.FG_SITUACAO = 'F' AND o2.DT_ENCERRA >= '${anterior}' GROUP BY o2.ID_OPERACAO
+  HAVING COUNT(*) >= 3 AND 2 * SUM(CASE WHEN ex.ha > 0 THEN 1 ELSE 0 END) < COUNT(*))
+SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS operacao, o.DE_OPERACAO AS operacao_de,
+  os.FG_SITUACAO AS situacao, CONVERT(varchar(10), os.DT_ABERTURA, 23) AS abertura, CONVERT(varchar(10), os.DT_ENCERRA, 23) AS encerramento,
+  ISNULL(pl.ha, 0) AS planejado, ISNULL(pl.n, 0) AS talhoes, ISNULL(ex.ha, 0) AS executado, CONVERT(varchar(10), ex.ultimo, 23) AS ultimo,
+  CASE WHEN sa.ID_OPERACAO IS NOT NULL THEN 1 ELSE 0 END AS sem_area
+FROM ${PIMS}APORDSERVICO os
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
+LEFT JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
+LEFT JOIN pl ON pl.ID_APORDSERVICO = os.ID_APORDSERVICO
+LEFT JOIN ex ON ex.ID_APORDSERVICO = os.ID_APORDSERVICO
+LEFT JOIN sa ON sa.ID_OPERACAO = os.ID_OPERACAO
+WHERE os.FG_SITUACAO = 'A'
+   OR (os.FG_SITUACAO = 'F' AND os.DT_ENCERRA >= '${d}' AND sa.ID_OPERACAO IS NULL AND ABS(ISNULL(pl.ha, 0) - ISNULL(ex.ha, 0)) > ${VALID_TOLERANCIA_HA})
+ORDER BY os.ID_APORDSERVICO
+OFFSET ${Math.max(0, Math.floor(pular))} ROWS FETCH NEXT ${Math.max(1, Math.floor(tamanho))} ROWS ONLY`;
+}
+
+/** Evolução das ordens ABERTAS: hectares apontados por dia em cada ordem. */
+export const SQL_EVOLUCAO_VALIDACAO = `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, CONVERT(varchar(10), x.dia, 23) AS dia, SUM(x.ha) AS ha
+FROM ${PIMS}APORDSERVICO os
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+JOIN (${SQL_EXEC_VALIDACAO}) x ON x.ID_APORDSERVICO = os.ID_APORDSERVICO
+WHERE os.FG_SITUACAO = 'A'
+GROUP BY u.DE_UNI_ADM, os.NO_BOLETIM, CONVERT(varchar(10), x.dia, 23)
+ORDER BY 1, 2, 3`;
+
+/** Coordenadores: as Equipes que tiveram ordem aberta ou fechada desde `desde` (ou têm ordem em aberto). */
+export function montarSqlCoordenadoresValidacao(desde) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  return `SELECT u.DE_UNI_ADM AS unidade, e.DE_EQUIPE AS equipe,
+  SUM(CASE WHEN os.FG_SITUACAO = 'A' THEN 1 ELSE 0 END) AS abertas, COUNT(*) AS ordens
+FROM ${PIMS}APORDSERVICO os
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
+WHERE os.DT_ABERTURA >= '${d}' OR os.DT_ENCERRA >= '${d}'
+GROUP BY u.DE_UNI_ADM, e.DE_EQUIPE
+ORDER BY 1, 2`;
+}
+
+/** Depósitos de cada unidade no PIMS que têm código no SAP (CD_INT_ERP = WhsCode). */
+export const SQL_DEPOSITOS_PIMS = `SELECT DISTINCT u.DE_UNI_ADM AS unidade, d.CD_INT_ERP AS codigo, d.DE_DEPOSITO AS nome
+FROM ${PIMS}DEPOSITO d
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = d.ID_UNIDADEADM
+WHERE d.FG_INT_ERP = 'S' AND d.CD_INT_ERP IS NOT NULL AND LTRIM(RTRIM(d.CD_INT_ERP)) <> ''
+ORDER BY 1, 2`;
+
+/** Depósitos de uma empresa do SAP (nome atual e se está inativo). */
+export const SQL_DEPOSITOS_SAP = 'SELECT "WhsCode" AS codigo, "WhsName" AS nome, "Inactive" AS inativo FROM OWHS';
+
+const ehCodigoSap = (c) => /^[A-Za-z0-9_.-]{1,20}$/.test(String(c ?? ''));
+
+/** Saldo (≠ 0) de cada item nos depósitos pedidos, numa empresa do SAP. */
+export function montarSqlEstoqueSap(codigos) {
+  const lista = [...new Set(codigos.map((c) => String(c)).filter(ehCodigoSap))].map((c) => `'${c}'`).join(', ');
+  if (!lista) throw new Error('Nenhum depósito válido para consultar o saldo.');
+  return `SELECT t."WhsCode" AS deposito, t."ItemCode" AS item, i."ItemName" AS nome, t."OnHand" AS saldo, i."InvntryUom" AS unidade
+FROM OITW t JOIN OITM i ON i."ItemCode" = t."ItemCode"
+WHERE t."WhsCode" IN (${lista}) AND t."OnHand" <> 0
+ORDER BY 1, 3`;
+}
+
+const arred = (v, casas = 2) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  const f = 10 ** casas;
+  return Math.round(n * f) / f;
+};
+
+/**
+ * Monta as linhas de valid_pims (uma por unidade): ordens (abertas com a evolução por dia; fechadas com
+ * diferença), coordenadores, depósitos (nome do SAP quando houver; inativos ficam marcados) e o saldo
+ * dos depósitos vinculados. Chaves curtas: a tela lê isso inteiro a cada abertura.
+ */
+export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, depositosSap = {}, estoque = {}, avisos = [] }, geradoEm) {
+  const linhas = new Map();
+  const linha = (unidade) => {
+    const u = txt(unidade);
+    if (!u) return null;
+    if (!linhas.has(u)) linhas.set(u, { unidade: u, gerado_em: geradoEm, ordens: [], coordenadores: [], depositos: [], estoque: {}, avisos });
+    return linhas.get(u);
+  };
+  const porOrdem = new Map();
+  for (const r of ordens) {
+    const l = linha(r.unidade);
+    if (!l) continue;
+    const o = {
+      os: Number(r.os), eq: txt(r.equipe) ?? '(sem equipe)', op: r.operacao === null ? null : Number(r.operacao), opn: txt(r.operacao_de) ?? '',
+      s: txt(r.situacao) === 'F' ? 'F' : 'A', ab: txt(r.abertura), enc: txt(r.encerramento), pl: arred(r.planejado), ex: arred(r.executado),
+      nt: Number(r.talhoes) || 0, ult: txt(r.ultimo),
+    };
+    if (o.s === 'A') o.ev = [];
+    if (Number(r.sem_area) === 1) o.sa = 1;
+    l.ordens.push(o);
+    porOrdem.set(`${l.unidade}|${o.os}`, o);
+  }
+  for (const r of evolucao) {
+    const o = porOrdem.get(`${txt(r.unidade)}|${Number(r.os)}`);
+    if (o?.ev && txt(r.dia)) o.ev.push([txt(r.dia), arred(r.ha)]);
+  }
+  for (const r of coordenadores) {
+    const l = linha(r.unidade);
+    if (l && txt(r.equipe)) l.coordenadores.push({ eq: txt(r.equipe), ab: Number(r.abertas) || 0, n: Number(r.ordens) || 0 });
+  }
+  for (const r of depositos) {
+    const l = linha(r.unidade);
+    const c = txt(r.codigo);
+    if (!l || !c) continue;
+    const sap = depositosSap[SAP_EMPRESA_DA_UNIDADE[l.unidade]]?.get(c);
+    const d = { c, n: sap?.nome ?? txt(r.nome) ?? c };
+    if (sap?.inativo) d.i = 1;
+    l.depositos.push(d);
+  }
+  for (const [unidade, porDeposito] of Object.entries(estoque)) {
+    const l = linhas.get(unidade);
+    if (l) l.estoque = porDeposito;
+  }
+  for (const l of linhas.values()) l.ordens.sort((a, b) => comparar(a.ab ?? '', b.ab ?? '') || a.os - b.os);
+  return [...linhas.values()].sort((a, b) => comparar(a.unidade, b.unidade));
+}
+
+/** Vínculos coordenador ↔ depósito cadastrados na tela (valid_vinculos); sem a tabela → []. */
+export async function lerVinculosValidacao({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
+  const resp = await fetchImpl(`${url}/rest/v1/valid_vinculos?select=unidade,deposito,deposito_origem`, { headers: cabecalhosSupabase(chave) });
+  if (!resp.ok) {
+    const texto = await resp.clone().text().catch(() => '');
+    if (resp.status === 404 || /PGRST205|42P01/.test(texto)) return [];
+    await erroSupabase(resp, chave, 'a leitura de valid_vinculos');
+  }
+  const linhas = await resp.json();
+  return Array.isArray(linhas) ? linhas : [];
+}
+
+/** Depósitos a consultar no SAP: { empresa: { unidade: [códigos] } } a partir dos vínculos. */
+export function depositosVinculados(vinculos) {
+  const porEmpresa = {};
+  for (const v of vinculos) {
+    const empresa = SAP_EMPRESA_DA_UNIDADE[txt(v.unidade) ?? ''];
+    if (!empresa) continue;
+    for (const c of [v.deposito, v.deposito_origem]) {
+      if (!ehCodigoSap(c)) continue;
+      const lista = ((porEmpresa[empresa] ??= {})[v.unidade] ??= []);
+      if (!lista.includes(String(c))) lista.push(String(c));
+    }
+  }
+  return porEmpresa;
+}
+
+/**
+ * Consulta o PIMS (e o SAP, para nomes de depósito e saldo dos vinculados) e devolve
+ * { geradoEm, linhas, avisos } da validação (não grava nada). Falha do SAP não derruba as ordens: vira aviso.
+ */
+export async function sincronizarValidacao({ url, token, vinculos = [], fetchImpl = fetch, agora = new Date() }) {
+  const desde = inicioSafraValidacao(agora);
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    const ordens = [];
+    for (let pular = 0; ; pular += VALID_PAGINA) {
+      const pagina = objetosDe(await cliente.consultar(montarSqlOrdensValidacao(desde, pular), 'ordens de serviço abertas e fechadas com diferença de área (validação)', 'ordens de serviço'));
+      ordens.push(...pagina);
+      if (pagina.length < VALID_PAGINA) break;
+    }
+    const evolucao = objetosDe(await cliente.consultar(SQL_EVOLUCAO_VALIDACAO, 'área apontada por dia nas ordens abertas (validação)', 'evolução das ordens'));
+    const coordenadores = objetosDe(await cliente.consultar(montarSqlCoordenadoresValidacao(desde), 'coordenadores com ordem de serviço na safra (validação)', 'coordenadores'));
+    const depositos = objetosDe(await cliente.consultar(SQL_DEPOSITOS_PIMS, 'depósitos do PIMS com código do SAP (validação)', 'depósitos'));
+
+    const avisos = [];
+    const depositosSap = {};
+    const estoque = {};
+    const vinculados = depositosVinculados(vinculos);
+    for (const empresa of new Set(Object.values(SAP_EMPRESA_DA_UNIDADE))) {
+      const fonte = { nome: 'SAP', source: 'hana', database: empresa, schema: empresa };
+      try {
+        const mapa = new Map();
+        for (const r of objetosDe(await cliente.consultar(SQL_DEPOSITOS_SAP, 'depósitos do SAP (validação)', `depósitos ${empresa}`, fonte))) {
+          if (txt(r.codigo)) mapa.set(txt(r.codigo), { nome: txt(r.nome), inativo: txt(r.inativo) === 'Y' });
+        }
+        depositosSap[empresa] = mapa;
+        const porUnidade = vinculados[empresa];
+        if (!porUnidade) continue;
+        const res = objetosDe(await cliente.consultar(montarSqlEstoqueSap(Object.values(porUnidade).flat()), 'saldo dos depósitos vinculados aos coordenadores (validação)', `saldo ${empresa}`, fonte));
+        for (const [unidade, codigos] of Object.entries(porUnidade)) {
+          const porDeposito = (estoque[unidade] ??= {});
+          for (const c of codigos) porDeposito[c] = [];
+          for (const r of res) {
+            const dep = txt(r.deposito);
+            if (dep && porDeposito[dep]) porDeposito[dep].push({ c: txt(r.item), n: txt(r.nome) ?? '', q: arred(r.saldo, 3), u: txt(r.unidade) ?? '' });
+          }
+        }
+      } catch (e) {
+        const msg = `Saldo do SAP indisponível (${empresa}): ${String(e instanceof Error ? e.message : e).slice(0, 160)}`;
+        console.warn(`Validação: ${semChave(msg, token)}`);
+        avisos.push(`sap:${empresa}`);
+      }
+    }
+    const geradoEm = agora.toISOString();
+    return { geradoEm, linhas: linhasValidacao({ ordens, evolucao, coordenadores, depositos, depositosSap, estoque, avisos }, geradoEm), avisos };
+  } finally {
+    await cliente.fechar();
+  }
+}
+
+/** Grava em valid_pims (upsert por unidade e limpeza das rodadas anteriores). 'ok', 'vazio' ou 'sem-tabela'. */
+export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchImpl = globalThis.fetch }) {
+  if (!dados.linhas.length) {
+    console.warn('Validação: o PIMS não retornou nenhuma ordem; valid_pims não foi alterada.');
+    return 'vazio';
+  }
+  const resp = await fetchImpl(`${url}/rest/v1/valid_pims?on_conflict=unidade`, {
+    method: 'POST',
+    headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(dados.linhas),
+  });
+  if (!resp.ok) {
+    const texto = await resp.clone().text().catch(() => '');
+    if (resp.status === 404 || /PGRST205|42P01/.test(texto)) {
+      console.warn('Validação: a tabela valid_pims ainda não existe no Supabase (rode supabase/0007_validacao_pims.sql).');
+      return 'sem-tabela';
+    }
+    await erroSupabase(resp, chave, 'o upsert em valid_pims');
+  }
+  const limpeza = await fetchImpl(`${url}/rest/v1/valid_pims?gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, { method: 'DELETE', headers: cabecalhosSupabase(chave) });
+  if (!limpeza.ok) await erroSupabase(limpeza, chave, 'a limpeza de valid_pims');
+  return 'ok';
+}
+
+/** Etapa da validação dentro da rotina: lê os vínculos, consulta, grava e registra só totais. Devolve null ou a mensagem de erro. */
+export async function rodarValidacao({ agrovex, supabase, fetchImpl = globalThis.fetch }) {
+  try {
+    const vinculos = await lerVinculosValidacao({ ...supabase, fetch: fetchImpl });
+    const dados = await sincronizarValidacao({ url: agrovex.url, token: agrovex.token, vinculos, fetchImpl });
+    const situacao = await gravarValidacaoSupabase(dados, { ...supabase, fetch: fetchImpl });
+    const ordens = dados.linhas.reduce((s, l) => s + l.ordens.length, 0);
+    const abertas = dados.linhas.reduce((s, l) => s + l.ordens.filter((o) => o.s === 'A').length, 0);
+    console.log(`Validação: ${situacao === 'ok' ? 'gravado no Supabase' : situacao}; ${dados.linhas.length} unidades, ${abertas} ordens abertas, ${ordens - abertas} fechadas com diferença, ${vinculos.length} vínculos de depósito${dados.avisos.length ? `; avisos: ${dados.avisos.join(', ')}` : ''}.`);
+    return null;
+  } catch (e) {
+    const msg = semChave(semChave(e instanceof Error ? e.message : String(e), supabase.chave), agrovex.token);
+    console.error(`Validação: erro (o plantio dos mapas não foi afetado): ${msg}`);
+    return msg;
+  }
+}
+
 // ---------- boletins de atividades mecanizadas (botão "Buscar direto no PIMS" de Mecanizadas) ----------
 
 /** período máximo de um pedido de boletins (dias) */
@@ -1035,6 +1328,14 @@ async function main() {
     if (config.acompanhamento !== false) {
       const erro = await rodarAcompanhamento({
         agrovex: { url: process.env.AGROVEX_URL || config.url, token, safras: config.safras ?? 'auto', excluirPrefixos: config.excluirPrefixos ?? [] },
+        supabase: { url: supabaseUrl, chave: supabaseChave },
+      });
+      if (erro) process.exitCode = 1;
+    }
+    // Validação de apontamentos (ordens de serviço e saldo dos depósitos): um erro nela não desfaz o resto
+    if (config.validacao !== false) {
+      const erro = await rodarValidacao({
+        agrovex: { url: process.env.AGROVEX_URL || config.url, token },
         supabase: { url: supabaseUrl, chave: supabaseChave },
       });
       if (erro) process.exitCode = 1;

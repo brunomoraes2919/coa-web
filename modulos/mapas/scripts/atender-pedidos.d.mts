@@ -37,3 +37,9 @@ export function atenderPedidosMec(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<number>;
+export function atenderPedidosValidacao(opcoes: {
+  supabase: { url: string; chave: string };
+  agrovex: { url: string; token: string };
+  fetch?: FetchLike;
+  agora?: () => Date;
+}): Promise<boolean>;

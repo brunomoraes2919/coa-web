@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Validação PIMS · COA</title>
+<link rel="icon" href="../mapas/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
+<link rel="stylesheet" href="estilo.css?v=202610061900">
+<script src="config.js?v=202610061900"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="logica.js?v=202610061900"></script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============================ BARRA ============================ -->
+  <header class="barra">
+    <div class="marca">
+      <span class="marca-titulo">Validação PIMS</span>
+      <span class="marca-sub">Ordens de serviço, área apontada e saldo dos depósitos por coordenador</span>
+    </div>
+    <div class="filtros">
+      <label class="campo-select"><span>Fazenda</span><select id="sel-unidade"></select></label>
+      <label class="campo-select"><span>Coordenador</span><select id="sel-equipe"></select></label>
+    </div>
+    <div class="barra-acoes">
+      <span class="atualizado" id="atualizado" aria-live="polite"></span>
+      <button class="botao-acao" id="btn-atualizar" title="Busca agora as ordens no PIMS e o saldo dos depósitos no SAP, sem esperar a atualização de cada hora">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2"/><path d="M18.5 2.5v3.6h-3.6M5.5 21.5v-3.6h3.6"/></svg><span>Atualizar</span>
+      </button>
+    </div>
+    <nav class="abas" id="abas" role="tablist" aria-label="Telas da validação">
+      <button role="tab" data-vista="abertas" aria-selected="true">Ordens abertas <span class="conta" id="conta-abertas"></span></button>
+      <button role="tab" data-vista="fechadas" aria-selected="false">Fechadas com diferença <span class="conta" id="conta-fechadas"></span></button>
+      <button role="tab" data-vista="depositos" aria-selected="false">Depósitos dos coordenadores</button>
+    </nav>
+  </header>
+
+  <p class="aviso" id="aviso" role="status" hidden></p>
+
+  <!-- ============================ ORDENS ABERTAS ============================ -->
+  <main class="vista" id="vista-abertas">
+    <section class="resumo" id="resumo" aria-label="Resumo das ordens abertas"></section>
+    <div class="linha-opcoes">
+      <p class="legenda-prazo">
+        Cada ordem tem <b>5 dias</b> para ser fechada a partir da abertura:
+        <span class="ponto ok"></span>até 2 dias <span class="ponto atencao"></span>3 a 5 dias <span class="ponto atraso"></span>mais de 5 dias
+      </p>
+      <label class="chave" id="chave-antigas" hidden><input type="checkbox" id="chk-antigas"><span id="txt-antigas"></span></label>
+    </div>
+    <div id="coordenadores"></div>
+  </main>
+
+  <!-- ============================ FECHADAS COM DIFERENÇA ============================ -->
+  <main class="vista" id="vista-fechadas" hidden>
+    <p class="explica">Ordens <b>fechadas</b> nesta safra em que a área apontada difere da planejada em mais de 1 ha.</p>
+    <section class="cartao">
+      <header class="cartao-cab"><h2>Fechadas faltando área</h2><span class="selo atraso" id="n-faltando"></span><p>A ordem foi encerrada sem apontar toda a área planejada.</p></header>
+      <div class="tabela-rolagem" id="tab-faltando"></div>
+    </section>
+    <section class="cartao">
+      <header class="cartao-cab"><h2>Fechadas com área a mais</h2><span class="selo atencao" id="n-sobrando"></span><p>A área apontada passou da planejada na ordem.</p></header>
+      <div class="tabela-rolagem" id="tab-sobrando"></div>
+    </section>
+  </main>
+
+  <!-- ============================ DEPÓSITOS ============================ -->
+  <main class="vista" id="vista-depositos" hidden>
+    <p class="explica" id="explica-depositos"></p>
+    <div id="vinculos"></div>
+  </main>
+
+</div>
+
+<div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Carregando as ordens</span><i>.</i><i>.</i><i>.</i></p></div></div>
+<script src="app.js?v=202610061900"></script>
+</body>
+</html>

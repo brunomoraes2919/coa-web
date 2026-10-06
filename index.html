@@ -695,9 +695,9 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 @media (max-width:900px){
   .app.modo-mapas .topbar, .app.modo-sat .topbar{display:none;}
 }
-/* Acompanhamento e Previsão do Tempo trazem o próprio cabeçalho (título + filtros numa barra só): o da casca sai sempre */
-.app.modo-acomp .topbar, .app.modo-previsao .topbar{display:none;}
-.app.modo-acomp main, .app.modo-previsao main{padding-top:0;}
+/* Acompanhamento, Previsão do Tempo e Validação PIMS trazem o próprio cabeçalho (título + filtros numa barra só): o da casca sai sempre */
+.app.modo-acomp .topbar, .app.modo-previsao .topbar, .app.modo-validacao .topbar{display:none;}
+.app.modo-acomp main, .app.modo-previsao main, .app.modo-validacao main{padding-top:0;}
 /* toque: campos com letra de 16px não disparam o zoom automático do iPhone ao focar */
 @media (max-width:900px) and (pointer:coarse){
   input, select, textarea{font-size:16px;}
@@ -790,6 +790,24 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 @media (max-width:480px){
   .app.modo-previsao .page[data-page="previsao"].active{margin:0 -12px -12px;}
 }
+/* ---------- categoria VALIDAÇÃO PIMS: módulo num iframe (validacao/index.html?embed=1) ---------- */
+.app.modo-validacao{min-height:0;}
+.app.modo-validacao main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
+.app.modo-validacao .topbar{flex:none;margin-bottom:0;}
+.app.modo-validacao .page[data-page="validacao"].active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin:0 -34px -60px;}
+#validacao-frame{display:block;flex:1 1 auto;width:100%;min-height:0;border:0;background:var(--fundo);}
+@media (max-width:900px){
+  .app.modo-validacao{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+  .app.modo-validacao .sidebar{flex:none;}
+  .app.modo-validacao main{flex:1 1 auto;min-height:0;height:auto;}
+  .app.modo-validacao .page[data-page="validacao"].active{margin:0 -18px -18px;}
+}
+@media (max-width:640px){
+  .app.modo-validacao .page[data-page="validacao"].active{margin:0 -14px -14px;}
+}
+@media (max-width:480px){
+  .app.modo-validacao .page[data-page="validacao"].active{margin:0 -12px -12px;}
+}
 /* estado do Locks SAT no card da categoria */
 .categoria-card small.categoria-card-nota{grid-column:2;font-size:11.5px;font-weight:500;color:var(--dourado-claro);margin-top:4px;}
 .categoria-card small.categoria-card-nota:empty{display:none;}
@@ -880,6 +898,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 16.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.6a3.5 3.5 0 0 1 .5 6.9"/><path d="M8.5 19.5l1-2M12 21l1-2M15.5 19.5l1-2"/></svg>
         <span>Previsão do Tempo</span><small class="categoria-card-desc">Mapa do Windy com os limites das fazendas</small>
       </button>
+      <button class="categoria-card" id="card-validacao">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3.5h6v3H9z"/><path d="M9 5H6.5A1.5 1.5 0 0 0 5 6.5v12A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-12A1.5 1.5 0 0 0 17.5 5H15"/><path d="m8.8 13.2 2.3 2.3 4.2-4.600"/></svg>
+        <span>Validação PIMS</span><small class="categoria-card-desc">Ordens de serviço por coordenador, áreas e depósitos</small>
+      </button>
       <button class="categoria-card admin-only" id="card-administracao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
         <span>Administração de usuários</span><small class="categoria-card-desc">Acessos, fazendas e módulos de cada usuário</small>
@@ -961,6 +983,14 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <div class="nav-eyebrow">Previsão do Tempo</div>
       <nav>
         <button class="nav-btn" data-page="previsao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.6a3.5 3.5 0 0 1 .5 6.9"/><path d="M8.5 19.5l1-2M12 21l1-2M15.5 19.5l1-2"/></svg>Mapa de previsão</button>
+      </nav>
+    </div>
+    <div id="nav-validacao" style="display:none">
+      <div class="nav-eyebrow">Validação PIMS</div>
+      <nav>
+        <button class="nav-btn" data-page="validacao" data-valid="abertas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Ordens em aberto</button>
+        <button class="nav-btn" data-page="validacao" data-valid="fechadas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 10v4M12 17.5v.5"/></svg>Fechadas com diferença</button>
+        <button class="nav-btn" data-page="validacao" data-valid="depositos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8 12 3.5 20.5 8v8L12 20.5 3.5 16V8Z"/><path d="M3.5 8 12 12.5 20.5 8M12 12.5v8"/></svg>Depósitos</button>
       </nav>
     </div>
     </div>
@@ -1406,6 +1436,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <section class="page" data-page="acompanhamento"></section>
     <section class="page" data-page="sat"></section>
     <section class="page" data-page="previsao"></section>
+    <section class="page" data-page="validacao"></section>
 
   </main>
 </div>
@@ -1500,7 +1531,7 @@ const coaLoader = (()=>{
   }
   return { mostrar, esconder };
 })();
-let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat' | 'previsao'
+let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat' | 'previsao' | 'validacao'
 /* categorias que o administrador libera por usuário (tabela usuario_categorias). O admin vê todas. */
 const CATEGORIAS = [
   { chave:'algodao', nome:'Algodão', card:'card-algodao' },
@@ -1509,6 +1540,7 @@ const CATEGORIAS = [
   { chave:'acompanhamento', nome:'Operacional', card:'card-acompanhamento' },
   { chave:'sat', nome:'Locks SAT', card:'card-sat' },
   { chave:'previsao', nome:'Previsão do Tempo', card:'card-previsao' },
+  { chave:'validacao', nome:'Validação PIMS', card:'card-validacao' },
 ];
 // null = ainda não se sabe, ou a tabela usuario_categorias não existe no banco: vale como "todas"
 let categoriasDoUsuario = null;
@@ -1652,6 +1684,7 @@ const titulos = {
   acompanhamento:['Acompanhamento Operacional','Plantio e colheita com os dados do PIMS'],
   sat:['Locks SAT','Monitoramento de cintilação RTK'], // o título real vem do módulo (mensagem 'sat-rota')
   previsao:['Previsão do Tempo','Mapa do Windy com os limites das fazendas'],
+  validacao:['Validação PIMS','Ordens de serviço por coordenador, áreas e depósitos'],
 };
 document.querySelectorAll('.nav-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -1660,6 +1693,7 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
     else if(btn.dataset.acomp) irParaAcomp(btn.dataset.acomp);
     else if(btn.dataset.sat) irParaSat(btn.dataset.sat);
     else if(btn.dataset.page === 'previsao') irParaPrevisao();
+    else if(btn.dataset.valid) irParaValidacao(btn.dataset.valid);
     else irPara(btn.dataset.page);
   });
 });
@@ -1672,6 +1706,7 @@ function irPara(pagina){
   document.getElementById('app-shell').classList.toggle('modo-acomp', pagina==='acompanhamento');
   document.getElementById('app-shell').classList.toggle('modo-sat', pagina==='sat');
   document.getElementById('app-shell').classList.toggle('modo-previsao', pagina==='previsao');
+  document.getElementById('app-shell').classList.toggle('modo-validacao', pagina==='validacao');
   renderTudo();
 }
 function atualizarCabecalhoPagina(){
@@ -4277,6 +4312,7 @@ function entrarAcompanhamento(){
   document.getElementById('nav-acompanhamento').style.display = '';
   document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('nav-previsao').style.display = 'none';
+  document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaAcomp(null); // 1ª entrada: cria o iframe no painel; depois mantém o módulo onde estava
@@ -4351,6 +4387,7 @@ function entrarPrevisao(){
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('nav-previsao').style.display = '';
+  document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaPrevisao(); // 1ª entrada: cria o iframe; depois mantém o mapa onde estava
@@ -4371,6 +4408,89 @@ window.addEventListener('message', ev=>{
   const d = ev.data;
   if(!d || typeof d !== 'object' || d.tipo !== 'previsao-fazenda') return;
   // fazenda escolhida no módulo → seletor do menu lateral (e o resto do COA WEB, como numa troca manual)
+  if(typeof d.coaFazenda === 'number'){
+    const el = document.getElementById('sb-fazenda');
+    if(el && el.value !== String(d.coaFazenda) && [...el.options].some(o=>o.value===String(d.coaFazenda))){
+      el.value = String(d.coaFazenda);
+      el.dispatchEvent(new Event('change'));
+    }
+  }
+});
+
+/* =====================================================================
+   VALIDAÇÃO PIMS — módulo num iframe da mesma origem
+   (validacao/index.html?embed=1#<vista>; a sessão do Supabase é a mesma do COA WEB)
+   - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'validacao-vista', vista:'abertas'|'fechadas'|'depositos' }
+   - módulo → COA: { tipo:'validacao-rota', vista, coaFazenda }
+   Sempre com targetOrigin = location.origin; só aceita mensagens do próprio iframe.
+===================================================================== */
+const VALID_VISTAS = ['abertas', 'fechadas', 'depositos'];
+let validFrame = null;      // iframe #validacao-frame (criado na primeira entrada; removido ao sair)
+let validCarregado = false;
+let validVista = 'abertas';
+function destacarBotaoValid(){
+  document.querySelectorAll('#nav-validacao .nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.valid===validVista));
+}
+function enviarAValidacao(msg){
+  if(!validFrame || !validCarregado || !validFrame.contentWindow) return;
+  try{ validFrame.contentWindow.postMessage(msg, location.origin); }
+  catch(e){ console.warn('VALIDAÇÃO: não foi possível avisar o módulo', e); }
+}
+function enviarFazendaValidacao(){
+  const f = state.fazendas.find(x=>x.id===fazendaSelecionadaId()) || { id:null, nome:null };
+  enviarAValidacao({ tipo:'coa-fazenda', id:f.id, nome:f.nome });
+}
+function irParaValidacao(vista){
+  if(VALID_VISTAS.includes(vista)) validVista = vista;
+  irPara('validacao');
+  if(!validFrame){
+    const frame = document.createElement('iframe');
+    frame.id = 'validacao-frame';
+    frame.title = 'Validação PIMS';
+    frame.addEventListener('load', ()=>{
+      if(frame !== validFrame) return;
+      coaLoader.esconder();
+      validCarregado = true;
+      enviarFazendaValidacao();
+    });
+    coaLoader.mostrar('Abrindo a Validação PIMS', true);
+    frame.src = 'validacao/index.html?embed=1#' + validVista;
+    validFrame = frame;
+    validCarregado = false;
+    document.querySelector('.page[data-page="validacao"]').appendChild(frame);
+  } else if(vista){
+    enviarAValidacao({ tipo:'validacao-vista', vista:validVista });
+  }
+  destacarBotaoValid();
+}
+function entrarValidacao(){
+  if(!podeCategoria('validacao')){ mostrarCategoriaScreen(); return; }
+  categoriaAtual = 'validacao';
+  ['nav-algodao','nav-mecanizadas','nav-administracao','nav-mapas','nav-acompanhamento','nav-sat','nav-previsao']
+    .forEach(id=>{ document.getElementById(id).style.display = 'none'; });
+  document.getElementById('nav-validacao').style.display = '';
+  document.getElementById('categoria-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = '';
+  irParaValidacao(null); // 1ª entrada: cria o iframe nas ordens em aberto; depois mantém o módulo onde estava
+  enviarFazendaValidacao();
+}
+function descarregarValidacao(){
+  if(validFrame){
+    validFrame.src = 'about:blank';
+    validFrame.remove();
+  }
+  validFrame = null;
+  validCarregado = false;
+  validVista = 'abertas';
+}
+document.getElementById('sb-fazenda').addEventListener('change', enviarFazendaValidacao);
+window.addEventListener('message', ev=>{
+  if(ev.origin !== location.origin) return;
+  if(!validFrame || ev.source !== validFrame.contentWindow) return;
+  const d = ev.data;
+  if(!d || typeof d !== 'object' || d.tipo !== 'validacao-rota') return;
+  if(VALID_VISTAS.includes(d.vista)){ validVista = d.vista; destacarBotaoValid(); }
+  // unidade escolhida no módulo → seletor do menu lateral (e o resto do COA WEB, como numa troca manual)
   if(typeof d.coaFazenda === 'number'){
     const el = document.getElementById('sb-fazenda');
     if(el && el.value !== String(d.coaFazenda) && [...el.options].some(o=>o.value===String(d.coaFazenda))){
@@ -4454,6 +4574,7 @@ function entrarSat(rota){
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = '';
   document.getElementById('nav-previsao').style.display = 'none';
+  document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaSat(typeof rota === 'string' ? rota : null); // sem rota: mantém o módulo onde estava
@@ -4744,6 +4865,7 @@ function entrarAlgodao(){
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('nav-previsao').style.display = 'none';
+  document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('relatorio');
@@ -4758,6 +4880,7 @@ function entrarMecanizadas(){
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('nav-previsao').style.display = 'none';
+  document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('importar-mecanizadas');
@@ -4772,6 +4895,7 @@ function entrarAdministracao(){
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('nav-previsao').style.display = 'none';
+  document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('usuarios');
@@ -4786,6 +4910,7 @@ function entrarMapas(){
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
   document.getElementById('nav-previsao').style.display = 'none';
+  document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaMapas(null); // 1ª entrada: cria o iframe na rota inicial; depois mantém o módulo onde estava
@@ -4798,6 +4923,7 @@ document.getElementById('card-mapas').addEventListener('click', entrarMapas);
 document.getElementById('card-acompanhamento').addEventListener('click', entrarAcompanhamento);
 document.getElementById('card-sat').addEventListener('click', ()=>entrarSat());
 document.getElementById('card-previsao').addEventListener('click', entrarPrevisao);
+document.getElementById('card-validacao').addEventListener('click', entrarValidacao);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
 
 async function tentarLogin(){
@@ -4827,6 +4953,7 @@ async function sair(){
   descarregarAcomp();
   descarregarSat();
   descarregarPrevisao();
+  descarregarValidacao();
   if(canalRealtime){ sb.removeChannel(canalRealtime); canalRealtime = null; }
   await sb.auth.signOut();
   sessao = null;
@@ -4905,7 +5032,7 @@ function renderTudo(){
   else { mostrarTelaLogin(); }
 })();
 sb.auth.onAuthStateChange((event)=>{
-  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = null; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); mostrarTelaLogin(); }
+  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = null; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); descarregarValidacao(); mostrarTelaLogin(); }
 });
 
 </script>

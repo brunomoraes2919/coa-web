@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, semChave, sincronizar, ultimoDiaZeus } from './sincronizar-plantio.mjs';
+import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, ultimoDiaZeus } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -262,6 +262,41 @@ export async function atualizarSituacaoZeus({ supabase, agrovex, fetch: fetchImp
   return 'ok';
 }
 
+// ---------- pedidos de "Atualizar" da Validação PIMS (tabela valid_pedidos) ----------
+
+const TABELA_VALID = 'valid_pedidos';
+const GUARDAR_VALID_DIAS = 7;
+
+/**
+ * Uma verificação dos pedidos de "Atualizar" da Validação PIMS: sem pendentes → false; com pendentes →
+ * consulta o PIMS e o SAP, grava valid_pims e marca os pedidos ('ok' ou 'erro: ...'). Sem a tabela
+ * (script 0007 não aplicado) → false, sem erro.
+ */
+export async function atenderPedidosValidacao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+  const ctx = { ...supabase, fetch: fetchImpl };
+  const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_VALID}?select=id&atendido_em=is.null&order=id.asc`, { headers: cabecalhosSupabase(supabase.chave) });
+  if (!resp.ok) {
+    if (await semTabela(resp)) return false;
+    await erroRest(resp, supabase.chave, 'a leitura dos pedidos da validação');
+  }
+  const linhas = await resp.json();
+  const ids = Array.isArray(linhas) ? linhas.map((l) => Number(l.id)).filter(Number.isFinite) : [];
+  if (!ids.length) return false;
+  const erro = await rodarValidacao({ agrovex, supabase, fetchImpl });
+  const marca = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_VALID}?atendido_em=is.null&id=lte.${ids[ids.length - 1]}`, {
+    method: 'PATCH',
+    headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ atendido_em: agora().toISOString(), resultado: (erro ? `erro: ${erro}` : 'ok').slice(0, 300) }),
+  });
+  if (!marca.ok) await erroRest(marca, supabase.chave, 'a marcação dos pedidos da validação');
+  const limite = new Date(agora().getTime() - GUARDAR_VALID_DIAS * 86_400_000).toISOString();
+  await fetchImpl(`${ctx.url}/rest/v1/${TABELA_VALID}?atendido_em=lt.${encodeURIComponent(limite)}`, {
+    method: 'DELETE',
+    headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
+  }).catch(() => undefined);
+  return true;
+}
+
 async function main() {
   const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const config = JSON.parse(readFileSync(join(raiz, 'scripts', 'plantio.config.json'), 'utf8'));
@@ -278,7 +313,7 @@ async function main() {
   };
   // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
   let erroConsulta = null;
-  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atualizarSituacaoZeus]) {
+  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus]) {
     try {
       await atender({ supabase, agrovex });
     } catch (e) {
