@@ -5,9 +5,9 @@ import { criarTrimble, janelasDeHoje } from './trimble'
 
 describe('trimble', () => {
   it('pede 168 h a partir de 7 dias antes da 00:00 de hoje, direto no site, como navegador', async () => {
-    const chamadas: { url: string; headers: Record<string, string> }[] = []
+    const chamadas: { url: string; headers: Record<string, string>; redirect: RequestRedirect | undefined }[] = []
     const fetchFalso = (async (url: string, init: RequestInit = {}) => {
-      chamadas.push({ url, headers: init.headers as Record<string, string> })
+      chamadas.push({ url, headers: init.headers as Record<string, string>, redirect: init.redirect })
       return new Response(JSON.stringify([{ value: 3, timeOfEstimation: '2026-10-05T23:00:00Z', tecValue: 20, scintiValue: 40, predicted: false }]), { status: 200 })
     }) as unknown as typeof fetch
     const agora = new Date(2026, 9, 6, 7).getTime()
@@ -15,12 +15,17 @@ describe('trimble', () => {
     // 00:00 de 29/09 em Cuiabá = 04:00 UTC
     expect(chamadas[0].url).toBe('https://www.gnssplanning.com/api/ionoindex/-50.5/-12.5/2026-09-29T04:00:00/168/600')
     expect(chamadas[0].headers['User-Agent']).toMatch(/Mozilla/)
+    expect(chamadas[0].redirect).toBe('error')
     expect(pontos).toHaveLength(1)
   })
   it('403 e 429 são bloqueio; outro status é indisponível', async () => {
     const com = (status: number) => criarTrimble({ fetch: (async () => new Response('', { status })) as unknown as typeof fetch })
     await expect(com(403).historico({ lat: 0, lon: 0 }, Date.now())).rejects.toMatchObject({ tipo: 'bloqueio' })
     await expect(com(500).historico({ lat: 0, lon: 0 }, Date.now())).rejects.toMatchObject({ tipo: 'indisponivel' })
+  })
+  it('série vazia é indisponível (a tela trata vazio como degradado)', async () => {
+    const vazia = criarTrimble({ fetch: (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch })
+    await expect(vazia.historico({ lat: 0, lon: 0 }, Date.now())).rejects.toMatchObject({ tipo: 'indisponivel', message: 'A Trimble devolveu série vazia.' })
   })
   it('janelas de hoje: a mesma conta da tela (3 de 7 dias)', () => {
     const ponto = (dia: number, h: number, m: number, cintilacao: number) => ({ instante: new Date(2026, 8, dia, h, m).getTime(), indice: 3, tec: 20, cintilacao, previsto: false })

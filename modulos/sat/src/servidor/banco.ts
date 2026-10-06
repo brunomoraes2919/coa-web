@@ -13,7 +13,7 @@ export interface Banco {
   /** Reserva o envio ANTES de mandar. `false` = já existia (não manda de novo). */
   reservarEnvio(contatoId: string, chave: string, tipo: TipoEvento): Promise<boolean>
   fecharEnvio(contatoId: string, chave: string, situacao: 'enviado' | 'falhou' | 'pulado', erro?: string): Promise<void>
-  /** Chaves de evento já reservadas hoje para o contato (para a linha do SAIR e para não repetir). */
+  /** Chaves de evento já reservadas no dia, de todos os contatos (para a linha do SAIR e para não repetir). */
   chavesDoDia(dia: string): Promise<{ contatoId: string; chave: string }[]>
   confirmar(contatoId: string, jid: string): Promise<void>
   guardarJid(contatoId: string, jid: string): Promise<void>
@@ -24,6 +24,8 @@ export interface Banco {
 }
 
 const PAGINA = 1000
+// chamada pendurada travaria o laço do serviço
+const PRAZO_MS = 20_000
 const GUARDA_ENVIOS_DIAS = 30
 
 interface PedidoOpcoes {
@@ -47,6 +49,7 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
       method: pedido.method ?? 'GET',
       headers,
       body: pedido.body === undefined ? undefined : JSON.stringify(pedido.body),
+      signal: AbortSignal.timeout(PRAZO_MS),
     })
     if (resposta.ok || pedido.aceitar?.includes(resposta.status)) return resposta
     // a mensagem do Supabase pode repetir a chave: some com ela antes de deixar sair
@@ -64,7 +67,13 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
     const todas: T[] = []
     for (let de = 0; ; de += PAGINA) {
       const resposta = await pedir(acao, `${tabela}?${consulta}`, { headers: { 'Range-Unit': 'items', Range: `${de}-${de + PAGINA - 1}` } })
-      const linhas = (await resposta.json()) as T[]
+      let linhas: T[]
+      try {
+        linhas = (await resposta.json()) as T[]
+      } catch {
+        // o erro do interpretador pode citar um trecho do corpo
+        throw new Error('Supabase devolveu resposta fora do formato')
+      }
       todas.push(...linhas)
       if (linhas.length < PAGINA) return todas
     }
@@ -77,7 +86,7 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
     async contatos() {
       // uma tabela por vez: se a primeira falhar, o erro que sai é o dela
       const linhas = await lerTudo<LinhaContato>('ler os contatos', 'whatsapp_contatos', 'select=*&order=nome')
-      const ligacoes = await lerTudo<{ contato_id: string; fazenda_id: number }>('ler as fazendas dos contatos', 'whatsapp_contato_fazendas', 'select=*')
+      const ligacoes = await lerTudo<{ contato_id: string; fazenda_id: number }>('ler as fazendas dos contatos', 'whatsapp_contato_fazendas', 'select=*&order=contato_id,fazenda_id')
       const porContato = new Map<string, number[]>()
       for (const l of ligacoes) porContato.set(l.contato_id, [...(porContato.get(l.contato_id) ?? []), Number(l.fazenda_id)])
       return linhas.map((l) => ({
@@ -95,7 +104,7 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
     },
 
     async fazendas() {
-      const linhas = await lerTudo<{ id: string; nome: string; coa_fazenda_id: number | string | null }>('ler as fazendas', 'mapas_fazendas', 'select=id,nome,coa_fazenda_id&order=nome')
+      const linhas = await lerTudo<{ id: string; nome: string; coa_fazenda_id: number | string | null }>('ler as fazendas', 'mapas_fazendas', 'select=id,nome,coa_fazenda_id&order=nome,id')
       const talhoes = await lerTudo<{ fazenda_id: string; geom: unknown }>('ler os talhões', 'mapas_talhoes', 'select=fazenda_id,geom&order=id')
       const limites = limitesPorFazenda(talhoes)
       return linhas.map((l) => {
@@ -131,7 +140,7 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
     },
 
     async chavesDoDia(dia) {
-      const linhas = await lerTudo<{ contato_id: string; chave: string }>('ler os envios do dia', 'whatsapp_envios', `select=contato_id,chave&chave=like.${encodeURIComponent(dia)}:*`)
+      const linhas = await lerTudo<{ contato_id: string; chave: string }>('ler os envios do dia', 'whatsapp_envios', `select=contato_id,chave&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)
       return linhas.map((l) => ({ contatoId: l.contato_id, chave: l.chave }))
     },
 
@@ -152,7 +161,7 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
       const corpo: Record<string, unknown> = { conectado: estado.conectado, batimento_em: agoraIso() }
       if (estado.desde !== undefined) corpo.desde = estado.desde
       if (estado.ultimoEnvioEm !== undefined) corpo.ultimo_envio_em = estado.ultimoEnvioEm
-      if (estado.ultimoErro !== undefined) corpo.ultimo_erro = estado.ultimoErro
+      if (estado.ultimoErro !== undefined) corpo.ultimo_erro = estado.ultimoErro === null ? null : estado.ultimoErro.slice(0, 300)
       return alterar('gravar o estado do serviço', 'whatsapp_estado?id=eq.1', corpo)
     },
 

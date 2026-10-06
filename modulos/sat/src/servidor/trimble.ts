@@ -20,7 +20,7 @@ export function criarTrimble(opcoes: { fetch?: typeof fetch } = {}) {
       const url = `${BASE}/ionoindex/${celula.lon}/${celula.lat}/${isoTrimble(inicio)}/${DIAS_HISTORICO * 24}/600`
       let resposta: Response
       try {
-        resposta = await buscar(url, { headers: { 'User-Agent': NAVEGADOR, Accept: 'application/json' }, signal: AbortSignal.timeout(PRAZO_MS) })
+        resposta = await buscar(url, { headers: { 'User-Agent': NAVEGADOR, Accept: 'application/json' }, signal: AbortSignal.timeout(PRAZO_MS), redirect: 'error' })
       } catch {
         throw new ErroGnss('rede', 0, 'Sem resposta da Trimble.')
       }
@@ -32,7 +32,10 @@ export function criarTrimble(opcoes: { fetch?: typeof fetch } = {}) {
       } catch {
         throw new ErroGnss('indisponivel', resposta.status, 'Resposta da Trimble fora do formato esperado.')
       }
-      return converterSerieTrimble(dados)
+      const serie = converterSerieTrimble(dados)
+      // a tela trata série vazia como degradado; sem isto o serviço calcularia "sem janelas"
+      if (serie.length === 0) throw new ErroGnss('indisponivel', 200, 'A Trimble devolveu série vazia.')
+      return serie
     },
   }
 }

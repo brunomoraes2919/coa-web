@@ -53,3 +53,21 @@ revoke all on public.whatsapp_envios from anon, authenticated;
 revoke all on public.whatsapp_estado from anon, authenticated;
 grant select on public.whatsapp_envios to authenticated;
 grant select on public.whatsapp_estado to authenticated;
+
+-- 4. Trocar o número de um contato não passa a autorização adiante: o número novo não mandou ATIVAR
+create or replace function public.whatsapp_contato_troca_numero() returns trigger
+language plpgsql as $$
+begin
+  if new.telefone is distinct from old.telefone then
+    new.confirmado_em := null;
+    new.confirmado_por := null;
+    new.jid := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists whatsapp_contato_troca_numero on public.whatsapp_contatos;
+create trigger whatsapp_contato_troca_numero
+  before update of telefone on public.whatsapp_contatos
+  for each row execute function public.whatsapp_contato_troca_numero();
