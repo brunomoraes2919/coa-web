@@ -116,7 +116,15 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .login-kicker{margin:0 0 1.3em;font-size:clamp(11.5px,.82vw,16px);font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--dourado-claro);}
 .login-painel h1{margin:0;font-size:clamp(30px,3.15vw,64px);line-height:1.14;font-weight:600;letter-spacing:-.018em;color:#fff;max-width:17ch;}
 .login-painel-sub{margin:1.3em 0 0;font-size:clamp(14px,1.12vw,21px);line-height:1.55;color:#9FB8AF;max-width:46ch;}
-.login-rodape{position:relative;z-index:1;font-size:clamp(12px,.78vw,15px);color:#6F9A8D;}
+.login-rodape{position:relative;z-index:1;font-size:clamp(12px,.78vw,15px);color:#6F9A8D;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px 28px;}
+/* assinatura "By: Locks AgTech Lab", discreta como a da tela de categorias (logo branca, sobre o painel escuro) */
+.login-assinatura{display:flex;align-items:center;gap:.9em;font-size:clamp(9.5px,.62vw,12px);opacity:.45;transition:opacity .25s;}
+.login-assinatura:hover{opacity:.85;}
+.login-assinatura span{font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#C9DAD3;}
+.login-assinatura img{height:clamp(20px,1.5vw,30px);width:auto;display:block;}
+.login-assinatura-breve{border:1px solid rgba(255,255,255,.3);border-radius:999px;padding:.2em .75em;font-size:.9em;letter-spacing:.06em !important;}
+/* no celular o painel escuro vira o topo: a assinatura vai para o pé da página, sobre o fundo claro (logo escurecida) */
+.login-assinatura.no-claro{display:none;}
 /* curvas de nível ao fundo: o produto é feito de mapas de fazenda */
 .login-contornos{position:absolute;right:-26%;bottom:-20%;width:clamp(640px,56vw,1180px);height:auto;opacity:.9;pointer-events:none;}
 .login-contornos path{fill:none;stroke:rgba(255,255,255,.07);stroke-width:1.2;
@@ -161,14 +169,19 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
   .login-dica{font-size:13px;}
 }
 @media (max-width:900px){
-  .login-screen{grid-template-columns:1fr;}
+  .login-screen{grid-template-columns:1fr;grid-template-rows:auto 1fr;}
   .login-painel{padding:28px 24px;min-height:0;}
   .login-painel h1{font-size:22px;max-width:none;}
   .login-kicker{margin-bottom:10px;}
   .login-painel-sub,.login-rodape{display:none;}
+  .login-form{flex-direction:column;justify-content:flex-start;gap:26px;}
+  .login-assinatura.no-claro{display:flex;font-size:9.5px;opacity:.5;margin-top:auto;}
+  .login-assinatura.no-claro img{height:20px;filter:invert(1) hue-rotate(180deg);}
+  .login-assinatura.no-claro span{color:#4E5E56;}
+  .login-assinatura.no-claro .login-assinatura-breve{border-color:rgba(16,54,50,.3);}
   .login-logo{width:104px;margin-bottom:22px;}
   .login-contornos{right:-200px;bottom:-240px;width:520px;}
-  .login-form{padding:28px 16px 40px;align-items:flex-start;}
+  .login-form{padding:28px 16px 32px;align-items:center;}
   .login-card{padding:26px 22px 22px;}
 }
 
@@ -799,7 +812,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <h1>Da chuva de ontem ao plantio de hoje, talhão por talhão.</h1>
       <p class="login-painel-sub">Plantio e colheita direto do PIMS, mapa de chuva, boletins das máquinas, sinal do RTK e previsão do tempo sobre os limites de cada fazenda.</p>
     </div>
-    <div class="login-rodape">Acesso restrito a usuários cadastrados pelo administrador.</div>
+    <div class="login-rodape"><span>Acesso restrito a usuários cadastrados pelo administrador.</span><div class="login-assinatura"><span>By:</span><img src="assets/locks-agtech-lab-branca.png" alt="Locks AgTech Lab"><span class="login-assinatura-breve">Em breve</span></div></div>
     <svg class="login-contornos" viewBox="0 0 640 640" aria-hidden="true">
       <path pathLength="1" style="--i:0" d="M40 600c60-120 40-230 150-290s260-20 330-130 60-200 120-250"/>
       <path pathLength="1" style="--i:1" d="M90 620c60-110 50-210 150-262s240-30 310-130 70-190 130-240"/>
@@ -828,6 +841,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <button class="btn" id="btn-entrar" style="width:100%;justify-content:center;margin-top:2px">Entrar</button>
       <p class="login-dica">Esqueceu a senha ou ainda não tem acesso? Fale com o administrador do COA WEB.</p>
     </div>
+    <div class="login-assinatura no-claro"><span>By:</span><img src="assets/locks-agtech-lab-branca.png" alt="Locks AgTech Lab"><span class="login-assinatura-breve">Em breve</span></div>
   </section>
 </div>
 
