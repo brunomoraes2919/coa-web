@@ -16,6 +16,8 @@
   const EMBED = PARAMS.get('embed') === '1';
   const VISTAS = ['abertas', 'fechadas', 'depositos'];
   const TODAS = '';
+  /** A fazenda do menu lateral não tem unidade no PIMS: nada a mostrar (em vez de mostrar todas). */
+  const SEM_UNIDADE = '\u0001';
   const INTERVALO_MS = 4000;
   const LIMITE_MS = 150000;
 
@@ -34,6 +36,7 @@
   let fazendasCoa = [];   // [{ unidade, coaId }] — de que fazenda do COA WEB é cada unidade
   let admin = false;
   let coaFazenda;         // fazenda escolhida no COA WEB, quando o módulo está no iframe
+  let coaFazendaNome = '';
   let fonte = null;
   let atualizando = false;
 
@@ -108,8 +111,8 @@
   function preencherUnidades() {
     const sel = $('sel-unidade');
     sel.innerHTML = '<option value="">Todas as fazendas</option>' + unidades().map((u) => '<option value="' + esc(u) + '">' + esc(L.titulo(u)) + '</option>').join('');
-    if (estado.unidade && unidades().indexOf(estado.unidade) < 0) estado.unidade = TODAS;
-    sel.value = estado.unidade;
+    if (estado.unidade && estado.unidade !== SEM_UNIDADE && unidades().indexOf(estado.unidade) < 0) estado.unidade = TODAS;
+    sel.value = estado.unidade === SEM_UNIDADE ? TODAS : estado.unidade;
   }
   function preencherEquipes() {
     const nomes = new Set();
@@ -309,6 +312,7 @@
     $('atualizado').innerHTML = mais ? 'PIMS · <b>' + new Date(mais).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</b>' : '';
     const semSap = linhas.some((l) => (l.avisos || []).length);
     if (!linhas.length) avisar('Ainda não há dados da validação. O servidor grava as ordens a cada hora; clique em Atualizar para buscar agora.', '');
+    else if (estado.unidade === SEM_UNIDADE) avisar('A fazenda escolhida no menu não tem ordens de serviço no PIMS (ou você não tem acesso à unidade dela).', '');
     else if (semSap) avisar('O saldo de alguns depósitos do SAP não pôde ser lido na última atualização. As ordens estão atualizadas.', 'alerta');
     else if (!$('aviso').classList.contains('fixo')) avisar('', '');
   }
@@ -318,11 +322,16 @@
     const f = fazendasCoa.find((x) => x.unidade === estado.unidade);
     try { window.parent.postMessage({ tipo: 'validacao-rota', vista: estado.vista, coaFazenda: f ? f.coaId : null }, location.origin); } catch (e) { /* fora do COA WEB */ }
   }
+  /** A fazenda do menu lateral do COA WEB manda na unidade: pelo cadastro do Mapas e, sem ele, pelo nome. */
   function aplicarFazendaCoa() {
     if (coaFazenda === undefined) return;
-    const f = fazendasCoa.find((x) => x.coaId === coaFazenda && unidades().indexOf(x.unidade) >= 0);
-    estado.unidade = f ? f.unidade : TODAS;
-    estado.equipe = TODAS;
+    const anterior = estado.unidade;
+    if (coaFazenda === null) estado.unidade = TODAS;
+    else {
+      const f = fazendasCoa.find((x) => x.coaId === coaFazenda && unidades().indexOf(x.unidade) >= 0);
+      estado.unidade = (f ? f.unidade : L.unidadeDaFazenda(coaFazendaNome, unidades())) || SEM_UNIDADE;
+    }
+    if (estado.unidade !== anterior) estado.equipe = TODAS;
   }
 
   async function carregar() {
@@ -403,6 +412,7 @@
     if (d.tipo === 'validacao-vista') { if (VISTAS.indexOf(d.vista) >= 0 && d.vista !== estado.vista) irPara(d.vista); return; }
     if (d.tipo !== 'coa-fazenda') return;
     coaFazenda = typeof d.id === 'number' ? d.id : null;
+    coaFazendaNome = typeof d.nome === 'string' ? d.nome : '';
     if (!linhas.length) return;
     aplicarFazendaCoa();
     desenhar();

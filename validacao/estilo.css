@@ -158,6 +158,8 @@ h2, p { margin: 0; }
 .progresso small { margin-top: 4px; white-space: nowrap; }
 .progresso small b { color: var(--texto); }
 .progresso.sem-area small { white-space: normal; margin-top: 0; font-style: italic; }
+/* dentro do COA WEB a fazenda é a do menu lateral, como nos outros módulos: o campo daqui some */
+html.embed .campo-unidade { display: none; }
 .evolucao { display: block; }
 .evolucao .com { fill: var(--verde-teal); }
 .evolucao .sem { fill: #D5DDD6; }
@@ -212,6 +214,7 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
   .barra { position: static; }
   .filtros { flex: 1 1 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .campo-select { min-width: 0; }
+  html.embed .filtros { grid-template-columns: 1fr; }
   /* 16px: o iPhone não dá zoom sozinho ao focar o campo */
   .campo-select select, .tabela-vinculos select { min-width: 0; width: 100%; font-size: 16px; padding: 0 6px; }
   .barra-acoes { margin-left: 0; }
