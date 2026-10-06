@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PontoIono } from '../tipos'
 import type { Banco } from './banco'
 import {
-  ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, limparPareamentoIncompleto, linhaDeRegistro, rodandoComoPrograma, sessaoPareada,
+  calarBibliotecas, ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, limparPareamentoIncompleto, linhaDeRegistro, rodandoComoPrograma, sessaoPareada,
 } from './principal'
 import type { ContatoWpp, FazendaServidor, SituacaoEnvio } from './tipos'
 import type { OpcoesWhatsapp, Whatsapp } from './whatsapp'
@@ -692,5 +692,48 @@ describe('sobra de um pareamento que não terminou', () => {
 
   it('pasta que não existe: nada a apagar, sem erro', () => {
     expect(limparPareamentoIncompleto(join(tmpdir(), 'locks-sat-nao-existe-' + Date.now()))).toBe(false)
+  })
+})
+
+describe('o que as bibliotecas escrevem no console', () => {
+  const consoleFalso = () => {
+    const saiu: { via: string; texto: string }[] = []
+    const via = (nome: string) => (...partes: unknown[]) => { saiu.push({ via: nome, texto: partes.join(' ') }) }
+    return { saiu, alvo: { log: via('log'), error: via('error'), info: via('info'), warn: via('warn'), debug: via('debug'), trace: via('trace') } }
+  }
+  const SESSAO = { currentRatchet: { ephemeralKeyPair: { privKey: Buffer.from('chave-privada-ficticia') }, rootKey: Buffer.from('raiz-ficticia') } }
+
+  it('a sessão despejada pela biblioteca do protocolo ("Closing session") não sai', () => {
+    const c = consoleFalso()
+    calarBibliotecas(c.alvo)
+    c.alvo.info('Closing session:', SESSAO)
+    c.alvo.info('Opening session:', SESSAO)
+    c.alvo.info('Removing old closed session:', SESSAO)
+    c.alvo.warn('Session already closed', SESSAO)
+    c.alvo.debug('qualquer coisa', SESSAO)
+    c.alvo.trace('qualquer coisa')
+    expect(c.saiu).toEqual([])
+  })
+
+  it('log e error continuam, mas objeto nunca é impresso', () => {
+    const c = consoleFalso()
+    calarBibliotecas(c.alvo)
+    c.alvo.log('serviço ligado')
+    c.alvo.log('sessão:', SESSAO)
+    c.alvo.error('Session error:', new Error('falhou'))
+    expect(c.saiu).toEqual([
+      { via: 'log', texto: 'serviço ligado' },
+      { via: 'log', texto: 'sessão: [omitido]' },
+      { via: 'error', texto: 'Session error: [omitido]' },
+    ])
+    expect(JSON.stringify(c.saiu)).not.toContain('ficticia')
+  })
+
+  it('número de telefone em texto de biblioteca sai mascarado', () => {
+    const c = consoleFalso()
+    calarBibliotecas(c.alvo)
+    c.alvo.error('No session for 5565999990001@s.whatsapp.net')
+    expect(c.saiu[0].texto).not.toContain('5565999990001')
+    expect(c.saiu[0].texto).toContain('0001')
   })
 })

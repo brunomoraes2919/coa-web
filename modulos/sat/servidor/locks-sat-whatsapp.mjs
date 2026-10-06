@@ -2106,6 +2106,25 @@ async function principal(argv, env = process.env) {
 	if (modo === "teste") return teste(env, numero);
 	await servico(env);
 }
+/**
+* As bibliotecas escrevem direto no console, sem passar pelo nosso registro. A do protocolo do
+* WhatsApp despeja a sessão inteira de uma conversa, com as chaves, a cada "Closing session" — e no
+* serviço a saída vai para o journal. Daqui em diante só sai texto: `info`, `warn`, `debug` e `trace`
+* ficam mudos (é por eles que as bibliotecas falam); `log` e `error` continuam, mas nunca imprimem
+* objeto, e número de telefone sai mascarado.
+*/
+function calarBibliotecas(alvo = console) {
+	const soTexto = (original) => (...partes) => {
+		original(semNumeros(partes.map((p) => typeof p === "string" ? p : "[omitido]").join(" ")));
+	};
+	alvo.log = soTexto(alvo.log.bind(alvo));
+	alvo.error = soTexto(alvo.error.bind(alvo));
+	const mudo = () => {};
+	alvo.info = mudo;
+	alvo.warn = mudo;
+	alvo.debug = mudo;
+	alvo.trace = mudo;
+}
 /** Este módulo é o arquivo que o `node` foi chamado para rodar? Compara o caminho de verdade: chamado por link simbólico também conta. */
 function rodandoComoPrograma(urlDoModulo, chamado) {
 	if (!chamado) return false;
@@ -2115,11 +2134,14 @@ function rodandoComoPrograma(urlDoModulo, chamado) {
 		return false;
 	}
 }
-if (rodandoComoPrograma(import.meta.url, process.argv[1])) principal(process.argv.slice(2)).then((codigo) => {
-	if (codigo !== void 0) process.exit(codigo);
-}).catch((e) => {
-	console.error(`Erro: ${mensagemDe(e)}`);
-	process.exit(1);
-});
+if (rodandoComoPrograma(import.meta.url, process.argv[1])) {
+	calarBibliotecas();
+	principal(process.argv.slice(2)).then((codigo) => {
+		if (codigo !== void 0) process.exit(codigo);
+	}).catch((e) => {
+		console.error(`Erro: ${mensagemDe(e)}`);
+		process.exit(1);
+	});
+}
 //#endregion
-export { desenhadorDeQr, ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, limparPareamentoIncompleto, linhaDeRegistro, pastaDaSessao, principal, rodandoComoPrograma, sessaoPareada };
+export { calarBibliotecas, desenhadorDeQr, ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, limparPareamentoIncompleto, linhaDeRegistro, pastaDaSessao, principal, rodandoComoPrograma, sessaoPareada };

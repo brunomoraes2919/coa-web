@@ -11,7 +11,7 @@ import type { Janela, PontoIono } from '../tipos'
 import { type Banco, criarBanco } from './banco'
 import { mascarar } from './comandos'
 import { MINUTO_LEMBRETE, MINUTO_RESUMO } from './agenda'
-import { type Dependencias, PRAZO_DAS_GRAVACOES_MS, PRAZO_DO_WHATSAPP_MS, Servico } from './servico'
+import { type Dependencias, PRAZO_DAS_GRAVACOES_MS, PRAZO_DO_WHATSAPP_MS, semNumeros, Servico } from './servico'
 import { criarTrimble, janelasDeHoje } from './trimble'
 import { conectarWhatsapp, type OpcoesWhatsapp, type Whatsapp } from './whatsapp'
 
@@ -456,6 +456,28 @@ export async function principal(argv: string[], env: Record<string, string | und
   return undefined
 }
 
+type ConsoleDoProcesso = Pick<Console, 'log' | 'error' | 'info' | 'warn' | 'debug' | 'trace'>
+
+/**
+ * As bibliotecas escrevem direto no console, sem passar pelo nosso registro. A do protocolo do
+ * WhatsApp despeja a sessão inteira de uma conversa, com as chaves, a cada "Closing session" — e no
+ * serviço a saída vai para o journal. Daqui em diante só sai texto: `info`, `warn`, `debug` e `trace`
+ * ficam mudos (é por eles que as bibliotecas falam); `log` e `error` continuam, mas nunca imprimem
+ * objeto, e número de telefone sai mascarado.
+ */
+export function calarBibliotecas(alvo: ConsoleDoProcesso = console): void {
+  const soTexto = (original: (...partes: unknown[]) => void) => (...partes: unknown[]): void => {
+    original(semNumeros(partes.map((p) => (typeof p === 'string' ? p : '[omitido]')).join(' ')))
+  }
+  alvo.log = soTexto(alvo.log.bind(alvo))
+  alvo.error = soTexto(alvo.error.bind(alvo))
+  const mudo = (): void => {}
+  alvo.info = mudo
+  alvo.warn = mudo
+  alvo.debug = mudo
+  alvo.trace = mudo
+}
+
 /** Este módulo é o arquivo que o `node` foi chamado para rodar? Compara o caminho de verdade: chamado por link simbólico também conta. */
 export function rodandoComoPrograma(urlDoModulo: string, chamado: string | undefined): boolean {
   if (!chamado) return false
@@ -468,6 +490,7 @@ export function rodandoComoPrograma(urlDoModulo: string, chamado: string | undef
 
 // Só roda quando é o programa chamado (o teste importa este arquivo sem ligar nada).
 if (rodandoComoPrograma(import.meta.url, process.argv[1])) {
+  calarBibliotecas()
   principal(process.argv.slice(2))
     .then((codigo) => { if (codigo !== undefined) process.exit(codigo) })
     .catch((e) => {
