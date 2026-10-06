@@ -15,8 +15,10 @@ alter table public.whatsapp_contatos add column if not exists jid text;
 -- 2. Um registro por pessoa e por evento: é o que impede mandar duas vezes
 create table if not exists public.whatsapp_envios (
   contato_id uuid not null references public.whatsapp_contatos(id) on delete cascade,
-  -- 'AAAA-MM-DD:resumo-07', 'AAAA-MM-DD:lembrete-12' ou 'AAAA-MM-DD:antes'
-  chave text not null,
+  -- 'AAAA-MM-DD:resumo-07', 'AAAA-MM-DD:lembrete-12' ou 'AAAA-MM-DD:antes'. O formato é conferido aqui, e não
+  -- só no serviço: junto da chave primária, garante no máximo 3 envios por pessoa por dia, seja qual for a
+  -- versão do programa que a VM baixou.
+  chave text not null check (chave ~ '^\d{4}-\d{2}-\d{2}:(resumo-07|lembrete-12|antes)$'),
   tipo text not null check (tipo in ('resumo-07', 'lembrete-12', 'antes')),
   situacao text not null default 'enviando' check (situacao in ('enviando', 'enviado', 'falhou', 'pulado')),
   criado_em timestamptz not null default now(),
