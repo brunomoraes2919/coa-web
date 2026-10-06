@@ -11,7 +11,7 @@ const fazenda = (id: string, coaId: number, nome: string, celulaId: string | nul
 const FAZENDAS = [fazenda('a', 1, 'Globo', 'c1'), fazenda('b', 2, 'Nebraska', 'c2'), fazenda('c', 3, 'Três Flechas', 'c2'), fazenda('d', 4, 'Sem Talhão', null)]
 const contato = (extra: Partial<ContatoWpp> = {}): ContatoWpp => ({
   id: 'x', nome: 'João da Silva', telefone: '5565999990001', todasFazendas: false, fazendas: [2], alertaJanela: true,
-  ativo: true, confirmadoEm: '2026-10-01T00:00:00Z', confirmadoPor: 'mensagem', jid: null, ...extra,
+  ativo: true, confirmadoEm: '2026-10-01T00:00:00Z', confirmadoPor: 'mensagem', jid: null, atualizadoEm: null, ...extra,
 })
 const NOITE = { inicio: 19 * 60, fim: 21 * 60 + 30, dias: 5 }
 const TARDE = { inicio: 21 * 60 + 50, fim: 22 * 60, dias: 3 }

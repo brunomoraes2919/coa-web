@@ -27,12 +27,20 @@ describe('banco', () => {
   })
   it('contatos: junta as fazendas de cada um', async () => {
     const r = rede({
-      'whatsapp_contatos?': { corpo: [{ id: 'a', nome: 'João', telefone: '5565999990001', todas_fazendas: false, alerta_janela: true, ativo: true, confirmado_em: '2026-10-01T00:00:00Z', confirmado_por: 'mensagem', jid: null }] },
+      'whatsapp_contatos?': { corpo: [{ id: 'a', nome: 'João', telefone: '5565999990001', todas_fazendas: false, alerta_janela: true, ativo: true, confirmado_em: '2026-10-01T00:00:00Z', confirmado_por: 'mensagem', jid: null, atualizado_em: '2026-10-02T12:00:00Z' }] },
       'whatsapp_contato_fazendas?': { corpo: [{ contato_id: 'a', fazenda_id: 2 }, { contato_id: 'outro', fazenda_id: 9 }] },
     })
     const resultado = await banco(r).contatos()
     expect(r.chamadas[1].url).toContain('whatsapp_contato_fazendas?select=*&order=contato_id,fazenda_id')
-    expect(resultado).toEqual([{ id: 'a', nome: 'João', telefone: '5565999990001', todasFazendas: false, fazendas: [2], alertaJanela: true, ativo: true, confirmadoEm: '2026-10-01T00:00:00Z', confirmadoPor: 'mensagem', jid: null }])
+    expect(resultado).toEqual([{ id: 'a', nome: 'João', telefone: '5565999990001', todasFazendas: false, fazendas: [2], alertaJanela: true, ativo: true, confirmadoEm: '2026-10-01T00:00:00Z', confirmadoPor: 'mensagem', jid: null, atualizadoEm: '2026-10-02T12:00:00Z' }])
+  })
+  it('A4. contatos: atualizado_em vazio (ou ausente) vira null', async () => {
+    const linha = { id: 'a', nome: 'João', telefone: '5565999990001', todas_fazendas: false, alerta_janela: true, ativo: true, confirmado_em: null, confirmado_por: null, jid: null }
+    const r = rede({
+      'whatsapp_contatos?': { corpo: [{ ...linha, atualizado_em: null }, { ...linha, id: 'b' }] },
+      'whatsapp_contato_fazendas?': { corpo: [] },
+    })
+    expect((await banco(r).contatos()).map((c) => c.atualizadoEm)).toEqual([null, null])
   })
   it('fazendas: centro dos talhões vira o quadrado; sem talhão fica sem quadrado', async () => {
     const quadrado = { type: 'Polygon', coordinates: [[[-50.4, -12.6], [-50.2, -12.6], [-50.2, -12.4], [-50.4, -12.4], [-50.4, -12.6]]] }

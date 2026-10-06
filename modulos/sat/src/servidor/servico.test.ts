@@ -33,7 +33,7 @@ const contato = (extra: Partial<ContatoWpp> = {}): ContatoWpp => {
   const telefone = extra.telefone ?? '5565999990001'
   return {
     id: 'c-ana', nome: 'Ana Souza', telefone, todasFazendas: false, fazendas: [2], alertaJanela: true,
-    ativo: true, confirmadoEm: '2026-10-01T00:00:00Z', confirmadoPor: 'mensagem', jid: jidDe(telefone), ...extra,
+    ativo: true, confirmadoEm: '2026-10-01T00:00:00Z', confirmadoPor: 'mensagem', jid: jidDe(telefone), atualizadoEm: null, ...extra,
   }
 }
 const ANA = contato()
@@ -248,7 +248,7 @@ function montar(opcoes: Opcoes = {}, inicio = em(7)) {
   }
   const pausasEntrePessoas = () => sonos.filter((ms) => ms >= 20_000 && ms < PRAZO_DO_WHATSAPP)
   const contador = () => (servico as unknown as { contador: ContadorDoDia }).contador
-  const recebida = (c: ContatoWpp, texto: string) => servico.recebida({ jid: jidDe(c.telefone), texto })
+  const recebida = (c: ContatoWpp, texto: string, em: number | null = null) => servico.recebida({ jid: jidDe(c.telefone), texto, em })
   /** Os avisos gravados em `ultimo_erro`, na ordem (sem os batimentos, que não mexem nele). */
   const avisos = () => banco.estados.filter((e) => e.ultimoErro !== undefined).map((e) => e.ultimoErro)
   return { servico, banco, wpp, trimble, relogio, registro, sonos, ordem, gancho, volta, pausasEntrePessoas, contador, recebida, avisos }
@@ -818,7 +818,7 @@ describe('servico: ATIVAR e SAIR', () => {
     const novo = contato({ confirmadoEm: null, confirmadoPor: null, ativo: false, jid: null, fazendas: [2, 3] })
     for (const jid of [jidDe('5565999990001'), '556599990001@s.whatsapp.net']) {
       const c = montar({ contatos: [novo] })
-      await c.servico.recebida({ jid, texto: 'Ativar' })
+      await c.servico.recebida({ jid, texto: 'Ativar', em: null })
       expect(c.banco.confirmacoes).toEqual([['c-ana', jid]])
       expect(c.wpp.enviados).toEqual([{ jid, texto: textoAtivado(novo, ['Nebraska', 'Três Flechas']) }])
       semNumerosNoRegistro(c.registro)
@@ -828,17 +828,17 @@ describe('servico: ATIVAR e SAIR', () => {
   it('16. SAIR pausa o contato e responde', async () => {
     const c = montar()
     const jid = jidDe('5565999990001')
-    await c.servico.recebida({ jid, texto: ' sair ' })
+    await c.servico.recebida({ jid, texto: ' sair ', em: null })
     expect(c.banco.pausas).toEqual(['c-ana'])
     expect(c.wpp.enviados).toEqual([{ jid, texto: textoSaiu(ANA) }])
   })
 
   it('17. número não cadastrado ou texto que não é comando: nada é gravado nem enviado, e o texto não vai ao registro', async () => {
     const c = montar()
-    await c.servico.recebida({ jid: jidDe('5565999990009'), texto: 'ATIVAR' })
-    await c.servico.recebida({ jid: jidDe('5565999990009'), texto: 'sair' })
-    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'SEGREDO-XYZ preciso falar com alguém' })
-    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'ativar por favor' })
+    await c.servico.recebida({ jid: jidDe('5565999990009'), texto: 'ATIVAR', em: null })
+    await c.servico.recebida({ jid: jidDe('5565999990009'), texto: 'sair', em: null })
+    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'SEGREDO-XYZ preciso falar com alguém', em: null })
+    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'ativar por favor', em: null })
     expect(c.banco.escritas).toBe(0)
     expect(c.wpp.enviados).toEqual([])
     const tudo = c.registro.join('\n')
@@ -850,14 +850,14 @@ describe('servico: ATIVAR e SAIR', () => {
   it('com o teto do dia estourado o SAIR vale do mesmo jeito, só a resposta não sai', async () => {
     const c = montar()
     for (const _ of vezes(TETO_DO_DIA)) c.contador().contar(null)
-    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'SAIR' })
+    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
     expect(c.banco.pausas).toEqual(['c-ana'])
     expect(c.wpp.enviados).toEqual([])
   })
 
   it('a resposta conta para o teto do dia', async () => {
     const c = montar()
-    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'SAIR' })
+    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
     expect(c.contador().total).toBe(1)
   })
 
@@ -1006,6 +1006,168 @@ describe('servico: ATIVAR e SAIR', () => {
   })
 })
 
+describe('servico: gravação na chegada e respostas espaçadas (duas filas)', () => {
+  const EVA = contato({ id: 'c-eva', nome: 'Eva Prado', telefone: '5565999990005' })
+  const CINCO = [ANA, BRUNO, CARLA, DIEGO, EVA]
+  const entreRespostas = (ms: number) => ms >= 3_000 && ms < 8_000
+  const gravacoes = (c: ReturnType<typeof montar>) => c.ordem.filter((o) => o === 'pausar' || o === 'confirmar')
+
+  it('A1. lote de 5 SAIR: os 5 são gravados sem esperar a resposta anterior; as respostas saem depois, uma por vez e espaçadas', async () => {
+    const c = montar({ contatos: CINCO })
+    const t = trava()
+    // a segunda resposta só anda quando o teste solta a primeira pausa entre respostas
+    c.gancho.aoDormir = (ms) => (entreRespostas(ms) ? t.espera : Promise.resolve())
+    const lote = Promise.all(CINCO.map((p) => c.recebida(p, 'SAIR')))
+    await umInstante()
+    expect(c.banco.pausas).toEqual(CINCO.map((p) => p.id))
+    expect(c.wpp.enviados).toHaveLength(1)
+    expect(c.sonos.filter(entreRespostas)).toHaveLength(1)
+    t.soltar()
+    await lote
+    expect(c.wpp.enviados.map((e) => e.jid)).toEqual(CINCO.map((p) => jidDe(p.telefone)))
+    const esperas = c.sonos.filter((ms) => ms !== PRAZO_DO_WHATSAPP)
+    expect(esperas).toHaveLength(4)
+    for (const ms of esperas) expect(entreRespostas(ms)).toBe(true)
+  })
+
+  it('A1. SAIR e ATIVAR da mesma pessoa no lote, com as respostas paradas: ambos são gravados e o estado final é o do último', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    const t = trava()
+    c.gancho.aoDormir = (ms) => (entreRespostas(ms) ? t.espera : Promise.resolve())
+    const lote = Promise.all([c.recebida(ANA, 'SAIR'), c.recebida(BRUNO, 'SAIR'), c.recebida(BRUNO, 'ATIVAR')])
+    await umInstante()
+    expect(gravacoes(c)).toEqual(['pausar', 'pausar', 'confirmar'])
+    expect(c.banco.contatosLista[1].ativo).toBe(true)
+    expect(c.wpp.enviados).toHaveLength(1)
+    t.soltar()
+    await lote
+    expect(c.wpp.enviados).toHaveLength(3)
+  })
+
+  it('A1. ATIVAR e depois SAIR da mesma pessoa: o SAIR (que ainda espera a vez de gravar) já segura os alertas, e o ATIVAR não solta a marca dele', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    const t = trava()
+    // só a primeira gravação da pausa (a do SAIR) fica parada; a volta, que também tenta pausar, não
+    let primeira = true
+    c.banco.antesDePausar = () => {
+      if (!primeira) return Promise.resolve()
+      primeira = false
+      return t.espera
+    }
+    const lote = Promise.all([c.recebida(BRUNO, 'ATIVAR'), c.recebida(BRUNO, 'SAIR')])
+    await umInstante()
+    expect(gravacoes(c)).toEqual(['confirmar']) // o SAIR está na gravação, parado em pausar()
+    await c.volta(7)
+    expect(alertasPara(c, '5565999990002')).toEqual([])
+    expect(alertasPara(c, '5565999990001')).toHaveLength(1)
+    t.soltar()
+    await lote
+    expect(c.banco.contatosLista[1].ativo).toBe(false)
+  })
+
+  it('A1. aguardarGravacoes com a fila vazia resolve na hora, sem esperar prazo nenhum', async () => {
+    const c = montar()
+    await c.servico.aguardarGravacoes(10_000)
+    expect(c.sonos).toEqual([])
+  })
+
+  it('A1. aguardarGravacoes espera a gravação que está andando e resolve quando ela acaba, antes do prazo', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    const gravacao = trava()
+    const prazo = trava()
+    c.banco.antesDePausar = () => gravacao.espera
+    c.gancho.aoDormir = (ms) => (ms === 10_000 ? prazo.espera : Promise.resolve())
+    void c.recebida(BRUNO, 'SAIR')
+    let resolveu = false
+    const espera = c.servico.aguardarGravacoes(10_000).then(() => { resolveu = true })
+    await umInstante()
+    expect(resolveu).toBe(false)
+    gravacao.soltar()
+    await espera // sem soltar o prazo
+    expect(c.banco.pausas).toEqual(['c-bruno'])
+  })
+
+  it('A1. aguardarGravacoes respeita o prazo quando a gravação fica pendurada', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    const prazo = trava()
+    c.banco.antesDePausar = () => new Promise<void>(() => {}) // o banco nunca responde
+    c.gancho.aoDormir = (ms) => (ms === 10_000 ? prazo.espera : Promise.resolve())
+    void c.recebida(BRUNO, 'SAIR')
+    let resolveu = false
+    const espera = c.servico.aguardarGravacoes(10_000).then(() => { resolveu = true })
+    await umInstante()
+    expect(resolveu).toBe(false)
+    prazo.soltar()
+    await espera
+    expect(resolveu).toBe(true)
+    expect(c.sonos).toContain(10_000)
+  })
+
+  it('A1. aguardarGravacoes não espera as respostas: com a fila de gravação vazia e respostas paradas, resolve', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    const t = trava()
+    c.gancho.aoDormir = (ms) => (entreRespostas(ms) ? t.espera : Promise.resolve())
+    const lote = Promise.all([c.recebida(ANA, 'SAIR'), c.recebida(BRUNO, 'SAIR')])
+    await umInstante()
+    expect(c.banco.pausas).toHaveLength(2)
+    await c.servico.aguardarGravacoes(10_000)
+    expect(c.wpp.enviados).toHaveLength(1)
+    t.soltar()
+    await lote
+  })
+})
+
+describe('servico: ATIVAR velho da fila offline', () => {
+  const editadoAs8 = () => contato({ ativo: false, confirmadoEm: null, confirmadoPor: null, atualizadoEm: new Date(em(8)).toISOString() })
+
+  it('A4. ATIVAR de antes da última alteração do contato é ignorado: não grava e não responde', async () => {
+    const novo = editadoAs8()
+    const c = montar({ contatos: [novo] }, em(9))
+    await c.recebida(novo, 'ATIVAR', em(7))
+    expect(c.banco.confirmacoes).toEqual([])
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.escritas).toBe(0)
+    expect(c.registro.some((l) => l.includes('ignorada'))).toBe(true)
+    semNumerosNoRegistro(c.registro)
+  })
+
+  it('A4. ATIVAR de depois da alteração (ou sem carimbo de hora) vale', async () => {
+    for (const quando of [em(8, 30), em(8), null]) {
+      const novo = editadoAs8()
+      const c = montar({ contatos: [novo] }, em(9))
+      await c.recebida(novo, 'ATIVAR', quando)
+      expect(c.banco.confirmacoes, String(quando)).toHaveLength(1)
+      expect(c.wpp.enviados, String(quando)).toHaveLength(1)
+    }
+  })
+
+  it('A4. contato sem data de alteração: o ATIVAR vale com qualquer carimbo', async () => {
+    const novo = contato({ ativo: false, confirmadoEm: null, confirmadoPor: null, atualizadoEm: null })
+    const c = montar({ contatos: [novo] }, em(9))
+    await c.recebida(novo, 'ATIVAR', em(1))
+    expect(c.banco.confirmacoes).toHaveLength(1)
+  })
+
+  it('A4. o SAIR vale sempre, com qualquer data, e responde', async () => {
+    const editado = contato({ atualizadoEm: new Date(em(8)).toISOString() })
+    const c = montar({ contatos: [editado] }, em(9))
+    await c.recebida(editado, 'SAIR', em(7))
+    expect(c.banco.pausas).toEqual(['c-ana'])
+    expect(c.wpp.enviados).toEqual([{ jid: jidDe(editado.telefone), texto: textoSaiu(editado) }])
+  })
+
+  it('A4. ATIVAR velho que chega depois de um SAIR cuja gravação falhou não solta a marca: a pessoa continua sem receber', async () => {
+    const ana = contato({ atualizadoEm: new Date(em(6)).toISOString() })
+    const c = montar({ contatos: [ana] }, em(7))
+    c.banco.pausarLanca = true
+    await c.recebida(ana, 'SAIR', em(7))
+    await c.recebida(ana, 'ATIVAR', em(5)) // anterior à alteração das 06:00: ignorado
+    expect(c.banco.confirmacoes).toEqual([])
+    await c.volta(7)
+    expect(alertasPara(c, '5565999990001')).toEqual([])
+  })
+})
+
 describe('servico: restrição da conta e recusas de entrega', () => {
   it('enquanto houver restrição nenhum alerta e nenhuma resposta saem, e o aviso vai para o estado; vencido o prazo, volta', async () => {
     const c = montar({ contatos: [ANA, BRUNO] }, em(6))
@@ -1083,6 +1245,66 @@ describe('servico: restrição da conta e recusas de entrega', () => {
     expect(c.wpp.enviados).toHaveLength(6)
     expect(c.avisos()).toEqual(['WhatsApp recusou 3 mensagens seguidas: envios parados até amanhã'])
   })
+
+  it('A3. restrição com prazo de agora + 60 s (o que a biblioteca inventa) vale 6 horas, e o aviso diz quando tentar de novo', async () => {
+    const c = montar({}, em(6))
+    await c.servico.restricao(em(6) + 60_000, 'BIZ_QUALITY')
+    expect(c.avisos()).toEqual(['WhatsApp restringiu os envios: nova tentativa depois de 06/10 12:00'])
+    await c.volta(7)
+    await c.volta(11, 59)
+    expect(c.wpp.enviados).toEqual([])
+    await c.volta(12)
+    expect(c.wpp.enviados).toHaveLength(1)
+    expect(c.avisos()).toEqual(['WhatsApp restringiu os envios: nova tentativa depois de 06/10 12:00', null])
+  })
+
+  it('A3. o aviso de que a restrição sumiu, 2 minutos depois, é ignorado: continua parado', async () => {
+    const c = montar({}, em(6))
+    await c.servico.restricao(em(6) + 60_000, 'BIZ_QUALITY')
+    c.relogio.agora = em(6, 2)
+    await c.servico.restricao(null, 'restrição retirada')
+    expect(c.avisos()).toHaveLength(1)
+    await c.volta(7)
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.reservas).toEqual([])
+  })
+
+  it('A3. passado o prazo guardado, o aviso de que a restrição sumiu é aceito', async () => {
+    const c = montar({}, em(6))
+    await c.servico.restricao(em(6) + 60_000, 'BIZ_QUALITY')
+    c.relogio.agora = em(12, 30)
+    await c.servico.restricao(null, 'restrição retirada')
+    expect(c.avisos()).toEqual(['WhatsApp restringiu os envios: nova tentativa depois de 06/10 12:00', null])
+  })
+
+  it('A3. restrição com prazo de 3 dias vale o prazo do servidor (e o aviso diz "até")', async () => {
+    const c = montar({}, em(6))
+    await c.servico.restricao(em(6, 0, 9), 'BIZ_QUALITY')
+    expect(c.avisos()).toEqual(['WhatsApp restringiu os envios até 09/10 06:00'])
+    await c.volta(7, 0, 8)
+    expect(c.wpp.enviados).toEqual([])
+    await c.volta(7, 0, 9)
+    expect(c.wpp.enviados).toHaveLength(1)
+  })
+
+  it('A3. um prazo de 10 minutos em diante vale como o servidor disse; a menos disso, não', async () => {
+    const dez = montar({}, em(6))
+    await dez.servico.restricao(em(6, 10), '')
+    expect(dez.avisos()).toEqual(['WhatsApp restringiu os envios até 06/10 06:10'])
+    const nove = montar({}, em(6))
+    await nove.servico.restricao(em(6, 9, 6), '')
+    expect(nove.avisos()).toEqual(['WhatsApp restringiu os envios: nova tentativa depois de 06/10 12:00'])
+  })
+
+  it('A3. um prazo desconhecido que chega depois não encurta (nem renova) uma restrição mais longa já guardada', async () => {
+    const c = montar({}, em(6))
+    await c.servico.restricao(em(6, 0, 9), 'BIZ_QUALITY')
+    c.relogio.agora = em(6, 5)
+    await c.servico.restricao(em(6, 6), 'BIZ_QUALITY')
+    expect(c.avisos()).toEqual(['WhatsApp restringiu os envios até 09/10 06:00'])
+    await c.volta(7, 0, 8)
+    expect(c.wpp.enviados).toEqual([])
+  })
 })
 
 describe('servico: avisos em ultimo_erro', () => {
@@ -1097,6 +1319,7 @@ describe('servico: avisos em ultimo_erro', () => {
     const c = montar()
     await semTrimble(c)
     await c.servico.restricao(em(15), 'BIZ_QUALITY')
+    c.relogio.agora = em(15, 1) // o aviso de que a restrição sumiu só vale depois do prazo
     await c.servico.restricao(null, 'restrição retirada')
     c.trimble.sempreFalha = false
     await c.volta(9, 0)
@@ -1223,7 +1446,7 @@ describe('servico: estado, batimento e limpeza', () => {
     expect(c.wpp.enviados).toEqual([])
     expect(c.wpp.resolvidos).toEqual([])
     await c.servico.conexao(true)
-    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'SAIR' })
+    await c.servico.recebida({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
     expect(c.banco.escritas).toBe(0)
   })
 

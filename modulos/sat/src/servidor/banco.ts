@@ -100,6 +100,7 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
         confirmadoEm: l.confirmado_em ?? null,
         confirmadoPor: l.confirmado_por ?? null,
         jid: l.jid ?? null,
+        atualizadoEm: l.atualizado_em ?? null,
       }))
     },
 
@@ -182,4 +183,5 @@ interface LinhaContato {
   confirmado_em: string | null
   confirmado_por: 'mensagem' | 'manual' | null
   jid: string | null
+  atualizado_em: string | null
 }

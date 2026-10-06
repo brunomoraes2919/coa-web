@@ -7,8 +7,8 @@ const JID_A = '5565999990001@s.whatsapp.net'
 
 describe('lerRecebida', () => {
   it('lê o texto de conversa individual (conversation e extendedTextMessage)', () => {
-    expect(lerRecebida({ key: { remoteJid: JID_A, fromMe: false }, message: { conversation: 'ATIVAR' } })).toEqual({ jid: JID_A, texto: 'ATIVAR' })
-    expect(lerRecebida({ key: { remoteJid: JID_A }, message: { extendedTextMessage: { text: 'sair' } } })).toEqual({ jid: JID_A, texto: 'sair' })
+    expect(lerRecebida({ key: { remoteJid: JID_A, fromMe: false }, message: { conversation: 'ATIVAR' } })).toEqual({ jid: JID_A, texto: 'ATIVAR', em: null })
+    expect(lerRecebida({ key: { remoteJid: JID_A }, message: { extendedTextMessage: { text: 'sair' } } })).toEqual({ jid: JID_A, texto: 'sair', em: null })
   })
 
   it('descarta mensagem minha, grupo, status e mensagem sem texto', () => {
@@ -20,15 +20,22 @@ describe('lerRecebida', () => {
   })
 
   it('endereço @lid usa o alternativo; sem alternativa é descartado', () => {
-    expect(lerRecebida({ key: { remoteJid: '123456789012345@lid', remoteJidAlt: JID_A }, message: { conversation: 'ATIVAR' } })).toEqual({ jid: JID_A, texto: 'ATIVAR' })
+    expect(lerRecebida({ key: { remoteJid: '123456789012345@lid', remoteJidAlt: JID_A }, message: { conversation: 'ATIVAR' } })).toEqual({ jid: JID_A, texto: 'ATIVAR', em: null })
     expect(lerRecebida({ key: { remoteJid: '123456789012345@lid' }, message: { conversation: 'ATIVAR' } })).toBeNull()
   })
 
   it('lê o texto embrulhado por mensagem temporária (efêmera) ou de visualização única', () => {
-    expect(lerRecebida({ key: { remoteJid: JID_A }, message: { ephemeralMessage: { message: { conversation: 'SAIR' } } } })).toEqual({ jid: JID_A, texto: 'SAIR' })
-    expect(lerRecebida({ key: { remoteJid: JID_A }, message: { ephemeralMessage: { message: { extendedTextMessage: { text: 'ativar' } } } } })).toEqual({ jid: JID_A, texto: 'ativar' })
-    expect(lerRecebida({ key: { remoteJid: JID_A }, message: { viewOnceMessageV2: { message: { conversation: 'SAIR' } } } })).toEqual({ jid: JID_A, texto: 'SAIR' })
+    expect(lerRecebida({ key: { remoteJid: JID_A }, message: { ephemeralMessage: { message: { conversation: 'SAIR' } } } })).toEqual({ jid: JID_A, texto: 'SAIR', em: null })
+    expect(lerRecebida({ key: { remoteJid: JID_A }, message: { ephemeralMessage: { message: { extendedTextMessage: { text: 'ativar' } } } } })).toEqual({ jid: JID_A, texto: 'ativar', em: null })
+    expect(lerRecebida({ key: { remoteJid: JID_A }, message: { viewOnceMessageV2: { message: { conversation: 'SAIR' } } } })).toEqual({ jid: JID_A, texto: 'SAIR', em: null })
     expect(lerRecebida({ key: { remoteJid: JID_A }, message: { ephemeralMessage: { message: {} } } })).toBeNull()
+  })
+
+  it('A4. leva o carimbo da mensagem em ms (número ou Long, em segundos); sem carimbo legível é null', () => {
+    const base = { key: { remoteJid: JID_A }, message: { conversation: 'ATIVAR' } }
+    expect(lerRecebida({ ...base, messageTimestamp: 1_790_000_000 })?.em).toBe(1_790_000_000_000)
+    expect(lerRecebida({ ...base, messageTimestamp: { toNumber: () => 1_790_000_000 } })?.em).toBe(1_790_000_000_000)
+    for (const ruim of [undefined, null, 0, -5, 'texto', NaN]) expect(lerRecebida({ ...base, messageTimestamp: ruim })?.em, String(ruim)).toBeNull()
   })
 
   it('descarta número estrangeiro, canal (newsletter) e @lid com alternativa que não é de telefone', () => {
@@ -67,6 +74,8 @@ function montar(extra: Partial<OpcoesWhatsapp> = {}) {
   const relogio = { agora: new Date(2026, 9, 6, 9, 0).getTime() }
   /** Com `segurar`, a pausa longa (1 h) só termina quando o teste chama `liberar()`. */
   const pausa = { segurar: false, liberar: () => {} }
+  /** Com `aguardar`, o prazo de 5 s da consulta ao mapa @lid só vence quando o teste chama `estourar()`. */
+  const prazoDoMapa = { aguardar: false, estourar: () => {} }
   const opcoes: OpcoesWhatsapp = {
     pastaSessao: 'sessao-falsa',
     aoReceber,
@@ -83,17 +92,19 @@ function montar(extra: Partial<OpcoesWhatsapp> = {}) {
       estadoDaSessao: async () => ({ state: { falso: true }, saveCreds }),
       dormir: async (ms) => {
         esperas.push(ms)
+        if (prazoDoMapa.aguardar && ms === PRAZO_DO_MAPA) await new Promise<void>((r) => { prazoDoMapa.estourar = r })
         if (pausa.segurar && ms >= HORA) await new Promise<void>((r) => { pausa.liberar = r })
       },
       agora: () => relogio.agora,
     },
     ...extra,
   }
-  return { opcoes, sockets, configs, esperas, saveCreds, aoReceber, aoMudarConexao, aoRestringir, aoFalharEntrega, relogio, pausa }
+  return { opcoes, sockets, configs, esperas, saveCreds, aoReceber, aoMudarConexao, aoRestringir, aoFalharEntrega, relogio, pausa, prazoDoMapa }
 }
 
 const MINUTO = 60_000
 const HORA = 60 * MINUTO
+const PRAZO_DO_MAPA = 5_000
 
 const proximoCiclo = () => new Promise<void>((r) => setImmediate(r))
 const queda = (codigo: number) => ({ connection: 'close', lastDisconnect: { error: { output: { statusCode: codigo } } } })
@@ -236,6 +247,99 @@ describe('conectarWhatsapp', () => {
     expect(w.precisaParear).toBe(false)
   })
 
+  it('A2. close 500 (código-coringa da biblioteca): não pede pareamento, avisa, espera 1 hora e tenta de novo', async () => {
+    const m = montar()
+    m.pausa.segurar = true
+    const w = await conectarWhatsapp(m.opcoes)
+    m.sockets[0].emit('connection.update', { connection: 'open' })
+    m.sockets[0].emit('connection.update', queda(500))
+    await proximoCiclo()
+    expect(w.precisaParear).toBe(false)
+    expect(w.conectado).toBe(false)
+    expect(m.aoMudarConexao).toHaveBeenLastCalledWith(false, 'erro de sessão: nova tentativa em 1 hora')
+    expect(m.esperas).toEqual([60 * MINUTO])
+    expect(m.sockets).toHaveLength(1)
+    m.pausa.liberar()
+    await proximoCiclo()
+    expect(m.sockets).toHaveLength(2)
+    // se o novo socket cair do mesmo jeito, é outra hora de espera
+    m.sockets[1].emit('connection.update', queda(500))
+    await proximoCiclo()
+    expect(m.esperas).toEqual([60 * MINUTO, 60 * MINUTO])
+    expect(w.precisaParear).toBe(false)
+  })
+
+  it('A2. o 500 não entra na conta das quedas por hora', async () => {
+    const m = montar()
+    m.pausa.segurar = true
+    const w = await conectarWhatsapp(m.opcoes)
+    m.sockets[0].emit('connection.update', queda(500))
+    await proximoCiclo()
+    m.pausa.liberar()
+    await proximoCiclo()
+    // 10 quedas comuns depois do 500, em menos de uma hora, ainda são toleradas
+    for (let i = 1; i < 11; i++) {
+      m.sockets[i].emit('connection.update', queda(428))
+      await proximoCiclo()
+    }
+    expect(m.esperas.filter((ms) => ms === 60 * MINUTO)).toHaveLength(1)
+    expect(w.precisaParear).toBe(false)
+  })
+
+  it('A6. um segundo close durante a pausa de 1 hora (muitas quedas ou 500) é ignorado e não apaga o motivo', async () => {
+    const porQuedas = montar()
+    await conectarWhatsapp(porQuedas.opcoes)
+    await ateAPausaLonga(porQuedas)
+    const chamadas = porQuedas.aoMudarConexao.mock.calls.length
+    porQuedas.sockets[10].emit('connection.update', queda(428))
+    await proximoCiclo()
+    expect(porQuedas.aoMudarConexao).toHaveBeenCalledTimes(chamadas)
+    expect(porQuedas.aoMudarConexao).toHaveBeenLastCalledWith(false, 'muitas quedas seguidas: nova tentativa em 1 hora')
+    expect(porQuedas.esperas.filter((ms) => ms === 60 * MINUTO)).toHaveLength(1)
+
+    const por500 = montar()
+    por500.pausa.segurar = true
+    await conectarWhatsapp(por500.opcoes)
+    por500.sockets[0].emit('connection.update', queda(500))
+    await proximoCiclo()
+    por500.sockets[0].emit('connection.update', queda(500))
+    por500.sockets[0].emit('connection.update', queda(428))
+    await proximoCiclo()
+    expect(por500.aoMudarConexao).toHaveBeenCalledTimes(1)
+    expect(por500.aoMudarConexao).toHaveBeenLastCalledWith(false, 'erro de sessão: nova tentativa em 1 hora')
+    // acabada a pausa o socket novo nasce, e uma queda dele volta a ser avisada
+    por500.pausa.liberar()
+    await proximoCiclo()
+    por500.sockets[1].emit('connection.update', queda(428))
+    await proximoCiclo()
+    expect(por500.aoMudarConexao).toHaveBeenLastCalledWith(false, 'conexão perdida (428)')
+  })
+
+  it('A7. encerrar() durante a pausa de 1 hora cancela a espera: nenhum timer fica pendente e nenhum socket nasce', async () => {
+    vi.useFakeTimers()
+    try {
+      const m = montar()
+      // sem o `dormir` injetado vale o de verdade (setTimeout), que o relógio falso controla
+      ;(m.opcoes.dependencias as Record<string, unknown>).dormir = undefined
+      const w = await conectarWhatsapp(m.opcoes)
+      for (let i = 0; i < 10; i++) {
+        m.sockets[i].emit('connection.update', queda(428))
+        await vi.advanceTimersByTimeAsync(5 * MINUTO)
+      }
+      expect(m.sockets).toHaveLength(11)
+      m.sockets[10].emit('connection.update', queda(428))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(m.aoMudarConexao).toHaveBeenLastCalledWith(false, 'muitas quedas seguidas: nova tentativa em 1 hora')
+      expect(vi.getTimerCount()).toBe(1) // a pausa
+      await w.encerrar()
+      expect(vi.getTimerCount()).toBe(0)
+      await vi.advanceTimersByTimeAsync(2 * HORA)
+      expect(m.sockets).toHaveLength(11)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('encerrar() durante a pausa de 1 hora: terminada a pausa, nenhum socket novo nasce', async () => {
     const m = montar()
     const w = await conectarWhatsapp(m.opcoes)
@@ -284,7 +388,7 @@ describe('conectarWhatsapp', () => {
     const grupo = { key: { remoteJid: '120363000000000001@g.us' }, message: { conversation: 'oi' } }
     sockets[0].emit('messages.upsert', { type: 'notify', messages: [valida, grupo] })
     expect(aoReceber).toHaveBeenCalledTimes(1)
-    expect(aoReceber).toHaveBeenCalledWith({ jid: JID_A, texto: 'ATIVAR' })
+    expect(aoReceber).toHaveBeenCalledWith({ jid: JID_A, texto: 'ATIVAR', em: null })
     sockets[0].emit('messages.upsert', { type: 'notify', messages: [{ ...valida, messageTimestamp: Math.floor(relogio.agora / 1000) }] })
     expect(aoReceber).toHaveBeenCalledTimes(2)
     sockets[0].emit('messages.upsert', { type: 'outro', messages: [valida] })
@@ -300,7 +404,7 @@ describe('conectarWhatsapp', () => {
       await conectarWhatsapp(opcoes)
       sockets[0].emit('messages.upsert', { type: 'append', messages: [sair(segundos(relogio.agora - 47 * HORA))] })
       expect(aoReceber).toHaveBeenCalledTimes(1)
-      expect(aoReceber).toHaveBeenCalledWith({ jid: JID_A, texto: 'SAIR' })
+      expect(aoReceber).toHaveBeenCalledWith({ jid: JID_A, texto: 'SAIR', em: segundos(relogio.agora - 47 * HORA) * 1000 })
       // a biblioteca também entrega o carimbo como objeto (Long)
       sockets[0].emit('messages.upsert', { type: 'append', messages: [sair({ toNumber: () => segundos(relogio.agora - HORA) })] })
       expect(aoReceber).toHaveBeenCalledTimes(2)
@@ -326,22 +430,28 @@ describe('conectarWhatsapp', () => {
   describe('remetente em @lid sem o telefone junto', () => {
     const LID = '123456789012345@lid'
     const doLid = (texto: string) => ({ key: { remoteJid: LID }, message: { conversation: texto } })
+    // o prazo do mapa só vence quando o teste manda: senão a corrida com a resposta do mapa seria sorte
+    const montarLid = () => {
+      const m = montar()
+      m.prazoDoMapa.aguardar = true
+      return m
+    }
 
     it('resolve o telefone pelo mapa da biblioteca e entrega com o endereço de telefone, sem o aparelho', async () => {
-      const { opcoes, sockets, aoReceber } = montar()
+      const { opcoes, sockets, aoReceber } = montarLid()
       await conectarWhatsapp(opcoes)
       sockets[0].pnDoLid.mockResolvedValue('5565999990001:0@s.whatsapp.net')
       sockets[0].emit('messages.upsert', { type: 'notify', messages: [doLid('ATIVAR')] })
       await proximoCiclo()
       expect(sockets[0].pnDoLid).toHaveBeenCalledWith(LID)
       expect(aoReceber).toHaveBeenCalledTimes(1)
-      expect(aoReceber).toHaveBeenCalledWith({ jid: JID_A, texto: 'ATIVAR' })
+      expect(aoReceber).toHaveBeenCalledWith({ jid: JID_A, texto: 'ATIVAR', em: null })
     })
 
     it('o mapa não conhece, devolve número de fora ou falha: descarta, e o registro não leva o texto', async () => {
       const log = vi.spyOn(console, 'log').mockImplementation(() => {})
       try {
-        const { opcoes, sockets, aoReceber } = montar()
+        const { opcoes, sockets, aoReceber } = montarLid()
         await conectarWhatsapp(opcoes)
         sockets[0].emit('messages.upsert', { type: 'notify', messages: [doLid('ATIVAR')] })
         await proximoCiclo()
@@ -360,7 +470,7 @@ describe('conectarWhatsapp', () => {
     })
 
     it('mensagem sem texto nem consulta o mapa', async () => {
-      const { opcoes, sockets, aoReceber } = montar()
+      const { opcoes, sockets, aoReceber } = montarLid()
       await conectarWhatsapp(opcoes)
       sockets[0].emit('messages.upsert', { type: 'notify', messages: [{ key: { remoteJid: LID }, message: {} }, { key: { remoteJid: LID, fromMe: true }, message: { conversation: 'oi' } }] })
       await proximoCiclo()
@@ -368,8 +478,36 @@ describe('conectarWhatsapp', () => {
       expect(aoReceber).not.toHaveBeenCalled()
     })
 
+    it('A5. o mapa que não responde em 5 s vira "sem telefone": a mensagem seguinte da fila é tratada', async () => {
+      const m = montarLid()
+      await conectarWhatsapp(m.opcoes)
+      let rejeitar: (e: Error) => void = () => {}
+      m.sockets[0].pnDoLid.mockReturnValueOnce(new Promise<string>((_, r) => { rejeitar = r }))
+      m.sockets[0].emit('messages.upsert', { type: 'notify', messages: [doLid('ATIVAR'), { key: { remoteJid: JID_A }, message: { conversation: 'SAIR' } }] })
+      await proximoCiclo()
+      expect(m.esperas).toContain(PRAZO_DO_MAPA)
+      expect(m.aoReceber).not.toHaveBeenCalled() // a ordem de chegada se mantém enquanto o prazo corre
+      m.prazoDoMapa.estourar()
+      await proximoCiclo()
+      expect(m.aoReceber.mock.calls.map((c) => c[0].texto)).toEqual(['SAIR'])
+      // a consulta que falha depois do prazo não vira rejeição solta
+      rejeitar(new Error('tarde demais'))
+      await proximoCiclo()
+    })
+
+    it('A5. o mapa que responde antes do prazo vale, e o prazo vencido depois não entrega de novo', async () => {
+      const m = montarLid()
+      await conectarWhatsapp(m.opcoes)
+      m.sockets[0].pnDoLid.mockResolvedValue('5565999990001:0@s.whatsapp.net')
+      m.sockets[0].emit('messages.upsert', { type: 'notify', messages: [doLid('ATIVAR')] })
+      await proximoCiclo()
+      m.prazoDoMapa.estourar()
+      await proximoCiclo()
+      expect(m.aoReceber).toHaveBeenCalledTimes(1)
+    })
+
     it('a ordem de chegada se mantém: a que espera o mapa não é ultrapassada pela seguinte', async () => {
-      const { opcoes, sockets, aoReceber } = montar()
+      const { opcoes, sockets, aoReceber } = montarLid()
       await conectarWhatsapp(opcoes)
       let soltar: (pn: string) => void = () => {}
       sockets[0].pnDoLid.mockReturnValueOnce(new Promise<string>((r) => { soltar = r }))
@@ -676,7 +814,7 @@ describe('conectarWhatsapp', () => {
       const msg = (texto: string) => ({ key: { remoteJid: JID_A }, message: { conversation: texto } })
       expect(() => sockets[0].emit('messages.upsert', { type: 'notify', messages: [msg('primeira'), msg('segunda')] })).not.toThrow()
       expect(aoReceber).toHaveBeenCalledTimes(2)
-      expect(aoReceber).toHaveBeenLastCalledWith({ jid: JID_A, texto: 'segunda' })
+      expect(aoReceber).toHaveBeenLastCalledWith({ jid: JID_A, texto: 'segunda', em: null })
       const registrado = JSON.stringify(log.mock.calls)
       expect(log).toHaveBeenCalled()
       expect(registrado).not.toContain('primeira')
@@ -705,7 +843,6 @@ describe('conectarWhatsapp', () => {
   it.each([
     [440, 'sessão em uso em outro lugar'],
     [403, 'acesso recusado pelo WhatsApp'],
-    [500, 'sessão inválida'],
     [411, 'versão do aparelho incompatível'],
   ])('close %i: para a reconexão e pede atenção', async (codigo, motivo) => {
     const { opcoes, sockets, aoMudarConexao, esperas } = montar()

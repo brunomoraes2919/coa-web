@@ -11,7 +11,7 @@ import type { Janela, PontoIono } from '../tipos'
 import { type Banco, criarBanco } from './banco'
 import { mascarar } from './comandos'
 import { MINUTO_LEMBRETE, MINUTO_RESUMO } from './agenda'
-import { type Dependencias, PRAZO_DO_WHATSAPP_MS, Servico } from './servico'
+import { type Dependencias, PRAZO_DAS_GRAVACOES_MS, PRAZO_DO_WHATSAPP_MS, Servico } from './servico'
 import { criarTrimble, janelasDeHoje } from './trimble'
 import { conectarWhatsapp, type OpcoesWhatsapp, type Whatsapp } from './whatsapp'
 
@@ -160,7 +160,8 @@ export async function ligarServico(p: PecasDoServico): Promise<void> {
 
   const dormirDoServico = (ms: number): Promise<void> => {
     // O prazo de uma chamada já feita ao WhatsApp não é interrompido: acordá-lo daria por falho um envio que ainda vai chegar.
-    if (ms === PRAZO_DO_WHATSAPP_MS) return dormir(ms)
+    // O da espera pelas gravações, na própria parada, também não: acordado (`parando` já é verdadeiro) deixaria de esperar.
+    if (ms === PRAZO_DO_WHATSAPP_MS || ms === PRAZO_DAS_GRAVACOES_MS) return dormir(ms)
     if (parando) return Promise.resolve()
     return new Promise<void>((resolver) => {
       const fim = () => {
@@ -235,6 +236,8 @@ export async function ligarServico(p: PecasDoServico): Promise<void> {
       if (voltaEmCurso) await Promise.race([voltaEmCurso, dormir(LIMITE_DA_VOLTA_MS)])
       const teto = setTimeout(() => p.sair(0), LIMITE_PARA_ENCERRAR_MS)
       teto.unref()
+      // um SAIR que o WhatsApp já deu como entregue tem de chegar ao banco; as respostas pendentes não se esperam
+      try { await s.aguardarGravacoes(PRAZO_DAS_GRAVACOES_MS) } catch (e) { p.registrar(`falha ao esperar as gravações: ${mensagemDe(e)}`) }
       // encerra a conexão antes de gravar: nada mais pode regravar "conectado" depois
       try { await whatsapp?.encerrar() } catch (e) { p.registrar(`falha ao encerrar a conexão: ${mensagemDe(e)}`) }
       try { await s.conexao(false, 'serviço parado') } catch (e) { p.registrar(`não gravei o estado: ${mensagemDe(e)}`) }

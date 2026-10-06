@@ -13,6 +13,8 @@ export interface ContatoWpp {
   confirmadoEm: string | null
   confirmadoPor: 'mensagem' | 'manual' | null
   jid: string | null
+  /** Última alteração do contato (ISO); um ATIVAR mais velho que isto não desfaz o que foi feito depois. */
+  atualizadoEm: string | null
 }
 
 export interface FazendaServidor {

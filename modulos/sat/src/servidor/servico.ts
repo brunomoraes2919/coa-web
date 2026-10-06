@@ -36,6 +36,8 @@ const NOVA_TENTATIVA_LENTA_TRIMBLE_MS = HORA_MS
 const PAUSA_ENTRE_QUADRADOS_MS = 2_000
 /** `enviar` e `resolverJid` podem ficar pendurados; sem prazo travariam o laço para sempre. */
 export const PRAZO_DO_WHATSAPP_MS = 60_000
+/** Na parada, quanto se espera pelas gravações de SAIR/ATIVAR já recebidas (a parada não interrompe esta espera). */
+export const PRAZO_DAS_GRAVACOES_MS = 10_000
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 const MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0]
 const MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2
@@ -45,6 +47,10 @@ const ERRO_TETO_DO_DIA = 'teto diário de mensagens atingido'
 const ERRO_SEM_WHATSAPP = 'número sem WhatsApp'
 const ERRO_PEDIU_PARA_SAIR = 'pediu para sair'
 const ERRO_RESTRICAO = 'WhatsApp restringiu os envios'
+/** Prazo de restrição a menos que isto à frente não é do servidor: é o "agora + 60 s" que a biblioteca põe quando ele não diz até quando. */
+const PRAZO_MINIMO_DE_RESTRICAO_MS = 10 * 60_000
+/** Sem prazo de verdade, a restrição vale isto a partir de agora. */
+const RESTRICAO_SEM_PRAZO_MS = 6 * HORA_MS
 const ERRO_RECUSAS = `WhatsApp recusou ${MAX_RECUSAS_SEGUIDAS} mensagens seguidas`
 const ESTOUROU = Symbol('prazo estourado')
 
@@ -60,6 +66,9 @@ class PrazoEstourado extends Error {
 }
 
 interface Reservada { contatoId: string; chave: string; situacao: SituacaoEnvio }
+
+/** A resposta a um ATIVAR/SAIR já gravado, à espera da vez na fila de respostas. */
+interface PedidoDeResposta { contato: ContatoWpp; jid: string; quem: string; texto: string }
 
 /** Um cálculo das janelas, que pode levar mais de uma tentativa: o que já respondeu não se consulta de novo. */
 interface Rodada {
@@ -97,19 +106,27 @@ export class Servico {
   private emVolta = false
   private semeado = false
   /**
-   * Números (`chaveDoNumero`) de quem mandou SAIR e cuja pausa o banco ainda não mostrou: ninguém
-   * marcado recebe nada. A marca só sai quando a leitura do banco já traz `ativo === false` ou
-   * quando a mesma pessoa manda ATIVAR.
+   * Números (`chaveDoNumero`) de quem mandou SAIR e cuja pausa o banco ainda não mostrou, com a ordem
+   * de chegada desse SAIR: ninguém marcado recebe nada. A marca só sai quando a leitura do banco já
+   * traz `ativo === false` ou quando um ATIVAR que chegou DEPOIS do SAIR foi gravado.
    */
-  private readonly pausados = new Set<string>()
+  private readonly pausados = new Map<string, number>()
+  /** Contador da ordem de chegada dos comandos (ATIVAR/SAIR). */
+  private chegadas = 0
   /** Só no ensaio: o que já foi registrado, para não repetir a cada minuto. */
   private readonly ensaiados = new Set<string>()
   private ensaioExplicado = false
   /** Números que o WhatsApp disse não existir, no dia: perguntar de novo todo minuto parece robô. */
   private semWhatsapp = { dia: '', telefones: new Set<string>() }
   private readonly respostas = new Map<string, { dia: string; n: number }>()
-  /** As mensagens recebidas são tratadas uma por vez, na ordem de chegada: esta é a ponta da fila. */
-  private filaDeRecebidas: Promise<void> = Promise.resolve()
+  /**
+   * Duas filas. A de gravação trata os comandos recebidos um por vez, na ordem de chegada e sem pausa:
+   * um SAIR tem de chegar ao banco antes de qualquer outra coisa (a ponta da fila é esta promessa).
+   * A de respostas envia uma por vez, com a pausa entre elas.
+   */
+  private filaDeGravacao: Promise<void> = Promise.resolve()
+  private gravacoesPendentes = 0
+  private filaDeRespostas: Promise<void> = Promise.resolve()
   private ultimaResposta: { em: number; pausa: number } | null = null
   /** Até quando o WhatsApp restringiu os envios da conta (`Infinity` = sem prazo informado). */
   private restritoAte: number | null = null
@@ -157,8 +174,9 @@ export class Servico {
   }
 
   /**
-   * Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado. Entra numa fila (uma é tratada
-   * por vez, na ordem de chegada): SAIR e ATIVAR da mesma pessoa não disputam a gravação.
+   * Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado. O comando entra na fila de
+   * gravação (um por vez, na ordem de chegada, sem esperar resposta nenhuma) e a resposta, se couber,
+   * na fila de respostas. Resolve quando a resposta foi tratada.
    */
   async recebida(m: MensagemRecebida): Promise<void> {
     // Qualquer outro texto é ignorado sem nem ir ao banco, e nenhum texto recebido vai ao registro.
@@ -169,32 +187,71 @@ export class Servico {
       this.registrar(`ensaio: comando de ${quem} ignorado`)
       return
     }
-    // Marcado de forma síncrona, na chegada e antes de entrar na fila: uma volta que comece agora,
-    // ou uma falha ao gravar, não pode deixar quem pediu para parar receber mais um alerta.
+    // O SAIR é marcado de forma síncrona, na chegada e antes de entrar na fila: uma volta que comece
+    // agora, ou uma falha ao gravar, não pode deixar quem pediu para parar receber mais um alerta.
+    // O ATIVAR não solta a marca aqui: só depois de gravado, e só se nenhum SAIR chegou depois dele.
+    const chegada = ++this.chegadas
     const numero = chaveDoNumero(m.jid)
-    if (numero) {
-      if (comando === 'sair') this.pausados.add(numero)
-      else this.pausados.delete(numero)
-    }
-    const vez = this.filaDeRecebidas.then(() => this.tratar(m, comando, numero, quem))
+    if (numero && comando === 'sair') this.pausados.set(numero, chegada)
+    this.gravacoesPendentes += 1
+    let daResposta: Promise<void> = Promise.resolve()
+    const gravacao = this.filaDeGravacao.then(async () => {
+      try {
+        const pedido = await this.gravar(m, comando, numero, quem, chegada)
+        if (pedido) daResposta = this.enfileirarResposta(pedido)
+      } finally {
+        this.gravacoesPendentes -= 1
+      }
+    })
     // a fila segue mesmo que uma mensagem dê erro
-    this.filaDeRecebidas = vez.catch(() => {})
-    await vez
+    this.filaDeGravacao = gravacao.catch(() => {})
+    await gravacao
+    await daResposta
+  }
+
+  /**
+   * Espera a fila de gravação esvaziar, no máximo `prazoMs` (o relógio é o `dormir` injetado). Não espera
+   * as respostas: o comando já está gravado, e uma resposta que se perder não desfaz nada.
+   */
+  async aguardarGravacoes(prazoMs: number): Promise<void> {
+    if (this.gravacoesPendentes === 0) return
+    let venceu = false
+    const prazo = this.d.dormir(prazoMs).then(() => { venceu = true })
+    while (this.gravacoesPendentes > 0 && !venceu) await Promise.race([this.filaDeGravacao, prazo])
   }
 
   /** O WhatsApp restringiu os envios da conta até `ate` (ms; `Infinity` = sem prazo), ou retirou a restrição (`null`). */
   async restricao(ate: number | null, motivo: string): Promise<void> {
     if (this.d.ensaio) return
-    if (ate === null || ate <= this.d.agora()) {
+    const agora = this.d.agora()
+    if (ate === null) {
       if (this.restritoAte === null) return
+      // A biblioteca limpa sozinha o prazo que ela inventou (60 s): "sumiu" antes do prazo guardado não vale.
+      // Sem prazo guardado (`Infinity`) não há o que esperar: o aviso de que sumiu é a retirada.
+      if (this.restritoAte > agora && Number.isFinite(this.restritoAte)) {
+        this.registrar('aviso de que a restrição de envios sumiu antes do prazo guardado: ignorado')
+        return
+      }
       this.restritoAte = null
       this.registrar('o WhatsApp retirou a restrição de envios')
       await this.avisar('restricao', null)
       return
     }
+    // Um prazo tão perto não é do servidor (ele não disse até quando): na dúvida, vale bem mais tempo.
+    // `!(… >=)` e não `<`: um prazo que não é número também entra aqui.
+    const presumido = !(ate - agora >= PRAZO_MINIMO_DE_RESTRICAO_MS)
+    const prazo = presumido ? agora + RESTRICAO_SEM_PRAZO_MS : ate
+    if (presumido && this.restritoAte !== null && this.restritoAte >= prazo) {
+      // já há uma restrição mais longa guardada: um prazo desses não a encurta
+      this.registrar('prazo de restrição de envios sem data de verdade: a restrição já guardada é mais longa e fica')
+      return
+    }
     // posto antes de qualquer espera: um envio que está para sair agora já enxerga
-    this.restritoAte = ate
-    const texto = `${ERRO_RESTRICAO} até ${Number.isFinite(ate) ? `${dataCurta(ate)} ${horaDe(ate)}` : 'novo aviso'}`
+    this.restritoAte = prazo
+    const quando = Number.isFinite(prazo) ? `${dataCurta(prazo)} ${horaDe(prazo)}` : ''
+    const texto = !Number.isFinite(prazo) ? `${ERRO_RESTRICAO} até novo aviso`
+      : presumido ? `${ERRO_RESTRICAO}: nova tentativa depois de ${quando}`
+        : `${ERRO_RESTRICAO} até ${quando}`
     this.registrar(`${texto}${motivo ? ` (${motivo})` : ''}: nada sai até lá`)
     await this.avisar('restricao', texto)
   }
@@ -233,17 +290,26 @@ export class Servico {
     this.d.registrar(semNumeros(linha))
   }
 
-  private async tratar(m: MensagemRecebida, comando: Comando, numero: string | null, quem: string): Promise<void> {
+  /** Um comando na fila de gravação: lê o contato e grava. Devolve a resposta a mandar, ou `null`. Nunca lança. */
+  private async gravar(m: MensagemRecebida, comando: Comando, numero: string | null, quem: string, chegada: number): Promise<PedidoDeResposta | null> {
     try {
       const contato = (await this.d.banco.contatos()).find((c) => mesmoNumero(c.telefone, m.jid))
       if (!contato) {
-        if (numero) this.pausados.delete(numero)
+        if (numero && this.pausados.get(numero) === chegada) this.pausados.delete(numero)
         this.registrar(`comando de número não cadastrado (${quem}) ignorado`)
-        return
+        return null
       }
       let resposta: string
       if (comando === 'ativar') {
+        // Um ATIVAR da fila de quando o serviço estava fora do ar (até 48 h) não desfaz o que o administrador fez depois.
+        // O SAIR não passa por aqui: vale com qualquer data (na dúvida, não enviar).
+        if (m.em !== null && contato.atualizadoEm !== null && m.em < Date.parse(contato.atualizadoEm)) {
+          this.registrar(`${quem}: mensagem de ativação anterior à última alteração do contato, ignorada`)
+          return null
+        }
         await this.d.banco.confirmar(contato.id, m.jid)
+        const marca = numero ? this.pausados.get(numero) : undefined
+        if (numero && marca !== undefined && marca < chegada) this.pausados.delete(numero)
         let nomes: string[] = []
         try {
           const fazendas = this.fazendas ?? await this.d.banco.fazendas()
@@ -259,11 +325,21 @@ export class Servico {
         resposta = textoSaiu(contato)
         this.registrar(`pausado: ${mascarar(contato.telefone)}`)
       }
-      await this.responder(contato, m.jid, quem, resposta)
+      return { contato, jid: m.jid, quem, texto: resposta }
     } catch (e) {
       // se foi SAIR, a marca fica: a próxima volta tenta gravar a pausa de novo
       this.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe(e)}`)
+      return null
     }
+  }
+
+  /** Põe a resposta na fila de respostas (uma por vez); a promessa devolvida nunca rejeita. */
+  private enfileirarResposta(p: PedidoDeResposta): Promise<void> {
+    const vez = this.filaDeRespostas
+      .then(() => this.responder(p.contato, p.jid, p.quem, p.texto))
+      .catch((e) => this.registrar(`falha ao responder a ${p.quem}: ${mensagemDe(e)}`))
+    this.filaDeRespostas = vez
+    return vez
   }
 
   private textoDosAvisos(): string | null {

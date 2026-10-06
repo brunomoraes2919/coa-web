@@ -5,7 +5,12 @@ import makeWASocket, {
 import { chaveDoNumero, mascarar } from './comandos'
 import { tempoDigitando } from './ritmo'
 
-export interface MensagemRecebida { jid: string; texto: string }
+export interface MensagemRecebida {
+  jid: string
+  texto: string
+  /** Quando a mensagem foi mandada, em ms (o carimbo dela); `null` quando a biblioteca não informa. */
+  em: number | null
+}
 
 export interface Whatsapp {
   readonly conectado: boolean
@@ -79,9 +84,14 @@ const MAXIMO_DE_QUEDAS_POR_HORA = 10
 /** Com quedas demais o serviço espera isto e tenta de novo sozinho: uma queda de internet da VM não pede ninguém. */
 const PAUSA_POR_MUITAS_QUEDAS_MS = HORA_MS
 const MOTIVO_MUITAS_QUEDAS = 'muitas quedas seguidas: nova tentativa em 1 hora'
+/** Na biblioteca o 500 é o código-coringa (erro de WebSocket ou `stream:error` sem código), não só "sessão inválida". */
+const CODIGO_ERRO_DE_SESSAO = DisconnectReason.badSession
+const MOTIVO_ERRO_DE_SESSAO = 'erro de sessão: nova tentativa em 1 hora'
 /** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido. */
 const VALIDADE_DA_FILA_MS = 48 * HORA_MS
 const PRAZO_DA_VERSAO_MS = 10_000
+/** A consulta ao mapa de endereços `@lid` é local; se pendurar, não pode travar as mensagens que vêm depois. */
+const PRAZO_DO_MAPA_MS = 5_000
 /** Quantas mensagens enviadas ficam lembradas para reconhecer uma recusa que chega depois. */
 const ENVIADAS_LEMBRADAS = 200
 
@@ -91,7 +101,6 @@ const MOTIVO_SEM_RECONEXAO: Record<number, string> = {
   [DisconnectReason.loggedOut]: 'sessão encerrada no celular',
   [DisconnectReason.connectionReplaced]: 'sessão em uso em outro lugar',
   [DisconnectReason.forbidden]: 'acesso recusado pelo WhatsApp',
-  [DisconnectReason.badSession]: 'sessão inválida',
   [DisconnectReason.multideviceMismatch]: 'versão do aparelho incompatível',
 }
 
@@ -112,7 +121,8 @@ export function lerRecebida(m: MensagemBruta): MensagemRecebida | null {
   // Descarta grupo, status/broadcast e número de fora do Brasil.
   if (!jid || chaveDoNumero(jid) === null) return null
   const texto = textoDe(m)
-  return texto ? { jid, texto } : null
+  const segundos = segundosDe(m.messageTimestamp)
+  return texto ? { jid, texto, em: segundos === null ? null : segundos * 1000 } : null
 }
 
 /** Remetente em `@lid` sem o telefone junto: só o mapa da biblioteca diz quem é. */
@@ -167,6 +177,10 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
   let precisaParear = false
   let encerrado = false
   let reconectando = false
+  /** Dentro da espera de 1 hora (muitas quedas, ou erro de sessão): um novo `close` não é queda nenhuma. */
+  let emPausa = false
+  /** Acorda a espera da reconexão antes da hora (só `encerrar()` chama). */
+  let acordarEspera: (() => void) | null = null
   let espera = ESPERA_MINIMA
   let abertaEm: number | null = null
   let quedas: number[] = []
@@ -196,7 +210,10 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
   function receber(s: SocketMinimo, m: MensagemBruta): void | Promise<void> {
     if (!precisaDoMapa(m)) return entregar(lerRecebida(m))
     const lid = m.key.remoteJid as string
-    return Promise.resolve(s.signalRepository?.lidMapping?.getPNForLID(lid) ?? null).then((telefone) => {
+    const consulta = Promise.resolve(s.signalRepository?.lidMapping?.getPNForLID(lid) ?? null)
+    consulta.catch(() => {}) // se o prazo vencer e ela falhar depois, ninguém mais espera por ela
+    // sem resposta no prazo, vale como "sem telefone": a mensagem se perde e a seguinte da fila segue
+    return Promise.race([consulta, dormir(PRAZO_DO_MAPA_MS).then(() => null)]).then((telefone) => {
       // o mapa devolve o endereço com o aparelho (`…:0@s.whatsapp.net`); a conversa é com a pessoa
       if (telefone) entregar(lerRecebida({ ...m, key: { ...m.key, remoteJidAlt: jidNormalizedUser(telefone) } }))
     })
@@ -280,18 +297,20 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
           opcoes.aoMudarConexao(false, motivoFixo)
           return
         }
+        // Na pausa de 1 hora um `close` repetido do mesmo socket nada acrescenta, e avisar apagaria do site o motivo da pausa.
+        if (emPausa) return
         // um segundo `close` do mesmo socket, com a reconexão já marcada, não é outra queda
         if (!reconectando) {
+          // sem `precisaParear`: o 500 não diz que a sessão acabou, e muitas quedas são a rede; é esperar e tentar de novo
+          if (codigo === CODIGO_ERRO_DE_SESSAO) {
+            pausarPorUmaHora(MOTIVO_ERRO_DE_SESSAO)
+            return
+          }
           const quando = agora()
           if (abertaEm !== null && quando - abertaEm >= ABERTA_PARA_ZERAR_A_ESPERA_MS) espera = ESPERA_MINIMA
           quedas = [...quedas.filter((t) => quando - t < HORA_MS), quando]
           if (quedas.length > MAXIMO_DE_QUEDAS_POR_HORA) {
-            // sem `precisaParear`: a sessão está boa, o que caiu foi a rede; depois da pausa recomeça do zero
-            abertaEm = null
-            quedas = []
-            espera = ESPERA_MINIMA
-            opcoes.aoMudarConexao(false, MOTIVO_MUITAS_QUEDAS)
-            void reconectar(PAUSA_POR_MUITAS_QUEDAS_MS)
+            pausarPorUmaHora(MOTIVO_MUITAS_QUEDAS)
             return
           }
         }
@@ -330,6 +349,30 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
     }) as (d: never) => void)
   }
 
+  /** Avisa e espera 1 hora antes de tentar de novo; depois da pausa a contagem de quedas e a espera recomeçam do zero. */
+  function pausarPorUmaHora(motivo: string): void {
+    abertaEm = null
+    quedas = []
+    espera = ESPERA_MINIMA
+    opcoes.aoMudarConexao(false, motivo)
+    void reconectar(PAUSA_POR_MUITAS_QUEDAS_MS)
+  }
+
+  /** Espera `ms`. `encerrar()` acorda a espera, e fora dos testes o timer é solto (um de 1 hora seguraria o processo). */
+  function esperar(ms: number): Promise<void> {
+    return new Promise<void>((resolver) => {
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const fim = () => {
+        clearTimeout(timer)
+        if (acordarEspera === fim) acordarEspera = null
+        resolver()
+      }
+      acordarEspera = fim
+      if (dep?.dormir) dormir(ms).then(fim, fim)
+      else timer = setTimeout(fim, ms)
+    })
+  }
+
   // Nunca dois sockets: não depende de a biblioteca emitir um só `close`.
   // `primeiraEspera` (ms) troca só a espera da 1ª tentativa; as seguintes seguem a espera crescente.
   async function reconectar(primeiraEspera?: number): Promise<void> {
@@ -341,11 +384,13 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
         if (primeiraEspera !== undefined) {
           ms = primeiraEspera
           primeiraEspera = undefined
+          emPausa = true
         } else {
           espera = Math.min(espera * 2, ESPERA_MAXIMA)
         }
         console.log(`[whatsapp] nova tentativa de conexão em ${Math.round(ms / 1000)} s`)
-        await dormir(ms)
+        await esperar(ms)
+        emPausa = false
         if (encerrado) return
         try {
           abrir()
@@ -356,6 +401,7 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
       }
     } finally {
       reconectando = false
+      emPausa = false
     }
   }
 
@@ -394,6 +440,7 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
     async encerrar() {
       encerrado = true
       conectado = false
+      acordarEspera?.()
       await socket?.end(undefined)
       await gravarSessao()
     },

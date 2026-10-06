@@ -280,7 +280,8 @@ function criarBanco(opcoes) {
 				ativo: l.ativo,
 				confirmadoEm: l.confirmado_em ?? null,
 				confirmadoPor: l.confirmado_por ?? null,
-				jid: l.jid ?? null
+				jid: l.jid ?? null,
+				atualizadoEm: l.atualizado_em ?? null
 			}));
 		},
 		async fazendas() {
@@ -694,6 +695,8 @@ var NOVA_TENTATIVA_LENTA_TRIMBLE_MS = HORA_MS$1;
 var PAUSA_ENTRE_QUADRADOS_MS = 2e3;
 /** `enviar` e `resolverJid` podem ficar pendurados; sem prazo travariam o laço para sempre. */
 var PRAZO_DO_WHATSAPP_MS = 6e4;
+/** Na parada, quanto se espera pelas gravações de SAIR/ATIVAR já recebidas (a parada não interrompe esta espera). */
+var PRAZO_DAS_GRAVACOES_MS = 1e4;
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 var MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0];
 var MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2;
@@ -703,6 +706,10 @@ var ERRO_TETO_DO_DIA = "teto diário de mensagens atingido";
 var ERRO_SEM_WHATSAPP = "número sem WhatsApp";
 var ERRO_PEDIU_PARA_SAIR = "pediu para sair";
 var ERRO_RESTRICAO = "WhatsApp restringiu os envios";
+/** Prazo de restrição a menos que isto à frente não é do servidor: é o "agora + 60 s" que a biblioteca põe quando ele não diz até quando. */
+var PRAZO_MINIMO_DE_RESTRICAO_MS = 6e5;
+/** Sem prazo de verdade, a restrição vale isto a partir de agora. */
+var RESTRICAO_SEM_PRAZO_MS = 6 * HORA_MS$1;
 var ERRO_RECUSAS = `WhatsApp recusou ${MAX_RECUSAS_SEGUIDAS} mensagens seguidas`;
 var ESTOUROU = Symbol("prazo estourado");
 /** Os avisos que o site mostra em `ultimo_erro`, na ordem em que aparecem quando há mais de um. */
@@ -741,11 +748,13 @@ var Servico = class {
 	emVolta = false;
 	semeado = false;
 	/**
-	* Números (`chaveDoNumero`) de quem mandou SAIR e cuja pausa o banco ainda não mostrou: ninguém
-	* marcado recebe nada. A marca só sai quando a leitura do banco já traz `ativo === false` ou
-	* quando a mesma pessoa manda ATIVAR.
+	* Números (`chaveDoNumero`) de quem mandou SAIR e cuja pausa o banco ainda não mostrou, com a ordem
+	* de chegada desse SAIR: ninguém marcado recebe nada. A marca só sai quando a leitura do banco já
+	* traz `ativo === false` ou quando um ATIVAR que chegou DEPOIS do SAIR foi gravado.
 	*/
-	pausados = /* @__PURE__ */ new Set();
+	pausados = /* @__PURE__ */ new Map();
+	/** Contador da ordem de chegada dos comandos (ATIVAR/SAIR). */
+	chegadas = 0;
 	/** Só no ensaio: o que já foi registrado, para não repetir a cada minuto. */
 	ensaiados = /* @__PURE__ */ new Set();
 	ensaioExplicado = false;
@@ -755,8 +764,14 @@ var Servico = class {
 		telefones: /* @__PURE__ */ new Set()
 	};
 	respostas = /* @__PURE__ */ new Map();
-	/** As mensagens recebidas são tratadas uma por vez, na ordem de chegada: esta é a ponta da fila. */
-	filaDeRecebidas = Promise.resolve();
+	/**
+	* Duas filas. A de gravação trata os comandos recebidos um por vez, na ordem de chegada e sem pausa:
+	* um SAIR tem de chegar ao banco antes de qualquer outra coisa (a ponta da fila é esta promessa).
+	* A de respostas envia uma por vez, com a pausa entre elas.
+	*/
+	filaDeGravacao = Promise.resolve();
+	gravacoesPendentes = 0;
+	filaDeRespostas = Promise.resolve();
 	ultimaResposta = null;
 	/** Até quando o WhatsApp restringiu os envios da conta (`Infinity` = sem prazo informado). */
 	restritoAte = null;
@@ -794,8 +809,9 @@ var Servico = class {
 		}
 	}
 	/**
-	* Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado. Entra numa fila (uma é tratada
-	* por vez, na ordem de chegada): SAIR e ATIVAR da mesma pessoa não disputam a gravação.
+	* Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado. O comando entra na fila de
+	* gravação (um por vez, na ordem de chegada, sem esperar resposta nenhuma) e a resposta, se couber,
+	* na fila de respostas. Resolve quando a resposta foi tratada.
 	*/
 	async recebida(m) {
 		const comando = lerComando(m.texto);
@@ -805,27 +821,59 @@ var Servico = class {
 			this.registrar(`ensaio: comando de ${quem} ignorado`);
 			return;
 		}
+		const chegada = ++this.chegadas;
 		const numero = chaveDoNumero(m.jid);
-		if (numero) {
-			if (comando === "sair") this.pausados.add(numero);
-			else this.pausados.delete(numero);
-		}
-		const vez = this.filaDeRecebidas.then(() => this.tratar(m, comando, numero, quem));
-		this.filaDeRecebidas = vez.catch(() => {});
-		await vez;
+		if (numero && comando === "sair") this.pausados.set(numero, chegada);
+		this.gravacoesPendentes += 1;
+		let daResposta = Promise.resolve();
+		const gravacao = this.filaDeGravacao.then(async () => {
+			try {
+				const pedido = await this.gravar(m, comando, numero, quem, chegada);
+				if (pedido) daResposta = this.enfileirarResposta(pedido);
+			} finally {
+				this.gravacoesPendentes -= 1;
+			}
+		});
+		this.filaDeGravacao = gravacao.catch(() => {});
+		await gravacao;
+		await daResposta;
+	}
+	/**
+	* Espera a fila de gravação esvaziar, no máximo `prazoMs` (o relógio é o `dormir` injetado). Não espera
+	* as respostas: o comando já está gravado, e uma resposta que se perder não desfaz nada.
+	*/
+	async aguardarGravacoes(prazoMs) {
+		if (this.gravacoesPendentes === 0) return;
+		let venceu = false;
+		const prazo = this.d.dormir(prazoMs).then(() => {
+			venceu = true;
+		});
+		while (this.gravacoesPendentes > 0 && !venceu) await Promise.race([this.filaDeGravacao, prazo]);
 	}
 	/** O WhatsApp restringiu os envios da conta até `ate` (ms; `Infinity` = sem prazo), ou retirou a restrição (`null`). */
 	async restricao(ate, motivo) {
 		if (this.d.ensaio) return;
-		if (ate === null || ate <= this.d.agora()) {
+		const agora = this.d.agora();
+		if (ate === null) {
 			if (this.restritoAte === null) return;
+			if (this.restritoAte > agora && Number.isFinite(this.restritoAte)) {
+				this.registrar("aviso de que a restrição de envios sumiu antes do prazo guardado: ignorado");
+				return;
+			}
 			this.restritoAte = null;
 			this.registrar("o WhatsApp retirou a restrição de envios");
 			await this.avisar("restricao", null);
 			return;
 		}
-		this.restritoAte = ate;
-		const texto = `${ERRO_RESTRICAO} até ${Number.isFinite(ate) ? `${dataCurta(ate)} ${horaDe(ate)}` : "novo aviso"}`;
+		const presumido = !(ate - agora >= PRAZO_MINIMO_DE_RESTRICAO_MS);
+		const prazo = presumido ? agora + RESTRICAO_SEM_PRAZO_MS : ate;
+		if (presumido && this.restritoAte !== null && this.restritoAte >= prazo) {
+			this.registrar("prazo de restrição de envios sem data de verdade: a restrição já guardada é mais longa e fica");
+			return;
+		}
+		this.restritoAte = prazo;
+		const quando = Number.isFinite(prazo) ? `${dataCurta(prazo)} ${horaDe(prazo)}` : "";
+		const texto = !Number.isFinite(prazo) ? `${ERRO_RESTRICAO} até novo aviso` : presumido ? `${ERRO_RESTRICAO}: nova tentativa depois de ${quando}` : `${ERRO_RESTRICAO} até ${quando}`;
 		this.registrar(`${texto}${motivo ? ` (${motivo})` : ""}: nada sai até lá`);
 		await this.avisar("restricao", texto);
 	}
@@ -863,17 +911,24 @@ var Servico = class {
 	registrar(linha) {
 		this.d.registrar(semNumeros(linha));
 	}
-	async tratar(m, comando, numero, quem) {
+	/** Um comando na fila de gravação: lê o contato e grava. Devolve a resposta a mandar, ou `null`. Nunca lança. */
+	async gravar(m, comando, numero, quem, chegada) {
 		try {
 			const contato = (await this.d.banco.contatos()).find((c) => mesmoNumero(c.telefone, m.jid));
 			if (!contato) {
-				if (numero) this.pausados.delete(numero);
+				if (numero && this.pausados.get(numero) === chegada) this.pausados.delete(numero);
 				this.registrar(`comando de número não cadastrado (${quem}) ignorado`);
-				return;
+				return null;
 			}
 			let resposta;
 			if (comando === "ativar") {
+				if (m.em !== null && contato.atualizadoEm !== null && m.em < Date.parse(contato.atualizadoEm)) {
+					this.registrar(`${quem}: mensagem de ativação anterior à última alteração do contato, ignorada`);
+					return null;
+				}
 				await this.d.banco.confirmar(contato.id, m.jid);
+				const marca = numero ? this.pausados.get(numero) : void 0;
+				if (numero && marca !== void 0 && marca < chegada) this.pausados.delete(numero);
 				let nomes = [];
 				try {
 					const fazendas = this.fazendas ?? await this.d.banco.fazendas();
@@ -888,10 +943,22 @@ var Servico = class {
 				resposta = textoSaiu(contato);
 				this.registrar(`pausado: ${mascarar(contato.telefone)}`);
 			}
-			await this.responder(contato, m.jid, quem, resposta);
+			return {
+				contato,
+				jid: m.jid,
+				quem,
+				texto: resposta
+			};
 		} catch (e) {
 			this.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe$1(e)}`);
+			return null;
 		}
+	}
+	/** Põe a resposta na fila de respostas (uma por vez); a promessa devolvida nunca rejeita. */
+	enfileirarResposta(p) {
+		const vez = this.filaDeRespostas.then(() => this.responder(p.contato, p.jid, p.quem, p.texto)).catch((e) => this.registrar(`falha ao responder a ${p.quem}: ${mensagemDe$1(e)}`));
+		this.filaDeRespostas = vez;
+		return vez;
 	}
 	textoDosAvisos() {
 		const textos = TIPOS_DE_AVISO.flatMap((tipo) => this.avisos.get(tipo) ?? []);
@@ -1305,16 +1372,20 @@ var MAXIMO_DE_QUEDAS_POR_HORA = 10;
 /** Com quedas demais o serviço espera isto e tenta de novo sozinho: uma queda de internet da VM não pede ninguém. */
 var PAUSA_POR_MUITAS_QUEDAS_MS = HORA_MS;
 var MOTIVO_MUITAS_QUEDAS = "muitas quedas seguidas: nova tentativa em 1 hora";
+/** Na biblioteca o 500 é o código-coringa (erro de WebSocket ou `stream:error` sem código), não só "sessão inválida". */
+var CODIGO_ERRO_DE_SESSAO = DisconnectReason.badSession;
+var MOTIVO_ERRO_DE_SESSAO = "erro de sessão: nova tentativa em 1 hora";
 /** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido. */
 var VALIDADE_DA_FILA_MS = 48 * HORA_MS;
 var PRAZO_DA_VERSAO_MS = 1e4;
+/** A consulta ao mapa de endereços `@lid` é local; se pendurar, não pode travar as mensagens que vêm depois. */
+var PRAZO_DO_MAPA_MS = 5e3;
 /** Quantas mensagens enviadas ficam lembradas para reconhecer uma recusa que chega depois. */
 var ENVIADAS_LEMBRADAS = 200;
 var MOTIVO_SEM_RECONEXAO = {
 	[DisconnectReason.loggedOut]: "sessão encerrada no celular",
 	[DisconnectReason.connectionReplaced]: "sessão em uso em outro lugar",
 	[DisconnectReason.forbidden]: "acesso recusado pelo WhatsApp",
-	[DisconnectReason.badSession]: "sessão inválida",
 	[DisconnectReason.multideviceMismatch]: "versão do aparelho incompatível"
 };
 var textoDoErro = (e) => e instanceof Error ? e.message : "erro";
@@ -1330,9 +1401,11 @@ function lerRecebida(m) {
 	const jid = bruto.endsWith("@lid") ? m.key.remoteJidAlt ?? "" : bruto;
 	if (!jid || chaveDoNumero(jid) === null) return null;
 	const texto = textoDe(m);
+	const segundos = segundosDe(m.messageTimestamp);
 	return texto ? {
 		jid,
-		texto
+		texto,
+		em: segundos === null ? null : segundos * 1e3
 	} : null;
 }
 /** Remetente em `@lid` sem o telefone junto: só o mapa da biblioteca diz quem é. */
@@ -1381,6 +1454,10 @@ async function conectarWhatsapp(opcoes) {
 	let precisaParear = false;
 	let encerrado = false;
 	let reconectando = false;
+	/** Dentro da espera de 1 hora (muitas quedas, ou erro de sessão): um novo `close` não é queda nenhuma. */
+	let emPausa = false;
+	/** Acorda a espera da reconexão antes da hora (só `encerrar()` chama). */
+	let acordarEspera = null;
 	let espera = ESPERA_MINIMA;
 	let abertaEm = null;
 	let quedas = [];
@@ -1405,7 +1482,9 @@ async function conectarWhatsapp(opcoes) {
 	function receber(s, m) {
 		if (!precisaDoMapa(m)) return entregar(lerRecebida(m));
 		const lid = m.key.remoteJid;
-		return Promise.resolve(s.signalRepository?.lidMapping?.getPNForLID(lid) ?? null).then((telefone) => {
+		const consulta = Promise.resolve(s.signalRepository?.lidMapping?.getPNForLID(lid) ?? null);
+		consulta.catch(() => {});
+		return Promise.race([consulta, dormir(PRAZO_DO_MAPA_MS).then(() => null)]).then((telefone) => {
 			if (telefone) entregar(lerRecebida({
 				...m,
 				key: {
@@ -1483,16 +1562,17 @@ async function conectarWhatsapp(opcoes) {
 					opcoes.aoMudarConexao(false, motivoFixo);
 					return;
 				}
+				if (emPausa) return;
 				if (!reconectando) {
+					if (codigo === CODIGO_ERRO_DE_SESSAO) {
+						pausarPorUmaHora(MOTIVO_ERRO_DE_SESSAO);
+						return;
+					}
 					const quando = agora();
 					if (abertaEm !== null && quando - abertaEm >= ABERTA_PARA_ZERAR_A_ESPERA_MS) espera = ESPERA_MINIMA;
 					quedas = [...quedas.filter((t) => quando - t < HORA_MS), quando];
 					if (quedas.length > MAXIMO_DE_QUEDAS_POR_HORA) {
-						abertaEm = null;
-						quedas = [];
-						espera = ESPERA_MINIMA;
-						opcoes.aoMudarConexao(false, MOTIVO_MUITAS_QUEDAS);
-						reconectar(PAUSA_POR_MUITAS_QUEDAS_MS);
+						pausarPorUmaHora(MOTIVO_MUITAS_QUEDAS);
 						return;
 					}
 				}
@@ -1525,6 +1605,28 @@ async function conectarWhatsapp(opcoes) {
 			}
 		}));
 	}
+	/** Avisa e espera 1 hora antes de tentar de novo; depois da pausa a contagem de quedas e a espera recomeçam do zero. */
+	function pausarPorUmaHora(motivo) {
+		abertaEm = null;
+		quedas = [];
+		espera = ESPERA_MINIMA;
+		opcoes.aoMudarConexao(false, motivo);
+		reconectar(PAUSA_POR_MUITAS_QUEDAS_MS);
+	}
+	/** Espera `ms`. `encerrar()` acorda a espera, e fora dos testes o timer é solto (um de 1 hora seguraria o processo). */
+	function esperar(ms) {
+		return new Promise((resolver) => {
+			let timer;
+			const fim = () => {
+				clearTimeout(timer);
+				if (acordarEspera === fim) acordarEspera = null;
+				resolver();
+			};
+			acordarEspera = fim;
+			if (dep?.dormir) dormir(ms).then(fim, fim);
+			else timer = setTimeout(fim, ms);
+		});
+	}
 	async function reconectar(primeiraEspera) {
 		if (reconectando) return;
 		reconectando = true;
@@ -1534,9 +1636,11 @@ async function conectarWhatsapp(opcoes) {
 				if (primeiraEspera !== void 0) {
 					ms = primeiraEspera;
 					primeiraEspera = void 0;
+					emPausa = true;
 				} else espera = Math.min(espera * 2, ESPERA_MAXIMA);
 				console.log(`[whatsapp] nova tentativa de conexão em ${Math.round(ms / 1e3)} s`);
-				await dormir(ms);
+				await esperar(ms);
+				emPausa = false;
 				if (encerrado) return;
 				try {
 					abrir();
@@ -1547,6 +1651,7 @@ async function conectarWhatsapp(opcoes) {
 			}
 		} finally {
 			reconectando = false;
+			emPausa = false;
 		}
 	}
 	abrir();
@@ -1584,6 +1689,7 @@ async function conectarWhatsapp(opcoes) {
 		async encerrar() {
 			encerrado = true;
 			conectado = false;
+			acordarEspera?.();
 			await socket?.end(void 0);
 			await gravarSessao();
 		}
@@ -1703,7 +1809,7 @@ async function ligarServico(p) {
 	/** As esperas do Servico que a parada interrompe (a pausa entre duas pessoas chega a 45 s). */
 	const acordar = /* @__PURE__ */ new Set();
 	const dormirDoServico = (ms) => {
-		if (ms === 6e4) return dormir(ms);
+		if (ms === 6e4 || ms === 1e4) return dormir(ms);
 		if (parando) return Promise.resolve();
 		return new Promise((resolver) => {
 			const fim = () => {
@@ -1781,6 +1887,11 @@ async function ligarServico(p) {
 			if (voltaEmCurso) await Promise.race([voltaEmCurso, dormir(LIMITE_DA_VOLTA_MS)]);
 			const teto = setTimeout(() => p.sair(0), LIMITE_PARA_ENCERRAR_MS);
 			teto.unref();
+			try {
+				await s.aguardarGravacoes(PRAZO_DAS_GRAVACOES_MS);
+			} catch (e) {
+				p.registrar(`falha ao esperar as gravações: ${mensagemDe(e)}`);
+			}
 			try {
 				await whatsapp?.encerrar();
 			} catch (e) {

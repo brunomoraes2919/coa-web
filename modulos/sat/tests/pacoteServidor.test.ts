@@ -127,13 +127,13 @@ describe('pacote do serviço da VM', () => {
       const fim = depois.indexOf('\n- **', inicio + 1)
       return depois.slice(inicio, fim < 0 ? undefined : fim)
     }
-    for (const aviso of ['muitas quedas seguidas', 'sessão inválida', 'versão do aparelho incompatível', 'WhatsApp restringiu os envios até', 'WhatsApp recusou 3 mensagens seguidas']) {
+    for (const aviso of ['muitas quedas seguidas', 'erro de sessão', 'versão do aparelho incompatível', 'WhatsApp restringiu os envios até', 'WhatsApp recusou 3 mensagens seguidas']) {
       expect(item(aviso), aviso).toMatch(/não (insista|pareie de novo)/i)
       expect(item(aviso), aviso).toContain('avise')
     }
     expect(item('Sem dados da Trimble desde')).toContain('uma vez por hora')
     // os textos do guia são os que o serviço grava
-    for (const texto of ['muitas quedas seguidas', 'sessão inválida', 'versão do aparelho incompatível', 'WhatsApp restringiu os envios', 'mensagens seguidas', 'Sem dados da Trimble desde']) {
+    for (const texto of ['muitas quedas seguidas', 'erro de sessão', 'versão do aparelho incompatível', 'WhatsApp restringiu os envios', 'mensagens seguidas', 'Sem dados da Trimble desde']) {
       expect(ler('locks-sat-whatsapp.mjs'), texto).toContain(texto)
     }
   })

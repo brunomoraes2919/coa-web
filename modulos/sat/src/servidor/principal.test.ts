@@ -373,7 +373,7 @@ describe('ligarServico (tudo falso)', () => {
   const jidDe = (telefone: string) => `${telefone}@s.whatsapp.net`
   const pessoa = (id: string, nome: string, telefone: string): ContatoWpp => ({
     id, nome, telefone, todasFazendas: true, fazendas: [], alertaJanela: true, ativo: true,
-    confirmadoEm: '2026-10-01T00:00:00Z', confirmadoPor: 'mensagem', jid: jidDe(telefone),
+    confirmadoEm: '2026-10-01T00:00:00Z', confirmadoPor: 'mensagem', jid: jidDe(telefone), atualizadoEm: null,
   })
   const ANA = pessoa('c-ana', 'Ana Souza', '5565999990001')
   const BIA = pessoa('c-bia', 'Bia Lima', '5565999990002')
@@ -384,13 +384,14 @@ describe('ligarServico (tudo falso)', () => {
   })))
 
   /** O serviço ligado às 06:59:30 de um dia com janela: a primeira volta (07:00:30) manda o resumo a Ana e depois a Bia. */
-  async function ligar(opcoes: { pareado?: boolean; segurarEnvios?: boolean } = {}) {
+  async function ligar(opcoes: { pareado?: boolean; segurarEnvios?: boolean; segurarPausa?: boolean } = {}) {
     vi.useFakeTimers({ now: new Date(2026, 9, 6, 6, 59, 30) })
     const ordem: string[] = []
     const linhas: string[] = []
     const estados: Parameters<Banco['gravarEstado']>[0][] = []
     const envios = new Map<string, SituacaoEnvio>()
     const soltar: (() => void)[] = []
+    const soltarPausas: (() => void)[] = []
     const estado = { pareado: opcoes.pareado ?? true, consultasTrimble: 0 }
     const banco: Banco = {
       contatos: async () => [ANA, BIA].map((c) => ({ ...c })),
@@ -409,7 +410,10 @@ describe('ligarServico (tudo falso)', () => {
         .filter((r) => r.chave.startsWith(`${dia}:`)),
       confirmar: async () => {},
       guardarJid: async () => {},
-      pausar: async () => {},
+      pausar: async () => {
+        if (opcoes.segurarPausa) await new Promise<void>((r) => { soltarPausas.push(r) })
+        ordem.push('pausar')
+      },
       gravarEstado: async (e) => {
         estados.push(e)
         if (e.ultimoErro) ordem.push(`estado ${e.ultimoErro}`)
@@ -446,7 +450,7 @@ describe('ligarServico (tudo falso)', () => {
       sair,
       processo,
     })
-    return { ordem, linhas, estados, soltar, estado, conectar, sair, processo, whatsapp, opcoesDaConexao: () => opcoesDaConexao }
+    return { ordem, linhas, estados, soltar, soltarPausas, estado, conectar, sair, processo, whatsapp, opcoesDaConexao: () => opcoesDaConexao }
   }
   const passar = (ms: number) => vi.advanceTimersByTimeAsync(ms)
 
@@ -542,6 +546,34 @@ describe('ligarServico (tudo falso)', () => {
     expect(s.estado.consultasTrimble).toBe(1)
   })
 
+  it('A1. SIGTERM com um SAIR ainda sendo gravado: espera a gravação e só então encerra', async () => {
+    const s = await ligar({ segurarPausa: true })
+    void s.opcoesDaConexao()?.aoReceber({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
+    await passar(0)
+    s.processo.emit('SIGTERM')
+    await passar(5_000)
+    expect(s.ordem).not.toContain('encerrar')
+    expect(s.sair).not.toHaveBeenCalled()
+    s.soltarPausas[0]()
+    await passar(0)
+    expect(s.ordem.indexOf('pausar')).toBeGreaterThanOrEqual(0)
+    expect(s.ordem.indexOf('pausar')).toBeLessThan(s.ordem.indexOf('encerrar'))
+    expect(s.ordem.at(-1)).toBe('sair 0')
+  })
+
+  it('A1. SIGTERM com a gravação pendurada: espera 10 s e encerra assim mesmo, dentro do teto da parada', async () => {
+    const s = await ligar({ segurarPausa: true })
+    void s.opcoesDaConexao()?.aoReceber({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
+    await passar(0)
+    s.processo.emit('SIGTERM')
+    await passar(9_000)
+    expect(s.ordem).not.toContain('encerrar')
+    await passar(1_500)
+    expect(s.ordem).toContain('encerrar')
+    expect(s.ordem).not.toContain('pausar')
+    expect(s.ordem.at(-1)).toBe('sair 0')
+  })
+
   it('promessa rejeitada sem tratamento: registra só o nome do erro e segue vivo', async () => {
     const s = await ligar()
     s.processo.emit('unhandledRejection', new TypeError('texto com segredo'))
@@ -579,7 +611,7 @@ describe('ligarServico (tudo falso)', () => {
     expect(s.conectar).toHaveBeenCalledTimes(1)
   })
 
-  it('a restrição avisada pela conexão chega ao serviço: grava o aviso e nada sai', async () => {
+  it('a restrição avisada pela conexão chega ao serviço: grava o aviso e nada sai, e o "sumiu" antes do prazo é ignorado', async () => {
     const s = await ligar()
     const ate = new Date(2026, 9, 6, 15, 0).getTime()
     s.opcoesDaConexao()?.aoRestringir?.(ate, 'BIZ_QUALITY')
@@ -587,10 +619,10 @@ describe('ligarServico (tudo falso)', () => {
     expect(s.estados.at(-1)).toEqual({ conectado: true, ultimoErro: 'WhatsApp restringiu os envios até 06/10 15:00' })
     await passar(120_000)
     expect(s.ordem.filter((o) => o.startsWith('enviar'))).toEqual([])
-    // retirada a restrição, a volta seguinte manda
+    // a biblioteca limpa sozinha o campo aos 60 s: o aviso de que sumiu só vale depois do prazo guardado
     s.opcoesDaConexao()?.aoRestringir?.(null, 'restrição retirada')
     await passar(60_000)
-    expect(s.ordem.filter((o) => o.startsWith('enviar'))).toEqual(['enviar 0001: começo', 'enviar 0001: fim'])
+    expect(s.ordem.filter((o) => o.startsWith('enviar'))).toEqual([])
   })
 
   it('três recusas de entrega avisadas pela conexão param os envios e gravam o aviso', async () => {
