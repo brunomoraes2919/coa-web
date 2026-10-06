@@ -41,6 +41,8 @@ export const PRAZO_DAS_GRAVACOES_MS = 10_000
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 const MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0]
 const MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2
+/** O carimbo do ATIVAR vem do WhatsApp e o `atualizadoEm` do relógio de quem gravou, que pode estar adiantado alguns minutos. */
+const MARGEM_DO_RELOGIO_MS = 10 * 60_000
 /** O WhatsApp recusar tantas mensagens seguidas é sinal de conta restrita: insistir piora. */
 const MAX_RECUSAS_SEGUIDAS = 3
 const ERRO_TETO_DO_DIA = 'teto diário de mensagens atingido'
@@ -303,7 +305,7 @@ export class Servico {
       if (comando === 'ativar') {
         // Um ATIVAR da fila de quando o serviço estava fora do ar (até 48 h) não desfaz o que o administrador fez depois.
         // O SAIR não passa por aqui: vale com qualquer data (na dúvida, não enviar).
-        if (m.em !== null && contato.atualizadoEm !== null && m.em < Date.parse(contato.atualizadoEm)) {
+        if (m.em !== null && contato.atualizadoEm !== null && m.em < Date.parse(contato.atualizadoEm) - MARGEM_DO_RELOGIO_MS) {
           this.registrar(`${quem}: mensagem de ativação anterior à última alteração do contato, ignorada`)
           return null
         }

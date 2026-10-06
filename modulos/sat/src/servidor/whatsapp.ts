@@ -2,7 +2,7 @@
 import makeWASocket, {
   Browsers, DisconnectReason, fetchLatestBaileysVersion, jidNormalizedUser, normalizeMessageContent, useMultiFileAuthState, WAMessageStatus,
 } from 'baileys'
-import { chaveDoNumero, mascarar } from './comandos'
+import { chaveDoNumero, lerComando, mascarar } from './comandos'
 import { tempoDigitando } from './ritmo'
 
 export interface MensagemRecebida {
@@ -87,7 +87,7 @@ const MOTIVO_MUITAS_QUEDAS = 'muitas quedas seguidas: nova tentativa em 1 hora'
 /** Na biblioteca o 500 é o código-coringa (erro de WebSocket ou `stream:error` sem código), não só "sessão inválida". */
 const CODIGO_ERRO_DE_SESSAO = DisconnectReason.badSession
 const MOTIVO_ERRO_DE_SESSAO = 'erro de sessão: nova tentativa em 1 hora'
-/** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido. */
+/** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido (exceto o SAIR). */
 const VALIDADE_DA_FILA_MS = 48 * HORA_MS
 const PRAZO_DA_VERSAO_MS = 10_000
 /** A consulta ao mapa de endereços `@lid` é local; se pendurar, não pode travar as mensagens que vêm depois. */
@@ -237,10 +237,14 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
     filaDeRecebidas = vez
   }
 
-  /** Mensagem de quando o serviço estava fora do ar: só a de outra pessoa e com menos de 48 h. */
-  function recenteNaFila(m: MensagemBruta): boolean {
+  /** Mensagem de quando o serviço estava fora do ar: só a de outra pessoa; com menos de 48 h, ou um SAIR (de qualquer idade, mesmo sem carimbo). */
+  function valeNaFila(m: MensagemBruta): boolean {
+    if (m.key.fromMe) return false
+    // Quem pediu para sair não volta a receber só porque o serviço ficou parado: na dúvida, não enviar.
+    const texto = textoDe(m)
+    if (texto !== null && lerComando(texto) === 'sair') return true
     const segundos = segundosDe(m.messageTimestamp)
-    return !m.key.fromMe && segundos !== null && agora() - segundos * 1000 < VALIDADE_DA_FILA_MS
+    return segundos !== null && agora() - segundos * 1000 < VALIDADE_DA_FILA_MS
   }
 
   function tratarRestricao(r: RestricaoBruta): void {
@@ -326,7 +330,7 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
       // (e também o eco das nossas próprias, que o `fromMe` descarta).
       if (e.type !== 'notify' && e.type !== 'append') return
       for (const m of e.messages) {
-        if (e.type === 'append' && !recenteNaFila(m)) continue
+        if (e.type === 'append' && !valeNaFila(m)) continue
         enfileirar(s, m)
       }
     }) as (d: never) => void)

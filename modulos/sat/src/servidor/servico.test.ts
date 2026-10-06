@@ -1120,15 +1120,23 @@ describe('servico: gravação na chegada e respostas espaçadas (duas filas)', (
 describe('servico: ATIVAR velho da fila offline', () => {
   const editadoAs8 = () => contato({ ativo: false, confirmadoEm: null, confirmadoPor: null, atualizadoEm: new Date(em(8)).toISOString() })
 
-  it('A4. ATIVAR de antes da última alteração do contato é ignorado: não grava e não responde', async () => {
+  it('A4. ATIVAR de antes da última alteração do contato (além da margem de 10 min) é ignorado: não grava e não responde', async () => {
     const novo = editadoAs8()
     const c = montar({ contatos: [novo] }, em(9))
-    await c.recebida(novo, 'ATIVAR', em(7))
+    await c.recebida(novo, 'ATIVAR', em(7, 45)) // 15 min antes das 08:00
     expect(c.banco.confirmacoes).toEqual([])
     expect(c.wpp.enviados).toEqual([])
     expect(c.banco.escritas).toBe(0)
     expect(c.registro.some((l) => l.includes('ignorada'))).toBe(true)
     semNumerosNoRegistro(c.registro)
+  })
+
+  it('A4. ATIVAR de 5 min antes da alteração (relógio da gravação adiantado) vale: confirma e responde', async () => {
+    const novo = editadoAs8()
+    const c = montar({ contatos: [novo] }, em(9))
+    await c.recebida(novo, 'ATIVAR', em(7, 55))
+    expect(c.banco.confirmacoes).toHaveLength(1)
+    expect(c.wpp.enviados).toHaveLength(1)
   })
 
   it('A4. ATIVAR de depois da alteração (ou sem carimbo de hora) vale', async () => {
@@ -1161,7 +1169,7 @@ describe('servico: ATIVAR velho da fila offline', () => {
     const c = montar({ contatos: [ana] }, em(7))
     c.banco.pausarLanca = true
     await c.recebida(ana, 'SAIR', em(7))
-    await c.recebida(ana, 'ATIVAR', em(5)) // anterior à alteração das 06:00: ignorado
+    await c.recebida(ana, 'ATIVAR', em(5)) // 1 h antes da alteração das 06:00: ignorado
     expect(c.banco.confirmacoes).toEqual([])
     await c.volta(7)
     expect(alertasPara(c, '5565999990001')).toEqual([])

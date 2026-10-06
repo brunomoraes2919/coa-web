@@ -410,19 +410,50 @@ describe('conectarWhatsapp', () => {
       expect(aoReceber).toHaveBeenCalledTimes(2)
     })
 
-    it('com 3 dias (ou 48 h em ponto) não é entregue', async () => {
+    const comTexto = (texto: string, carimbo: unknown, fromMe = false) => ({ ...sair(carimbo, fromMe), message: { conversation: texto } })
+
+    it('SAIR com 5 dias é entregue: quem pediu para sair não volta a receber', async () => {
       const { opcoes, sockets, aoReceber, relogio } = montar()
       await conectarWhatsapp(opcoes)
-      sockets[0].emit('messages.upsert', { type: 'append', messages: [sair(segundos(relogio.agora - 72 * HORA))] })
-      sockets[0].emit('messages.upsert', { type: 'append', messages: [sair(segundos(relogio.agora - 48 * HORA))] })
+      sockets[0].emit('messages.upsert', { type: 'append', messages: [sair(segundos(relogio.agora - 120 * HORA))] })
+      expect(aoReceber).toHaveBeenCalledTimes(1)
+      expect(aoReceber).toHaveBeenCalledWith({ jid: JID_A, texto: 'SAIR', em: segundos(relogio.agora - 120 * HORA) * 1000 })
+    })
+
+    it('SAIR sem carimbo de hora é entregue (na dúvida, não enviar)', async () => {
+      const { opcoes, sockets, aoReceber } = montar()
+      await conectarWhatsapp(opcoes)
+      sockets[0].emit('messages.upsert', { type: 'append', messages: [sair(undefined), sair(null), sair('texto')] })
+      expect(aoReceber).toHaveBeenCalledTimes(3)
+    })
+
+    it('ATIVAR com 5 dias (ou 48 h em ponto) não é entregue', async () => {
+      const { opcoes, sockets, aoReceber, relogio } = montar()
+      await conectarWhatsapp(opcoes)
+      sockets[0].emit('messages.upsert', { type: 'append', messages: [comTexto('ATIVAR', segundos(relogio.agora - 120 * HORA))] })
+      sockets[0].emit('messages.upsert', { type: 'append', messages: [comTexto('ATIVAR', segundos(relogio.agora - 48 * HORA))] })
       expect(aoReceber).not.toHaveBeenCalled()
     })
 
-    it('minha (fromMe) não é entregue, nem a sem carimbo de hora', async () => {
+    it('ATIVAR sem carimbo de hora não é entregue', async () => {
+      const { opcoes, sockets, aoReceber } = montar()
+      await conectarWhatsapp(opcoes)
+      sockets[0].emit('messages.upsert', { type: 'append', messages: [comTexto('ATIVAR', undefined), comTexto('ATIVAR', null), comTexto('ATIVAR', 'texto')] })
+      expect(aoReceber).not.toHaveBeenCalled()
+    })
+
+    it('outro texto com 5 dias não é entregue', async () => {
+      const { opcoes, sockets, aoReceber, relogio } = montar()
+      await conectarWhatsapp(opcoes)
+      sockets[0].emit('messages.upsert', { type: 'append', messages: [comTexto('bom dia', segundos(relogio.agora - 120 * HORA))] })
+      expect(aoReceber).not.toHaveBeenCalled()
+    })
+
+    it('minha (fromMe) não é entregue, nem se for SAIR de 5 dias', async () => {
       const { opcoes, sockets, aoReceber, relogio } = montar()
       await conectarWhatsapp(opcoes)
       sockets[0].emit('messages.upsert', { type: 'append', messages: [sair(segundos(relogio.agora), true)] })
-      sockets[0].emit('messages.upsert', { type: 'append', messages: [sair(undefined), sair(null), sair('texto')] })
+      sockets[0].emit('messages.upsert', { type: 'append', messages: [sair(segundos(relogio.agora - 120 * HORA), true), sair(undefined, true)] })
       expect(aoReceber).not.toHaveBeenCalled()
     })
   })

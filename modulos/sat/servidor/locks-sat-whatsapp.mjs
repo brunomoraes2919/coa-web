@@ -700,6 +700,8 @@ var PRAZO_DAS_GRAVACOES_MS = 1e4;
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 var MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0];
 var MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2;
+/** O carimbo do ATIVAR vem do WhatsApp e o `atualizadoEm` do relógio de quem gravou, que pode estar adiantado alguns minutos. */
+var MARGEM_DO_RELOGIO_MS = 6e5;
 /** O WhatsApp recusar tantas mensagens seguidas é sinal de conta restrita: insistir piora. */
 var MAX_RECUSAS_SEGUIDAS = 3;
 var ERRO_TETO_DO_DIA = "teto diário de mensagens atingido";
@@ -922,7 +924,7 @@ var Servico = class {
 			}
 			let resposta;
 			if (comando === "ativar") {
-				if (m.em !== null && contato.atualizadoEm !== null && m.em < Date.parse(contato.atualizadoEm)) {
+				if (m.em !== null && contato.atualizadoEm !== null && m.em < Date.parse(contato.atualizadoEm) - MARGEM_DO_RELOGIO_MS) {
 					this.registrar(`${quem}: mensagem de ativação anterior à última alteração do contato, ignorada`);
 					return null;
 				}
@@ -1375,7 +1377,7 @@ var MOTIVO_MUITAS_QUEDAS = "muitas quedas seguidas: nova tentativa em 1 hora";
 /** Na biblioteca o 500 é o código-coringa (erro de WebSocket ou `stream:error` sem código), não só "sessão inválida". */
 var CODIGO_ERRO_DE_SESSAO = DisconnectReason.badSession;
 var MOTIVO_ERRO_DE_SESSAO = "erro de sessão: nova tentativa em 1 hora";
-/** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido. */
+/** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido (exceto o SAIR). */
 var VALIDADE_DA_FILA_MS = 48 * HORA_MS;
 var PRAZO_DA_VERSAO_MS = 1e4;
 /** A consulta ao mapa de endereços `@lid` é local; se pendurar, não pode travar as mensagens que vêm depois. */
@@ -1510,10 +1512,13 @@ async function conectarWhatsapp(opcoes) {
 		});
 		filaDeRecebidas = vez;
 	}
-	/** Mensagem de quando o serviço estava fora do ar: só a de outra pessoa e com menos de 48 h. */
-	function recenteNaFila(m) {
+	/** Mensagem de quando o serviço estava fora do ar: só a de outra pessoa; com menos de 48 h, ou um SAIR (de qualquer idade, mesmo sem carimbo). */
+	function valeNaFila(m) {
+		if (m.key.fromMe) return false;
+		const texto = textoDe(m);
+		if (texto !== null && lerComando(texto) === "sair") return true;
 		const segundos = segundosDe(m.messageTimestamp);
-		return !m.key.fromMe && segundos !== null && agora() - segundos * 1e3 < VALIDADE_DA_FILA_MS;
+		return segundos !== null && agora() - segundos * 1e3 < VALIDADE_DA_FILA_MS;
 	}
 	function tratarRestricao(r) {
 		const fim = r.timeEnforcementEnds == null ? NaN : new Date(r.timeEnforcementEnds).getTime();
@@ -1585,7 +1590,7 @@ async function conectarWhatsapp(opcoes) {
 			if (!atual()) return;
 			if (e.type !== "notify" && e.type !== "append") return;
 			for (const m of e.messages) {
-				if (e.type === "append" && !recenteNaFila(m)) continue;
+				if (e.type === "append" && !valeNaFila(m)) continue;
 				enfileirar(s, m);
 			}
 		}));
