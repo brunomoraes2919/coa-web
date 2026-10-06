@@ -118,9 +118,7 @@ h2, p { margin: 0; }
 
 /* ---- cartões ---- */
 .cartao { background: #fff; border: 1px solid var(--linha); border-radius: var(--raio); box-shadow: 0 1px 2px rgba(16, 54, 50, .05); overflow: hidden; }
-.cartao.coordenador { border-left: 4px solid var(--bom); }
-.cartao.coordenador.atencao { border-left-color: var(--atencao-marca); }
-.cartao.coordenador.atraso { border-left-color: var(--ruim); }
+/* a cor do prazo fica só na faixa de cada ordem (e nos selos do cabeçalho): o quadro em si é neutro */
 #coordenadores, #vinculos { display: flex; flex-direction: column; gap: 14px; }
 .cartao-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding: 14px 18px 12px; }
 .cartao-cab h2 { font-size: 16px; font-weight: 600; color: var(--verde-escuro); letter-spacing: -.005em; }
@@ -154,11 +152,25 @@ h2, p { margin: 0; }
 .tabela-ordens .falta.ok { color: var(--bom); }
 .tabela-ordens .falta.atencao { color: var(--atencao); }
 .tabela-ordens .falta.atraso { color: var(--ruim); font-weight: 600; }
-.tabela-ordens tr.atraso td:first-child { box-shadow: inset 3px 0 0 var(--ruim); }
-.tabela-ordens tr.atencao td:first-child { box-shadow: inset 3px 0 0 var(--atencao-marca); }
-.tabela-ordens tr.ok td:first-child { box-shadow: inset 3px 0 0 var(--bom); }
+.tabela-ordens tr.atraso td:first-child { box-shadow: inset 4px 0 0 var(--ruim); }
+.tabela-ordens tr.atencao td:first-child { box-shadow: inset 4px 0 0 var(--atencao-marca); }
+.tabela-ordens tr.ok td:first-child { box-shadow: inset 4px 0 0 var(--bom); }
 .tabela-ordens tr.excedeu { background: #FFF8F7; }
 .progresso { min-width: 220px; }
+/* larguras fixas: as colunas ficam alinhadas de um coordenador para o outro */
+@media (min-width: 641px) {
+  .tabela-ordens { table-layout: fixed; min-width: 860px; }
+  .tabela-ordens th:nth-child(1) { width: 7%; }
+  .tabela-ordens th:nth-child(2) { width: 20%; }
+  .tabela-ordens th:nth-child(3) { width: 9%; }
+  .tabela-ordens th:nth-child(4) { width: 9%; }
+  .tabela-ordens th:nth-child(5) { width: 13%; }
+  .tabela-ordens th:nth-child(6) { width: 19%; }
+  .tabela-ordens th:nth-child(7) { width: 8%; }
+  .tabela-ordens th:nth-child(8) { width: 15%; }
+  .tabela-ordens .progresso { min-width: 0; }
+  .tabela-ordens .falta, .tabela-ordens .progresso small { white-space: normal; }
+}
 .barra-prog { height: 8px; border-radius: 4px; background: var(--linha-suave); overflow: hidden; }
 .barra-prog span { display: block; height: 100%; border-radius: 4px; background: var(--verde-teal); min-width: 2px; }
 .barra-prog.cheia span { background: var(--ruim); }
@@ -183,11 +195,11 @@ summary.saldo-cab { cursor: pointer; list-style: none; }
 summary.saldo-cab::-webkit-details-marker { display: none; }
 summary.saldo-cab::before { content: ""; width: 7px; height: 7px; border-right: 2px solid var(--texto-suave); border-bottom: 2px solid var(--texto-suave); transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
 details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
-.saldo-cab b, .saldo.vazio b { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); }
+.saldo-cab b, .saldo.sem-vinculo b { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); }
 .saldo-dep { font-weight: 600; color: var(--verde-escuro); }
 .saldo-origem { color: var(--texto-suave); }
 .saldo-qtd { margin-left: auto; font-size: 12px; color: var(--texto-suave); }
-.saldo.vazio { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 11px 18px; font-size: 13px; color: var(--texto-suave); }
+.saldo.sem-vinculo { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 11px 18px; font-size: 13px; color: var(--texto-suave); }
 .saldo-nota { padding: 0 18px 12px; font-size: 12.5px; color: var(--texto-suave); }
 .tabela-saldo .cod { display: inline-block; min-width: 62px; color: var(--texto-fraco); font-variant-numeric: tabular-nums; font-size: 12px; }
 .link { border: 0; background: none; padding: 0; color: var(--verde-teal); font-weight: 600; cursor: pointer; text-decoration: underline; }
@@ -239,9 +251,9 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
   .tabela-ordens tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--linha-suave); }
   .tabela-ordens tbody tr:last-child { border-bottom: 0; }
   .tabela-ordens td { display: block; padding: 0 !important; border: 0; box-shadow: none !important; }
-  .tabela-ordens tr.atraso { box-shadow: inset 3px 0 0 var(--ruim); }
-  .tabela-ordens tr.atencao { box-shadow: inset 3px 0 0 var(--atencao-marca); }
-  .tabela-ordens tr.ok { box-shadow: inset 3px 0 0 var(--bom); }
+  .tabela-ordens tr.atraso { box-shadow: inset 4px 0 0 var(--ruim); }
+  .tabela-ordens tr.atencao { box-shadow: inset 4px 0 0 var(--atencao-marca); }
+  .tabela-ordens tr.ok { box-shadow: inset 4px 0 0 var(--bom); }
   .tabela-ordens td.os { grid-column: 1; grid-row: 1; font-size: 15px; }
   .tabela-ordens td.operacao { grid-column: 2; grid-row: 1; }
   .tabela-ordens td.prazo { grid-column: 3; grid-row: 1; }

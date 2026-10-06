@@ -178,7 +178,7 @@
   function blocoSaldo(g) {
     const s = L.saldoDoCoordenador(linhaDa(g.unidade), vinculoDe(g.unidade, g.eq));
     if (!s) {
-      return '<div class="saldo vazio"><b>Depósito no SAP</b><span>Sem depósito vinculado a este coordenador.' +
+      return '<div class="saldo sem-vinculo"><b>Depósito no SAP</b><span>Sem depósito vinculado a este coordenador.' +
         (admin ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '') + '</span></div>';
     }
     const cab = '<b>Depósito no SAP</b><span class="saldo-dep">' + esc(s.deposito) + ' · ' + esc(L.titulo(s.depositoNome)) + '</span>' +
