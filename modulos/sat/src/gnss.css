@@ -143,6 +143,41 @@
 /* Mapa */
 .gnss-mapa-caixa { position: relative; border-radius: var(--r-md); overflow: hidden; border: 1px solid var(--linha); }
 .gnss-mapa { height: min(62vh, 640px); min-height: 360px; width: 100%; background: var(--afundado); }
+/* A tela do mapa ocupa a janela inteira: o mapa cresce em tudo que sobra entre o topo e a barra de horário,
+   sem faixa vazia embaixo. Em navegador sem :has() vale a altura fixa da linha de cima. */
+@supports selector(html:has(a)) {
+  html:has(.gnss-pagina-mapa) body { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; padding-bottom: 16px; }
+  html:has(.gnss-pagina-mapa) #root { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; }
+  html:has(.gnss-pagina-mapa) .sat-topo { margin-bottom: 10px; }
+  .gnss-pagina-mapa { flex: 1 1 auto; min-height: 0; gap: 12px; }
+  .gnss-pagina-mapa .gnss-cabecalho p { max-width: 112ch; }
+  .gnss-pagina-mapa .gnss-mapa-caixa { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 360px; }
+  .gnss-pagina-mapa .gnss-mapa { flex: 1 1 auto; height: auto; }
+  /* fora do celular, a explicação encolhe (quebra em mais linhas) antes de empurrar os botões para a linha de baixo */
+  @media (min-width: 761px) {
+    .gnss-pagina-mapa .gnss-cabecalho { align-items: center; flex-wrap: nowrap; }
+    .gnss-pagina-mapa .gnss-cabecalho > div:first-child { flex: 1 1 0; min-width: 0; }
+    .gnss-pagina-mapa .gnss-acoes { flex: none; }
+  }
+  /* no celular o cabeçalho e a barra de horário ocupam mais linhas: o mapa pode ser um pouco mais baixo para tudo caber sem rolar */
+  @media (max-width: 760px) {
+    .gnss-pagina-mapa .gnss-mapa-caixa, .gnss-pagina-mapa .gnss-mapa { min-height: 300px; }
+  }
+  /* Tela larga, dentro do COA WEB: a marca, a explicação, as camadas e o selo cabem numa linha só
+     (a faixa do topo e a página deixam de ser caixas: os filhos entram direto na grade). */
+  @media (min-width: 1400px) {
+    html.embed:has(.gnss-pagina-mapa) #root {
+      display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto minmax(360px, 1fr) auto;
+      grid-template-areas: "logo cab selo" "mapa mapa mapa" "tempo tempo tempo"; gap: 12px 20px; align-items: center;
+    }
+    html.embed:has(.gnss-pagina-mapa) .sat-topo, html.embed .gnss-pagina-mapa { display: contents; }
+    html.embed:has(.gnss-pagina-mapa) .sat-topo-logo { grid-area: logo; }
+    html.embed:has(.gnss-pagina-mapa) .sat-topo .gnss-selo-conexao { grid-area: selo; margin-left: 0; }
+    html.embed .gnss-pagina-mapa .gnss-cabecalho { grid-area: cab; }
+    html.embed .gnss-pagina-mapa .gnss-mapa-caixa { grid-area: mapa; align-self: stretch; }
+    html.embed .gnss-pagina-mapa .gnss-controles-tempo { grid-area: tempo; }
+  }
+}
 .gnss-legenda {
   position: absolute; z-index: 500; top: 12px; right: 12px; background: var(--superficie);
   border: 1px solid var(--linha); border-radius: var(--r-md); padding: 8px 10px; box-shadow: var(--sombra);

@@ -339,7 +339,7 @@ export default function MapaPage() {
   const fundoAtual = FUNDOS[fundo]
 
   return (
-    <div className="gnss-pagina">
+    <div className="gnss-pagina gnss-pagina-mapa">
       <header className="gnss-cabecalho">
         <div>
           <span className="gnss-sobre">Locks SAT</span>
