@@ -1,11 +1,11 @@
-import { existsSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import makeWASocket, { Browsers, DisconnectReason, fetchLatestBaileysVersion, useMultiFileAuthState } from "baileys";
+import makeWASocket, { Browsers, DisconnectReason, WAMessageStatus, fetchLatestBaileysVersion, jidNormalizedUser, normalizeMessageContent, useMultiFileAuthState } from "baileys";
 //#region src/logic/tempo.ts
 var MINUTOS_DIA = 1440;
-var HORA_MS = 36e5;
-var DIA_MS = 24 * HORA_MS;
+var HORA_MS$1 = 36e5;
+var DIA_MS = 24 * HORA_MS$1;
 /** 00:00 local do dia de `ms`. */
 function inicioDoDiaLocal(ms) {
 	const d = new Date(ms);
@@ -35,7 +35,12 @@ function rotuloHora(minuto) {
 function horaDe(ms) {
 	return rotuloHora(minutoDoDia(ms));
 }
-3 * HORA_MS;
+/** 'DD/MM' local de um instante. */
+function dataCurta(ms) {
+	const d = new Date(ms);
+	return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+3 * HORA_MS$1;
 /** Em quantos dias distintos cada fatia de 10 min teve cintilação ≥ média. */
 function contarDiasPorFatia(historico) {
 	const dias = Array.from({ length: 144 }, () => /* @__PURE__ */ new Set());
@@ -397,7 +402,7 @@ function chaveEvento(agora, tipo) {
 }
 /** O "começa em breve" é no máximo um por noite: a janela depois da meia-noite pertence à noite anterior. */
 function chaveDoAntes(agora) {
-	return chaveEvento(agora - 12 * HORA_MS, "antes");
+	return chaveEvento(agora - 12 * HORA_MS$1, "antes");
 }
 function eventosFixosNaHora(agora) {
 	const m = minutoDoDia(agora);
@@ -407,11 +412,19 @@ function eventosFixosNaHora(agora) {
 	if (naHora(720)) eventos.push("lembrete-12");
 	return eventos;
 }
+/** Os horários de cálculo de hoje e o último de ontem (cobre a virada do dia), em ordem. */
+function marcosDeCalculo(agora) {
+	const dia = inicioDoDiaLocal(agora);
+	return [dia - DIA_MS + MINUTOS_DE_CALCULO[MINUTOS_DE_CALCULO.length - 1] * 6e4, ...MINUTOS_DE_CALCULO.map((m) => dia + m * 6e4)];
+}
 /** Já passou de algum horário de cálculo desde o último? (`null` = nunca calculou.) */
 function precisaCalcular(agora, calculadoEm) {
 	if (calculadoEm == null) return true;
-	const dia = inicioDoDiaLocal(agora);
-	return [dia - DIA_MS + MINUTOS_DE_CALCULO[MINUTOS_DE_CALCULO.length - 1] * 6e4, ...MINUTOS_DE_CALCULO.map((m) => dia + m * 6e4)].some((marco) => marco <= agora && marco > calculadoEm);
+	return marcosDeCalculo(agora).some((marco) => marco <= agora && marco > calculadoEm);
+}
+/** O horário de cálculo mais recente que já passou: cada um abre uma rodada nova de tentativas. */
+function ultimoMarcoDeCalculo(agora) {
+	return Math.max(...marcosDeCalculo(agora).filter((marco) => marco <= agora));
 }
 /** A janela que começa primeiro dentro dos próximos 30 min (ou agora); `null` se nenhuma. */
 function janelaDoAntes(janelas, agora) {
@@ -494,6 +507,12 @@ function pausaEntrePessoas(sorteio = Math.random) {
 }
 function tempoDigitando(sorteio = Math.random) {
 	return entre(2e3, 4e3, sorteio);
+}
+var RESPOSTAS_NO_MINIMO_MS = 3e3;
+var RESPOSTAS_NO_MAXIMO_MS = 8e3;
+/** Entre uma resposta de ATIVAR/SAIR e a próxima: duas saindo no mesmo instante são sinal de robô. */
+function pausaEntreRespostas(sorteio = Math.random) {
+	return entre(RESPOSTAS_NO_MINIMO_MS, RESPOSTAS_NO_MAXIMO_MS, sorteio);
 }
 var ContadorDoDia = class {
 	dia = "";
@@ -618,15 +637,32 @@ function janelasDeHoje(historico) {
 var BATIMENTO_MS = 3e5;
 /** A Trimble recusa quem insiste: depois de uma falha, só tenta de novo passado este tempo. */
 var NOVA_TENTATIVA_TRIMBLE_MS = 3e5;
+/** Uma rodada de cálculo insiste (a cada 5 min) durante este tempo: é a tolerância de atraso do evento. */
+var INSISTENCIA_NA_TRIMBLE_MS = HORA_MS$1;
+/** Passada a insistência sem resposta, a Trimble é consultada só uma vez por hora (até o próximo horário de cálculo). */
+var NOVA_TENTATIVA_LENTA_TRIMBLE_MS = HORA_MS$1;
 var PAUSA_ENTRE_QUADRADOS_MS = 2e3;
 /** `enviar` e `resolverJid` podem ficar pendurados; sem prazo travariam o laço para sempre. */
 var PRAZO_DO_WHATSAPP_MS = 6e4;
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 var MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0];
 var MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2;
+/** O WhatsApp recusar tantas mensagens seguidas é sinal de conta restrita: insistir piora. */
+var MAX_RECUSAS_SEGUIDAS = 3;
 var ERRO_TETO_DO_DIA = "teto diário de mensagens atingido";
 var ERRO_SEM_WHATSAPP = "número sem WhatsApp";
+var ERRO_PEDIU_PARA_SAIR = "pediu para sair";
+var ERRO_RESTRICAO = "WhatsApp restringiu os envios";
+var ERRO_RECUSAS = `WhatsApp recusou ${MAX_RECUSAS_SEGUIDAS} mensagens seguidas`;
 var ESTOUROU = Symbol("prazo estourado");
+/** Os avisos que o site mostra em `ultimo_erro`, na ordem em que aparecem quando há mais de um. */
+var TIPOS_DE_AVISO = [
+	"restricao",
+	"recusas",
+	"teto",
+	"trimble"
+];
+var ENTRE_AVISOS = " · ";
 var PrazoEstourado = class extends Error {
 	constructor() {
 		super(`sem resposta do WhatsApp em ${PRAZO_DO_WHATSAPP_MS / 1e3} s`);
@@ -646,7 +682,9 @@ var Servico = class {
 	/** As fazendas lidas junto do cálculo das janelas: a geometria dos talhões é pesada demais para reler a cada minuto. */
 	fazendas = null;
 	rodada = null;
-	falhaDoCalculoEm = null;
+	falhasDaTrimble = null;
+	/** A primeira falha da Trimble desde o último cálculo que deu certo: é o "desde" do aviso. */
+	semTrimbleDesde = null;
 	ultimoBatimento = null;
 	diaDaLimpeza = "";
 	diaDoAvisoDeTeto = "";
@@ -660,12 +698,25 @@ var Servico = class {
 	pausados = /* @__PURE__ */ new Set();
 	/** Só no ensaio: o que já foi registrado, para não repetir a cada minuto. */
 	ensaiados = /* @__PURE__ */ new Set();
+	ensaioExplicado = false;
 	/** Números que o WhatsApp disse não existir, no dia: perguntar de novo todo minuto parece robô. */
 	semWhatsapp = {
 		dia: "",
 		telefones: /* @__PURE__ */ new Set()
 	};
 	respostas = /* @__PURE__ */ new Map();
+	/** As mensagens recebidas são tratadas uma por vez, na ordem de chegada: esta é a ponta da fila. */
+	filaDeRecebidas = Promise.resolve();
+	ultimaResposta = null;
+	/** Até quando o WhatsApp restringiu os envios da conta (`Infinity` = sem prazo informado). */
+	restritoAte = null;
+	recusasSeguidas = 0;
+	recusaDesdeOUltimoEnvio = false;
+	/** O dia em que as recusas seguidas pararam os envios (até o dia seguinte). */
+	diaDasRecusas = "";
+	avisos = /* @__PURE__ */ new Map();
+	/** O que está gravado em `ultimo_erro`; `undefined` = não se sabe (uma gravação falhou, ou está lá o motivo de uma queda). */
+	avisoGravado = null;
 	constructor(d) {
 		this.d = d;
 		this.contador = new ContadorDoDia(d.agora);
@@ -677,12 +728,13 @@ var Servico = class {
 		try {
 			const agora = this.d.agora();
 			await this.bater(agora);
-			await this.limparAvisoDeTeto(agora);
+			await this.vencerAvisos(agora);
 			await this.limparUmaVezPorDia(agora);
 			await this.calcularSePreciso(agora);
 			const janelas = this.janelas;
 			const valida = janelas !== null && chaveData(janelas.calculadoEm) === chaveData(agora);
-			const podeEnviar = this.d.ensaio || this.d.whatsapp.conectado;
+			if (this.d.ensaio && valida && !this.ensaioExplicado) await this.explicarEnsaio(janelas);
+			const podeEnviar = this.d.ensaio || this.d.whatsapp.conectado && this.bloqueio() === null;
 			if (valida && podeEnviar && this.algoNaHora(agora, janelas)) await this.enviarEventos(agora, janelas);
 			else if (this.pausados.size && !this.d.ensaio) await this.reconciliarPausados(await this.d.banco.contatos());
 		} catch (e) {
@@ -691,7 +743,10 @@ var Servico = class {
 			this.emVolta = false;
 		}
 	}
-	/** Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado. */
+	/**
+	* Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado. Entra numa fila (uma é tratada
+	* por vez, na ordem de chegada): SAIR e ATIVAR da mesma pessoa não disputam a gravação.
+	*/
 	async recebida(m) {
 		const comando = lerComando(m.texto);
 		if (!comando) return;
@@ -705,6 +760,60 @@ var Servico = class {
 			if (comando === "sair") this.pausados.add(numero);
 			else this.pausados.delete(numero);
 		}
+		const vez = this.filaDeRecebidas.then(() => this.tratar(m, comando, numero, quem));
+		this.filaDeRecebidas = vez.catch(() => {});
+		await vez;
+	}
+	/** O WhatsApp restringiu os envios da conta até `ate` (ms; `Infinity` = sem prazo), ou retirou a restrição (`null`). */
+	async restricao(ate, motivo) {
+		if (this.d.ensaio) return;
+		if (ate === null || ate <= this.d.agora()) {
+			if (this.restritoAte === null) return;
+			this.restritoAte = null;
+			this.registrar("o WhatsApp retirou a restrição de envios");
+			await this.avisar("restricao", null);
+			return;
+		}
+		this.restritoAte = ate;
+		const texto = `${ERRO_RESTRICAO} até ${Number.isFinite(ate) ? `${dataCurta(ate)} ${horaDe(ate)}` : "novo aviso"}`;
+		this.registrar(`${texto}${motivo ? ` (${motivo})` : ""}: nada sai até lá`);
+		await this.avisar("restricao", texto);
+	}
+	/** O WhatsApp recusou uma mensagem que o serviço mandou. Três seguidas param os envios até o dia seguinte. */
+	async falhaDeEntrega(jid) {
+		if (this.d.ensaio) return;
+		this.recusasSeguidas += 1;
+		this.recusaDesdeOUltimoEnvio = true;
+		this.registrar(`o WhatsApp recusou a mensagem para ${mascarar(numeroDoJid(jid))} (${this.recusasSeguidas} seguida(s))`);
+		const hoje = chaveData(this.d.agora());
+		if (this.recusasSeguidas < MAX_RECUSAS_SEGUIDAS || this.diaDasRecusas === hoje) return;
+		this.diaDasRecusas = hoje;
+		const texto = `${ERRO_RECUSAS}: envios parados até amanhã`;
+		this.registrar(texto);
+		await this.avisar("recusas", texto);
+	}
+	/** Estado da conexão mudou. */
+	async conexao(conectado, motivo) {
+		this.registrar(`WhatsApp ${conectado ? "conectado" : "desconectado"}${motivo ? `: ${motivo}` : ""}`);
+		if (this.d.ensaio) return;
+		const ultimoErro = conectado ? this.textoDosAvisos() : motivo ? semNumeros(motivo) : null;
+		try {
+			await this.d.banco.gravarEstado({
+				conectado,
+				desde: new Date(this.d.agora()).toISOString(),
+				ultimoErro
+			});
+			this.avisoGravado = conectado ? ultimoErro : void 0;
+		} catch (e) {
+			this.avisoGravado = void 0;
+			this.registrar(`não gravei o estado da conexão: ${mensagemDe$1(e)}`);
+		}
+	}
+	/** Todo registro passa por aqui: nunca sai número de telefone inteiro. */
+	registrar(linha) {
+		this.d.registrar(semNumeros(linha));
+	}
+	async tratar(m, comando, numero, quem) {
 		try {
 			const contato = (await this.d.banco.contatos()).find((c) => mesmoNumero(c.telefone, m.jid));
 			if (!contato) {
@@ -734,23 +843,41 @@ var Servico = class {
 			this.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe$1(e)}`);
 		}
 	}
-	/** Estado da conexão mudou. */
-	async conexao(conectado, motivo) {
-		this.registrar(`WhatsApp ${conectado ? "conectado" : "desconectado"}${motivo ? `: ${motivo}` : ""}`);
+	textoDosAvisos() {
+		const textos = TIPOS_DE_AVISO.flatMap((tipo) => this.avisos.get(tipo) ?? []);
+		return textos.length ? textos.join(ENTRE_AVISOS) : null;
+	}
+	/**
+	* Liga (com o texto) ou desliga (`null`) um aviso. O `ultimo_erro` do estado leva sempre a junção
+	* dos avisos ativos, ou `null` sem nenhum: um aviso que entra ou sai não apaga os outros.
+	*/
+	async avisar(tipo, texto) {
+		if (texto === null) this.avisos.delete(tipo);
+		else this.avisos.set(tipo, semNumeros(texto));
+		await this.gravarAvisos();
+	}
+	/** Grava a junção dos avisos se ela mudou (ou se a gravação anterior falhou); chamada também a cada volta. */
+	async gravarAvisos() {
 		if (this.d.ensaio) return;
+		const texto = this.textoDosAvisos();
+		if (texto === this.avisoGravado) return;
+		if (!this.d.whatsapp.conectado) return;
 		try {
 			await this.d.banco.gravarEstado({
-				conectado,
-				desde: new Date(this.d.agora()).toISOString(),
-				ultimoErro: conectado || !motivo ? null : semNumeros(motivo)
+				conectado: true,
+				ultimoErro: texto
 			});
+			this.avisoGravado = texto;
 		} catch (e) {
-			this.registrar(`não gravei o estado da conexão: ${mensagemDe$1(e)}`);
+			this.registrar(`não gravei o aviso do serviço: ${mensagemDe$1(e)}`);
 		}
 	}
-	/** Todo registro passa por aqui: nunca sai número de telefone inteiro. */
-	registrar(linha) {
-		this.d.registrar(semNumeros(linha));
+	/** O que impede qualquer envio agora (alerta ou resposta), ou `null`. */
+	bloqueio() {
+		const agora = this.d.agora();
+		if (this.restritoAte !== null && agora < this.restritoAte) return ERRO_RESTRICAO;
+		if (this.diaDasRecusas === chaveData(agora)) return ERRO_RECUSAS;
+		return null;
 	}
 	async bater(agora) {
 		if (this.d.ensaio) return;
@@ -762,19 +889,25 @@ var Servico = class {
 			this.registrar(`não gravei o batimento: ${mensagemDe$1(e)}`);
 		}
 	}
-	/** O aviso de teto de um dia não pode ficar no estado no dia seguinte. */
-	async limparAvisoDeTeto(agora) {
-		if (this.d.ensaio || !this.diaDoAvisoDeTeto || this.diaDoAvisoDeTeto === chaveData(agora)) return;
-		if (!this.d.whatsapp.conectado) return;
-		try {
-			await this.d.banco.gravarEstado({
-				conectado: true,
-				ultimoErro: null
-			});
+	/** Avisos com prazo: o de teto e o de recusas valem só no dia; o de restrição, até a hora que o WhatsApp deu. */
+	async vencerAvisos(agora) {
+		const hoje = chaveData(agora);
+		if (this.diaDoAvisoDeTeto && this.diaDoAvisoDeTeto !== hoje) {
 			this.diaDoAvisoDeTeto = "";
-		} catch (e) {
-			this.registrar(`não limpei o aviso de teto: ${mensagemDe$1(e)}`);
+			this.avisos.delete("teto");
 		}
+		if (this.diaDasRecusas && this.diaDasRecusas !== hoje) {
+			this.diaDasRecusas = "";
+			this.recusasSeguidas = 0;
+			this.recusaDesdeOUltimoEnvio = false;
+			this.avisos.delete("recusas");
+		}
+		if (this.restritoAte !== null && agora >= this.restritoAte) {
+			this.restritoAte = null;
+			this.avisos.delete("restricao");
+			this.registrar("venceu o prazo da restrição de envios do WhatsApp");
+		}
+		await this.gravarAvisos();
 	}
 	async limparUmaVezPorDia(agora) {
 		const dia = chaveData(agora);
@@ -788,7 +921,12 @@ var Servico = class {
 	}
 	async calcularSePreciso(agora) {
 		if (!precisaCalcular(agora, this.janelas?.calculadoEm ?? null)) return;
-		if (this.falhaDoCalculoEm !== null && agora - this.falhaDoCalculoEm < NOVA_TENTATIVA_TRIMBLE_MS) return;
+		const marco = ultimoMarcoDeCalculo(agora);
+		const falhas = this.falhasDaTrimble?.marco === marco ? this.falhasDaTrimble : null;
+		if (falhas) {
+			const insistiu = falhas.ultima - falhas.primeira >= INSISTENCIA_NA_TRIMBLE_MS;
+			if (agora - falhas.ultima < (insistiu ? NOVA_TENTATIVA_LENTA_TRIMBLE_MS : NOVA_TENTATIVA_TRIMBLE_MS)) return;
+		}
 		const dia = chaveData(agora);
 		if (!this.rodada || this.rodada.dia !== dia) {
 			const fazendas = await this.d.banco.fazendas();
@@ -814,8 +952,19 @@ var Servico = class {
 				rodada.respondidos[id] = janelasDeHoje(await this.d.trimble.historico(celula, agora));
 			}
 		} catch (e) {
-			this.falhaDoCalculoEm = agora;
+			const primeira = falhas?.primeira ?? agora;
+			this.falhasDaTrimble = {
+				marco,
+				primeira,
+				ultima: agora
+			};
+			this.semTrimbleDesde ??= agora;
 			this.registrar(`Trimble: ${mensagemDe$1(e)}`);
+			if (agora - primeira >= INSISTENCIA_NA_TRIMBLE_MS) {
+				const desde = this.semTrimbleDesde;
+				const quando = chaveData(desde) === dia ? horaDe(desde) : `${dataCurta(desde)} ${horaDe(desde)}`;
+				await this.avisar("trimble", `Sem dados da Trimble desde ${quando}: alertas parados até ela voltar`);
+			}
 			return;
 		}
 		this.janelas = {
@@ -824,8 +973,10 @@ var Servico = class {
 		};
 		this.fazendas = rodada.fazendas;
 		this.rodada = null;
-		this.falhaDoCalculoEm = null;
+		this.falhasDaTrimble = null;
+		this.semTrimbleDesde = null;
 		this.registrar(`janelas calculadas para ${rodada.quadrados.size} quadrado(s)`);
+		await this.avisar("trimble", null);
 	}
 	/** Evita ler contatos e envios (o banco) a cada minuto do dia: só quando há um evento a considerar. */
 	algoNaHora(agora, janelas) {
@@ -891,7 +1042,7 @@ var Servico = class {
 	}
 	/** O texto a mandar a este contato agora; `null` = nada para ele; `'parar'` = nada mais sai nesta volta. */
 	async preparar(tipo, contato, fazendas, janelas) {
-		if (!this.d.ensaio && !this.d.whatsapp.conectado) return "parar";
+		if (!this.d.ensaio && (!this.d.whatsapp.conectado || this.bloqueio() !== null)) return "parar";
 		if (this.estaPausado(contato)) return null;
 		const texto = textoDoEvento(tipo, contato, fazendas, janelas.porCelula, this.d.agora());
 		if (!texto) return null;
@@ -905,15 +1056,7 @@ var Servico = class {
 		if (this.diaDoAvisoDeTeto === dia) return;
 		this.diaDoAvisoDeTeto = dia;
 		this.registrar(`${ERRO_TETO_DO_DIA}: nada mais sai hoje`);
-		if (this.d.ensaio) return;
-		try {
-			await this.d.banco.gravarEstado({
-				conectado: this.d.whatsapp.conectado,
-				ultimoErro: ERRO_TETO_DO_DIA
-			});
-		} catch (e) {
-			this.registrar(`não gravei o aviso de teto: ${mensagemDe$1(e)}`);
-		}
+		await this.avisar("teto", ERRO_TETO_DO_DIA);
 	}
 	/** Espera a chamada ao WhatsApp, no máximo `PRAZO_DO_WHATSAPP_MS` (o relógio é o `dormir` injetado). */
 	async comPrazo(chamada) {
@@ -921,6 +1064,12 @@ var Servico = class {
 		const r = await Promise.race([chamada, this.d.dormir(PRAZO_DO_WHATSAPP_MS).then(() => ESTOUROU)]);
 		if (r === ESTOUROU) throw new PrazoEstourado();
 		return r;
+	}
+	/** Todo envio (alerta ou resposta) passa por aqui: é onde a sequência de recusas do WhatsApp é contada. */
+	async enviar(jid, texto) {
+		if (!this.recusaDesdeOUltimoEnvio) this.recusasSeguidas = 0;
+		this.recusaDesdeOUltimoEnvio = false;
+		await this.comPrazo(this.d.whatsapp.enviar(jid, texto));
 	}
 	numerosSemWhatsapp() {
 		const dia = chaveData(this.d.agora());
@@ -987,8 +1136,15 @@ var Servico = class {
 			this.registrar(`${quem}: não mandei ${tipo}: ${mensagemDe$1(e)}`);
 			return false;
 		}
+		const impedimento = this.estaPausado(contato) ? ERRO_PEDIU_PARA_SAIR : this.bloqueio();
+		if (impedimento !== null) {
+			entrada.situacao = "pulado";
+			this.registrar(`${quem}: ${tipo} não enviado: ${impedimento}`);
+			await this.fechar(contato.id, chave, quem, "pulado", impedimento);
+			return false;
+		}
 		try {
-			await this.comPrazo(this.d.whatsapp.enviar(jid, montarMensagem(contato, texto, this.d.agora(), comSair)));
+			await this.enviar(jid, montarMensagem(contato, texto, this.d.agora(), comSair));
 		} catch (e) {
 			this.registrar(`${quem}: falha ao enviar ${tipo}: ${mensagemDe$1(e)}`);
 			entrada.situacao = "falhou";
@@ -1025,6 +1181,27 @@ var Servico = class {
 		const mensagem = montarMensagem(contato, texto, this.d.agora(), comSair).replaceAll("\n", " / ");
 		this.registrar(`ensaio: enviaria ${tipo} a ${mascarar(contato.telefone)}: ${mensagem}`);
 	}
+	/**
+	* Só no ensaio, uma vez: por que cada contato NÃO receberia, e as fazendas que nenhum contato
+	* alcança (a não ser os de "todas"). É o que explica um ensaio que não mostra ninguém.
+	*/
+	async explicarEnsaio(janelas) {
+		const contatos = await this.d.banco.contatos();
+		this.ensaioExplicado = true;
+		const fazendas = this.fazendas ?? [];
+		const porNome = (a, b) => a.localeCompare(b, "pt-BR");
+		for (const c of [...contatos].sort((a, b) => porNome(a.nome, b.nome))) {
+			const motivos = [];
+			if (!c.ativo) motivos.push("inativo");
+			if (!c.alertaJanela) motivos.push("sem Janela de risco");
+			if (!c.confirmadoEm) motivos.push("aguardando ATIVAR");
+			const temJanela = fazendasDoContato(c, fazendas).some((f) => (janelas.porCelula[f.celulaId] ?? []).length > 0);
+			if (!motivos.length && !temJanela) motivos.push("sem janela nas fazendas dele hoje");
+			if (motivos.length) this.registrar(`ensaio: ${mascarar(c.telefone)} não receberia: ${motivos.join(", ")}`);
+		}
+		const semVinculo = fazendas.filter((f) => f.celulaId && f.coaId == null).map((f) => f.nome).sort(porNome);
+		if (semVinculo.length) this.registrar(`ensaio: Fazendas sem vínculo com o COA WEB (não entram em contato nenhum que não seja "todas"): ${semVinculo.join(", ")}`);
+	}
 	/** Resposta a ATIVAR/SAIR: no máximo 2 por pessoa por dia, respeita o teto do dia e conta nele. */
 	async responder(contato, jid, quem, texto) {
 		const dia = chaveData(this.d.agora());
@@ -1032,6 +1209,10 @@ var Servico = class {
 		const feitas = anterior && anterior.dia === dia ? anterior.n : 0;
 		if (feitas >= MAX_RESPOSTAS_POR_PESSOA_POR_DIA) {
 			this.registrar(`${quem}: limite de respostas do dia, não respondi`);
+			return;
+		}
+		if (this.bloqueio() !== null) {
+			this.registrar(`${quem}: ${this.bloqueio()}, não respondi`);
 			return;
 		}
 		if (!this.contador.podeMensagem()) {
@@ -1042,9 +1223,20 @@ var Servico = class {
 			dia,
 			n: feitas + 1
 		});
+		if (this.ultimaResposta) {
+			const passou = this.d.agora() - this.ultimaResposta.em;
+			if (passou >= 0 && passou < this.ultimaResposta.pausa) {
+				await this.d.dormir(this.ultimaResposta.pausa - passou);
+				if (this.bloqueio() !== null) return;
+			}
+		}
 		try {
-			await this.comPrazo(this.d.whatsapp.enviar(jid, texto));
+			await this.enviar(jid, texto);
 			this.contador.contar(null);
+			this.ultimaResposta = {
+				em: this.d.agora(),
+				pausa: pausaEntreRespostas()
+			};
 		} catch (e) {
 			this.registrar(`${quem}: não consegui responder: ${mensagemDe$1(e)}`);
 		}
@@ -1055,23 +1247,49 @@ var Servico = class {
 /** Conexão do WhatsApp do serviço (Baileys). É o único arquivo que importa a biblioteca. */
 var ESPERA_MINIMA = 5e3;
 var ESPERA_MAXIMA = 3e5;
+/** Conexão que abre e cai logo em seguida não zera a espera: só a que ficou aberta este tempo. */
+var ABERTA_PARA_ZERAR_A_ESPERA_MS = 3e5;
+var HORA_MS = 36e5;
+/** Mais quedas que isto dentro de uma hora: reconectar em laço só piora a reputação do número. */
+var MAXIMO_DE_QUEDAS_POR_HORA = 10;
+var MOTIVO_MUITAS_QUEDAS = "muitas quedas seguidas";
+/** A fila de quando o serviço estava fora do ar: mensagem mais velha que isto não vale mais como pedido. */
+var VALIDADE_DA_FILA_MS = 48 * HORA_MS;
+var PRAZO_DA_VERSAO_MS = 1e4;
+/** Quantas mensagens enviadas ficam lembradas para reconhecer uma recusa que chega depois. */
+var ENVIADAS_LEMBRADAS = 200;
 var MOTIVO_SEM_RECONEXAO = {
 	[DisconnectReason.loggedOut]: "sessão encerrada no celular",
 	[DisconnectReason.connectionReplaced]: "sessão em uso em outro lugar",
-	[DisconnectReason.forbidden]: "acesso recusado pelo WhatsApp"
+	[DisconnectReason.forbidden]: "acesso recusado pelo WhatsApp",
+	[DisconnectReason.badSession]: "sessão inválida",
+	[DisconnectReason.multideviceMismatch]: "versão do aparelho incompatível"
 };
 var textoDoErro = (e) => e instanceof Error ? e.message : "erro";
+/** O texto da mensagem; mensagem temporária (efêmera) ou de visualização única embrulha o conteúdo. */
+function textoDe(m) {
+	const conteudo = normalizeMessageContent(m.message);
+	return (conteudo?.conversation ?? conteudo?.extendedTextMessage?.text) || null;
+}
 /** Só o texto de uma mensagem de conversa individual vinda de outra pessoa; o resto vira `null`. */
 function lerRecebida(m) {
 	if (m.key.fromMe) return null;
 	const bruto = m.key.remoteJid ?? "";
 	const jid = bruto.endsWith("@lid") ? m.key.remoteJidAlt ?? "" : bruto;
 	if (!jid || chaveDoNumero(jid) === null) return null;
-	const texto = m.message?.conversation ?? m.message?.extendedTextMessage?.text;
+	const texto = textoDe(m);
 	return texto ? {
 		jid,
 		texto
 	} : null;
+}
+/** Remetente em `@lid` sem o telefone junto: só o mapa da biblioteca diz quem é. */
+function precisaDoMapa(m) {
+	return !m.key.fromMe && (m.key.remoteJid ?? "").endsWith("@lid") && !m.key.remoteJidAlt && textoDe(m) !== null;
+}
+function segundosDe(carimbo) {
+	const valor = typeof carimbo === "number" ? carimbo : typeof carimbo?.toNumber === "function" ? carimbo.toNumber() : NaN;
+	return Number.isFinite(valor) && valor > 0 ? valor : null;
 }
 var registradorSilencioso = {
 	level: "silent",
@@ -1086,24 +1304,39 @@ var registradorSilencioso = {
 	fatal() {}
 };
 var dormirDeVerdade = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A versão mais nova do protocolo, com prazo: sem resposta (ou com falha), a biblioteca usa a que ela traz. */
+async function versaoDoProtocolo(buscar, dormir) {
+	try {
+		const busca = buscar();
+		busca.catch(() => {});
+		const resposta = await Promise.race([busca, dormir(PRAZO_DA_VERSAO_MS).then(() => void 0)]);
+		return resposta && resposta.isLatest !== false ? resposta.version : void 0;
+	} catch {
+		return;
+	}
+}
 async function conectarWhatsapp(opcoes) {
 	const dep = opcoes.dependencias;
 	const criarSocket = dep?.criarSocket ?? ((config) => makeWASocket(config));
 	const estadoDaSessao = dep?.estadoDaSessao ?? useMultiFileAuthState;
 	const dormir = dep?.dormir ?? dormirDeVerdade;
+	const agora = dep?.agora ?? Date.now;
+	const buscarVersao = dep ? dep.buscarVersao : fetchLatestBaileysVersion;
 	const { state, saveCreds } = await estadoDaSessao(opcoes.pastaSessao);
-	let version;
-	if (!dep) try {
-		version = (await fetchLatestBaileysVersion()).version;
-	} catch {
-		version = void 0;
-	}
+	const version = buscarVersao ? await versaoDoProtocolo(buscarVersao, dormir) : void 0;
 	let socket;
 	let conectado = false;
 	let precisaParear = false;
 	let encerrado = false;
 	let reconectando = false;
 	let espera = ESPERA_MINIMA;
+	let abertaEm = null;
+	let quedas = [];
+	let restritoAte = null;
+	/** Id de cada mensagem enviada → para onde foi (a recusa chega depois, com o endereço que o servidor quiser). */
+	const enviadas = /* @__PURE__ */ new Map();
+	/** As recebidas à espera do mapa de endereços; vazia, a mensagem é entregue na hora. */
+	let filaDeRecebidas = null;
 	const numeroParaCodigo = opcoes.numeroParaCodigo?.replace(/\D/g, "");
 	async function gravarSessao() {
 		try {
@@ -1113,6 +1346,51 @@ async function conectarWhatsapp(opcoes) {
 		}
 	}
 	const falhouAoReceber = (e) => console.log(`[whatsapp] falha ao tratar uma mensagem recebida: ${e instanceof Error ? e.name : "erro"}`);
+	const entregar = (recebida) => {
+		if (recebida) Promise.resolve(opcoes.aoReceber(recebida)).catch(falhouAoReceber);
+	};
+	/** Lê a mensagem e a entrega; devolve uma promessa só quando precisou perguntar ao mapa de endereços. */
+	function receber(s, m) {
+		if (!precisaDoMapa(m)) return entregar(lerRecebida(m));
+		const lid = m.key.remoteJid;
+		return Promise.resolve(s.signalRepository?.lidMapping?.getPNForLID(lid) ?? null).then((telefone) => {
+			if (telefone) entregar(lerRecebida({
+				...m,
+				key: {
+					...m.key,
+					remoteJidAlt: jidNormalizedUser(telefone)
+				}
+			}));
+		});
+	}
+	/** Uma por vez e na ordem de chegada: um SAIR não pode passar na frente (nem ficar atrás) do ATIVAR da mesma pessoa. */
+	function enfileirar(s, m) {
+		const passo = () => {
+			try {
+				return receber(s, m);
+			} catch (erro) {
+				falhouAoReceber(erro);
+			}
+		};
+		const pendente = filaDeRecebidas ? filaDeRecebidas.then(passo) : passo();
+		if (!pendente) return;
+		const vez = pendente.catch(falhouAoReceber).finally(() => {
+			if (filaDeRecebidas === vez) filaDeRecebidas = null;
+		});
+		filaDeRecebidas = vez;
+	}
+	/** Mensagem de quando o serviço estava fora do ar: só a de outra pessoa e com menos de 48 h. */
+	function recenteNaFila(m) {
+		const segundos = segundosDe(m.messageTimestamp);
+		return !m.key.fromMe && segundos !== null && agora() - segundos * 1e3 < VALIDADE_DA_FILA_MS;
+	}
+	function tratarRestricao(r) {
+		const fim = r.timeEnforcementEnds == null ? NaN : new Date(r.timeEnforcementEnds).getTime();
+		const novo = r.isActive ? Number.isFinite(fim) ? fim : Infinity : null;
+		if (novo === restritoAte) return;
+		restritoAte = novo;
+		opcoes.aoRestringir?.(novo, novo === null ? "restrição retirada" : r.enforcementType ?? "");
+	}
 	function abrir() {
 		const s = criarSocket({
 			auth: state,
@@ -1138,10 +1416,11 @@ async function conectarWhatsapp(opcoes) {
 					s.requestPairingCode(numeroParaCodigo).then((codigo) => opcoes.aoReceberCodigo?.(codigo)).catch((e) => console.log(`[whatsapp] não consegui pedir o código de pareamento (${mascarar(numeroParaCodigo)}): ${textoDoErro(e)}`));
 				}
 			}
+			if (u.reachoutTimeLock) tratarRestricao(u.reachoutTimeLock);
 			if (u.connection === "open") {
 				conectado = true;
 				precisaParear = false;
-				espera = ESPERA_MINIMA;
+				abertaEm = agora();
 				opcoes.aoMudarConexao(true);
 			} else if (u.connection === "close") {
 				conectado = false;
@@ -1152,17 +1431,43 @@ async function conectarWhatsapp(opcoes) {
 					opcoes.aoMudarConexao(false, motivoFixo);
 					return;
 				}
+				if (!reconectando) {
+					const quando = agora();
+					if (abertaEm !== null && quando - abertaEm >= ABERTA_PARA_ZERAR_A_ESPERA_MS) espera = ESPERA_MINIMA;
+					quedas = [...quedas.filter((t) => quando - t < HORA_MS), quando];
+					if (quedas.length > MAXIMO_DE_QUEDAS_POR_HORA) {
+						abertaEm = null;
+						precisaParear = true;
+						opcoes.aoMudarConexao(false, MOTIVO_MUITAS_QUEDAS);
+						return;
+					}
+				}
+				abertaEm = null;
 				opcoes.aoMudarConexao(false, `conexão perdida${codigo ? ` (${codigo})` : ""}`);
 				reconectar();
 			}
 		}));
 		s.ev.on("messages.upsert", ((e) => {
-			if (!atual() || e.type !== "notify") return;
-			for (const m of e.messages) try {
-				const recebida = lerRecebida(m);
-				if (recebida) Promise.resolve(opcoes.aoReceber(recebida)).catch(falhouAoReceber);
-			} catch (erro) {
-				falhouAoReceber(erro);
+			if (!atual()) return;
+			if (e.type !== "notify" && e.type !== "append") return;
+			for (const m of e.messages) {
+				if (e.type === "append" && !recenteNaFila(m)) continue;
+				enfileirar(s, m);
+			}
+		}));
+		s.ev.on("messages.update", ((atualizacoes) => {
+			if (!atual()) return;
+			for (const a of atualizacoes) {
+				const id = a.key?.id;
+				if (!id || a.update?.status !== WAMessageStatus.ERROR) continue;
+				const jid = enviadas.get(id);
+				if (!jid) continue;
+				enviadas.delete(id);
+				try {
+					opcoes.aoFalharEntrega?.(jid);
+				} catch (erro) {
+					console.log(`[whatsapp] falha ao tratar uma recusa de mensagem: ${erro instanceof Error ? erro.name : "erro"}`);
+				}
 			}
 		}));
 	}
@@ -1195,6 +1500,9 @@ async function conectarWhatsapp(opcoes) {
 		get precisaParear() {
 			return precisaParear;
 		},
+		get restritoAte() {
+			return restritoAte !== null && restritoAte > agora() ? restritoAte : null;
+		},
 		async enviar(jid, texto) {
 			if (!conectado || !socket) throw new Error("WhatsApp desconectado");
 			const s = socket;
@@ -1204,7 +1512,12 @@ async function conectarWhatsapp(opcoes) {
 			} finally {
 				await s.sendPresenceUpdate("paused", jid).catch(() => {});
 			}
-			await s.sendMessage(jid, { text: texto });
+			const id = (await s.sendMessage(jid, { text: texto }))?.key?.id ?? null;
+			if (id) {
+				enviadas.set(id, jid);
+				if (enviadas.size > ENVIADAS_LEMBRADAS) enviadas.delete(enviadas.keys().next().value);
+			}
+			return id;
 		},
 		async resolverJid(telefone) {
 			if (!conectado || !socket) throw new Error("WhatsApp desconectado");
@@ -1284,8 +1597,20 @@ function lerAmbiente(env) {
 		pastaSessao: pastaDaSessao(env)
 	};
 }
-/** A biblioteca do WhatsApp grava o `creds.json` na pasta da sessão; sem ele, conectar só geraria QR que ninguém vê. */
-var sessaoPareada = (pastaSessao) => existsSync(join(pastaSessao, "creds.json"));
+/**
+* Já existe sessão pareada? Sem ela, conectar só geraria QR que ninguém vê. Existir o `creds.json` não basta:
+* a biblioteca o grava assim que começa, e o pareamento por código põe nele o `me` (e depois o `registered`)
+* antes de o celular aceitar. Conta registrada é a que tem `account`, que só chega junto do aceite; o
+* `registered` não serve de prova porque fica `false` para sempre em quem pareou por QR.
+*/
+function sessaoPareada(pastaSessao) {
+	try {
+		const creds = JSON.parse(readFileSync(join(pastaSessao, "creds.json"), "utf8"));
+		return typeof creds?.me?.id === "string" && creds.me.id !== "" && typeof creds.account === "object" && creds.account !== null;
+	} catch {
+		return false;
+	}
+}
 var fusoCerto = (tz) => tz === FUSO;
 /** `AAAA-MM-DDTHH:MM:SS` na hora local do processo, e a linha. */
 function linhaDeRegistro(agora, linha) {
@@ -1371,6 +1696,12 @@ async function ligarServico(p) {
 					} catch (e) {
 						p.registrar(`falha ao tratar a conexão: ${mensagemDe(e)}`);
 					}
+				},
+				aoRestringir: (ate, motivo) => {
+					s.restricao(ate, motivo).catch((e) => p.registrar(`falha ao tratar a restrição: ${mensagemDe(e)}`));
+				},
+				aoFalharEntrega: (jid) => {
+					s.falhaDeEntrega(jid).catch((e) => p.registrar(`falha ao tratar a recusa: ${mensagemDe(e)}`));
 				}
 			});
 			if (parando) await nova.encerrar();

@@ -60,7 +60,13 @@ principal() {
   if [ -n "$primeira_vez" ]; then
     echo "Instalado. Falta: gravar a chave, parear e ligar o serviço (LEIA-ME.md)."
   else
-    echo "Instalado. O arquivo da chave já existia e não foi tocado."
+    # O arquivo pode ser o que este instalador criou vazio numa rodada anterior. Quem olha é o locks-sat, e o
+    # grep -q só responde se a linha da chave tem algum valor: nada do arquivo vai para a tela.
+    if ! sudo -u locks-sat grep -q '^SUPABASE_SERVICE_ROLE_KEY=.' "$AMBIENTE"; then
+      echo "Instalado. O arquivo da chave existe mas ainda está vazio: faça o passo 2 do LEIA-ME."
+    else
+      echo "Instalado. O arquivo da chave já existia e não foi tocado."
+    fi
   fi
 }
 

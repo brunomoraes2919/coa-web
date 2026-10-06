@@ -108,6 +108,47 @@ describe('pacote do serviço da VM', () => {
     expect(guia).not.toMatch(/--(?:teste|parear) \d/)
   })
 
+  it('o guia manda para o caminho manual quando o defeito está no arquivo de onde a cópia sai', () => {
+    const guia = ler('LEIA-ME.md').split('\n')
+    for (const erro of ['**SUPABASE_URL não parece um endereço https://… do Supabase**', '**SUPABASE_SERVICE_ROLE_KEY tem caracteres que uma chave não tem**']) {
+      const linha = guia.find((l) => l.startsWith(`- ${erro}`))
+      expect(linha, erro).toContain('Se o comando acima não mostrar as duas linhas')
+      expect(linha, erro).not.toContain('Refaça o passo 2.')
+    }
+    expect(ler('LEIA-ME.md')).toContain('sudo -H -u locks-sat nano /home/locks-sat/.locks-sat-whatsapp.env')
+  })
+
+  it('o guia explica cada aviso novo do serviço, e nos do WhatsApp manda parar e avisar', () => {
+    const guia = ler('LEIA-ME.md')
+    const depois = guia.slice(guia.indexOf('## Se algo der errado'))
+    const item = (aviso: string) => {
+      const inicio = depois.indexOf(`- **${aviso}`)
+      expect(inicio, aviso).toBeGreaterThan(0)
+      const fim = depois.indexOf('\n- **', inicio + 1)
+      return depois.slice(inicio, fim < 0 ? undefined : fim)
+    }
+    for (const aviso of ['muitas quedas seguidas', 'sessão inválida', 'versão do aparelho incompatível', 'WhatsApp restringiu os envios até', 'WhatsApp recusou 3 mensagens seguidas']) {
+      expect(item(aviso), aviso).toMatch(/não (insista|pareie de novo)/i)
+      expect(item(aviso), aviso).toContain('avise')
+    }
+    expect(item('Sem dados da Trimble desde')).toContain('uma vez por hora')
+    // os textos do guia são os que o serviço grava
+    for (const texto of ['muitas quedas seguidas', 'sessão inválida', 'versão do aparelho incompatível', 'WhatsApp restringiu os envios', 'mensagens seguidas', 'Sem dados da Trimble desde']) {
+      expect(ler('locks-sat-whatsapp.mjs'), texto).toContain(texto)
+    }
+  })
+
+  it('o guia diz que ATIVAR só vale com o serviço ligado, como testar ATIVAR e SAIR, e para começar com poucas pessoas', () => {
+    const guia = ler('LEIA-ME.md')
+    const passo = (n: number) => guia.slice(guia.indexOf(`## ${n}. `), guia.indexOf(`## ${n + 1}. `) < 0 ? guia.indexOf('## Dia a dia') : guia.indexOf(`## ${n + 1}. `))
+    expect(passo(4)).toContain('confirmar à mão')
+    expect(passo(4)).toContain('só vale com o serviço **ligado**')
+    expect(passo(5)).toContain('digitando')
+    expect(passo(6)).toMatch(/ATIVAR[\s\S]*SAIR[\s\S]*Autorização[\s\S]*Situação/)
+    expect(passo(6)).toContain('2 ou 3')
+    expect(guia).toContain('o sistema o liga de novo sozinho em 1 minuto')
+  })
+
   it('o pacote tem os arquivos que o instalar.sh e o atualizar.sh baixam', () => {
     const presentes = arquivos()
     for (const f of ['locks-sat-whatsapp.mjs', 'package.json', 'package-lock.json', 'atualizar.sh', 'instalar.sh',
@@ -176,9 +217,24 @@ describe('instalar.sh', () => {
     const se = codigo.findIndex((l) => l.includes('if ! sudo -u locks-sat test -f "$AMBIENTE"; then'))
     expect(se).toBeGreaterThan(0)
     expect(codigo[se + 1]).toContain('sudo -H -u locks-sat sh -c \'umask 077; set -C; printf "SUPABASE_URL=\\nSUPABASE_SERVICE_ROLE_KEY=\\n" > "$1"\' sh "$AMBIENTE"')
-    // é o único lugar do instalador que escreve nesse arquivo
-    expect(codigo.filter((l) => l.includes('$AMBIENTE') && !l.startsWith('AMBIENTE='))).toHaveLength(2)
+    // é o único lugar do instalador que escreve nesse arquivo: as outras duas linhas só perguntam (test -f e grep -q)
+    const citam = codigo.filter((l) => l.includes('$AMBIENTE') && !l.startsWith('AMBIENTE='))
+    expect(citam).toHaveLength(3)
+    expect(citam.filter((l) => !/sudo -u locks-sat (test -f|grep -q) /.test(l))).toHaveLength(1)
     expect(codigo.join('\n')).not.toContain('tee')
+  })
+
+  it('a mensagem final distingue o arquivo da chave ainda vazio do já preenchido, sem mostrar nada dele', () => {
+    const codigo = linhas()
+    const confere = codigo.findIndex((l) => l.includes('if ! sudo -u locks-sat grep -q \'^SUPABASE_SERVICE_ROLE_KEY=.\' "$AMBIENTE"; then'))
+    expect(confere).toBeGreaterThan(codigo.indexOf('  sudo rm -f "$PASTA/.mudou"'))
+    expect(codigo[confere + 1]).toContain('O arquivo da chave existe mas ainda está vazio: faça o passo 2 do LEIA-ME.')
+    expect(codigo[confere + 2].trim()).toBe('else')
+    expect(codigo[confere + 3]).toContain('O arquivo da chave já existia e não foi tocado.')
+    // as três mensagens finais começam com "Instalado.", que é o que o guia manda conferir
+    expect(codigo.filter((l) => l.trim().startsWith('echo "Instalado. '))).toHaveLength(3)
+    // nenhum comando do instalador põe o conteúdo do arquivo na tela
+    expect(codigo.join('\n')).not.toMatch(/\b(cat|head|tail|less|more) [^|]*\$AMBIENTE/)
   })
 
   it('confere o Node como locks-sat, e nada é feito em /home/locks-sat pelo usuário comum', () => {

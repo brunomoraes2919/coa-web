@@ -6,3 +6,6 @@ dist/
 !.env.coa-web
 coverage/
 .vite/
+# serviço da VM: a sessão do WhatsApp equivale à senha do número e nunca vai para o repositório
+servidor/sessao/
+servidor/node_modules/
