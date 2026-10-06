@@ -551,7 +551,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 }
 /* nos módulos em tela cheia (Mapas e Operacional) o título da página sai no celular: a altura vai para o módulo */
 @media (max-width:900px){
-  .app.modo-mapas .topbar, .app.modo-acomp .topbar{display:none;}
+  .app.modo-mapas .topbar, .app.modo-acomp .topbar, .app.modo-previsao .topbar{display:none;}
 }
 /* toque: campos com letra de 16px não disparam o zoom automático do iPhone ao focar */
 @media (max-width:900px) and (pointer:coarse){
@@ -627,6 +627,24 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 @media (max-width:480px){
   .app.modo-sat .page[data-page="sat"].active{margin:0 -12px -12px;}
 }
+/* ---------- categoria PREVISÃO DO TEMPO: módulo num iframe (previsao/index.html?embed=1) ---------- */
+.app.modo-previsao{min-height:0;}
+.app.modo-previsao main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
+.app.modo-previsao .topbar{flex:none;margin-bottom:0;}
+.app.modo-previsao .page[data-page="previsao"].active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin:0 -34px -60px;}
+#previsao-frame{display:block;flex:1 1 auto;width:100%;min-height:0;border:0;background:var(--fundo);}
+@media (max-width:900px){
+  .app.modo-previsao{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+  .app.modo-previsao .sidebar{flex:none;}
+  .app.modo-previsao main{flex:1 1 auto;min-height:0;height:auto;}
+  .app.modo-previsao .page[data-page="previsao"].active{margin:0 -18px -18px;}
+}
+@media (max-width:640px){
+  .app.modo-previsao .page[data-page="previsao"].active{margin:0 -14px -14px;}
+}
+@media (max-width:480px){
+  .app.modo-previsao .page[data-page="previsao"].active{margin:0 -12px -12px;}
+}
 /* estado do Locks SAT no card da categoria */
 .categoria-card small.categoria-card-nota{font-size:11.5px;font-weight:400;opacity:.85;}
 .categoria-card small.categoria-card-nota:empty{display:none;}
@@ -685,6 +703,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m9.5 9.5 5 5"/><rect x="9.2" y="8.5" width="5.6" height="7" rx="1" transform="rotate(-45 12 12)"/><path d="m7.6 11.4-3.2-3.2 2.8-2.8 3.2 3.2M16.4 12.6l3.2 3.2-2.8 2.8-3.2-3.2"/><path d="M4.5 16a3.5 3.5 0 0 0 3.5 3.5M2.5 16A5.5 5.5 0 0 0 8 21.5"/></svg>
         <span>Locks SAT</span>
         <small class="categoria-card-nota" id="sat-resumo"></small>
+      </button>
+      <button class="categoria-card" id="card-previsao">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 16.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.6a3.5 3.5 0 0 1 .5 6.9"/><path d="M8.5 19.5l1-2M12 21l1-2M15.5 19.5l1-2"/></svg>
+        <span>Previsão do Tempo</span>
       </button>
       <button class="categoria-card admin-only" id="card-administracao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
@@ -759,6 +781,12 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <button class="nav-btn" data-page="sat" data-sat="/hoje"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Hoje</button>
         <button class="nav-btn" data-page="sat" data-sat="/mapa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4Z"/><path d="M9 4v13.5M15 6.5V20"/></svg>Mapa</button>
         <button class="nav-btn" data-page="sat" data-sat="/alertas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 10v4M12 17.5v.5"/></svg>Alertas</button>
+      </nav>
+    </div>
+    <div id="nav-previsao" style="display:none">
+      <div class="nav-eyebrow">Previsão do Tempo</div>
+      <nav>
+        <button class="nav-btn" data-page="previsao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.6a3.5 3.5 0 0 1 .5 6.9"/><path d="M8.5 19.5l1-2M12 21l1-2M15.5 19.5l1-2"/></svg>Mapa de previsão</button>
       </nav>
     </div>
     <div class="sidebar-foot">
@@ -1173,6 +1201,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <section class="page" data-page="mapas"></section>
     <section class="page" data-page="acompanhamento"></section>
     <section class="page" data-page="sat"></section>
+    <section class="page" data-page="previsao"></section>
 
   </main>
 </div>
@@ -1236,7 +1265,7 @@ const state = {
   whatsappDisponivel: null     // false = a tabela ainda não existe no banco (script 0003)
 };
 let sessao = null;
-let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat'
+let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat' | 'previsao'
 /* categorias que o administrador libera por usuário (tabela usuario_categorias). O admin vê todas. */
 const CATEGORIAS = [
   { chave:'algodao', nome:'Algodão', card:'card-algodao' },
@@ -1244,6 +1273,7 @@ const CATEGORIAS = [
   { chave:'mapas', nome:'Mapas', card:'card-mapas' },
   { chave:'acompanhamento', nome:'Operacional', card:'card-acompanhamento' },
   { chave:'sat', nome:'Locks SAT', card:'card-sat' },
+  { chave:'previsao', nome:'Previsão do Tempo', card:'card-previsao' },
 ];
 // null = ainda não se sabe, ou a tabela usuario_categorias não existe no banco: vale como "todas"
 let categoriasDoUsuario = null;
@@ -1386,6 +1416,7 @@ const titulos = {
   mapas:['Mapas','Mapa de Chuva'], // o título real vem do módulo (mensagem 'mapas-rota')
   acompanhamento:['Acompanhamento Operacional','Plantio e colheita com os dados do PIMS'],
   sat:['Locks SAT','Monitoramento de cintilação RTK'], // o título real vem do módulo (mensagem 'sat-rota')
+  previsao:['Previsão do Tempo','Mapa do Windy com os limites das fazendas'],
 };
 document.querySelectorAll('.nav-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -1393,6 +1424,7 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
     if(btn.dataset.rota) irParaMapas(btn.dataset.rota);
     else if(btn.dataset.acomp) irParaAcomp(btn.dataset.acomp);
     else if(btn.dataset.sat) irParaSat(btn.dataset.sat);
+    else if(btn.dataset.page === 'previsao') irParaPrevisao();
     else irPara(btn.dataset.page);
   });
 });
@@ -1404,6 +1436,7 @@ function irPara(pagina){
   document.getElementById('app-shell').classList.toggle('modo-mapas', pagina==='mapas');
   document.getElementById('app-shell').classList.toggle('modo-acomp', pagina==='acompanhamento');
   document.getElementById('app-shell').classList.toggle('modo-sat', pagina==='sat');
+  document.getElementById('app-shell').classList.toggle('modo-previsao', pagina==='previsao');
   renderTudo();
 }
 function atualizarCabecalhoPagina(){
@@ -3775,6 +3808,7 @@ function entrarAcompanhamento(){
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = '';
   document.getElementById('nav-sat').style.display = 'none';
+  document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaAcomp(null); // 1ª entrada: cria o iframe no painel; depois mantém o módulo onde estava
@@ -3797,6 +3831,76 @@ window.addEventListener('message', ev=>{
   if(!d || typeof d !== 'object' || d.tipo !== 'acomp-rota') return;
   if(d.vista === 'painel' || d.vista === 'metas' || d.vista === 'safras'){ acompVista = d.vista; destacarBotaoAcomp(); }
   // fazenda escolhida nas abas do módulo → seletor do menu lateral (e o resto do COA WEB, como numa troca manual)
+  if(typeof d.coaFazenda === 'number'){
+    const el = document.getElementById('sb-fazenda');
+    if(el && el.value !== String(d.coaFazenda) && [...el.options].some(o=>o.value===String(d.coaFazenda))){
+      el.value = String(d.coaFazenda);
+      el.dispatchEvent(new Event('change'));
+    }
+  }
+});
+
+/* =====================================================================
+   PREVISÃO DO TEMPO — módulo num iframe da mesma origem
+   (previsao/index.html?embed=1; a sessão do Supabase é a mesma do COA WEB)
+   - COA → módulo: { tipo:'coa-fazenda', id, nome }
+   - módulo → COA: { tipo:'previsao-fazenda', coaFazenda }
+   ===================================================================== */
+let previsaoFrame = null;      // iframe #previsao-frame (criado na primeira entrada; removido ao sair)
+let previsaoCarregado = false;
+function enviarFazendaPrevisao(){
+  if(!previsaoFrame || !previsaoCarregado || !previsaoFrame.contentWindow) return;
+  const f = state.fazendas.find(x=>x.id===fazendaSelecionadaId()) || { id:null, nome:null };
+  try{ previsaoFrame.contentWindow.postMessage({ tipo:'coa-fazenda', id:f.id, nome:f.nome }, location.origin); }
+  catch(e){ console.warn('PREVISÃO: não foi possível avisar o módulo', e); }
+}
+function irParaPrevisao(){
+  irPara('previsao');
+  if(previsaoFrame) return;
+  const frame = document.createElement('iframe');
+  frame.id = 'previsao-frame';
+  frame.allow = 'fullscreen';
+  frame.title = 'Previsão do Tempo';
+  frame.addEventListener('load', ()=>{
+    if(frame !== previsaoFrame) return;
+    previsaoCarregado = true;
+    enviarFazendaPrevisao();
+  });
+  frame.src = 'previsao/index.html?embed=1';
+  previsaoFrame = frame;
+  previsaoCarregado = false;
+  document.querySelector('.page[data-page="previsao"]').appendChild(frame);
+}
+function entrarPrevisao(){
+  if(!podeCategoria('previsao')){ mostrarCategoriaScreen(); return; }
+  categoriaAtual = 'previsao';
+  document.getElementById('nav-algodao').style.display = 'none';
+  document.getElementById('nav-mecanizadas').style.display = 'none';
+  document.getElementById('nav-administracao').style.display = 'none';
+  document.getElementById('nav-mapas').style.display = 'none';
+  document.getElementById('nav-acompanhamento').style.display = 'none';
+  document.getElementById('nav-sat').style.display = 'none';
+  document.getElementById('nav-previsao').style.display = '';
+  document.getElementById('categoria-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = '';
+  irParaPrevisao(); // 1ª entrada: cria o iframe; depois mantém o mapa onde estava
+  enviarFazendaPrevisao();
+}
+function descarregarPrevisao(){
+  if(previsaoFrame){
+    previsaoFrame.src = 'about:blank';
+    previsaoFrame.remove();
+  }
+  previsaoFrame = null;
+  previsaoCarregado = false;
+}
+document.getElementById('sb-fazenda').addEventListener('change', enviarFazendaPrevisao);
+window.addEventListener('message', ev=>{
+  if(ev.origin !== location.origin) return;
+  if(!previsaoFrame || ev.source !== previsaoFrame.contentWindow) return;
+  const d = ev.data;
+  if(!d || typeof d !== 'object' || d.tipo !== 'previsao-fazenda') return;
+  // fazenda escolhida no módulo → seletor do menu lateral (e o resto do COA WEB, como numa troca manual)
   if(typeof d.coaFazenda === 'number'){
     const el = document.getElementById('sb-fazenda');
     if(el && el.value !== String(d.coaFazenda) && [...el.options].some(o=>o.value===String(d.coaFazenda))){
@@ -3879,6 +3983,7 @@ function entrarSat(rota){
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = '';
+  document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaSat(typeof rota === 'string' ? rota : null); // sem rota: mantém o módulo onde estava
@@ -4095,6 +4200,7 @@ function entrarAlgodao(){
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
+  document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('relatorio');
@@ -4108,6 +4214,7 @@ function entrarMecanizadas(){
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
+  document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('importar-mecanizadas');
@@ -4121,6 +4228,7 @@ function entrarAdministracao(){
   document.getElementById('nav-mapas').style.display = 'none';
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
+  document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('usuarios');
@@ -4134,6 +4242,7 @@ function entrarMapas(){
   document.getElementById('nav-mapas').style.display = '';
   document.getElementById('nav-acompanhamento').style.display = 'none';
   document.getElementById('nav-sat').style.display = 'none';
+  document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaMapas(null); // 1ª entrada: cria o iframe na rota inicial; depois mantém o módulo onde estava
@@ -4145,6 +4254,7 @@ document.getElementById('card-administracao').addEventListener('click', entrarAd
 document.getElementById('card-mapas').addEventListener('click', entrarMapas);
 document.getElementById('card-acompanhamento').addEventListener('click', entrarAcompanhamento);
 document.getElementById('card-sat').addEventListener('click', ()=>entrarSat());
+document.getElementById('card-previsao').addEventListener('click', entrarPrevisao);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
 
 async function tentarLogin(){
@@ -4171,6 +4281,7 @@ async function sair(){
   descarregarMapas();
   descarregarAcomp();
   descarregarSat();
+  descarregarPrevisao();
   if(canalRealtime){ sb.removeChannel(canalRealtime); canalRealtime = null; }
   await sb.auth.signOut();
   sessao = null;
@@ -4245,7 +4356,7 @@ function renderTudo(){
   else { mostrarTelaLogin(); }
 })();
 sb.auth.onAuthStateChange((event)=>{
-  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = null; descarregarMapas(); descarregarAcomp(); descarregarSat(); mostrarTelaLogin(); }
+  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = null; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); mostrarTelaLogin(); }
 });
 
 </script>

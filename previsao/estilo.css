@@ -1,0 +1,104 @@
+/* =====================================================================
+   Previsão do Tempo — módulo do COA WEB
+   Tokens do COA WEB (index.html), como no Acompanhamento Operacional
+===================================================================== */
+:root {
+  --verde-escuro: #103632;
+  --verde-teal: #0C5A50;
+  --dourado: #DB8A08;
+  --dourado-claro: #F0B24A;
+  --fundo: #EEF2EE;
+  --linha: #DCE3DC;
+  --linha-suave: #EBF0EB;
+  --texto: #17251F;
+  --texto-suave: #5B6B62;
+  --texto-fraco: #8A988F;
+  --raio-p: 8px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+button, select { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+:focus-visible { outline: 2px solid var(--dourado); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* a página é a barra em cima e o mapa no resto da altura */
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+/* ============================ BARRA ============================ */
+.barra {
+  flex: none; display: flex; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap;
+  padding: 12px 28px; background: #fff; border-bottom: 1px solid var(--linha);
+}
+.marca { display: flex; flex-direction: column; margin-right: auto; }
+.marca-titulo { font-size: 17px; font-weight: 700; color: var(--verde-escuro); }
+.marca-sub { font-size: 12px; color: var(--texto-suave); }
+/* dentro do COA WEB (iframe): o COA já tem cabeçalho e marca */
+.embed .marca { display: none; }
+.filtros { display: flex; gap: 10px; flex-wrap: wrap; }
+.campo-select { display: flex; flex-direction: column; gap: 2px; }
+.campo-select span { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); }
+.campo-select select {
+  height: 34px; padding: 0 10px; border: 1px solid var(--linha); border-radius: var(--raio-p); background: #fff;
+  font-size: 13.5px; font-weight: 600; color: var(--verde-escuro); min-width: 170px; cursor: pointer;
+}
+.campo-select select:hover { border-color: #BFCBC1; }
+.barra-acoes { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.botao-acao {
+  height: 34px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border-radius: var(--raio-p);
+  border: 1px solid var(--linha); background: #fff; color: var(--verde-teal); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.botao-acao:hover { background: var(--linha-suave); }
+.botao-acao[aria-pressed="true"] { background: var(--verde-teal); border-color: var(--verde-teal); color: #fff; }
+.botao-acao:disabled { opacity: .5; cursor: default; }
+.botao-acao svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ============================ MAPA ============================ */
+.mapa { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; background: #6B6B6B; }
+#windy { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+/* os limites ficam por cima do Windy e deixam o clique passar para ele */
+#limites { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.limite-sombra { fill: none; stroke: rgba(0, 0, 0, .55); stroke-width: 3.2; stroke-linejoin: round; }
+.limite { fill: none; stroke: #fff; stroke-width: 1.3; stroke-linejoin: round; }
+.limite.escolhida { stroke: var(--dourado-claro); stroke-width: 1.6; }
+.ponto-fazenda { fill: #fff; stroke: rgba(0, 0, 0, .6); stroke-width: 1.5; }
+.ponto-fazenda.escolhida { fill: var(--dourado-claro); }
+.nome-fazenda {
+  font-size: 12.5px; font-weight: 700; fill: #fff; text-anchor: middle;
+  paint-order: stroke; stroke: rgba(0, 0, 0, .7); stroke-width: 3px; stroke-linejoin: round;
+}
+.nome-fazenda.escolhida { fill: var(--dourado-claro); }
+.aviso {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%); margin: 0; max-width: calc(100% - 140px);
+  padding: 7px 12px; border-radius: var(--raio-p); background: rgba(16, 54, 50, .92); color: #fff; font-size: 12.5px; text-align: center;
+}
+
+/* ============================ CARREGANDO ============================ */
+.carregando { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; background: var(--fundo); z-index: 100; color: var(--texto-suave); padding: 0 24px; text-align: center; }
+.carregando.fora { display: none; }
+.spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--linha); border-top-color: var(--verde-teal); animation: girar .9s linear infinite; }
+.carregando.erro .spinner { display: none; }
+@keyframes girar { to { transform: rotate(360deg); } }
+
+/* ============================ RESPONSIVO ============================ */
+@media (max-width: 900px) {
+  .barra { padding: 10px 14px; gap: 10px 12px; }
+  .botao-acao span { display: none; }
+  .botao-acao { padding: 0 9px; }
+}
+@media (max-width: 640px) {
+  .filtros { flex: 1 1 100%; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .campo-select { min-width: 0; }
+  /* 16px: o iPhone não dá zoom sozinho ao focar o campo */
+  .campo-select select { min-width: 0; width: 100%; font-size: 16px; padding: 0 6px; }
+  .barra-acoes { margin-left: 0; }
+  .marca { flex: 1 1 auto; }
+}

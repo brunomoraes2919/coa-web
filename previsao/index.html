@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Previsão do Tempo · COA</title>
+<link rel="icon" href="../mapas/favicon.png">
+<link rel="stylesheet" href="estilo.css?v=202610060100">
+<script src="config.js?v=202610060100"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="logica.js?v=202610060100"></script>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============================ BARRA ============================ -->
+  <header class="barra">
+    <div class="marca">
+      <span class="marca-titulo">Previsão do Tempo</span>
+      <span class="marca-sub">Centro de Operações Agrícolas</span>
+    </div>
+    <div class="filtros">
+      <label class="campo-select"><span>Fazenda</span><select id="sel-fazenda"></select></label>
+      <label class="campo-select"><span>Camada</span><select id="sel-camada"></select></label>
+      <label class="campo-select"><span>Modelo</span><select id="sel-modelo"></select></label>
+    </div>
+    <div class="barra-acoes">
+      <button class="botao-acao" id="btn-ponto" aria-pressed="false" title="Abre a tabela de previsão dos próximos dias no centro da fazenda">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><path d="M6 16v-4M11 16V8M16 16v-6M21 16V5"/></svg><span>Previsão do ponto</span>
+      </button>
+      <button class="botao-acao" id="btn-centralizar" title="Volta o mapa para a fazenda escolhida">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>Centralizar</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ============================ MAPA ============================ -->
+  <!-- o mapa é o widget do Windy; os limites das fazendas são desenhados por cima, no <svg> -->
+  <main class="mapa" id="mapa">
+    <iframe id="windy" title="Mapa de previsão do tempo (Windy)" allow="fullscreen"></iframe>
+    <svg id="limites" aria-hidden="true"></svg>
+    <p class="aviso" id="aviso" hidden></p>
+  </main>
+
+</div>
+
+<div class="carregando" id="carregando"><div class="spinner" aria-hidden="true"></div><p id="carregando-texto">Carregando as fazendas…</p></div>
+<script src="app.js?v=202610060100"></script>
+</body>
+</html>
