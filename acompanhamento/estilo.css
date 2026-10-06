@@ -331,9 +331,9 @@ button, input, select { font: inherit; color: inherit; }
 .botao:disabled, .botao-sutil:disabled { opacity: .55; cursor: progress; }
 
 /* ============================ CARREGANDO ============================ */
-.carregando { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; background: var(--fundo); z-index: 100; color: var(--texto-suave); }
+/* o "carregando" é o do COA WEB (../assets/coa-loader.css); aqui só o que é deste módulo */
+.carregando { z-index: 100; padding: 0 24px; }
 .carregando.fora { display: none; }
-.spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--linha); border-top-color: var(--verde-teal); animation: girar .9s linear infinite; }
 
 /* ============================ RESPONSIVO ============================ */
 @media (max-width: 1320px) {

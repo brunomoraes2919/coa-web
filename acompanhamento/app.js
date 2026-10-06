@@ -2307,7 +2307,7 @@
       }, RECARREGAR_MIN * 60000);
       if (PARAMS.get('tv') === '1') entrarTv();
     } catch (e) {
-      $('carregando').querySelector('.spinner').hidden = true;
+      $('carregando').classList.add('erro');
       set('carregando-texto', erroLegivel(e));
     }
   })();

@@ -82,12 +82,48 @@ button, select { font: inherit; color: inherit; }
   padding: 7px 12px; border-radius: var(--raio-p); background: rgba(16, 54, 50, .92); color: #fff; font-size: 12.5px; text-align: center;
 }
 
+/* ============================ MODO TV ============================
+   Faixa no padrão do Acompanhamento (degradê teal → verde-escuro, filete dourado); fonte em função da tela,
+   para TV grande e monitor pequeno. O mapa do Windy ocupa todo o resto. */
+.modo-tv .barra { display: none; }
+.tv-barra {
+  position: relative; flex: none; display: flex; align-items: center; gap: 1.4em; padding: .9em 1.6em 1.15em;
+  color: #fff; background: linear-gradient(100deg, #0B8C7F 0%, #0B6E62 34%, #094C44 68%, #06312C 100%);
+  font-size: clamp(12px, calc(.86vmin + .5vmax), 64px);
+}
+.tv-barra::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: .25em; background: var(--dourado); }
+.tv-logo { height: 2.6em; width: auto; padding-right: 1.3em; border-right: 1px solid rgba(255, 255, 255, .2); }
+.tv-titulo { flex: 1 1 auto; min-width: 0; }
+.tv-titulo span { display: block; font-size: .78em; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #F0B24A; }
+.tv-titulo h1 { margin: .05em 0 0; font-size: 2.1em; line-height: 1.1; font-weight: 700; letter-spacing: -.02em; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv-camada { text-align: right; }
+.tv-camada b { display: block; font-size: 1.35em; line-height: 1.15; font-weight: 650; }
+.tv-camada span { font-size: .72em; color: #D7E8E2; white-space: nowrap; }
+.tv-relogio { display: flex; flex-direction: column; align-items: flex-end; text-align: right; border-left: 1px solid rgba(255, 255, 255, .2); padding-left: 1.2em; }
+.tv-relogio b { font-size: 1.9em; line-height: 1; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tv-relogio span { font-size: .72em; color: #D7E8E2; white-space: nowrap; }
+.tv-relogio span::first-letter { text-transform: uppercase; }
+.tv-progresso { position: absolute; left: 1.6em; right: 1.6em; bottom: .4em; height: .3em; border-radius: 99em; background: rgba(255, 255, 255, .16); overflow: hidden; }
+.tv-progresso span { display: block; height: 100%; width: 0; border-radius: 99em; background: linear-gradient(90deg, #F0B24A, #DB8A08); }
+/* controles sobre o mapa, no canto de baixo à esquerda (acima do play do Windy); discretos até o mouse mexer */
+.tv-controles {
+  position: fixed; left: 16px; bottom: 118px; z-index: 50; display: flex; gap: 6px; padding: 6px;
+  background: rgba(16, 54, 50, .88); border-radius: 999px; box-shadow: 0 6px 20px rgba(0, 0, 0, .3);
+  opacity: .35; transition: opacity .3s;
+}
+.modo-tv.mostrar .tv-controles, .tv-controles:hover, .tv-controles:focus-within { opacity: 1; }
+.tv-controles button {
+  font: inherit; font-size: 13px; font-weight: 600; border: 1px solid rgba(255, 255, 255, .25); background: transparent; color: #fff;
+  border-radius: 999px; padding: 6px 14px; cursor: pointer; line-height: 1.2;
+}
+.tv-controles button:hover { background: rgba(255, 255, 255, .12); }
+.tv-controles #tv-anterior, .tv-controles #tv-proximo { font-size: 18px; padding: 2px 12px; }
+@media (max-width: 900px) { .tv-camada { display: none; } .tv-relogio span { display: none; } .tv-logo { display: none; } }
+
 /* ============================ CARREGANDO ============================ */
-.carregando { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; background: var(--fundo); z-index: 100; color: var(--texto-suave); padding: 0 24px; text-align: center; }
+/* o "carregando" é o do COA WEB (../assets/coa-loader.css); aqui só o que é deste módulo */
+.carregando { z-index: 100; padding: 0 24px; }
 .carregando.fora { display: none; }
-.spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--linha); border-top-color: var(--verde-teal); animation: girar .9s linear infinite; }
-.carregando.erro .spinner { display: none; }
-@keyframes girar { to { transform: rotate(360deg); } }
 
 /* ============================ RESPONSIVO ============================ */
 @media (max-width: 900px) {

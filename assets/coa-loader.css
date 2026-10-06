@@ -1,0 +1,69 @@
+/* =====================================================================
+   Carregando do COA WEB — o logo se monta (risco, C, O, A), brilha e recomeça,
+   enquanto algo carrega. Usado pela casca (index.html) e pelos módulos.
+   Marcação:
+     <div class="coa-loader [claro] [pequeno] [embutido]" id="…" role="status" aria-live="polite">
+       <div class="coa-loader-caixa">
+         <div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i>
+           <i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div>
+         <p class="coa-loader-texto"><span id="…-texto">Carregando</span><i>.</i><i>.</i><i>.</i></p>
+       </div>
+     </div>
+   As partes do logo são máscaras (assets/loader/*.png), pintadas com a cor da tinta.
+===================================================================== */
+.coa-loader{
+  --tinta:#fff; --coa-dur:1.9s;
+  position:fixed; inset:0; z-index:1000; display:grid; place-items:center;
+  background:#103632; color:#C9DAD3; transition:opacity .25s ease;
+}
+.coa-loader[hidden]{display:none;}
+.coa-loader.saindo{opacity:0; pointer-events:none;}
+.coa-loader.claro{--tinta:#103632; background:#EEF2EE; color:#5B6B62;}
+.coa-loader.embutido{position:absolute;}
+.coa-loader-caixa{display:flex; flex-direction:column; align-items:center; gap:22px; width:min(56vw,340px);}
+.coa-loader.pequeno .coa-loader-caixa{width:min(44vw,200px); gap:14px;}
+.coa-loader-logo{position:relative; width:100%; aspect-ratio:1000 / 368; animation:coaSaida var(--coa-dur) cubic-bezier(.6,0,.4,1) infinite both;}
+.coa-loader-parte, .coa-loader-brilho{
+  position:absolute; inset:0; background:var(--tinta);
+  -webkit-mask-size:100% 100%; mask-size:100% 100%; -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat;
+  animation-duration:var(--coa-dur); animation-iteration-count:infinite; animation-timing-function:cubic-bezier(.22,.8,.3,1); animation-fill-mode:both;
+}
+.coa-loader-parte.risco{-webkit-mask-image:url(loader/coa-swoosh.png); mask-image:url(loader/coa-swoosh.png); animation-name:coaRisco; transform-origin:0 50%;}
+.coa-loader-parte.c{-webkit-mask-image:url(loader/coa-c.png); mask-image:url(loader/coa-c.png); animation-name:coaC;}
+.coa-loader-parte.o{-webkit-mask-image:url(loader/coa-o.png); mask-image:url(loader/coa-o.png); animation-name:coaO;}
+.coa-loader-parte.a{-webkit-mask-image:url(loader/coa-a.png); mask-image:url(loader/coa-a.png); animation-name:coaA;}
+.coa-loader-brilho{
+  -webkit-mask-image:url(loader/coa-c.png), url(loader/coa-o.png), url(loader/coa-a.png), url(loader/coa-swoosh.png);
+  mask-image:url(loader/coa-c.png), url(loader/coa-o.png), url(loader/coa-a.png), url(loader/coa-swoosh.png);
+  background:linear-gradient(105deg, transparent 38%, rgba(255,255,255,.95) 50%, transparent 62%); background-size:300% 100%;
+  animation-name:coaBrilho; animation-timing-function:linear;
+}
+.coa-loader.claro .coa-loader-brilho{background:linear-gradient(105deg, transparent 38%, rgba(240,178,74,.9) 50%, transparent 62%); background-size:300% 100%;}
+.coa-loader-brilho-fundo{
+  position:absolute; left:50%; top:58%; width:120%; height:140%; border-radius:50%; pointer-events:none;
+  background:radial-gradient(closest-side, rgba(255,255,255,.10), rgba(255,255,255,0));
+  animation:coaHalo var(--coa-dur) cubic-bezier(.22,.8,.3,1) infinite both;
+}
+.coa-loader.claro .coa-loader-brilho-fundo{background:radial-gradient(closest-side, rgba(16,54,50,.08), rgba(16,54,50,0));}
+.coa-loader-texto{margin:0; font-size:12px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; display:flex; align-items:baseline; gap:1px;}
+.coa-loader-texto i{font-style:normal; animation:coaPonto 1.2s infinite;}
+.coa-loader-texto i:nth-child(3){animation-delay:.2s;}
+.coa-loader-texto i:nth-child(4){animation-delay:.4s;}
+/* erro: o logo para de se montar e a mensagem fica em evidência */
+.coa-loader.erro .coa-loader-logo, .coa-loader.erro .coa-loader-parte, .coa-loader.erro .coa-loader-brilho, .coa-loader.erro .coa-loader-brilho-fundo{animation:none; opacity:1; clip-path:none; transform:none; filter:none;}
+.coa-loader.erro .coa-loader-brilho{display:none;}
+.coa-loader.erro .coa-loader-texto{text-transform:none; letter-spacing:0; font-size:13.5px; font-weight:500; text-align:center; max-width:46ch; line-height:1.5; color:#B3261E;}
+.coa-loader.erro .coa-loader-texto i{display:none;}
+
+@keyframes coaRisco{0%{clip-path:inset(0 100% 0 0); opacity:.6;} 19%{clip-path:inset(0 0 0 0); opacity:1;} 100%{clip-path:inset(0 0 0 0); opacity:1;}}
+@keyframes coaC{0%,9%{clip-path:inset(100% 0 0 0); transform:translateY(10%); filter:blur(8px); opacity:0;} 28%{clip-path:inset(0 0 0 0); transform:none; filter:blur(0); opacity:1;} 100%{clip-path:inset(0 0 0 0); transform:none; filter:blur(0); opacity:1;}}
+@keyframes coaO{0%,17%{clip-path:inset(100% 0 0 0); transform:translateY(10%); filter:blur(8px); opacity:0;} 36%{clip-path:inset(0 0 0 0); transform:none; filter:blur(0); opacity:1;} 100%{clip-path:inset(0 0 0 0); transform:none; filter:blur(0); opacity:1;}}
+@keyframes coaA{0%,25%{clip-path:inset(100% 0 0 0); transform:translateY(10%); filter:blur(8px); opacity:0;} 44%{clip-path:inset(0 0 0 0); transform:none; filter:blur(0); opacity:1;} 100%{clip-path:inset(0 0 0 0); transform:none; filter:blur(0); opacity:1;}}
+@keyframes coaBrilho{0%,47%{background-position:200% 0; opacity:0;} 50%{opacity:1;} 66%{background-position:-100% 0; opacity:1;} 67%,100%{background-position:-100% 0; opacity:0;}}
+@keyframes coaSaida{0%,76%{opacity:1; transform:scale(1);} 94%,100%{opacity:0; transform:scale(.965);}}
+@keyframes coaHalo{0%,10%{opacity:0; transform:translate(-50%,-50%) scale(.7);} 45%{opacity:1; transform:translate(-50%,-50%) scale(1);} 76%{opacity:1;} 94%,100%{opacity:0; transform:translate(-50%,-50%) scale(.9);}}
+@keyframes coaPonto{0%,100%{opacity:.15;} 40%{opacity:1;}}
+@media (prefers-reduced-motion: reduce){
+  .coa-loader-logo, .coa-loader-parte, .coa-loader-brilho-fundo, .coa-loader-texto i{animation:none !important; opacity:1; clip-path:none; transform:none; filter:none;}
+  .coa-loader-brilho{display:none;}
+}

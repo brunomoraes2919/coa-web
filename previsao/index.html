@@ -8,7 +8,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="estilo.css?v=202610060300">
+<link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
+<link rel="stylesheet" href="estilo.css?v=202610062300">
 <script src="config.js?v=202610060300"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="logica.js?v=202610060300"></script>
@@ -31,11 +32,31 @@
       <button class="botao-acao" id="btn-ponto" aria-pressed="false" title="Abre a tabela de previsão dos próximos dias no centro da fazenda">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><path d="M6 16v-4M11 16V8M16 16v-6M21 16V5"/></svg><span>Previsão do ponto</span>
       </button>
+      <button class="botao-acao" id="btn-tv" title="Modo TV: tela cheia que passa pelas fazendas sozinha">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Modo TV</span>
+      </button>
       <button class="botao-acao" id="btn-centralizar" title="Volta o mapa para a fazenda escolhida">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>Centralizar</span>
       </button>
     </div>
   </header>
+
+  <!-- ============================ MODO TV ============================ -->
+  <!-- faixa do topo no Modo TV (a barra de filtros sai); os controles ficam por cima do mapa e somem quando o mouse para -->
+  <header class="tv-barra" id="tv-barra" hidden>
+    <img class="tv-logo" src="../acompanhamento/assets/logo_coa_branco.png" alt="COA · Centro de Operações Agrícolas">
+    <div class="tv-titulo"><span id="tv-eyebrow">Previsão do Tempo · ao vivo</span><h1 id="tv-fazenda">Todas as fazendas</h1></div>
+    <div class="tv-camada"><b id="tv-camada">Chuva e trovoadas</b><span id="tv-modelo">Modelo ECMWF · Windy</span></div>
+    <div class="tv-relogio"><b id="tv-hora">--:--</b><span id="tv-data"></span></div>
+    <div class="tv-progresso" aria-hidden="true"><span id="tv-barra-tempo"></span></div>
+  </header>
+  <div class="tv-controles" id="tv-controles" hidden>
+    <button type="button" id="tv-anterior" title="Fazenda anterior (seta para a esquerda)">‹</button>
+    <button type="button" id="tv-pausa" title="Pausar ou continuar a troca (barra de espaço)">Pausar</button>
+    <button type="button" id="tv-proximo" title="Próxima fazenda (seta para a direita)">›</button>
+    <button type="button" id="tv-cheia">Tela cheia</button>
+    <button type="button" id="tv-sair" title="Sair do Modo TV (Esc)">Sair</button>
+  </div>
 
   <!-- ============================ MAPA ============================ -->
   <!-- o mapa é o widget do Windy; os limites das fazendas são desenhados por cima, no <svg> -->
@@ -47,7 +68,7 @@
 
 </div>
 
-<div class="carregando" id="carregando"><div class="spinner" aria-hidden="true"></div><p id="carregando-texto">Carregando as fazendas…</p></div>
-<script src="app.js?v=202610060300"></script>
+<div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Carregando as fazendas</span><i>.</i><i>.</i><i>.</i></p></div></div>
+<script src="app.js?v=202610062300"></script>
 </body>
 </html>
