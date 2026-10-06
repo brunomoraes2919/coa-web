@@ -141,7 +141,11 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 /* ---------- fazendas permitidas (Usuários) ---------- */
 /* blocos de caixas (fazendas, categorias) e botões do formulário de usuário: mesmo respiro da grade de campos */
 .campo-fazendas{margin-top:0;padding:4px 16px 14px;}
-#nu-form-wrap .card .section-actions{padding:2px 16px 16px;margin-top:0 !important;}
+#nu-form-wrap .card .section-actions, #wc-secao .card .section-actions{padding:2px 16px 16px;margin-top:0 !important;}
+/* contatos do WhatsApp (Usuários, só o ADMINISTRADOR+) */
+.wc-aviso{font-size:12.5px;color:var(--texto-suave);background:var(--fundo);border:1px dashed var(--linha);border-radius:8px;padding:9px 12px;margin-bottom:12px;}
+#wc-secao .tabela-wrap{margin-top:14px;}
+.wc-pausado{opacity:.55;}
 .campo-fazendas label{display:block;font-size:11px;color:var(--texto-suave);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;}
 .checks-fazendas{display:flex;flex-wrap:wrap;gap:8px;}
 .checks-fazendas label{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--texto);text-transform:none;
@@ -493,7 +497,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   .btn{padding:9px 13px;font-size:12.5px;}
   .form-grid{grid-template-columns:1fr;padding:14px;}
   .campo-fazendas{padding:4px 14px 12px;}
-  #nu-form-wrap .card .section-actions{padding:2px 14px 14px;}
+  #nu-form-wrap .card .section-actions, #wc-secao .card .section-actions{padding:2px 14px 14px;}
   .filtros .filtro-grupo{min-width:0;}
   .lista-simples .item{flex-wrap:wrap;gap:4px;}
   .lista-simples .item .edit-nome-input{width:100%;margin-right:0;}
@@ -1058,6 +1062,44 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
           </table>
         </div>
       </div>
+      <!-- contatos que vão receber alertas pelo WhatsApp: só o ADMINISTRADOR+ vê (ver renderContatosWhatsapp) -->
+      <div class="section" id="wc-secao" style="display:none">
+        <div class="section-head">
+          <div><h2>Contatos do WhatsApp</h2><div class="desc">Quem vai receber os alertas do Locks SAT no WhatsApp, com ou sem login no COA WEB</div></div>
+        </div>
+        <div class="wc-aviso" id="wc-aviso">O envio pelo WhatsApp ainda não está ligado: por enquanto esta lista só guarda os contatos.</div>
+        <div id="wc-conteudo">
+          <div class="card">
+            <div class="form-grid">
+              <div class="campo"><label for="wc-nome">Nome</label><input type="text" id="wc-nome" maxlength="80" placeholder="Ex: João Silva"></div>
+              <div class="campo"><label for="wc-telefone">WhatsApp (com DDD)</label><input type="tel" id="wc-telefone" inputmode="tel" autocomplete="off" placeholder="(65) 99999-9999"></div>
+            </div>
+            <div class="campo-fazendas">
+              <label>Fazendas do alerta</label>
+              <div class="checks-fazendas" style="margin-bottom:8px"><label><input type="checkbox" id="wc-todas-fazendas"> Todas as fazendas</label></div>
+              <div class="checks-fazendas" id="wc-fazendas-checks"></div>
+            </div>
+            <div class="campo-fazendas">
+              <label>Alertas que recebe</label>
+              <div class="checks-fazendas"><label><input type="checkbox" id="wc-alerta-janela" checked> Janela de risco</label></div>
+            </div>
+            <div class="campo-fazendas">
+              <label>Situação</label>
+              <div class="checks-fazendas"><label><input type="checkbox" id="wc-ativo" checked> Ativo (desmarque para pausar sem apagar)</label></div>
+            </div>
+            <div class="section-actions">
+              <button class="btn" id="btn-salvar-contato-wpp">Adicionar contato</button>
+              <button class="btn fantasma" id="btn-cancelar-contato-wpp">Cancelar</button>
+            </div>
+          </div>
+          <div class="card tabela-wrap">
+            <table>
+              <thead><tr><th>Nome</th><th>WhatsApp</th><th>Fazendas</th><th>Alertas</th><th>Situação</th><th></th></tr></thead>
+              <tbody id="tbl-contatos-wpp"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ===================== MECANIZADAS: IMPORTAR BOLETIM ===================== -->
@@ -1189,7 +1231,9 @@ const state = {
   variedades: [],
   safras: [],
   talhoes: [],
-  usuarios: []
+  usuarios: [],
+  contatosWhatsapp: [],        // só o ADMINISTRADOR+ carrega (tabela whatsapp_contatos)
+  whatsappDisponivel: null     // false = a tabela ainda não existe no banco (script 0003)
 };
 let sessao = null;
 let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat'
@@ -3182,6 +3226,7 @@ function renderUsuarios(){
     if(usuarioEditandoId===id) cancelarEdicaoUsuario();
     await recarregarTudoDoSupabase();
   }));
+  renderContatosWhatsapp();
 }
 
 let usuarioEditandoId = null;
@@ -3379,6 +3424,192 @@ document.getElementById('btn-add-usuario').addEventListener('click', ()=>{
   if(usuarioEditandoId) salvarEdicaoUsuario();
   else criarNovoUsuario();
 });
+
+/* =====================================================================
+   CONTATOS DO WHATSAPP — quem vai receber os alertas do Locks SAT
+   (tabelas whatsapp_contatos e whatsapp_contato_fazendas, script 0003).
+   Por enquanto é só o cadastro: nada aqui envia mensagem.
+   Só o ADMINISTRADOR+ de verdade vê (número de telefone é dado pessoal;
+   o banco recusa os outros). Os nomes vão para a tela por textContent.
+===================================================================== */
+function ehSuperDeVerdade(){
+  return !!(sessao && state.adminMaisDisponivel && sessao.super);
+}
+/* Só dígitos, com o 55 na frente. Aceita com ou sem +55 e com zero antes do DDD; devolve null se
+   não for um número brasileiro com DDD (celular: 9 + 8 dígitos; fixo: 8 dígitos começando de 2 a 5). */
+function normalizarWhatsapp(texto){
+  const bruto = String(texto == null ? '' : texto);
+  let d = bruto.replace(/\D/g, '');
+  if(/^\s*\+/.test(bruto)){ if(!d.startsWith('55')) return null; } // outro país
+  else {
+    d = d.replace(/^0/, '');
+    if(d.length === 10 || d.length === 11) d = '55' + d;
+  }
+  return /^55[1-9][1-9](9[0-9]{8}|[2-5][0-9]{7})$/.test(d) ? d : null;
+}
+function formatarWhatsapp(d){
+  const m = /^55(\d{2})(\d{4,5})(\d{4})$/.exec(d || '');
+  return m ? `+55 (${m[1]}) ${m[2]}-${m[3]}` : (d || '');
+}
+async function carregarContatosWhatsapp(){
+  if(!ehSuperDeVerdade()){ state.contatosWhatsapp = []; state.whatsappDisponivel = null; return; }
+  const id = sessao.id;
+  const [ct, cf] = await Promise.all([
+    sb.from('whatsapp_contatos').select('*').order('nome'),
+    sb.from('whatsapp_contato_fazendas').select('*')
+  ]);
+  if(!sessao || sessao.id !== id) return; // saiu (ou trocou de usuário) durante a consulta
+  if(ct.error || cf.error){ state.contatosWhatsapp = []; state.whatsappDisponivel = false; return; }
+  const ligacoes = cf.data || [];
+  state.whatsappDisponivel = true;
+  state.contatosWhatsapp = (ct.data || []).map(c=>({
+    id: c.id, nome: c.nome, telefone: c.telefone,
+    todasFazendas: !!c.todas_fazendas, alertaJanela: !!c.alerta_janela, ativo: !!c.ativo,
+    fazendas: ligacoes.filter(l=>l.contato_id===c.id).map(l=>l.fazenda_id)
+  }));
+}
+
+let contatoWppEditandoId = null;
+function ajustarFormContatoWpp(){
+  const todas = document.getElementById('wc-todas-fazendas').checked;
+  document.getElementById('wc-fazendas-checks').style.display = todas ? 'none' : '';
+}
+function limparFormContatoWpp(){
+  contatoWppEditandoId = null;
+  document.getElementById('wc-nome').value = '';
+  document.getElementById('wc-telefone').value = '';
+  document.getElementById('wc-todas-fazendas').checked = false;
+  document.getElementById('wc-alerta-janela').checked = true;
+  document.getElementById('wc-ativo').checked = true;
+  document.querySelectorAll('.wc-fazenda-chk').forEach(c=>{ c.checked = false; });
+  document.getElementById('btn-salvar-contato-wpp').textContent = 'Adicionar contato';
+  ajustarFormContatoWpp();
+}
+function editarContatoWpp(id){
+  const c = state.contatosWhatsapp.find(x=>x.id===id);
+  if(!c) return;
+  contatoWppEditandoId = id;
+  document.getElementById('wc-nome').value = c.nome;
+  document.getElementById('wc-telefone').value = formatarWhatsapp(c.telefone);
+  document.getElementById('wc-todas-fazendas').checked = c.todasFazendas;
+  document.getElementById('wc-alerta-janela').checked = c.alertaJanela;
+  document.getElementById('wc-ativo').checked = c.ativo;
+  document.querySelectorAll('.wc-fazenda-chk').forEach(k=>{ k.checked = c.fazendas.includes(parseInt(k.value)); });
+  document.getElementById('btn-salvar-contato-wpp').textContent = 'Salvar contato';
+  ajustarFormContatoWpp();
+  const campo = document.getElementById('wc-nome');
+  if(campo.scrollIntoView) campo.scrollIntoView({behavior:'smooth', block:'center'});
+}
+function renderContatosWhatsapp(){
+  const secao = document.getElementById('wc-secao');
+  if(!ehSuperDeVerdade()){
+    secao.style.display = 'none';
+    document.getElementById('tbl-contatos-wpp').replaceChildren(); // não deixa números na página de outro usuário
+    if(contatoWppEditandoId) limparFormContatoWpp();
+    return;
+  }
+  secao.style.display = '';
+  const semTabela = state.whatsappDisponivel === false;
+  document.getElementById('wc-conteudo').style.display = semTabela ? 'none' : '';
+  document.getElementById('wc-aviso').textContent = semTabela
+    ? 'Rode o script supabase/0003_whatsapp_contatos.sql no Supabase para cadastrar os contatos.'
+    : 'O envio pelo WhatsApp ainda não está ligado: por enquanto esta lista só guarda os contatos.';
+  if(semTabela) return;
+
+  // renderTudo() redesenha a cada mudança em tempo real: guarda as fazendas já marcadas e remarca
+  const checks = document.getElementById('wc-fazendas-checks');
+  const marcadas = new Set([...checks.querySelectorAll('.wc-fazenda-chk:checked')].map(c=>c.value));
+  checks.replaceChildren(...state.fazendas.map(f=>{
+    const rotulo = document.createElement('label');
+    const caixa = document.createElement('input');
+    caixa.type = 'checkbox'; caixa.className = 'wc-fazenda-chk'; caixa.value = f.id;
+    caixa.checked = marcadas.has(String(f.id));
+    rotulo.append(caixa, ' ' + f.nome);
+    return rotulo;
+  }));
+  ajustarFormContatoWpp();
+
+  const tag = texto=>{ const t = document.createElement('span'); t.className = 'fazendas-permitidas-tag'; t.textContent = texto; return t; };
+  const celula = (...filhos)=>{ const td = document.createElement('td'); td.append(...filhos); return td; };
+  const corpo = document.getElementById('tbl-contatos-wpp');
+  if(!state.contatosWhatsapp.length){
+    const vazio = celula('Nenhum contato cadastrado.');
+    vazio.colSpan = 6; vazio.style.color = 'var(--texto-suave)';
+    const linha = document.createElement('tr'); linha.append(vazio);
+    corpo.replaceChildren(linha);
+    return;
+  }
+  corpo.replaceChildren(...state.contatosWhatsapp.map(c=>{
+    const linha = document.createElement('tr');
+    if(!c.ativo) linha.className = 'wc-pausado';
+    const nome = document.createElement('b'); nome.textContent = c.nome;
+    const nomesFaz = c.fazendas.map(id=>(state.fazendas.find(f=>f.id===id) || {}).nome).filter(Boolean);
+    const fazendas = c.todasFazendas ? [tag('Todas')] : (nomesFaz.length ? nomesFaz.map(tag) : [tag('Nenhuma')]);
+    const alertas = c.alertaJanela ? [tag('Janela de risco')] : [tag('Nenhum')];
+    const editar = document.createElement('button'); editar.className = 'editar'; editar.textContent = 'editar';
+    editar.addEventListener('click', ()=>editarContatoWpp(c.id));
+    const remover = document.createElement('button'); remover.className = 'remover'; remover.textContent = 'remover';
+    remover.addEventListener('click', ()=>removerContatoWpp(c.id, remover));
+    const acoes = celula(editar, remover); acoes.className = 'acoes-usuario';
+    linha.append(celula(nome), celula(formatarWhatsapp(c.telefone)), celula(...fazendas), celula(...alertas),
+      celula(c.ativo ? 'Ativo' : 'Pausado'), acoes);
+    return linha;
+  }));
+}
+async function removerContatoWpp(id, botao){
+  const c = state.contatosWhatsapp.find(x=>x.id===id);
+  if(!c || !ehSuperDeVerdade()) return;
+  if(!confirm(`Remover ${c.nome} da lista do WhatsApp?`)) return;
+  botao.disabled = true;
+  const { error } = await sb.from('whatsapp_contatos').delete().eq('id', id);
+  if(error){ alert('Erro ao remover: '+error.message); botao.disabled = false; return; }
+  if(contatoWppEditandoId===id) limparFormContatoWpp();
+  await carregarContatosWhatsapp();
+  renderContatosWhatsapp();
+}
+async function salvarContatoWpp(){
+  if(!ehSuperDeVerdade()) return;
+  const nome = document.getElementById('wc-nome').value.trim();
+  const telefone = normalizarWhatsapp(document.getElementById('wc-telefone').value);
+  if(!nome){ alert('Informe o nome do contato.'); return; }
+  if(!telefone){ alert('Informe o WhatsApp com DDD, por exemplo (65) 99999-9999.'); return; }
+  const todasFazendas = document.getElementById('wc-todas-fazendas').checked;
+  const fazendas = todasFazendas ? [] : [...document.querySelectorAll('.wc-fazenda-chk:checked')].map(c=>parseInt(c.value));
+  if(!todasFazendas && !fazendas.length){ alert('Marque pelo menos uma fazenda, ou "Todas as fazendas".'); return; }
+  const dados = {
+    nome, telefone, todas_fazendas: todasFazendas,
+    alerta_janela: document.getElementById('wc-alerta-janela').checked,
+    ativo: document.getElementById('wc-ativo').checked,
+    atualizado_em: new Date().toISOString()
+  };
+  const btn = document.getElementById('btn-salvar-contato-wpp');
+  btn.disabled = true;
+  let id = contatoWppEditandoId;
+  const resposta = id
+    ? await sb.from('whatsapp_contatos').update(dados).eq('id', id).select('id')
+    : await sb.from('whatsapp_contatos').insert(dados).select('id');
+  btn.disabled = false;
+  if(resposta.error){
+    // 23505 = número repetido (o banco só aceita cada WhatsApp uma vez)
+    alert(resposta.error.code === '23505' ? 'Já existe um contato com este WhatsApp.' : 'Erro ao salvar: '+resposta.error.message);
+    return;
+  }
+  if(!resposta.data || !resposta.data.length){ alert('O contato não foi salvo. Atualize a página e tente de novo.'); return; }
+  id = resposta.data[0].id;
+
+  const { error: erroApagar } = await sb.from('whatsapp_contato_fazendas').delete().eq('contato_id', id);
+  if(erroApagar) alert('Contato salvo, mas houve erro nas fazendas: '+erroApagar.message);
+  else if(fazendas.length){
+    const { error: erroFaz } = await sb.from('whatsapp_contato_fazendas').insert(fazendas.map(fid=>({ contato_id: id, fazenda_id: fid })));
+    if(erroFaz) alert('Contato salvo, mas houve erro nas fazendas: '+erroFaz.message);
+  }
+  limparFormContatoWpp();
+  await carregarContatosWhatsapp();
+  renderContatosWhatsapp();
+}
+document.getElementById('btn-salvar-contato-wpp').addEventListener('click', salvarContatoWpp);
+document.getElementById('btn-cancelar-contato-wpp').addEventListener('click', limparFormContatoWpp);
+document.getElementById('wc-todas-fazendas').addEventListener('change', ajustarFormContatoWpp);
 
 /* =====================================================================
    MAPAS — módulo Mapa de Chuva num iframe da mesma origem
@@ -3763,6 +3994,7 @@ async function recarregarTudoDoSupabase(){
   } else {
     state.usuarios = [];
   }
+  await carregarContatosWhatsapp();
   renderTudo();
 }
 
