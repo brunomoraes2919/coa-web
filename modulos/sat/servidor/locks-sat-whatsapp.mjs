@@ -1327,7 +1327,7 @@ var Servico = class {
 		const prefixoDoDia = `${contato.id}|${chave.split(":")[0]}:`;
 		const comSair = !jaReservadas.some((r) => r.contatoId === contato.id && r.situacao === "enviado") && ![...this.ensaiados].some((m) => m.startsWith(prefixoDoDia));
 		this.ensaiados.add(marca);
-		const mensagem = montarMensagem(tipo, contato, texto, this.d.agora(), comSair).replaceAll("\n", " / ");
+		const mensagem = montarMensagem(tipo, contato, texto, this.d.agora(), comSair).replace(/\n+/g, " / ");
 		this.registrar(`ensaio: enviaria ${tipo} a ${mascarar(contato.telefone)}: ${mensagem}`);
 	}
 	/**
