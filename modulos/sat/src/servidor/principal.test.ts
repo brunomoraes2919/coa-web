@@ -645,3 +645,22 @@ describe('ligarServico (tudo falso)', () => {
     expect(s.linhas).toContain('Sessão encerrada: é preciso parear de novo (ver LEIA-ME).')
   })
 })
+
+describe('desenho do QR do pareamento', () => {
+  it('desenha com a biblioteca de verdade (chamada solta de `generate` quebrava com "bad rs block")', async () => {
+    const { desenhadorDeQr } = await import('./principal')
+    const escrito: string[] = []
+    const original = console.log
+    console.log = (...partes: unknown[]) => { escrito.push(partes.join(' ')) }
+    try {
+      const desenhar = await desenhadorDeQr()
+      // formato de um QR de pareamento: referência, chaves e identificador separados por vírgula (valores fictícios)
+      desenhar('2@AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcdefgh,ZmljdGljaW8tMQ==,ZmljdGljaW8tMg==,ZmljdGljaW8tMw==')
+    } finally {
+      console.log = original
+    }
+    const desenho = escrito.join('\n')
+    expect(desenho.split('\n').length).toBeGreaterThan(10)
+    expect(desenho).toMatch(/[▀▄█]/)
+  })
+})

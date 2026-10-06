@@ -288,11 +288,21 @@ async function servico(env: Record<string, string | undefined>): Promise<void> {
   })
 }
 
-/** Mostra o QR (ou o código de 8 dígitos, se vier o número) até o celular aceitar; então escreve "Pareado.". */
-async function parear(env: Record<string, string | undefined>, numero?: string): Promise<number> {
+/**
+ * O desenhador do QR no terminal. A biblioteca lê `this.error` dentro de `generate`: chamada solta
+ * (`const generate = lib.generate`), ela quebra com "bad rs block" — foi o que aconteceu no primeiro
+ * pareamento na VM. Por isso a chamada é sempre pelo objeto.
+ */
+export async function desenhadorDeQr(): Promise<(qr: string) => void> {
   // carregada só aqui: o serviço não precisa dela
   const modulo = await import('qrcode-terminal')
-  const generate = (modulo.default ?? modulo).generate
+  const biblioteca = modulo.default ?? modulo
+  return (qr) => biblioteca.generate(qr, { small: true })
+}
+
+/** Mostra o QR (ou o código de 8 dígitos, se vier o número) até o celular aceitar; então escreve "Pareado.". */
+async function parear(env: Record<string, string | undefined>, numero?: string): Promise<number> {
+  const desenharQr = await desenhadorDeQr()
   let whatsapp: Whatsapp | undefined
   let terminar: (codigo: number) => void = () => {}
   const fim = new Promise<number>((r) => { terminar = r })
@@ -303,7 +313,7 @@ async function parear(env: Record<string, string | undefined>, numero?: string):
     aoPedirQr: (qr) => {
       if (numero) return
       console.log('No celular do COA: WhatsApp → Aparelhos conectados → Conectar um aparelho, e leia o código abaixo.')
-      generate(qr, { small: true })
+      desenharQr(qr)
     },
     aoReceberCodigo: (codigo) => {
       const legivel = codigo.length === 8 ? `${codigo.slice(0, 4)}-${codigo.slice(4)}` : codigo

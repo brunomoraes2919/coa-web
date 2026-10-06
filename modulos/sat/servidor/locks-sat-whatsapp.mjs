@@ -1950,10 +1950,19 @@ async function servico(env) {
 		processo: process
 	});
 }
+/**
+* O desenhador do QR no terminal. A biblioteca lê `this.error` dentro de `generate`: chamada solta
+* (`const generate = lib.generate`), ela quebra com "bad rs block" — foi o que aconteceu no primeiro
+* pareamento na VM. Por isso a chamada é sempre pelo objeto.
+*/
+async function desenhadorDeQr() {
+	const modulo = await import("qrcode-terminal");
+	const biblioteca = modulo.default ?? modulo;
+	return (qr) => biblioteca.generate(qr, { small: true });
+}
 /** Mostra o QR (ou o código de 8 dígitos, se vier o número) até o celular aceitar; então escreve "Pareado.". */
 async function parear(env, numero) {
-	const modulo = await import("qrcode-terminal");
-	const generate = (modulo.default ?? modulo).generate;
+	const desenharQr = await desenhadorDeQr();
 	let whatsapp;
 	let terminar = () => {};
 	const fim = new Promise((r) => {
@@ -1966,7 +1975,7 @@ async function parear(env, numero) {
 		aoPedirQr: (qr) => {
 			if (numero) return;
 			console.log("No celular do COA: WhatsApp → Aparelhos conectados → Conectar um aparelho, e leia o código abaixo.");
-			generate(qr, { small: true });
+			desenharQr(qr);
 		},
 		aoReceberCodigo: (codigo) => {
 			const legivel = codigo.length === 8 ? `${codigo.slice(0, 4)}-${codigo.slice(4)}` : codigo;
@@ -2093,4 +2102,4 @@ if (rodandoComoPrograma(import.meta.url, process.argv[1])) principal(process.arg
 	process.exit(1);
 });
 //#endregion
-export { ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, linhaDeRegistro, pastaDaSessao, principal, rodandoComoPrograma, sessaoPareada };
+export { desenhadorDeQr, ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, linhaDeRegistro, pastaDaSessao, principal, rodandoComoPrograma, sessaoPareada };
