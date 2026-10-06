@@ -185,7 +185,7 @@
     const porChave = new Map();
     const pegar = function (unidade, eq) {
       const chave = unidade + '|' + eq;
-      if (!porChave.has(chave)) porChave.set(chave, { unidade: unidade, eq: eq, abertas: 0, ordens: 0, deposito: null, origem: null });
+      if (!porChave.has(chave)) porChave.set(chave, { unidade: unidade, eq: eq, abertas: 0, ordens: 0, deposito: null });
       return porChave.get(chave);
     };
     (linhas || []).forEach(function (l) {
@@ -196,7 +196,7 @@
     (vinculos || []).forEach(function (v) {
       if (f.unidade && v.unidade !== f.unidade) return;
       const x = pegar(v.unidade, v.equipe);
-      x.deposito = v.deposito || null; x.origem = v.deposito_origem || null;
+      x.deposito = v.deposito || null;
     });
     return Array.from(porChave.values()).sort(function (a, b) {
       return (a.unidade < b.unidade ? -1 : a.unidade > b.unidade ? 1 : 0) || (a.eq < b.eq ? -1 : a.eq > b.eq ? 1 : 0);
@@ -204,9 +204,10 @@
   }
 
   /**
-   * Saldo do depósito de um coordenador: os itens do depósito dele e, ao lado, o saldo do mesmo item no
-   * depósito de origem. `linha` = a linha de valid_pims da unidade. Sem vínculo → null; vínculo salvo mas
-   * saldo ainda não lido pelo servidor → { pendente: true }.
+   * Saldo do depósito de um coordenador: os itens do depósito dele e, em cada um, o depósito de ORIGEM
+   * (de onde o item veio na última transferência do SAP) com o saldo do item lá. `origens` = os depósitos
+   * de origem distintos, do que abastece mais itens para o que abastece menos. `linha` = a linha de
+   * valid_pims da unidade. Sem vínculo → null; vínculo salvo mas saldo ainda não lido → { pendente: true }.
    */
   function saldoDoCoordenador(linha, vinculo) {
     if (!linha || !vinculo || !vinculo.deposito) return null;
@@ -214,16 +215,49 @@
     const estoque = linha.estoque || {};
     const saida = {
       deposito: vinculo.deposito, depositoNome: nomes.get(vinculo.deposito) || '',
-      origem: vinculo.deposito_origem || null, origemNome: vinculo.deposito_origem ? (nomes.get(vinculo.deposito_origem) || '') : '',
-      pendente: !Object.prototype.hasOwnProperty.call(estoque, vinculo.deposito), itens: [],
+      pendente: !Object.prototype.hasOwnProperty.call(estoque, vinculo.deposito), itens: [], origens: [],
     };
     if (saida.pendente) return saida;
-    const naOrigem = new Map(((vinculo.deposito_origem && estoque[vinculo.deposito_origem]) || []).map(function (i) { return [i.c, i.q]; }));
-    saida.origemLida = !vinculo.deposito_origem || Object.prototype.hasOwnProperty.call(estoque, vinculo.deposito_origem);
+    const porOrigem = new Map();
     saida.itens = (estoque[vinculo.deposito] || []).map(function (i) {
-      return { c: i.c, n: i.n, q: i.q, u: i.u, origem: naOrigem.has(i.c) ? naOrigem.get(i.c) : (vinculo.deposito_origem && saida.origemLida ? 0 : null) };
+      const origem = i.o || null;
+      const nome = origem ? (i.on || nomes.get(origem) || '') : '';
+      if (origem) {
+        if (!porOrigem.has(origem)) porOrigem.set(origem, { c: origem, n: nome, itens: 0 });
+        porOrigem.get(origem).itens += 1;
+      }
+      return { c: i.c, n: i.n, q: i.q, u: i.u, origem: origem, origemNome: nome, origemSaldo: origem ? (Number(i.oq) || 0) : null, transferidoEm: i.od || null };
     });
+    saida.origens = Array.from(porOrigem.values()).sort(function (a, b) { return b.itens - a.itens || (a.c < b.c ? -1 : a.c > b.c ? 1 : 0); });
     return saida;
+  }
+
+  /**
+   * O que a tela mostra ao abrir uma ordem: os talhões (planejado × apontado em cada um) e os apontamentos
+   * um a um. `o` = a ordem como veio do servidor (tl = [[talhão, ha planejado]]; ap = [[dia, boletim,
+   * talhão, ha, lançado em, por]]). Talhão apontado que não está na ordem vem com `fora: true`.
+   * Retrato antigo, sem essas listas → { pendente: true }.
+   */
+  function detalheDaOrdem(o) {
+    if (!o || !Array.isArray(o.tl) || !Array.isArray(o.ap)) return { pendente: true, talhoes: [], apontamentos: [] };
+    const r2 = function (v) { return Math.round(v * 100) / 100; };
+    const porTalhao = new Map();
+    const pegar = function (t) {
+      const nome = String(t === null || t === undefined ? '?' : t);
+      if (!porTalhao.has(nome)) porTalhao.set(nome, { t: nome, pl: 0, ex: 0, fora: true });
+      return porTalhao.get(nome);
+    };
+    o.tl.forEach(function (l) { const x = pegar(l[0]); x.pl += Number(l[1]) || 0; x.fora = false; });
+    const apontamentos = o.ap.map(function (a) {
+      pegar(a[2]).ex += Number(a[3]) || 0;
+      return { dia: a[0], boletim: a[1], talhao: String(a[2] === null || a[2] === undefined ? '?' : a[2]), ha: Number(a[3]) || 0, lancado: a[4] || null, por: a[5] || null };
+    });
+    const talhoes = Array.from(porTalhao.values()).map(function (x) {
+      const pl = r2(x.pl), ex = r2(x.ex);
+      return { t: x.t, pl: pl, ex: ex, falta: r2(pl - ex), fora: x.fora, excedeu: !x.fora && ex > pl + FOLGA_HA };
+    });
+    talhoes.sort(function (a, b) { return (a.fora ? 1 : 0) - (b.fora ? 1 : 0); }); // os da ordem primeiro, na ordem do PIMS
+    return { pendente: false, talhoes: talhoes, apontamentos: apontamentos };
   }
 
   /** Unidade do PIMS de uma fazenda do COA WEB pelo nome ("Fazenda Três Flechas" → "TRES FLECHAS"); sem igual → null. */
@@ -245,6 +279,6 @@
     hojeIso: hojeIso, inicioSafra: inicioSafra, inicioDoMes: inicioDoMes, noPeriodo: noPeriodo, diasEmAberto: diasEmAberto, classificarPrazo: classificarPrazo, ordemAberta: ordemAberta,
     textoFalta: textoFalta, textoDias: textoDias, abertasPorCoordenador: abertasPorCoordenador, resumoAbertas: resumoAbertas,
     fechadasComDiferenca: fechadasComDiferenca, coordenadoresComVinculo: coordenadoresComVinculo, saldoDoCoordenador: saldoDoCoordenador,
-    unidadeDaFazenda: unidadeDaFazenda, titulo: titulo,
+    detalheDaOrdem: detalheDaOrdem, unidadeDaFazenda: unidadeDaFazenda, titulo: titulo,
   };
 });

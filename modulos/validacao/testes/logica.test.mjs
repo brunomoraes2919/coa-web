@@ -142,34 +142,70 @@ test('coordenadores com vínculo: junta os da safra, os de ordem antiga e os já
     coordenadores: [{ eq: 'COORD A', ab: 1, n: 7 }],
     ordens: [ordem({ os: 1, eq: 'COORD A' }), ordem({ os: 2, eq: 'COORD ANTIGO', ab: '2025-01-01' })],
   }];
-  const vinculos = [{ unidade: 'FAZENDA X', equipe: 'COORD A', deposito: '1001', deposito_origem: '1000' }];
+  const vinculos = [{ unidade: 'FAZENDA X', equipe: 'COORD A', deposito: '1001' }];
   const r = L.coordenadoresComVinculo(linhas, vinculos, {});
-  assert.deepEqual(r.map((c) => [c.eq, c.abertas, c.ordens, c.deposito, c.origem]), [
-    ['COORD A', 1, 7, '1001', '1000'],
-    ['COORD ANTIGO', 1, 0, null, null],
+  assert.deepEqual(r.map((c) => [c.eq, c.abertas, c.ordens, c.deposito]), [
+    ['COORD A', 1, 7, '1001'],
+    ['COORD ANTIGO', 1, 0, null],
   ]);
 });
 
-test('saldo do coordenador: itens do depósito dele com o saldo do mesmo item na origem', () => {
+test('saldo do coordenador: cada item com a sua origem (última transferência do SAP) e o saldo lá', () => {
   const linha = {
     unidade: 'FAZENDA X',
-    depositos: [{ c: '1001', n: 'DEP COORD A' }, { c: '1000', n: 'DEP CENTRAL' }],
+    depositos: [{ c: '1001', n: 'DEP COORD A' }, { c: '1000', n: 'DEP ADUBOS' }],
     estoque: {
-      1001: [{ c: 'I1', n: 'PRODUTO UM', q: 12, u: 'L' }, { c: 'I2', n: 'PRODUTO DOIS', q: 3.5, u: 'KG' }],
-      1000: [{ c: 'I1', n: 'PRODUTO UM', q: 400, u: 'L' }],
+      1001: [
+        { c: 'I1', n: 'ADUBO UM', q: 12, u: 'KG', o: '1000', on: 'ADUBOS', oq: 400, od: '2026-09-30' },
+        { c: 'I2', n: 'ADUBO DOIS', q: 3.5, u: 'KG', o: '1000', on: '', oq: 0 },
+        { c: 'I3', n: 'SEMENTE', q: 8, u: 'SC', o: '1007', on: 'SEMENTES', oq: 55.5, od: '2026-10-01' },
+        { c: 'I4', n: 'ITEM SEM TRANSFERENCIA', q: 1, u: 'UN' },
+      ],
     },
   };
   assert.equal(L.saldoDoCoordenador(linha, null), null);
   assert.equal(L.saldoDoCoordenador(linha, { deposito: null }), null);
-  const s = L.saldoDoCoordenador(linha, { deposito: '1001', deposito_origem: '1000' });
+  const s = L.saldoDoCoordenador(linha, { deposito: '1001' });
   assert.equal(s.depositoNome, 'DEP COORD A');
-  assert.equal(s.origemNome, 'DEP CENTRAL');
   assert.equal(s.pendente, false);
-  assert.deepEqual(s.itens.map((i) => [i.c, i.q, i.origem]), [['I1', 12, 400], ['I2', 3.5, 0]]);
+  assert.deepEqual(s.itens.map((i) => [i.c, i.q, i.origem, i.origemNome, i.origemSaldo, i.transferidoEm]), [
+    ['I1', 12, '1000', 'ADUBOS', 400, '2026-09-30'],
+    ['I2', 3.5, '1000', 'DEP ADUBOS', 0, null], // sem nome do SAP: vale o da lista de depósitos da unidade
+    ['I3', 8, '1007', 'SEMENTES', 55.5, '2026-10-01'],
+    ['I4', 1, null, '', null, null],
+  ]);
+  // o depósito recebe de mais de uma origem: a que abastece mais itens vem primeiro
+  assert.deepEqual(s.origens, [{ c: '1000', n: 'ADUBOS', itens: 2 }, { c: '1007', n: 'SEMENTES', itens: 1 }]);
   // vínculo salvo agora: o servidor ainda não leu o saldo
-  assert.equal(L.saldoDoCoordenador(linha, { deposito: '2222', deposito_origem: null }).pendente, true);
-  // sem depósito de origem não há coluna de origem
-  assert.equal(L.saldoDoCoordenador(linha, { deposito: '1001', deposito_origem: null }).itens[0].origem, null);
+  assert.equal(L.saldoDoCoordenador(linha, { deposito: '2222' }).pendente, true);
+  // retrato antigo (sem origem nos itens): nada quebra
+  const antigo = L.saldoDoCoordenador({ unidade: 'X', depositos: [], estoque: { 1001: [{ c: 'I1', n: 'A', q: 1, u: 'L' }] } }, { deposito: '1001' });
+  assert.deepEqual(antigo.origens, []);
+  assert.equal(antigo.itens[0].origem, null);
+});
+
+test('detalhe da ordem: planejado × apontado por talhão e os apontamentos um a um', () => {
+  const d = L.detalheDaOrdem(ordem({
+    tl: [['T19', 65.5], ['T18', 81.25]],
+    ap: [
+      ['2026-10-01', 9001, 'T18', 100, '2026-10-01 18:40', 'usuario.um'],
+      ['2026-10-02', 9002, 'T18', 62.5, null, null],
+      ['2026-10-02', 9002, 'T77', 5, null, 'usuario.dois'],
+    ],
+  }));
+  assert.equal(d.pendente, false);
+  assert.deepEqual(d.talhoes, [
+    { t: 'T19', pl: 65.5, ex: 0, falta: 65.5, fora: false, excedeu: false },
+    { t: 'T18', pl: 81.25, ex: 162.5, falta: -81.25, fora: false, excedeu: true }, // apontou tudo num talhão só
+    { t: 'T77', pl: 0, ex: 5, falta: -5, fora: true, excedeu: false }, // talhão que não está na ordem
+  ]);
+  assert.deepEqual(d.apontamentos[0], { dia: '2026-10-01', boletim: 9001, talhao: 'T18', ha: 100, lancado: '2026-10-01 18:40', por: 'usuario.um' });
+  assert.equal(d.apontamentos.length, 3);
+  // ordem sem apontamento ainda
+  assert.deepEqual(L.detalheDaOrdem(ordem({ tl: [['T01', 10]], ap: [] })).apontamentos, []);
+  // retrato antigo, de antes de o servidor mandar o detalhe
+  assert.equal(L.detalheDaOrdem(ordem({})).pendente, true);
+  assert.equal(L.detalheDaOrdem(null).pendente, true);
 });
 
 test('início da safra, unidade da fazenda e título', () => {

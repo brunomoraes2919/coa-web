@@ -188,6 +188,30 @@ html.embed .campo-unidade { display: none; }
 .dif.menos b { color: var(--ruim); }
 .dif.mais b { color: var(--atencao); }
 
+/* ---- ordem clicável e o detalhe dos apontamentos ---- */
+.tabela tr.clicavel { cursor: pointer; }
+.tabela tr.clicavel:hover > td { background-color: #F4F8F5; }
+.tabela tr.clicavel:focus-visible { outline: 2px solid var(--verde-teal); outline-offset: -2px; }
+.seta { display: inline-block; width: 6px; height: 6px; margin-right: 9px; border-right: 2px solid var(--texto-fraco); border-bottom: 2px solid var(--texto-fraco); transform: rotate(-45deg); transition: transform .15s; vertical-align: 2px; }
+tr[aria-expanded="true"] .seta { transform: rotate(45deg); border-color: var(--verde-teal); }
+.tabela tr.detalhe > td { background: #F7FAF8; padding: 14px 18px 16px 33px; box-shadow: inset 0 3px 5px -4px rgba(16, 54, 50, .25); white-space: normal; }
+.det { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(380px, 1.7fr); gap: 16px 36px; align-items: start; }
+.det h3 { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); margin-bottom: 4px; }
+.det-grade { font-size: 12.5px; }
+.det-linha { display: grid; gap: 0 12px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid var(--linha-suave); }
+.det-grade .det-linha:last-child { border-bottom: 0; }
+.det-talhoes .det-linha { grid-template-columns: minmax(90px, 1.3fr) 1fr 1fr 1fr; }
+.det-apont .det-linha { grid-template-columns: 54px 84px minmax(60px, 1fr) 84px 104px minmax(80px, 1.2fr); }
+.det-linha.cab { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--texto-fraco); }
+.det-linha .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.det-linha small { display: inline; font-size: 11px; }
+.det-linha.ruim, .det-linha.ruim small { color: var(--ruim); }
+.det-linha .c-por { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--texto-suave); }
+.det-linha .c-lanc { color: var(--texto-suave); font-variant-numeric: tabular-nums; }
+.det-linha .c-lanc i { display: none; font-style: normal; }
+.det-nota { font-size: 12.5px; color: var(--texto-suave); }
+@media (max-width: 1100px) { .det { grid-template-columns: 1fr; } }
+
 /* ---- saldo do depósito do coordenador ---- */
 .saldo { border-top: 1px solid var(--linha); background: #FAFBFA; }
 .saldo-cab { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 11px 18px; font-size: 13px; }
@@ -198,6 +222,8 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
 .saldo-cab b, .saldo.sem-vinculo b { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); }
 .saldo-dep { font-weight: 600; color: var(--verde-escuro); }
 .saldo-origem { color: var(--texto-suave); }
+.tabela-saldo .origem { color: var(--texto-suave); font-variant-numeric: tabular-nums; }
+.tabela-saldo .origem.sem { font-style: italic; color: var(--texto-fraco); }
 .saldo-qtd { margin-left: auto; font-size: 12px; color: var(--texto-suave); }
 .saldo.sem-vinculo { display: flex; align-items: center; gap: 6px 14px; flex-wrap: wrap; padding: 11px 18px; font-size: 13px; color: var(--texto-suave); }
 .saldo-nota { padding: 0 18px 12px; font-size: 12.5px; color: var(--texto-suave); }
@@ -286,9 +312,23 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
   .tabela-fechadas td.ex::before { content: "apontado "; }
 
   /* saldo do depósito: o código do produto sobe para cima do nome e a tabela cabe na tela */
-  .tabela-saldo th, .tabela-saldo td { padding-left: 10px; padding-right: 10px; }
+  .tabela-saldo th, .tabela-saldo td { padding-left: 6px; padding-right: 6px; }
+  .tabela.tabela-saldo th, .tabela.tabela-saldo th.n { white-space: normal; letter-spacing: .02em; vertical-align: bottom; }
+  .tabela-saldo th:last-child, .tabela-saldo td:last-child { padding-right: 14px; }
   .tabela-saldo th:first-child, .tabela-saldo td:first-child { padding-left: 14px; }
   .tabela-saldo .cod { display: block; min-width: 0; }
+  /* no celular a origem fica só com o código (o nome está no cabeçalho do bloco, em "recebe de") */
+  .tabela-saldo .origem-nome { display: none; }
+
+  /* o detalhe da ordem ocupa a largura toda, fora da grade da linha */
+  .tabela-ordens tr.detalhe, .tabela-fechadas tr.detalhe { display: block; padding: 0; box-shadow: none; }
+  .tabela-ordens tr.detalhe > td, .tabela-fechadas tr.detalhe > td { display: block; padding: 10px 14px 14px !important; font-size: 13px; color: var(--texto); }
+  .tabela-ordens td.os .seta, .tabela-fechadas td.os .seta { margin-right: 7px; }
+  .det-apont .det-linha { grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr) 74px; }
+  .det-apont .det-linha.cab .c-lanc, .det-apont .det-linha.cab .c-por { display: none; }
+  .det-apont .det-linha .c-lanc { grid-column: 1 / 3; font-size: 11.5px; }
+  .det-apont .det-linha .c-lanc i { display: inline; }
+  .det-apont .det-linha .c-por { grid-column: 3 / -1; text-align: right; font-size: 11.5px; }
 
   .tabela-vinculos, .tabela-vinculos tbody { display: block; }
   .tabela-vinculos thead { display: none; }
@@ -296,7 +336,6 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
   .tabela-vinculos td { display: block; padding: 0 !important; border: 0; text-align: left !important; }
   .tabela-vinculos td.n::before { content: "ordens abertas: "; color: var(--texto-suave); }
   .tabela-vinculos td:nth-child(3)::before { content: "Depósito do coordenador"; }
-  .tabela-vinculos td:nth-child(4)::before { content: "Depósito de origem"; }
-  .tabela-vinculos td:nth-child(3)::before, .tabela-vinculos td:nth-child(4)::before { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); margin-bottom: 3px; }
+  .tabela-vinculos td:nth-child(3)::before { display: block; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--texto-fraco); margin-bottom: 3px; }
   .tabela-vinculos select { max-width: none; }
 }

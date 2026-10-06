@@ -28,6 +28,8 @@
   const fmtPct = (v) => Math.round((v || 0) * 100) + '%';
   const fmtData = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '—');
   const fmtDataCurta = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—');
+  /** 'YYYY-MM-DD HH:MM' → 'DD/MM HH:MM'. */
+  const fmtDataHora = (t) => (t ? t.slice(8, 10) + '/' + t.slice(5, 7) + ' ' + t.slice(11, 16) : '—');
 
   const vistaDoEndereco = () => { const v = location.hash.replace(/^#/, ''); return VISTAS.indexOf(v) >= 0 ? v : 'abertas'; };
   // período: por padrão, do primeiro dia do mês até hoje (abertura das ordens abertas; encerramento das fechadas)
@@ -59,7 +61,7 @@
       ler: async function () {
         const r = await Promise.all([
           sb.from('valid_pims').select('unidade,gerado_em,ordens,coordenadores,depositos,estoque,avisos').order('unidade'),
-          sb.from('valid_vinculos').select('unidade,equipe,deposito,deposito_origem'),
+          sb.from('valid_vinculos').select('unidade,equipe,deposito'),
           sb.from('mapas_fazendas').select('unidade_pims,coa_fazenda_id'),
           sb.rpc('mapas_eh_admin'),
         ]);
@@ -71,11 +73,11 @@
         };
       },
       salvarVinculo: async function (v) {
-        if (!v.deposito && !v.deposito_origem) {
+        if (!v.deposito) {
           conferir(await sb.from('valid_vinculos').delete().eq('unidade', v.unidade).eq('equipe', v.equipe), 'remover o vínculo');
           return;
         }
-        conferir(await sb.from('valid_vinculos').upsert({ unidade: v.unidade, equipe: v.equipe, deposito: v.deposito || null, deposito_origem: v.deposito_origem || null }, { onConflict: 'unidade,equipe' }), 'salvar o vínculo');
+        conferir(await sb.from('valid_vinculos').upsert({ unidade: v.unidade, equipe: v.equipe, deposito: v.deposito, deposito_origem: null }, { onConflict: 'unidade,equipe' }), 'salvar o vínculo');
       },
       pedirAtualizacao: async function () {
         const r = await sb.from('valid_pedidos').insert({}).select('id').single();
@@ -155,13 +157,59 @@
     return '<svg class="evolucao" viewBox="0 0 ' + (dias.length * (w + g) - g) + ' ' + h + '" width="' + (dias.length * (w + g) - g) + '" height="' + h + '" role="img" aria-label="Área apontada por dia">' + barras + '</svg>';
   }
 
+  /* ---- detalhe de uma ordem: abre ao clicar na linha (talhões planejado × apontado e os apontamentos) ---- */
+  const abertos = new Set(); // 'unidade|ordem' das linhas abertas: sobrevive ao redesenho dos filtros
+  const COLUNAS_ORDEM = 8;
+  const chaveOrdem = (o) => o.unidade + '|' + o.os;
+  function ordemBruta(chave) {
+    const corte = chave.lastIndexOf('|');
+    const linha = linhaDa(chave.slice(0, corte));
+    return linha ? (linha.ordens || []).find((o) => String(o.os) === chave.slice(corte + 1)) || null : null;
+  }
+  /** Atributos da linha clicável (a seta fica na primeira célula). */
+  function attrsOrdem(o) {
+    const k = chaveOrdem(o);
+    return ' data-ordem="' + esc(k) + '" tabindex="0" aria-expanded="' + (abertos.has(k) ? 'true' : 'false') + '" title="Clique para ver os apontamentos desta ordem"';
+  }
+  function detalheHtml(chave) {
+    const bruta = ordemBruta(chave);
+    const d = L.detalheDaOrdem(bruta);
+    let corpo;
+    if (d.pendente) corpo = '<p class="det-nota">Os apontamentos desta ordem chegam na próxima atualização do servidor (a cada hora, ou pelo botão Atualizar).</p>';
+    else {
+      const semArea = bruta && bruta.sa === 1;
+      const talhoes = d.talhoes.length
+        ? '<div class="det-grade det-talhoes"><div class="det-linha cab"><span>Talhão</span><span class="n">Planejado</span><span class="n">Apontado</span><span class="n">A realizar</span></div>' +
+          d.talhoes.map((t) => '<div class="det-linha' + (t.excedeu || t.fora ? ' ruim' : '') + '"><span><b>' + esc(t.t) + '</b>' + (t.fora ? ' <small>fora da ordem</small>' : '') + '</span>' +
+            '<span class="n">' + (t.fora ? '—' : fmtHa(t.pl) + ' ha') + '</span><span class="n">' + fmtHa(t.ex) + ' ha</span>' +
+            '<span class="n">' + (t.fora || semArea ? '—' : fmtHa(t.falta) + ' ha') + '</span></div>').join('') + '</div>'
+        : '<p class="det-nota">A ordem não tem talhões planejados.</p>';
+      const apont = d.apontamentos.length
+        ? '<div class="det-grade det-apont"><div class="det-linha cab"><span>Data</span><span>Boletim</span><span>Talhão</span><span class="n">Área</span><span class="c-lanc">Lançado em</span><span class="c-por">Por</span></div>' +
+          d.apontamentos.map((a) => '<div class="det-linha"><span>' + fmtDataCurta(a.dia) + '</span><span>' + (a.boletim === null ? '—' : esc(a.boletim)) + '</span><span><b>' + esc(a.talhao) + '</b></span>' +
+            '<span class="n">' + fmtHa(a.ha) + ' ha</span><span class="c-lanc">' + (a.lancado ? '<i>lançado em </i>' + fmtDataHora(a.lancado) : '—') + '</span><span class="c-por">' + esc(a.por || '—') + '</span></div>').join('') + '</div>'
+        : '<p class="det-nota">Nenhum apontamento nesta ordem.</p>';
+      corpo = '<div class="det"><div class="det-bloco"><h3>Talhões da ordem</h3>' + talhoes + '</div>' +
+        '<div class="det-bloco"><h3>Apontamentos' + (d.apontamentos.length ? ' (' + d.apontamentos.length + ')' : '') + '</h3>' + apont + '</div></div>';
+    }
+    return '<tr class="detalhe"><td colspan="' + COLUNAS_ORDEM + '">' + corpo + '</td></tr>';
+  }
+  function alternarDetalhe(tr) {
+    const k = tr.dataset.ordem;
+    const prox = tr.nextElementSibling;
+    if (prox && prox.classList.contains('detalhe')) { prox.remove(); abertos.delete(k); tr.setAttribute('aria-expanded', 'false'); return; }
+    tr.insertAdjacentHTML('afterend', detalheHtml(k));
+    abertos.add(k);
+    tr.setAttribute('aria-expanded', 'true');
+  }
+
   function linhaOrdem(o, hoje) {
     const pct = Math.min(1, o.pct);
     const alerta = o.excedeu
       ? '<span class="selo alerta" title="A área apontada passou da planejada: a área a realizar ficou negativa">Área excedida em ' + fmtHa(-o.aRealizar) + ' ha</span>'
       : '';
-    return '<tr class="ordem ' + o.prazo + (o.excedeu ? ' excedeu' : '') + '">' +
-      '<td class="os"><b>' + esc(o.os) + '</b></td>' +
+    return '<tr class="ordem clicavel ' + o.prazo + (o.excedeu ? ' excedeu' : '') + '"' + attrsOrdem(o) + '>' +
+      '<td class="os"><span class="seta" aria-hidden="true"></span><b>' + esc(o.os) + '</b></td>' +
       '<td class="operacao"><span>' + esc(L.titulo(o.opn)) + '</span><small>' + (o.nt === 1 ? '1 talhão' : o.nt + ' talhões') + '</small></td>' +
       '<td class="n">' + fmtData(o.ab) + '</td>' +
       '<td class="prazo"><span class="selo ' + o.prazo + '">' + esc(L.textoDias(o.dias)) + '</span></td>' +
@@ -172,23 +220,29 @@
           '<small><b>' + fmtPct(o.pct) + '</b> · ' + fmtHa(o.ex) + ' de ' + fmtHa(o.pl) + ' ha' + (o.ult ? ' · último em ' + fmtDataCurta(o.ult) : ' · sem apontamento') + '</small></td>' +
           '<td class="evo">' + evolucaoSvg(o, hoje) + '</td>' +
           '<td class="n realizar' + (o.excedeu ? ' negativo' : '') + '">' + fmtHa(o.aRealizar) + ' ha' + alerta + '</td>') +
-      '</tr>';
+      '</tr>' + (abertos.has(chaveOrdem(o)) ? detalheHtml(chaveOrdem(o)) : '');
   }
 
   function blocoSaldo(g) {
     const s = L.saldoDoCoordenador(linhaDa(g.unidade), vinculoDe(g.unidade, g.eq));
+    // retrato gravado antes de o servidor mandar a origem de cada produto (as ordens ainda vêm sem o detalhe)
+    const retratoNovo = ((linhaDa(g.unidade) || {}).ordens || []).some((o) => Array.isArray(o.ap));
     if (!s) {
       return '<div class="saldo sem-vinculo"><b>Depósito no SAP</b><span>Sem depósito vinculado a este coordenador.' +
         (admin ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '') + '</span></div>';
     }
     const cab = '<b>Depósito no SAP</b><span class="saldo-dep">' + esc(s.deposito) + ' · ' + esc(L.titulo(s.depositoNome)) + '</span>' +
-      (s.origem ? '<span class="saldo-origem">origem: ' + esc(s.origem) + ' · ' + esc(L.titulo(s.origemNome)) + '</span>' : '');
+      (s.origens.length ? '<span class="saldo-origem">recebe de ' + s.origens.map((o) => esc(o.c) + ' · ' + esc(L.titulo(o.n))).join(', ') + '</span>' : '');
     if (s.pendente) return '<div class="saldo"><div class="saldo-cab">' + cab + '</div><p class="saldo-nota">O saldo deste depósito ainda não foi lido. Clique em Atualizar ou aguarde a próxima atualização.</p></div>';
     if (!s.itens.length) return '<div class="saldo"><div class="saldo-cab">' + cab + '</div><p class="saldo-nota">Depósito sem saldo no SAP.</p></div>';
     return '<details class="saldo"' + (s.itens.length <= 20 ? ' open' : '') + '><summary class="saldo-cab">' + cab + '<span class="saldo-qtd">' + s.itens.length + (s.itens.length === 1 ? ' produto com saldo' : ' produtos com saldo') + '</span></summary>' +
-      '<div class="tabela-rolagem"><table class="tabela tabela-saldo"><thead><tr><th>Produto</th><th class="n">Saldo no depósito</th>' + (s.origem ? '<th class="n">Saldo na origem</th>' : '') + '</tr></thead><tbody>' +
+      '<div class="tabela-rolagem"><table class="tabela tabela-saldo"><thead><tr><th>Produto</th><th class="n">Saldo no depósito</th>' +
+        '<th title="Depósito de onde o produto veio na última transferência de estoque do SAP">Origem</th><th class="n">Saldo na origem</th></tr></thead><tbody>' +
       s.itens.map((i) => '<tr><td><span class="cod">' + esc(i.c) + '</span>' + esc(L.titulo(i.n)) + '</td><td class="n"><b>' + fmtQtd(i.q) + '</b> ' + esc(i.u) + '</td>' +
-        (s.origem ? '<td class="n">' + (i.origem === null ? '—' : fmtQtd(i.origem) + ' ' + esc(i.u)) + '</td>' : '') + '</tr>').join('') +
+        (i.origem
+          ? '<td class="origem"' + (i.transferidoEm ? ' title="Última transferência em ' + fmtData(i.transferidoEm) + '"' : '') + '>' + esc(i.origem) + '<span class="origem-nome"> · ' + esc(L.titulo(i.origemNome)) + '</span></td>' +
+            '<td class="n">' + fmtQtd(i.origemSaldo) + ' ' + esc(i.u) + '</td>'
+          : '<td class="origem sem" colspan="2">' + (retratoNovo ? 'sem transferência no SAP' : 'chega na próxima atualização') + '</td>') + '</tr>').join('') +
       '</tbody></table></div></details>';
   }
 
@@ -232,9 +286,10 @@
   function tabelaFechadas(lista, vazio) {
     if (!lista.length) return '<p class="vazio">' + esc(vazio) + '</p>';
     return '<table class="tabela tabela-fechadas"><thead><tr><th>Ordem</th><th>Fazenda</th><th>Coordenador</th><th>Operação</th><th class="n">Encerrada em</th><th class="n">Planejado</th><th class="n">Apontado</th><th class="n">Diferença</th></tr></thead><tbody>' +
-      lista.map((o) => '<tr><td class="os"><b>' + esc(o.os) + '</b></td><td class="faz">' + esc(L.titulo(o.unidade)) + '</td><td class="eq">' + esc(L.titulo(o.eq)) + '</td><td class="opn">' + esc(L.titulo(o.opn)) + '</td>' +
+      lista.map((o) => '<tr class="clicavel"' + attrsOrdem(o) + '><td class="os"><span class="seta" aria-hidden="true"></span><b>' + esc(o.os) + '</b></td><td class="faz">' + esc(L.titulo(o.unidade)) + '</td><td class="eq">' + esc(L.titulo(o.eq)) + '</td><td class="opn">' + esc(L.titulo(o.opn)) + '</td>' +
         '<td class="n enc">' + fmtData(o.enc) + '</td><td class="n pl">' + fmtHa(o.pl) + ' ha</td><td class="n ex">' + fmtHa(o.ex) + ' ha</td>' +
-        '<td class="n dif ' + (o.dif < 0 ? 'menos' : 'mais') + '"><b>' + (o.dif > 0 ? '+' : '−') + fmtHa(Math.abs(o.dif)) + ' ha</b>' + (o.pct === null ? '' : '<small>' + fmtPct(o.pct) + ' do planejado</small>') + '</td></tr>').join('') +
+        '<td class="n dif ' + (o.dif < 0 ? 'menos' : 'mais') + '"><b>' + (o.dif > 0 ? '+' : '−') + fmtHa(Math.abs(o.dif)) + ' ha</b>' + (o.pct === null ? '' : '<small>' + fmtPct(o.pct) + ' do planejado</small>') + '</td></tr>' +
+        (abertos.has(chaveOrdem(o)) ? detalheHtml(chaveOrdem(o)) : '')).join('') +
       '</tbody></table>';
   }
   function desenharFechadas() {
@@ -259,8 +314,8 @@
   }
   function desenharDepositos() {
     $('explica-depositos').innerHTML = admin
-      ? 'Escolha, para cada coordenador, o <b>depósito dele no SAP</b> e o <b>depósito de origem</b> dos produtos. O saldo do depósito aparece no painel do coordenador depois da próxima atualização.'
-      : 'Depósito do SAP de cada coordenador e o depósito de origem dos produtos. Só administradores alteram estes vínculos.';
+      ? 'Escolha o <b>depósito de cada coordenador no SAP</b>. O saldo aparece no painel do coordenador depois da próxima atualização, e a origem de cada produto vem sozinha das transferências de estoque do SAP.'
+      : 'Depósito do SAP de cada coordenador. A origem de cada produto vem das transferências de estoque do SAP. Só administradores alteram estes vínculos.';
     const lista = L.coordenadoresComVinculo(linhas, vinculos, { unidade: estado.unidade }).filter((c) => !estado.equipe || c.eq === estado.equipe);
     if (!lista.length) { $('vinculos').innerHTML = '<p class="vazio">Nenhum coordenador com ordem de serviço' + (estado.unidade ? ' nesta fazenda' : '') + '.</p>'; return; }
     const porUnidade = new Map();
@@ -269,10 +324,9 @@
       const linha = linhaDa(unidade) || { depositos: [] };
       return '<section class="cartao"><header class="cartao-cab"><div><h2>' + esc(L.titulo(unidade)) + '</h2><p>' + (coords.length === 1 ? '1 coordenador' : coords.length + ' coordenadores') +
         ' · ' + (linha.depositos || []).filter((d) => !d.i).length + ' depósitos no SAP</p></div></header>' +
-        '<div class="tabela-rolagem"><table class="tabela tabela-vinculos"><thead><tr><th>Coordenador</th><th class="n">Ordens abertas</th><th>Depósito do coordenador</th><th>Depósito de origem</th><th></th></tr></thead><tbody>' +
+        '<div class="tabela-rolagem"><table class="tabela tabela-vinculos"><thead><tr><th>Coordenador</th><th class="n">Ordens abertas</th><th>Depósito do coordenador</th><th></th></tr></thead><tbody>' +
         coords.map((c) => '<tr data-unidade="' + esc(c.unidade) + '" data-equipe="' + esc(c.eq) + '"><td><b>' + esc(L.titulo(c.eq)) + '</b></td><td class="n">' + c.abertas + '</td>' +
           '<td><select data-campo="deposito" aria-label="Depósito de ' + esc(L.titulo(c.eq)) + '"' + (admin ? '' : ' disabled') + '>' + opcoesDeposito(linha, c.deposito) + '</select></td>' +
-          '<td><select data-campo="deposito_origem" aria-label="Depósito de origem de ' + esc(L.titulo(c.eq)) + '"' + (admin ? '' : ' disabled') + '>' + opcoesDeposito(linha, c.origem) + '</select></td>' +
           '<td class="situacao" aria-live="polite"></td></tr>').join('') +
         '</tbody></table></div></section>';
     }).join('');
@@ -282,16 +336,15 @@
     const v = {
       unidade: tr.dataset.unidade, equipe: tr.dataset.equipe,
       deposito: tr.querySelector('[data-campo="deposito"]').value || null,
-      deposito_origem: tr.querySelector('[data-campo="deposito_origem"]').value || null,
     };
     const sit = tr.querySelector('.situacao');
     sit.className = 'situacao'; sit.textContent = 'Salvando…';
     try {
       await fonte.salvarVinculo(v);
       vinculos = vinculos.filter((x) => !(x.unidade === v.unidade && x.equipe === v.equipe));
-      if (v.deposito || v.deposito_origem) vinculos.push(v);
+      if (v.deposito) vinculos.push(v);
       sit.className = 'situacao ok';
-      sit.textContent = v.deposito || v.deposito_origem ? 'Salvo. O saldo entra na próxima atualização.' : 'Vínculo removido.';
+      sit.textContent = v.deposito ? 'Salvo. O saldo entra na próxima atualização.' : 'Vínculo removido.';
     } catch (e) {
       sit.className = 'situacao erro';
       sit.textContent = e && e.message ? e.message : 'Não foi possível salvar.';
@@ -419,6 +472,18 @@
     mostrarPeriodo(); desenhar();
   });
   $('btn-atualizar').addEventListener('click', atualizar);
+  // clicar (ou Enter/Espaço) numa ordem abre os apontamentos dela logo abaixo
+  document.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-ordem]');
+    if (!tr || e.target.closest('button, a, select, input, summary')) return;
+    if (String(window.getSelection && window.getSelection()) !== '') return; // estava selecionando texto para copiar
+    alternarDetalhe(tr);
+  });
+  document.addEventListener('keydown', (e) => {
+    if ((e.key !== 'Enter' && e.key !== ' ') || !e.target.matches || !e.target.matches('tr[data-ordem]')) return;
+    e.preventDefault();
+    alternarDetalhe(e.target);
+  });
   $('coordenadores').addEventListener('click', (e) => {
     const b = e.target.closest('[data-ir="depositos"]');
     if (!b) return;
@@ -459,6 +524,8 @@
     // ?unidade=…&equipe=… abre já filtrado (atalho para um coordenador)
     if (PARAMS.get('unidade') && unidades().indexOf(PARAMS.get('unidade')) >= 0) estado.unidade = PARAMS.get('unidade');
     if (PARAMS.get('equipe')) estado.equipe = PARAMS.get('equipe');
+    // ?abrir=UNIDADE|ordem (várias separadas por vírgula) já abre os apontamentos dessas ordens
+    if (PARAMS.get('abrir')) PARAMS.get('abrir').split(',').forEach((k) => { if (ordemBruta(k)) abertos.add(k); });
     if (PARAMS.has('de')) estado.de = ehData(PARAMS.get('de')) ? PARAMS.get('de') : '';
     if (PARAMS.has('ate')) estado.ate = ehData(PARAMS.get('ate')) ? PARAMS.get('ate') : '';
     mostrarPeriodo();

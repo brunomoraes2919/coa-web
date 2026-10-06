@@ -25,13 +25,16 @@ create table if not exists public.valid_pims (
   unidade       text primary key,
   gerado_em     timestamptz not null,
   -- [{ os, eq (coordenador), op, opn, s 'A'|'F', ab, enc, pl (ha planejado), ex (ha apontado), nt, ult, ev [[dia, ha]],
-  --    sa (1 = operação que não aponta área) }]
+  --    sa (1 = operação que não aponta área), tl [[talhão, ha planejado]],
+  --    ap [[dia, boletim, talhão, ha, lançado em, lançado por]] }]
   ordens        jsonb not null default '[]'::jsonb,
   -- [{ eq, ab (ordens abertas), n (ordens na safra) }]
   coordenadores jsonb not null default '[]'::jsonb,
   -- [{ c (código do SAP), n (nome), i (1 = inativo no SAP) }]
   depositos     jsonb not null default '[]'::jsonb,
-  -- { "<código do depósito>": [{ c (item), n (nome), q (saldo), u (unidade) }] } — só dos depósitos vinculados
+  -- { "<código do depósito>": [{ c (item), n (nome), q (saldo), u (unidade),
+  --     o (depósito de origem pela última transferência do SAP), on (nome), oq (saldo na origem), od (data) }] }
+  -- só dos depósitos vinculados aos coordenadores
   estoque       jsonb not null default '{}'::jsonb,
   -- ex.: ["sap:SBOAGROPECUARIALOCKS"] quando o saldo do SAP não pôde ser lido nesta rodada
   avisos        jsonb not null default '[]'::jsonb
@@ -53,7 +56,8 @@ create table if not exists public.valid_vinculos (
   unidade         text not null,
   -- coordenador = Equipe da ordem de serviço no PIMS (DE_EQUIPE)
   equipe          text not null,
-  -- código do depósito no SAP (WhsCode) do coordenador e o de origem dos produtos
+  -- código do depósito no SAP (WhsCode) do coordenador. deposito_origem não é mais usado: a origem de cada
+  -- produto vem das transferências de estoque do SAP (fica a coluna para não mexer no banco)
   deposito        text,
   deposito_origem text,
   atualizado_em   timestamptz not null default now(),

@@ -200,16 +200,19 @@ export function montarSqlMecanizadas(unidade: string, de: string, ate: string, p
 export function fmtHrKm(v: unknown): string;
 export function linhasMecanizadas(objs: Record<string, unknown>[]): string[][];
 export function boletinsMecanizadas(opcoes: { url: string; token: string; unidade: string; de: string; ate: string; fetchImpl?: FetchLike }): Promise<BoletinsMecScript>;
-export interface OrdemValidScript { os: number; eq: string; op: number | null; opn: string; s: 'A' | 'F'; ab: string | null; enc: string | null; pl: number; ex: number; nt: number; ult: string | null; ev?: [string, number][]; sa?: 1 }
+export interface OrdemValidScript { os: number; eq: string; op: number | null; opn: string; s: 'A' | 'F'; ab: string | null; enc: string | null; pl: number; ex: number; nt: number; ult: string | null; ev?: [string, number][]; sa?: 1;
+  tl?: [string, number][]; ap?: [string, number | null, string, number, string | null, string | null][] }
 export interface LinhaValidScript {
   unidade: string;
   gerado_em: string;
   ordens: OrdemValidScript[];
   coordenadores: { eq: string; ab: number; n: number }[];
   depositos: { c: string; n: string; i?: number }[];
-  estoque: Record<string, { c: string | null; n: string; q: number; u: string }[]>;
+  estoque: Record<string, ItemSaldoScript[]>;
   avisos: string[];
 }
+export interface ItemSaldoScript { c: string | null; n: string; q: number; u: string; o?: string; on?: string; oq?: number; od?: string }
+export function itemDoSaldoSap(r: Record<string, unknown>): ItemSaldoScript;
 export const VALID_TOLERANCIA_HA: number;
 export const SAP_EMPRESA_DA_UNIDADE: Record<string, string>;
 export const SQL_EVOLUCAO_VALIDACAO: string;
@@ -218,6 +221,8 @@ export const SQL_DEPOSITOS_SAP: string;
 export function inicioSafraValidacao(agora?: Date): string;
 export function montarSqlOrdensValidacao(desde: string, pular?: number, tamanho?: number): string;
 export function montarSqlCoordenadoresValidacao(desde: string): string;
+export function montarSqlTalhoesValidacao(desde: string, pular?: number, tamanho?: number): string;
+export function montarSqlApontamentosValidacao(desde: string, pular?: number, tamanho?: number): string;
 export function montarSqlEstoqueSap(codigos: unknown[]): string;
 export function linhasValidacao(
   dados: {
@@ -225,15 +230,17 @@ export function linhasValidacao(
     evolucao: Record<string, unknown>[];
     coordenadores: Record<string, unknown>[];
     depositos: Record<string, unknown>[];
+    talhoes?: Record<string, unknown>[];
+    apontamentos?: Record<string, unknown>[];
     depositosSap?: Record<string, Map<string, { nome: string | null; inativo: boolean }>>;
-    estoque?: Record<string, Record<string, { c: string | null; n: string; q: number; u: string }[]>>;
+    estoque?: Record<string, Record<string, ItemSaldoScript[]>>;
     avisos?: string[];
   },
   geradoEm: string,
 ): LinhaValidScript[];
-export function depositosVinculados(vinculos: { unidade: string; deposito: string | null; deposito_origem: string | null }[]): Record<string, Record<string, string[]>>;
-export function lerVinculosValidacao(opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<{ unidade: string; deposito: string | null; deposito_origem: string | null }[]>;
-export function sincronizarValidacao(opcoes: { url: string; token: string; vinculos?: { unidade: string; deposito: string | null; deposito_origem: string | null }[]; fetchImpl?: FetchLike; agora?: Date }): Promise<{ geradoEm: string; linhas: LinhaValidScript[]; avisos: string[] }>;
+export function depositosVinculados(vinculos: { unidade: string; deposito: string | null }[]): Record<string, Record<string, string[]>>;
+export function lerVinculosValidacao(opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<{ unidade: string; deposito: string | null }[]>;
+export function sincronizarValidacao(opcoes: { url: string; token: string; vinculos?: { unidade: string; deposito: string | null }[]; fetchImpl?: FetchLike; agora?: Date }): Promise<{ geradoEm: string; linhas: LinhaValidScript[]; avisos: string[] }>;
 export function gravarValidacaoSupabase(dados: { geradoEm: string; linhas: LinhaValidScript[] }, opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<'ok' | 'vazio' | 'sem-tabela'>;
 export function rodarValidacao(opcoes: { agrovex: { url: string; token: string }; supabase: { url: string; chave: string }; fetchImpl?: FetchLike }): Promise<string | null>;
 export function rodarAcompanhamento(opcoes: {

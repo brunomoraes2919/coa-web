@@ -33,18 +33,28 @@ const dia = (atras) => {
   const d = new Date(Date.now() - atras * 86400000);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
-const ordem = (os, eq, opn, atras, pl, ex) => ({
-  os, eq, op: 45, opn, s: 'A', ab: dia(atras), enc: null, pl, ex, nt: 3, ult: ex ? dia(Math.max(0, atras - 1)) : null,
-  ev: ex ? [[dia(Math.max(0, atras - 2)), Math.round(ex * 0.4 * 10) / 10], [dia(Math.max(0, atras - 1)), Math.round(ex * 0.6 * 10) / 10]] : [],
+const r1 = (v) => Math.round(v * 10) / 10;
+/** Talhões planejados e apontamentos de mentira de uma ordem (o segundo apontamento cai num talhão fora da ordem). */
+const detalhe = (os, atras, pl, ex) => ({
+  tl: [['T01', r1(pl * 0.6)], ['T02', r1(pl * 0.4)]],
+  ap: ex ? [
+    [dia(Math.max(0, atras - 2)), 900000 + os * 10, 'T01', r1(ex * 0.4), `${dia(Math.max(0, atras - 2))} 18:20`, 'usuario.teste'],
+    [dia(Math.max(0, atras - 1)), 900001 + os * 10, os % 2 ? 'T02' : 'T09', r1(ex * 0.6), null, 'outro.usuario'],
+  ] : [],
 });
-const fechada = (os, eq, opn, atras, pl, ex) => ({ os, eq, op: 91, opn, s: 'F', ab: dia(atras + 6), enc: dia(atras), pl, ex, nt: 2, ult: dia(atras) });
+const ordem = (os, eq, opn, atras, pl, ex) => ({
+  os, eq, op: 45, opn, s: 'A', ab: dia(atras), enc: null, pl, ex, nt: 2, ult: ex ? dia(Math.max(0, atras - 1)) : null,
+  ev: ex ? [[dia(Math.max(0, atras - 2)), r1(ex * 0.4)], [dia(Math.max(0, atras - 1)), r1(ex * 0.6)]] : [],
+  ...detalhe(os, atras, pl, ex),
+});
+const fechada = (os, eq, opn, atras, pl, ex) => ({ os, eq, op: 91, opn, s: 'F', ab: dia(atras + 6), enc: dia(atras), pl, ex, nt: 2, ult: dia(atras), ...detalhe(os, atras + 1, pl, ex) });
 
 /** Retrato FICTÍCIO (nenhuma ordem, nome ou saldo real entra no repositório). */
 function dadosFicticios() {
   return {
     admin: true,
     fazendas: [{ unidade_pims: 'TESTE NORTE', coa_fazenda_id: 1 }, { unidade_pims: 'TESTE SUL', coa_fazenda_id: 2 }],
-    vinculos: [{ unidade: 'TESTE NORTE', equipe: 'COORDENADOR UM', deposito: '9001', deposito_origem: '9003' }],
+    vinculos: [{ unidade: 'TESTE NORTE', equipe: 'COORDENADOR UM', deposito: '9001' }],
     linhas: [
       {
         unidade: 'TESTE NORTE', gerado_em: new Date().toISOString(), avisos: [],
@@ -60,8 +70,11 @@ function dadosFicticios() {
         coordenadores: [{ eq: 'COORDENADOR UM', ab: 3, n: 20 }, { eq: 'COORDENADOR DOIS', ab: 2, n: 14 }, { eq: 'COORDENADOR TRES', ab: 0, n: 5 }],
         depositos: [{ c: '9001', n: 'APLICACAO TERRESTRE' }, { c: '9002', n: 'PLANTIO EQUIPE 1' }, { c: '9003', n: 'DEFENSIVOS - TESTE NORTE' }, { c: '9004', n: 'DEPOSITO ANTIGO', i: 1 }],
         estoque: {
-          9001: [{ c: '000001', n: 'HERBICIDA TESTE', q: 40, u: 'LT' }, { c: '000002', n: 'ADJUVANTE TESTE', q: 12.5, u: 'LT' }],
-          9003: [{ c: '000001', n: 'HERBICIDA TESTE', q: 1200, u: 'LT' }],
+          9001: [
+            { c: '000001', n: 'HERBICIDA TESTE', q: 40, u: 'LT', o: '9003', on: 'DEFENSIVOS - TESTE NORTE', oq: 1200, od: '2026-10-02' },
+            { c: '000002', n: 'ADJUVANTE TESTE', q: 12.5, u: 'LT', o: '9005', on: 'OLEO MINERAL - TESTE NORTE', oq: 0, od: '2026-09-20' },
+            { c: '000003', n: 'PRODUTO SEM TRANSFERENCIA', q: 3, u: 'KG' },
+          ],
         },
       },
       {
@@ -147,8 +160,8 @@ createServer((req, res) => {
     lerCorpo(req)
       .then((v) => {
         DADOS.vinculos = DADOS.vinculos.filter((x) => !(x.unidade === v.unidade && x.equipe === v.equipe));
-        if (v.deposito || v.deposito_origem) {
-          DADOS.vinculos.push({ unidade: String(v.unidade), equipe: String(v.equipe), deposito: v.deposito || null, deposito_origem: v.deposito_origem || null });
+        if (v.deposito) {
+          DADOS.vinculos.push({ unidade: String(v.unidade), equipe: String(v.equipe), deposito: v.deposito });
         }
         responder(res, 200, TIPOS['.json'], '{"ok":true}');
       })
