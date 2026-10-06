@@ -4512,8 +4512,9 @@ function montarFundoCategorias(){
       camada += '<line class="cat-gota" style="--d:'+(1.5+Math.random()*1.2).toFixed(2)+'s;--a:-'+(Math.random()*2.7).toFixed(2)+'s" x1="'+f(x)+'" y1="'+f(y)+'" x2="'+f(x-5)+'" y2="'+f(y+20)+'"/>';
     }
   }
-  // estações (pluviômetros/bases) fora dos talhões animados
-  const estacoes = [[1095,772,0],[380,705,1.4],[1090,150,2.7]].map(e=>
+  // estações (pluviômetros/bases) fora dos talhões animados e longe do topo (o desenho cresce com a tela:
+  // um ponto perto do canto de cima caía sobre o nome do usuário e o botão Sair)
+  const estacoes = [[1095,772,0],[380,705,1.4],[700,640,2.7]].map(e=>
     '<circle class="cat-pulso" cx="'+e[0]+'" cy="'+e[1]+'" r="4" style="animation-delay:'+e[2]+'s"/><circle class="cat-ponto" cx="'+e[0]+'" cy="'+e[1]+'" r="3"/>').join('');
   svg.setAttribute('class', 'categoria-fundo cat-'+cena);
   svg.innerHTML = '<defs><radialGradient id="cat-luz" cx="18%" cy="12%" r="70%"><stop offset="0" stop-color="#1A5A50" stop-opacity=".55"/><stop offset="1" stop-color="#103632" stop-opacity="0"/></radialGradient></defs>'
