@@ -108,16 +108,17 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 }
 .login-painel{
   position:relative;overflow:hidden;background:var(--verde-escuro);color:#EAF2EF;
-  display:flex;flex-direction:column;justify-content:space-between;padding:44px 56px;min-height:100%;
+  display:flex;flex-direction:column;justify-content:space-between;padding:clamp(40px,4.2vw,88px) clamp(48px,5.4vw,112px);min-height:100%;
 }
-.login-logo{width:132px;height:auto;display:block;}
-.login-painel-texto{position:relative;z-index:1;max-width:30ch;}
-.login-kicker{margin:0 0 14px;font-size:11.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--dourado-claro);}
-.login-painel h1{margin:0;font-size:30px;line-height:1.2;font-weight:600;letter-spacing:-.01em;color:#fff;}
-.login-painel-sub{margin:16px 0 0;font-size:14px;line-height:1.55;color:#9FB8AF;max-width:36ch;}
-.login-rodape{position:relative;z-index:1;font-size:12px;color:#6F9A8D;}
+/* logo e textos acompanham a largura da tela (o painel ocupa mais da metade dela): num monitor grande não ficam miúdos */
+.login-logo{width:clamp(132px,11.5vw,240px);height:auto;display:block;}
+.login-painel-texto{position:relative;z-index:1;}
+.login-kicker{margin:0 0 1.3em;font-size:clamp(11.5px,.82vw,16px);font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--dourado-claro);}
+.login-painel h1{margin:0;font-size:clamp(30px,3.15vw,64px);line-height:1.14;font-weight:600;letter-spacing:-.018em;color:#fff;max-width:17ch;}
+.login-painel-sub{margin:1.3em 0 0;font-size:clamp(14px,1.12vw,21px);line-height:1.55;color:#9FB8AF;max-width:46ch;}
+.login-rodape{position:relative;z-index:1;font-size:clamp(12px,.78vw,15px);color:#6F9A8D;}
 /* curvas de nível ao fundo: o produto é feito de mapas de fazenda */
-.login-contornos{position:absolute;right:-120px;bottom:-80px;width:640px;height:auto;opacity:.9;pointer-events:none;}
+.login-contornos{position:absolute;right:-26%;bottom:-20%;width:clamp(640px,56vw,1180px);height:auto;opacity:.9;pointer-events:none;}
 .login-contornos path{fill:none;stroke:rgba(255,255,255,.07);stroke-width:1.2;
   stroke-dasharray:1500;stroke-dashoffset:1500;animation:login-tracar 3.2s cubic-bezier(.3,.6,.3,1) forwards;animation-delay:calc(var(--i) * .22s);}
 .login-contornos path.forte{stroke:rgba(240,178,74,.3);}
@@ -141,10 +142,22 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .login-erro{color:var(--vermelho-abaixo);font-size:12.5px;min-height:18px;margin:0 0 6px;}
 .login-card .btn{height:42px;font-size:14px;}
 .login-dica{color:var(--texto-fraco);font-size:12px;margin-top:18px;line-height:1.5;}
+@media (min-width:1500px){
+  .login-card{width:420px;padding:40px 40px 34px;}
+  .login-card h2{font-size:26px;}
+  .login-sub{font-size:14.5px;margin-bottom:26px;}
+  .login-card label{font-size:12px;}
+  .login-card .campo{margin-bottom:16px;}
+  .login-card .campo input{height:46px;font-size:15.5px;}
+  .login-olho{bottom:7px;}
+  .login-card .btn{height:48px;font-size:15.5px;}
+  .login-dica{font-size:13px;}
+}
 @media (max-width:900px){
   .login-screen{grid-template-columns:1fr;}
   .login-painel{padding:28px 24px;min-height:0;}
-  .login-painel h1{font-size:22px;}
+  .login-painel h1{font-size:22px;max-width:none;}
+  .login-kicker{margin-bottom:10px;}
   .login-painel-sub,.login-rodape{display:none;}
   .login-logo{width:104px;margin-bottom:22px;}
   .login-contornos{right:-200px;bottom:-240px;width:520px;}
