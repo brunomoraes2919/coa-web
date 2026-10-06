@@ -14,6 +14,14 @@ export function tempoDigitando(sorteio: () => number = Math.random): number {
   return entre(2_000, 4_000, sorteio)
 }
 
+const RESPOSTAS_NO_MINIMO_MS = 3_000
+const RESPOSTAS_NO_MAXIMO_MS = 8_000
+
+/** Entre uma resposta de ATIVAR/SAIR e a próxima: duas saindo no mesmo instante são sinal de robô. */
+export function pausaEntreRespostas(sorteio: () => number = Math.random): number {
+  return entre(RESPOSTAS_NO_MINIMO_MS, RESPOSTAS_NO_MAXIMO_MS, sorteio)
+}
+
 export class ContadorDoDia {
   private dia = ''
   private porContato = new Map<string, number>()

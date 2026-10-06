@@ -1,7 +1,7 @@
 // @vitest-environment node
 process.env.TZ = 'America/Cuiaba'
 import { describe, expect, it } from 'vitest'
-import { chaveDoAntes, chaveEvento, eventosFixosNaHora, janelaDoAntes, precisaCalcular } from './agenda'
+import { chaveDoAntes, chaveEvento, eventosFixosNaHora, janelaDoAntes, precisaCalcular, ultimoMarcoDeCalculo } from './agenda'
 
 const em = (h: number, m = 0, dia = 6) => new Date(2026, 9, dia, h, m).getTime()
 
@@ -31,6 +31,14 @@ describe('agenda', () => {
     expect(precisaCalcular(em(12), em(7, 1))).toBe(true)
     expect(precisaCalcular(em(0, 4, 7), em(12, 1))).toBe(false)
     expect(precisaCalcular(em(0, 5, 7), em(12, 1))).toBe(true)
+  })
+  it('o último horário de cálculo que já passou: 00:05, 07:00, 12:00 ou o 12:00 de ontem', () => {
+    expect(ultimoMarcoDeCalculo(em(0, 4))).toBe(em(12, 0, 5))
+    expect(ultimoMarcoDeCalculo(em(0, 5))).toBe(em(0, 5))
+    expect(ultimoMarcoDeCalculo(em(6, 59))).toBe(em(0, 5))
+    expect(ultimoMarcoDeCalculo(em(7))).toBe(em(7))
+    expect(ultimoMarcoDeCalculo(em(11, 59))).toBe(em(7))
+    expect(ultimoMarcoDeCalculo(em(23, 59))).toBe(em(12))
   })
   it('o "antes" é a janela que começa primeiro, dentro dos próximos 30 min', () => {
     const a = { inicio: 19 * 60, fim: 21 * 60 + 30, dias: 5 }

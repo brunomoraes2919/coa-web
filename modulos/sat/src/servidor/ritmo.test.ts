@@ -1,7 +1,7 @@
 // @vitest-environment node
 process.env.TZ = 'America/Cuiaba'
 import { describe, expect, it } from 'vitest'
-import { ContadorDoDia, pausaEntrePessoas, tempoDigitando, TETO_DO_DIA } from './ritmo'
+import { ContadorDoDia, pausaEntrePessoas, pausaEntreRespostas, tempoDigitando, TETO_DO_DIA } from './ritmo'
 
 describe('ritmo', () => {
   it('pausa entre pessoas de 20 a 45 s; digitando de 2 a 4 s', () => {
@@ -9,6 +9,11 @@ describe('ritmo', () => {
     expect(pausaEntrePessoas(() => 0.999999)).toBeLessThanOrEqual(45_000)
     expect(tempoDigitando(() => 0)).toBe(2_000)
     expect(tempoDigitando(() => 0.999999)).toBeLessThanOrEqual(4_000)
+  })
+  it('entre uma resposta e a próxima, de 3 a 8 s', () => {
+    expect(pausaEntreRespostas(() => 0)).toBe(3_000)
+    expect(pausaEntreRespostas(() => 0.999999)).toBeLessThan(8_000)
+    expect(pausaEntreRespostas(() => 0.999999)).toBeGreaterThan(7_900)
   })
   it('no máximo 3 alertas por pessoa por dia; o dia novo zera', () => {
     let agora = new Date(2026, 9, 6, 7).getTime()

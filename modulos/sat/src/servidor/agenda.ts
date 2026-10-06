@@ -32,14 +32,22 @@ export function eventosFixosNaHora(agora: number): ('resumo-07' | 'lembrete-12')
   return eventos
 }
 
+/** Os horários de cálculo de hoje e o último de ontem (cobre a virada do dia), em ordem. */
+function marcosDeCalculo(agora: number): number[] {
+  const dia = inicioDoDiaLocal(agora)
+  return [dia - DIA_MS + MINUTOS_DE_CALCULO[MINUTOS_DE_CALCULO.length - 1] * 60_000,
+    ...MINUTOS_DE_CALCULO.map((m) => dia + m * 60_000)]
+}
+
 /** Já passou de algum horário de cálculo desde o último? (`null` = nunca calculou.) */
 export function precisaCalcular(agora: number, calculadoEm: number | null): boolean {
   if (calculadoEm == null) return true
-  const dia = inicioDoDiaLocal(agora)
-  // Os horários de hoje e o último de ontem: cobre a virada do dia.
-  const marcos = [dia - DIA_MS + MINUTOS_DE_CALCULO[MINUTOS_DE_CALCULO.length - 1] * 60_000,
-    ...MINUTOS_DE_CALCULO.map((m) => dia + m * 60_000)]
-  return marcos.some((marco) => marco <= agora && marco > calculadoEm)
+  return marcosDeCalculo(agora).some((marco) => marco <= agora && marco > calculadoEm)
+}
+
+/** O horário de cálculo mais recente que já passou: cada um abre uma rodada nova de tentativas. */
+export function ultimoMarcoDeCalculo(agora: number): number {
+  return Math.max(...marcosDeCalculo(agora).filter((marco) => marco <= agora))
 }
 
 /** A janela que começa primeiro dentro dos próximos 30 min (ou agora); `null` se nenhuma. */

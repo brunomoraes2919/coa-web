@@ -67,6 +67,12 @@ class BancoFalso implements Banco {
   reservaLanca = new Set<string>()
   fecharLanca = new Set<string>()
   chavesEscondidas = false
+  /** Quantas das próximas gravações de estado falham. */
+  estadoLanca = 0
+  /** Ganchos para os testes de ordem: o que acontece no meio de uma chamada ao banco. */
+  aoReservar?: () => void
+  antesDePausar?: () => Promise<void>
+  antesDeConfirmar?: () => Promise<void>
   constructor(private ordem: string[], public contatosLista: ContatoWpp[], public fazendasLista: FazendaServidor[]) {}
 
   get escritas() {
@@ -95,6 +101,7 @@ class BancoFalso implements Banco {
     this.envios.set(k, 'enviando')
     this.reservas.push([contatoId, chave, tipo])
     this.ordem.push('reservar')
+    this.aoReservar?.()
     return true
   }
   async fecharEnvio(contatoId: string, chave: string, situacao: 'enviado' | 'falhou' | 'pulado', erro?: string) {
@@ -114,7 +121,9 @@ class BancoFalso implements Banco {
   }
   async confirmar(contatoId: string, jid: string) {
     this.chamadas.push('confirmar')
+    await this.antesDeConfirmar?.()
     this.confirmacoes.push([contatoId, jid])
+    this.ordem.push('confirmar')
     const c = this.contatosLista.find((x) => x.id === contatoId)
     if (c) {
       c.ativo = true
@@ -129,12 +138,18 @@ class BancoFalso implements Banco {
     this.chamadas.push('pausar')
     this.tentativasDePausa.push(contatoId)
     if (this.pausarLanca) throw new Error('Supabase fora do ar')
+    await this.antesDePausar?.()
     this.pausas.push(contatoId)
+    this.ordem.push('pausar')
     const c = this.contatosLista.find((x) => x.id === contatoId)
     if (c) c.ativo = false
   }
   async gravarEstado(estado: Parameters<Banco['gravarEstado']>[0]) {
     this.chamadas.push('gravarEstado')
+    if (this.estadoLanca > 0) {
+      this.estadoLanca -= 1
+      throw new Error('Supabase fora do ar')
+    }
     this.estados.push(estado)
   }
   async limparEnviosAntigos() {
@@ -153,15 +168,16 @@ class WhatsappFalso {
   /** Endereços para os quais `enviar` nunca responde. */
   pendurados = new Set<string>()
   resolverPendurado = false
-  depoisDeEnviar?: () => void
+  depoisDeEnviar?: (jid: string) => void
   constructor(private ordem: string[]) {}
-  async enviar(jid: string, texto: string) {
+  async enviar(jid: string, texto: string): Promise<string | null> {
     this.ordem.push('enviar')
-    if (this.pendurados.has(jid)) return new Promise<void>(() => {})
+    if (this.pendurados.has(jid)) return new Promise<string | null>(() => {})
     const erro = this.falhaEnvio.get(jid)
     if (erro) throw erro
     this.enviados.push({ jid, texto })
-    this.depoisDeEnviar?.()
+    this.depoisDeEnviar?.(jid)
+    return `MSG${this.enviados.length}`
   }
   async resolverJid(telefone: string) {
     this.resolvidos.push(telefone)
@@ -218,6 +234,7 @@ function montar(opcoes: Opcoes = {}, inicio = em(7)) {
         return new Promise<void>(() => {})
       }
       if (ms >= 20_000) ordem.push('pausa')
+      else if (ms >= 3_000) ordem.push('entre respostas')
       if (gancho.somar) relogio.agora += ms
       await gancho.aoDormir?.(ms)
     },
@@ -232,7 +249,17 @@ function montar(opcoes: Opcoes = {}, inicio = em(7)) {
   const pausasEntrePessoas = () => sonos.filter((ms) => ms >= 20_000 && ms < PRAZO_DO_WHATSAPP)
   const contador = () => (servico as unknown as { contador: ContadorDoDia }).contador
   const recebida = (c: ContatoWpp, texto: string) => servico.recebida({ jid: jidDe(c.telefone), texto })
-  return { servico, banco, wpp, trimble, relogio, registro, sonos, ordem, gancho, volta, pausasEntrePessoas, contador, recebida }
+  /** Os avisos gravados em `ultimo_erro`, na ordem (sem os batimentos, que não mexem nele). */
+  const avisos = () => banco.estados.filter((e) => e.ultimoErro !== undefined).map((e) => e.ultimoErro)
+  return { servico, banco, wpp, trimble, relogio, registro, sonos, ordem, gancho, volta, pausasEntrePessoas, contador, recebida, avisos }
+}
+
+const umInstante = () => new Promise<void>((r) => setTimeout(r, 5))
+/** Uma promessa que o teste solta quando quiser. */
+function trava() {
+  let soltar: () => void = () => {}
+  const espera = new Promise<void>((r) => { soltar = r })
+  return { espera, soltar }
 }
 
 const semNumerosNoRegistro = (registro: string[]) => expect(registro.join('\n')).not.toMatch(/55\d{8,}/)
@@ -507,6 +534,75 @@ describe('servico: janelas e Trimble', () => {
     expect(c.banco.leiturasDeFazendas).toBe(2)
   })
 
+  it('7. Trimble fora: tenta a cada 5 min por 60 min; a falha das 08:00 grava o aviso; depois, uma tentativa por hora', async () => {
+    const c = montar()
+    c.trimble.sempreFalha = true
+    for (let m = 0; m < 60; m++) await c.volta(7, m)
+    expect(c.trimble.chamadas).toHaveLength(12) // 07:00, 07:05, …, 07:55
+    expect(c.avisos()).toEqual([])
+    await c.volta(8, 0)
+    expect(c.trimble.chamadas).toHaveLength(13)
+    expect(c.banco.estados.filter((e) => e.ultimoErro !== undefined)).toEqual([
+      { conectado: true, ultimoErro: 'Sem dados da Trimble desde 07:00: alertas parados até ela voltar' },
+    ])
+    for (let m = 1; m < 60; m++) await c.volta(8, m)
+    expect(c.trimble.chamadas).toHaveLength(13)
+    await c.volta(9, 0)
+    expect(c.trimble.chamadas).toHaveLength(14)
+    for (let m = 1; m < 60; m++) await c.volta(9, m)
+    await c.volta(10, 0)
+    expect(c.trimble.chamadas).toHaveLength(15)
+    // o aviso foi gravado uma vez só
+    expect(c.avisos()).toHaveLength(1)
+    expect(c.wpp.enviados).toEqual([])
+    semNumerosNoRegistro(c.registro)
+  })
+
+  it('7b. quando um cálculo dá certo, o aviso da Trimble é limpo', async () => {
+    const c = montar()
+    c.trimble.sempreFalha = true
+    for (let m = 0; m <= 60; m += 5) await c.volta(7 + Math.floor(m / 60), m % 60)
+    expect(c.avisos()).toEqual(['Sem dados da Trimble desde 07:00: alertas parados até ela voltar'])
+    c.trimble.sempreFalha = false
+    await c.volta(8, 30) // ainda não é hora de tentar
+    expect(c.avisos()).toHaveLength(1)
+    await c.volta(9, 0)
+    expect(c.avisos()).toEqual(['Sem dados da Trimble desde 07:00: alertas parados até ela voltar', null])
+    expect(c.banco.estados.at(-1)).toEqual({ conectado: true, ultimoErro: null })
+    // e a falha seguinte começa a contar do zero
+    c.trimble.sempreFalha = true
+    await c.volta(12, 0)
+    await c.volta(12, 5)
+    await c.volta(12, 55)
+    expect(c.avisos()).toHaveLength(2)
+  })
+
+  it('7c. cada horário de cálculo abre uma rodada nova: às 12:00 volta a tentar a cada 5 min, e o aviso continua', async () => {
+    const c = montar()
+    c.trimble.sempreFalha = true
+    for (let m = 0; m <= 60; m += 5) await c.volta(7 + Math.floor(m / 60), m % 60)
+    for (const h of [9, 10, 11]) await c.volta(h, 0)
+    const antes = c.trimble.chamadas.length
+    expect(antes).toBe(16)
+    await c.volta(11, 58)
+    expect(c.trimble.chamadas).toHaveLength(antes)
+    await c.volta(12, 0)
+    await c.volta(12, 3)
+    await c.volta(12, 5)
+    await c.volta(12, 10)
+    expect(c.trimble.chamadas).toHaveLength(antes + 3)
+    expect(c.avisos()).toEqual(['Sem dados da Trimble desde 07:00: alertas parados até ela voltar'])
+  })
+
+  it('7d. Trimble fora desde ontem: o aviso diz o dia', async () => {
+    const c = montar({}, em(12))
+    c.trimble.sempreFalha = true
+    for (let m = 0; m <= 60; m += 5) await c.volta(12 + Math.floor(m / 60), m % 60)
+    expect(c.avisos()).toEqual(['Sem dados da Trimble desde 12:00: alertas parados até ela voltar'])
+    for (let m = 5; m <= 65; m += 5) await c.volta(Math.floor(m / 60), m % 60, 7)
+    expect(c.avisos().at(-1)).toBe('Sem dados da Trimble desde 06/10 12:00: alertas parados até ela voltar')
+  })
+
   it('6. falha parcial: na nova tentativa só os quadrados que faltam são consultados', async () => {
     const c = montar()
     c.banco.fazendasLista = FAZENDAS.slice(0, 2) // dois quadrados: c1 e c2
@@ -541,6 +637,26 @@ describe('servico: reserva antes de enviar', () => {
     expect(c.wpp.enviados).toHaveLength(2)
     expect(c.banco.reservas).toHaveLength(2)
     expect(c.registro.some((l) => l.includes('não fechei o envio'))).toBe(true)
+  })
+
+  it('SAIR que chega durante a reserva: nada é enviado e o envio fica como pulado', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    let tratada: Promise<void> | undefined
+    c.banco.aoReservar = () => {
+      // só a marca posta na chegada protege: a fila ainda nem começou a tratar a mensagem
+      if (c.banco.reservas.at(-1)?.[0] === 'c-bruno') tratada = c.recebida(BRUNO, 'SAIR')
+    }
+    await c.volta(7)
+    await tratada
+    expect(alertasPara(c, '5565999990002')).toEqual([])
+    expect(alertasPara(c, '5565999990001')).toHaveLength(1)
+    expect(c.banco.fechamentos).toContainEqual({ contatoId: 'c-bruno', chave: `${HOJE}:resumo-07`, situacao: 'pulado', erro: 'pediu para sair' })
+    expect(c.banco.envios.get(`c-bruno|${HOJE}:resumo-07`)).toBe('pulado')
+    // não conta no teto nem volta a sair na volta seguinte
+    expect(c.contador().total).toBe(2) // o alerta da Ana e a resposta ao SAIR
+    await c.volta(7, 1)
+    expect(alertasPara(c, '5565999990002')).toEqual([])
+    semNumerosNoRegistro(c.registro)
   })
 
   it('"começa em breve" é por noite: a janela depois da meia-noite não gera outro; a do dia seguinte gera', async () => {
@@ -800,6 +916,71 @@ describe('servico: ATIVAR e SAIR', () => {
     expect(alertasPara(c, '5565999990002')).toHaveLength(1)
   })
 
+  it('SAIR e ATIVAR da mesma pessoa no mesmo lote: uma é tratada por vez e vale a última (ATIVAR)', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.banco.antesDePausar = umInstante // sem a fila, o ATIVAR gravaria antes e o SAIR ficaria por último
+    await Promise.all([c.recebida(BRUNO, 'SAIR'), c.recebida(BRUNO, 'ATIVAR')])
+    expect(c.ordem.filter((o) => o === 'pausar' || o === 'confirmar')).toEqual(['pausar', 'confirmar'])
+    expect(c.banco.contatosLista[1].ativo).toBe(true)
+    await c.volta(7)
+    expect(alertasPara(c, '5565999990002')).toHaveLength(1)
+  })
+
+  it('ATIVAR e SAIR da mesma pessoa no mesmo lote: vale a última (SAIR) e ela não recebe', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.banco.antesDeConfirmar = umInstante
+    await Promise.all([c.recebida(BRUNO, 'ATIVAR'), c.recebida(BRUNO, 'SAIR')])
+    expect(c.ordem.filter((o) => o === 'pausar' || o === 'confirmar')).toEqual(['confirmar', 'pausar'])
+    expect(c.banco.contatosLista[1].ativo).toBe(false)
+    await c.volta(7)
+    expect(alertasPara(c, '5565999990002')).toEqual([])
+    expect(alertasPara(c, '5565999990001')).toHaveLength(1)
+  })
+
+  it('duas respostas não saem coladas: entre uma e a próxima há uma espera de 3 a 8 s', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    await Promise.all([c.recebida(ANA, 'SAIR'), c.recebida(BRUNO, 'SAIR')])
+    expect(c.ordem).toEqual(['pausar', 'enviar', 'pausar', 'entre respostas', 'enviar'])
+    const esperas = c.sonos.filter((ms) => ms !== PRAZO_DO_WHATSAPP)
+    expect(esperas).toHaveLength(1)
+    expect(esperas[0]).toBeGreaterThanOrEqual(3_000)
+    expect(esperas[0]).toBeLessThan(8_000)
+    expect(c.wpp.enviados.map((e) => e.jid)).toEqual([jidDe('5565999990001'), jidDe('5565999990002')])
+  })
+
+  it('resposta bem depois da anterior não espera nada', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] }, em(9))
+    await c.recebida(ANA, 'SAIR')
+    c.relogio.agora = em(9, 1)
+    await c.recebida(BRUNO, 'SAIR')
+    expect(c.sonos.filter((ms) => ms !== PRAZO_DO_WHATSAPP)).toEqual([])
+    expect(c.wpp.enviados).toHaveLength(2)
+  })
+
+  it('a marca do SAIR é posta na chegada, mesmo com a fila parada em outra mensagem', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    const t = trava()
+    c.banco.antesDeConfirmar = () => t.espera
+    const daAna = c.recebida(ANA, 'ATIVAR')
+    const doBruno = c.recebida(BRUNO, 'SAIR')
+    await umInstante()
+    expect(c.banco.tentativasDePausa).toEqual([]) // o SAIR do Bruno ainda está na fila
+    c.banco.antesDeConfirmar = undefined
+    await c.volta(7)
+    expect(alertasPara(c, '5565999990002')).toEqual([])
+    t.soltar()
+    await Promise.all([daAna, doBruno])
+    expect(c.banco.contatosLista[1].ativo).toBe(false)
+  })
+
+  it('uma mensagem que falha não trava a fila', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.banco.erroDeContatos = new Error('rede caiu')
+    await Promise.all([c.recebida(ANA, 'SAIR'), c.recebida(BRUNO, 'SAIR')])
+    expect(c.banco.pausas).toEqual(['c-bruno'])
+    expect(c.registro.some((l) => l.includes('rede caiu'))).toBe(true)
+  })
+
   it('quem manda SAIR no meio da volta não recebe o alerta que estava na fila', async () => {
     const c = montar({ contatos: [ANA, BRUNO] })
     c.gancho.aoDormir = async (ms) => {
@@ -822,6 +1003,180 @@ describe('servico: ATIVAR e SAIR', () => {
     await c.volta(7)
     expect(alertasPara(c, '5565999990002')).toHaveLength(1)
     expect(c.banco.reservas.map((r) => r[0])).toEqual(['c-ana', 'c-bruno'])
+  })
+})
+
+describe('servico: restrição da conta e recusas de entrega', () => {
+  it('enquanto houver restrição nenhum alerta e nenhuma resposta saem, e o aviso vai para o estado; vencido o prazo, volta', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] }, em(6))
+    await c.servico.restricao(em(15), 'BIZ_QUALITY')
+    expect(c.banco.estados).toEqual([{ conectado: true, ultimoErro: 'WhatsApp restringiu os envios até 06/10 15:00' }])
+    await c.volta(7)
+    await c.volta(12)
+    await c.recebida(BRUNO, 'SAIR')
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.reservas).toEqual([])
+    // o SAIR vale do mesmo jeito; só a resposta não sai
+    expect(c.banco.pausas).toEqual(['c-bruno'])
+    await c.volta(18, 30)
+    expect(c.wpp.enviados.map((e) => e.jid)).toEqual([jidDe('5565999990001')])
+    expect(c.avisos()).toEqual(['WhatsApp restringiu os envios até 06/10 15:00', null])
+    semNumerosNoRegistro(c.registro)
+  })
+
+  it('restrição retirada pelo WhatsApp libera na hora; sem prazo informado vale até segunda ordem', async () => {
+    const c = montar({}, em(6))
+    await c.servico.restricao(Infinity, '')
+    expect(c.avisos()).toEqual(['WhatsApp restringiu os envios até novo aviso'])
+    await c.volta(7)
+    await c.volta(7, 30, 9) // três dias depois continua valendo
+    expect(c.wpp.enviados).toEqual([])
+    await c.servico.restricao(null, 'restrição retirada')
+    expect(c.avisos()).toEqual(['WhatsApp restringiu os envios até novo aviso', null])
+    await c.volta(7, 31, 9)
+    expect(c.wpp.enviados).toHaveLength(1)
+    // retirar o que não existe não grava nada
+    await c.servico.restricao(null, 'restrição retirada')
+    expect(c.avisos()).toHaveLength(2)
+  })
+
+  it('restrição que chega durante a reserva: o envio fica como pulado e nada sai', async () => {
+    const c = montar()
+    let avisada: Promise<void> | undefined
+    c.banco.aoReservar = () => { avisada = c.servico.restricao(em(15), 'BIZ_QUALITY') }
+    await c.volta(7)
+    await avisada
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.fechamentos).toEqual([{ contatoId: 'c-ana', chave: `${HOJE}:resumo-07`, situacao: 'pulado', erro: 'WhatsApp restringiu os envios' }])
+  })
+
+  it('3 recusas seguidas: para de enviar pelo resto do dia (alertas e respostas), grava o aviso e volta no dia seguinte', async () => {
+    const c = montar({ contatos: [ANA, BRUNO, CARLA, DIEGO] })
+    // o WhatsApp recusa cada mensagem logo depois de aceitar o envio
+    c.wpp.depoisDeEnviar = (jid) => { void c.servico.falhaDeEntrega(jid) }
+    await c.volta(7)
+    expect(c.wpp.enviados.map((e) => e.jid)).toEqual([jidDe('5565999990001'), jidDe('5565999990002'), jidDe('5565999990003')])
+    expect(c.avisos()).toEqual(['WhatsApp recusou 3 mensagens seguidas: envios parados até amanhã'])
+    await c.volta(7, 1)
+    await c.volta(12)
+    await c.recebida(DIEGO, 'SAIR')
+    expect(c.wpp.enviados).toHaveLength(3)
+    expect(c.banco.pausas).toEqual(['c-diego'])
+    // no dia seguinte o aviso sai e os envios voltam
+    c.wpp.depoisDeEnviar = undefined
+    await c.volta(0, 10, 7)
+    expect(c.avisos()).toEqual(['WhatsApp recusou 3 mensagens seguidas: envios parados até amanhã', null])
+    await c.volta(7, 0, 7)
+    expect(c.wpp.enviados.length).toBeGreaterThan(3)
+    semNumerosNoRegistro(c.registro)
+  })
+
+  it('recusas que não são seguidas (uma mensagem aceita no meio) não param os envios', async () => {
+    const c = montar({ contatos: [ANA, BRUNO, CARLA, DIEGO] })
+    c.wpp.depoisDeEnviar = (jid) => { if (jid !== jidDe('5565999990003')) void c.servico.falhaDeEntrega(jid) }
+    await c.volta(7)
+    // Ana e Bruno recusadas, Carla aceita, Diego recusada: nunca três seguidas
+    expect(c.wpp.enviados).toHaveLength(4)
+    expect(c.avisos()).toEqual([])
+    await c.volta(12)
+    // 12:00: Ana recusada (2 seguidas com a do Diego), Bruno recusada (3): para antes da Carla
+    expect(c.wpp.enviados).toHaveLength(6)
+    expect(c.avisos()).toEqual(['WhatsApp recusou 3 mensagens seguidas: envios parados até amanhã'])
+  })
+})
+
+describe('servico: avisos em ultimo_erro', () => {
+  const TRIMBLE = 'Sem dados da Trimble desde 07:00: alertas parados até ela voltar'
+  const RESTRICAO = 'WhatsApp restringiu os envios até 06/10 15:00'
+  const semTrimble = async (c: ReturnType<typeof montar>) => {
+    c.trimble.sempreFalha = true
+    for (let m = 0; m <= 60; m += 5) await c.volta(7 + Math.floor(m / 60), m % 60)
+  }
+
+  it('dois avisos ativos ficam juntos, separados por " · "; quando um sai, o outro fica', async () => {
+    const c = montar()
+    await semTrimble(c)
+    await c.servico.restricao(em(15), 'BIZ_QUALITY')
+    await c.servico.restricao(null, 'restrição retirada')
+    c.trimble.sempreFalha = false
+    await c.volta(9, 0)
+    expect(c.avisos()).toEqual([TRIMBLE, `${RESTRICAO} · ${TRIMBLE}`, TRIMBLE, null])
+  })
+
+  it('o teto do dia entra na mesma junção e sai no dia seguinte sem levar os outros', async () => {
+    const c = montar({ contatos: [ANA] }, em(0, 5))
+    await c.volta(0, 5) // as janelas das 00:05 valem o dia inteiro
+    await semTrimble(c)
+    for (const _ of vezes(TETO_DO_DIA)) c.contador().contar(null)
+    await c.volta(12) // o lembrete esbarra no teto
+    expect(c.avisos()).toEqual([TRIMBLE, `teto diário de mensagens atingido · ${TRIMBLE}`])
+    await c.volta(0, 10, 7)
+    expect(c.avisos().at(-1)).toBe(TRIMBLE)
+    expect(c.avisos()).toHaveLength(3)
+  })
+
+  it('desconectado, o aviso espera a conexão voltar e não apaga o motivo da queda', async () => {
+    const c = montar({}, em(9))
+    c.wpp.conectado = false
+    await c.servico.conexao(false, 'conexão perdida (428)')
+    await c.servico.restricao(em(15), 'BIZ_QUALITY')
+    await c.volta(9, 1)
+    expect(c.avisos()).toEqual(['conexão perdida (428)'])
+    c.wpp.conectado = true
+    c.relogio.agora = em(9, 2)
+    await c.servico.conexao(true)
+    expect(c.banco.estados.at(-1)).toEqual({ conectado: true, desde: new Date(em(9, 2)).toISOString(), ultimoErro: RESTRICAO })
+  })
+
+  it('se a gravação do aviso falha, a volta seguinte grava', async () => {
+    const c = montar({}, em(9))
+    c.banco.estadoLanca = 1
+    await c.servico.restricao(em(15), 'BIZ_QUALITY')
+    expect(c.avisos()).toEqual([])
+    await c.volta(9, 1)
+    expect(c.avisos()).toEqual([RESTRICAO])
+    await c.volta(9, 2)
+    expect(c.avisos()).toEqual([RESTRICAO])
+  })
+})
+
+describe('servico: ensaio', () => {
+  it('diz, uma vez, por que cada contato não receberia e que fazendas estão sem vínculo; números mascarados, nada gravado', async () => {
+    const inativo = contato({ ativo: false })
+    const semAlerta = contato({ id: 'c-b', nome: 'Bruno', telefone: '5565999990002', alertaJanela: false })
+    const aguardando = contato({ id: 'c-c', nome: 'Carla', telefone: '5565999990003', confirmadoEm: null, confirmadoPor: null, jid: null })
+    const semJanela = contato({ id: 'c-d', nome: 'Diego', telefone: '5565999990004', fazendas: [4] })
+    const semFazenda = contato({ id: 'c-e', nome: 'Edu', telefone: '5565999990005', fazendas: [5] })
+    const doisMotivos = contato({ id: 'c-f', nome: 'Fabi', telefone: '5565999990006', ativo: false, confirmadoEm: null, confirmadoPor: null })
+    const apto = contato({ id: 'c-g', nome: 'Gil', telefone: '5565999990007' })
+    const c = montar({ ensaio: true, contatos: [inativo, semAlerta, aguardando, semJanela, semFazenda, doisMotivos, apto] })
+    c.banco.fazendasLista = [
+      ...FAZENDAS,
+      { id: 'f6', coaId: null, nome: 'Sem Vínculo', celulaId: 'c1', lat: -12.5, lon: -50.5 },
+      { id: 'f7', coaId: null, nome: 'Aurora', celulaId: 'c2', lat: -12.5, lon: -50 },
+      { id: 'f8', coaId: null, nome: 'Sem Vínculo Nem Talhão', celulaId: null, lat: null, lon: null },
+    ]
+    await c.volta(0, 5)
+    await c.volta(7)
+    const explicacoes = c.registro.filter((l) => l.includes('não receberia') || l.includes('sem vínculo'))
+    expect(explicacoes).toEqual([
+      'ensaio: …0001 não receberia: inativo',
+      'ensaio: …0002 não receberia: sem Janela de risco',
+      'ensaio: …0003 não receberia: aguardando ATIVAR',
+      'ensaio: …0004 não receberia: sem janela nas fazendas dele hoje',
+      'ensaio: …0005 não receberia: sem janela nas fazendas dele hoje',
+      'ensaio: …0006 não receberia: inativo, aguardando ATIVAR',
+      'ensaio: Fazendas sem vínculo com o COA WEB (não entram em contato nenhum que não seja "todas"): Aurora, Sem Vínculo',
+    ])
+    expect(c.registro.filter((l) => l.includes('enviaria resumo-07'))).toHaveLength(1)
+    semNumerosNoRegistro(c.registro)
+    expect(c.banco.escritas).toBe(0)
+  })
+
+  it('sem fazenda desvinculada e com todos aptos, não acrescenta linha nenhuma', async () => {
+    const c = montar({ ensaio: true, contatos: [ANA, BRUNO] })
+    await c.volta(7)
+    expect(c.registro.filter((l) => l.includes('não receberia') || l.includes('sem vínculo'))).toEqual([])
   })
 })
 

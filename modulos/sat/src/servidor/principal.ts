@@ -2,7 +2,7 @@
  * Linha de comando do serviço da VM (`node locks-sat-whatsapp.mjs [modo]`). Sem argumento é o serviço
  * de verdade; os outros modos são para quem instala: parear o número, ensaiar e testar o envio.
  */
-import { existsSync, realpathSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ANTECEDENCIA_JANELA_MIN } from '../logic/alertas'
@@ -79,8 +79,21 @@ export function lerAmbiente(env: Record<string, string | undefined>): { url: str
   }
 }
 
-/** A biblioteca do WhatsApp grava o `creds.json` na pasta da sessão; sem ele, conectar só geraria QR que ninguém vê. */
-export const sessaoPareada = (pastaSessao: string): boolean => existsSync(join(pastaSessao, 'creds.json'))
+/**
+ * Já existe sessão pareada? Sem ela, conectar só geraria QR que ninguém vê. Existir o `creds.json` não basta:
+ * a biblioteca o grava assim que começa, e o pareamento por código põe nele o `me` (e depois o `registered`)
+ * antes de o celular aceitar. Conta registrada é a que tem `account`, que só chega junto do aceite; o
+ * `registered` não serve de prova porque fica `false` para sempre em quem pareou por QR.
+ */
+export function sessaoPareada(pastaSessao: string): boolean {
+  try {
+    const creds = JSON.parse(readFileSync(join(pastaSessao, 'creds.json'), 'utf8')) as { me?: { id?: unknown } | null; account?: unknown } | null
+    return typeof creds?.me?.id === 'string' && creds.me.id !== '' && typeof creds.account === 'object' && creds.account !== null
+  } catch {
+    // sem arquivo, ou gravado pela metade
+    return false
+  }
+}
 
 export const fusoCerto = (tz: string | undefined): boolean => tz === FUSO
 
@@ -193,6 +206,12 @@ export async function ligarServico(p: PecasDoServico): Promise<void> {
           // Sem ela não há o que tentar de novo: segue vivo (e batendo o estado como desconectado) em vez de sair em laço de reinício.
           if (ponte.precisaParear) p.registrar(quedaSemVolta(motivo, ' e o serviço não tenta de novo sozinho'))
           try { await s.conexao(conectado, motivo) } catch (e) { p.registrar(`falha ao tratar a conexão: ${mensagemDe(e)}`) }
+        },
+        aoRestringir: (ate, motivo) => {
+          s.restricao(ate, motivo).catch((e) => p.registrar(`falha ao tratar a restrição: ${mensagemDe(e)}`))
+        },
+        aoFalharEntrega: (jid) => {
+          s.falhaDeEntrega(jid).catch((e) => p.registrar(`falha ao tratar a recusa: ${mensagemDe(e)}`))
         },
       })
       if (parando) await nova.encerrar()

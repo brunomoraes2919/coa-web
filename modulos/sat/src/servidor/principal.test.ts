@@ -182,12 +182,55 @@ describe('rodandoComoPrograma', () => {
 })
 
 describe('sessaoPareada', () => {
-  it('só com o creds.json na pasta da sessão', () => {
+  const gravar = (pasta: string, creds: unknown) => writeFileSync(join(pasta, 'creds.json'), typeof creds === 'string' ? creds : JSON.stringify(creds))
+  // o que a biblioteca grava: `me` e `account` só juntos depois de o celular aceitar
+  const EU = { id: '5565999990001:12@s.whatsapp.net', name: 'COA' }
+  const CONTA = { details: 'Cg==', accountSignatureKey: 'AA==', accountSignature: 'AA==', deviceSignature: 'AA==' }
+
+  it('sem a pasta ou sem o creds.json: não', () => {
     const pasta = pastaTemporaria()
     expect(sessaoPareada(pasta)).toBe(false)
     expect(sessaoPareada(join(pasta, 'nao-existe'))).toBe(false)
-    writeFileSync(join(pasta, 'creds.json'), '{}')
+  })
+
+  it('creds.json vazio, cortado no meio ou que não é um objeto: não', () => {
+    const pasta = pastaTemporaria()
+    for (const conteudo of ['', '{', '{"me":', 'null', '[]', '"texto"']) {
+      gravar(pasta, conteudo)
+      expect(sessaoPareada(pasta), conteudo).toBe(false)
+    }
+  })
+
+  it('arquivo recém-criado pela biblioteca (QR ainda na tela): não', () => {
+    const pasta = pastaTemporaria()
+    gravar(pasta, { noiseKey: {}, registered: false })
+    expect(sessaoPareada(pasta)).toBe(false)
+  })
+
+  it('pareamento por código pedido mas ainda não aceito no celular (a biblioteca já gravou `me` e até `registered`): não', () => {
+    const pasta = pastaTemporaria()
+    gravar(pasta, { me: { id: '5565999990001@s.whatsapp.net', name: '~' }, pairingCode: 'ABCD1234', registered: false })
+    expect(sessaoPareada(pasta)).toBe(false)
+    gravar(pasta, { me: { id: '5565999990001@s.whatsapp.net', name: '~' }, pairingCode: 'ABCD1234', registered: true })
+    expect(sessaoPareada(pasta)).toBe(false)
+  })
+
+  it('conta registrada (`me` e `account`), por QR (`registered: false`) ou por código: sim', () => {
+    const pasta = pastaTemporaria()
+    gravar(pasta, { me: EU, account: CONTA, registered: false })
     expect(sessaoPareada(pasta)).toBe(true)
+    gravar(pasta, { me: EU, account: CONTA, registered: true })
+    expect(sessaoPareada(pasta)).toBe(true)
+  })
+
+  it('`account` sem `me`, ou com `me` sem endereço: não', () => {
+    const pasta = pastaTemporaria()
+    gravar(pasta, { account: CONTA })
+    expect(sessaoPareada(pasta)).toBe(false)
+    gravar(pasta, { me: { name: 'COA' }, account: CONTA })
+    expect(sessaoPareada(pasta)).toBe(false)
+    gravar(pasta, { me: EU, account: null })
+    expect(sessaoPareada(pasta)).toBe(false)
   })
 })
 
@@ -220,10 +263,14 @@ describe('ensaio (rede simulada)', () => {
     value: 3, timeOfEstimation: new Date(2026, 8, d, 20, min).toISOString(), tecValue: 20, scintiValue: 50, predicted: false,
   })))
 
-  function simular(opcoes: { duasFazendas?: boolean; aoConsultarTrimble?: (url: string) => Response | undefined } = {}) {
+  function simular(opcoes: { duasFazendas?: boolean; fazendaSemVinculo?: boolean; contatos?: unknown[]; aoConsultarTrimble?: (url: string) => Response | undefined } = {}) {
     const chamadas: { url: string; method: string }[] = []
-    const fazendas = [{ id: 'f1', nome: 'Fazenda Exemplo', coa_fazenda_id: 2 }]
+    const fazendas: { id: string; nome: string; coa_fazenda_id: number | null }[] = [{ id: 'f1', nome: 'Fazenda Exemplo', coa_fazenda_id: 2 }]
     const talhoes = [{ fazenda_id: 'f1', geom: quadrado }]
+    if (opcoes.fazendaSemVinculo) {
+      fazendas.push({ id: 'f9', nome: 'Fazenda Solta', coa_fazenda_id: null })
+      talhoes.push({ fazenda_id: 'f9', geom: quadrado })
+    }
     if (opcoes.duasFazendas) {
       fazendas.push({ id: 'f2', nome: 'Fazenda Outra', coa_fazenda_id: 3 })
       talhoes.push({ fazenda_id: 'f2', geom: outroQuadrado })
@@ -231,7 +278,7 @@ describe('ensaio (rede simulada)', () => {
     const corpo = (url: string): unknown => {
       if (url.includes('gnssplanning.com')) return serie
       if (url.includes('whatsapp_contato_fazendas')) return []
-      if (url.includes('whatsapp_contatos')) return [contato]
+      if (url.includes('whatsapp_contatos')) return opcoes.contatos ?? [contato]
       if (url.includes('mapas_fazendas')) return fazendas
       if (url.includes('mapas_talhoes')) return talhoes
       return []
@@ -263,6 +310,34 @@ describe('ensaio (rede simulada)', () => {
     // só leituras no banco, e uma consulta só à Trimble para o dia inteiro
     expect(chamadas.filter((c) => c.method !== 'GET')).toEqual([])
     expect(chamadas.filter((c) => c.url.includes('gnssplanning.com'))).toHaveLength(1)
+    // todo mundo apto e toda fazenda vinculada: nenhuma linha de explicação
+    expect(texto).not.toContain('não receberia')
+    expect(texto).not.toContain('sem vínculo')
+  })
+
+  it('explica quem não receberia e avisa das fazendas sem vínculo com o COA WEB', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 9, 6, 10, 0) })
+    simular({
+      contatos: [
+        contato,
+        { ...contato, id: 'c2', nome: 'Bia Lima', telefone: '5565999990002', confirmado_em: null, confirmado_por: null },
+        { ...contato, id: 'c3', nome: 'Caio Reis', telefone: '5565999990003', ativo: false },
+      ],
+      fazendaSemVinculo: true,
+    })
+    const linhas: string[] = []
+    vi.spyOn(console, 'log').mockImplementation((l: string) => { linhas.push(l) })
+
+    expect(await ensaio(ambiente)).toBe(0)
+
+    const texto = linhas.join('\n')
+    expect(texto).toContain('ensaio: …0002 não receberia: aguardando ATIVAR')
+    expect(texto).toContain('ensaio: …0003 não receberia: inativo')
+    expect(texto).not.toContain('…0001 não receberia')
+    expect(texto).toContain('ensaio: Fazendas sem vínculo com o COA WEB (não entram em contato nenhum que não seja "todas"): Fazenda Solta')
+    expect(texto).not.toMatch(/55659999900\d\d/)
+    // a explicação vem antes do primeiro horário
+    expect(linhas.findIndex((l) => l.includes('não receberia'))).toBeLessThan(linhas.findIndex((l) => l.includes('ensaio: 07:00')))
   })
 
   it('espera 2 s antes de cada consulta à Trimble depois da primeira, também na nova tentativa', async () => {
@@ -344,11 +419,12 @@ describe('ligarServico (tudo falso)', () => {
     const whatsapp: Whatsapp = {
       conectado: true,
       precisaParear: false,
+      restritoAte: null,
       enviar: (jid) => {
         const quem = jid.slice(9, 13)
         ordem.push(`enviar ${quem}: começo`)
-        return new Promise<void>((resolver) => {
-          const fim = () => { ordem.push(`enviar ${quem}: fim`); resolver() }
+        return new Promise<string | null>((resolver) => {
+          const fim = () => { ordem.push(`enviar ${quem}: fim`); resolver(`MSG-${quem}`) }
           if (opcoes.segurarEnvios) soltar.push(fim)
           else fim()
         })
@@ -501,6 +577,30 @@ describe('ligarServico (tudo falso)', () => {
     expect(s.conectar).toHaveBeenCalledTimes(1)
     await passar(120_000)
     expect(s.conectar).toHaveBeenCalledTimes(1)
+  })
+
+  it('a restrição avisada pela conexão chega ao serviço: grava o aviso e nada sai', async () => {
+    const s = await ligar()
+    const ate = new Date(2026, 9, 6, 15, 0).getTime()
+    s.opcoesDaConexao()?.aoRestringir?.(ate, 'BIZ_QUALITY')
+    await passar(0)
+    expect(s.estados.at(-1)).toEqual({ conectado: true, ultimoErro: 'WhatsApp restringiu os envios até 06/10 15:00' })
+    await passar(120_000)
+    expect(s.ordem.filter((o) => o.startsWith('enviar'))).toEqual([])
+    // retirada a restrição, a volta seguinte manda
+    s.opcoesDaConexao()?.aoRestringir?.(null, 'restrição retirada')
+    await passar(60_000)
+    expect(s.ordem.filter((o) => o.startsWith('enviar'))).toEqual(['enviar 0001: começo', 'enviar 0001: fim'])
+  })
+
+  it('três recusas de entrega avisadas pela conexão param os envios e gravam o aviso', async () => {
+    const s = await ligar()
+    for (const _ of [1, 2, 3]) s.opcoesDaConexao()?.aoFalharEntrega?.(jidDe('5565999990001'))
+    await passar(0)
+    expect(s.estados.at(-1)).toEqual({ conectado: true, ultimoErro: 'WhatsApp recusou 3 mensagens seguidas: envios parados até amanhã' })
+    await passar(120_000)
+    expect(s.ordem.filter((o) => o.startsWith('enviar'))).toEqual([])
+    expect(s.linhas.join('\n')).not.toContain('5565999990001')
   })
 
   it('queda sem volta por outro motivo não manda parear de novo', async () => {
