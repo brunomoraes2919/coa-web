@@ -1,7 +1,7 @@
 // @vitest-environment node
 process.env.TZ = 'America/Cuiaba'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync as readdirSyncDoTeste, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PontoIono } from '../tipos'
 import type { Banco } from './banco'
 import {
-  ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, linhaDeRegistro, rodandoComoPrograma, sessaoPareada,
+  ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, limparPareamentoIncompleto, linhaDeRegistro, rodandoComoPrograma, sessaoPareada,
 } from './principal'
 import type { ContatoWpp, FazendaServidor, SituacaoEnvio } from './tipos'
 import type { OpcoesWhatsapp, Whatsapp } from './whatsapp'
@@ -662,5 +662,35 @@ describe('desenho do QR do pareamento', () => {
     const desenho = escrito.join('\n')
     expect(desenho.split('\n').length).toBeGreaterThan(10)
     expect(desenho).toMatch(/[▀▄█]/)
+  })
+})
+
+describe('sobra de um pareamento que não terminou', () => {
+  const pastas: string[] = []
+  const pasta = (creds?: unknown) => {
+    const p = mkdtempSync(join(tmpdir(), 'locks-sat-pareamento-'))
+    pastas.push(p)
+    if (creds !== undefined) writeFileSync(join(p, 'creds.json'), JSON.stringify(creds))
+    writeFileSync(join(p, 'pre-key-1.json'), '{}')
+    return p
+  }
+  afterEach(() => { for (const p of pastas.splice(0)) rmSync(p, { recursive: true, force: true }) })
+
+  it('sessão sem a conta registrada (código pedido e não aceito) é apagada', () => {
+    const p = pasta({ me: { id: '5565999990001@s.whatsapp.net' }, pairingCode: 'ABCD1234' })
+    expect(limparPareamentoIncompleto(p)).toBe(true)
+    expect(sessaoPareada(p)).toBe(false)
+    expect(() => readdirSyncDoTeste(p)).not.toThrow()
+    expect(readdirSyncDoTeste(p)).toEqual([])
+  })
+
+  it('sessão pareada de verdade não é tocada', () => {
+    const p = pasta({ me: { id: '5565999990001@s.whatsapp.net' }, account: { details: 'x' } })
+    expect(limparPareamentoIncompleto(p)).toBe(false)
+    expect(readdirSyncDoTeste(p).sort()).toEqual(['creds.json', 'pre-key-1.json'])
+  })
+
+  it('pasta que não existe: nada a apagar, sem erro', () => {
+    expect(limparPareamentoIncompleto(join(tmpdir(), 'locks-sat-nao-existe-' + Date.now()))).toBe(false)
   })
 })

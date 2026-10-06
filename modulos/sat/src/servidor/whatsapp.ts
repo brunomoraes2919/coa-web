@@ -260,7 +260,9 @@ export async function conectarWhatsapp(opcoes: OpcoesWhatsapp): Promise<Whatsapp
     const s = criarSocket({
       auth: state,
       ...(version ? { version } : {}),
-      browser: Browsers.ubuntu('Locks SAT'),
+      // Navegador comum, como um WhatsApp Web qualquer: o pareamento por código só aceita nomes conhecidos,
+      // e um nome próprio chamaria atenção à toa.
+      browser: Browsers.ubuntu('Chrome'),
       markOnlineOnConnect: false,
       syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,

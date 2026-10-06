@@ -2,7 +2,7 @@
  * Linha de comando do serviço da VM (`node locks-sat-whatsapp.mjs [modo]`). Sem argumento é o serviço
  * de verdade; os outros modos são para quem instala: parear o número, ensaiar e testar o envio.
  */
-import { readFileSync, realpathSync } from 'node:fs'
+import { readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ANTECEDENCIA_JANELA_MIN } from '../logic/alertas'
@@ -93,6 +93,25 @@ export function sessaoPareada(pastaSessao: string): boolean {
     // sem arquivo, ou gravado pela metade
     return false
   }
+}
+
+/**
+ * Sobra de um pareamento que não terminou: o pareamento por código grava a sessão antes de o celular
+ * aceitar, e com ela a tentativa seguinte entraria como uma conta que não existe e seria recusada.
+ * Sessão pareada de verdade nunca é tocada. Devolve se apagou alguma coisa.
+ */
+export function limparPareamentoIncompleto(pastaSessao: string): boolean {
+  if (sessaoPareada(pastaSessao)) return false
+  let apagou = false
+  try {
+    for (const nome of readdirSync(pastaSessao)) {
+      rmSync(join(pastaSessao, nome), { recursive: true, force: true })
+      apagou = true
+    }
+  } catch {
+    // a pasta ainda não existe: não há o que apagar
+  }
+  return apagou
 }
 
 export const fusoCerto = (tz: string | undefined): boolean => tz === FUSO
@@ -303,6 +322,7 @@ export async function desenhadorDeQr(): Promise<(qr: string) => void> {
 /** Mostra o QR (ou o código de 8 dígitos, se vier o número) até o celular aceitar; então escreve "Pareado.". */
 async function parear(env: Record<string, string | undefined>, numero?: string): Promise<number> {
   const desenharQr = await desenhadorDeQr()
+  if (limparPareamentoIncompleto(pastaDaSessao(env))) console.log('Apaguei a sobra de uma tentativa de pareamento que não terminou.')
   let whatsapp: Whatsapp | undefined
   let terminar: (codigo: number) => void = () => {}
   const fim = new Promise<number>((r) => { terminar = r })

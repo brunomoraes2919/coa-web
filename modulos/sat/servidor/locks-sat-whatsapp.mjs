@@ -1,4 +1,4 @@
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import makeWASocket, { Browsers, DisconnectReason, WAMessageStatus, fetchLatestBaileysVersion, jidNormalizedUser, normalizeMessageContent, useMultiFileAuthState } from "baileys";
@@ -1531,7 +1531,7 @@ async function conectarWhatsapp(opcoes) {
 		const s = criarSocket({
 			auth: state,
 			...version ? { version } : {},
-			browser: Browsers.ubuntu("Locks SAT"),
+			browser: Browsers.ubuntu("Chrome"),
 			markOnlineOnConnect: false,
 			syncFullHistory: false,
 			shouldSyncHistoryMessage: () => false,
@@ -1779,6 +1779,25 @@ function sessaoPareada(pastaSessao) {
 		return false;
 	}
 }
+/**
+* Sobra de um pareamento que não terminou: o pareamento por código grava a sessão antes de o celular
+* aceitar, e com ela a tentativa seguinte entraria como uma conta que não existe e seria recusada.
+* Sessão pareada de verdade nunca é tocada. Devolve se apagou alguma coisa.
+*/
+function limparPareamentoIncompleto(pastaSessao) {
+	if (sessaoPareada(pastaSessao)) return false;
+	let apagou = false;
+	try {
+		for (const nome of readdirSync(pastaSessao)) {
+			rmSync(join(pastaSessao, nome), {
+				recursive: true,
+				force: true
+			});
+			apagou = true;
+		}
+	} catch {}
+	return apagou;
+}
 var fusoCerto = (tz) => tz === FUSO;
 /** `AAAA-MM-DDTHH:MM:SS` na hora local do processo, e a linha. */
 function linhaDeRegistro(agora, linha) {
@@ -1963,6 +1982,7 @@ async function desenhadorDeQr() {
 /** Mostra o QR (ou o código de 8 dígitos, se vier o número) até o celular aceitar; então escreve "Pareado.". */
 async function parear(env, numero) {
 	const desenharQr = await desenhadorDeQr();
+	if (limparPareamentoIncompleto(pastaDaSessao(env))) console.log("Apaguei a sobra de uma tentativa de pareamento que não terminou.");
 	let whatsapp;
 	let terminar = () => {};
 	const fim = new Promise((r) => {
@@ -2102,4 +2122,4 @@ if (rodandoComoPrograma(import.meta.url, process.argv[1])) principal(process.arg
 	process.exit(1);
 });
 //#endregion
-export { desenhadorDeQr, ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, linhaDeRegistro, pastaDaSessao, principal, rodandoComoPrograma, sessaoPareada };
+export { desenhadorDeQr, ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, limparPareamentoIncompleto, linhaDeRegistro, pastaDaSessao, principal, rodandoComoPrograma, sessaoPareada };
