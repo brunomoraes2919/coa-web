@@ -784,9 +784,20 @@ var Servico = class {
 	avisos = /* @__PURE__ */ new Map();
 	/** O que está gravado em `ultimo_erro`; `undefined` = não se sabe (uma gravação falhou, ou está lá o motivo de uma queda). */
 	avisoGravado = null;
+	/** O dia (`chaveData`) para o qual alguém pediu o resumo à mão; `null` = nenhum pedido pendente. */
+	pedidoDeResumo = null;
 	constructor(d) {
 		this.d = d;
 		this.contador = new ContadorDoDia(d.agora);
+	}
+	/**
+	* Pede o resumo de hoje fora do horário (o sinal da VM). Só guarda o pedido: quem envia é a volta,
+	* pelo caminho normal, com todos os freios. No ensaio não muda nada (o ensaio já mostra o resumo).
+	*/
+	pedirResumoDeHoje() {
+		if (this.d.ensaio) return;
+		this.pedidoDeResumo = chaveData(this.d.agora());
+		this.registrar("resumo de hoje pedido à mão");
 	}
 	/** Uma volta do laço: calcula se precisa, manda o que está na hora, grava o batimento a cada 5 min. */
 	async volta() {
@@ -794,6 +805,7 @@ var Servico = class {
 		this.emVolta = true;
 		try {
 			const agora = this.d.agora();
+			if (this.pedidoDeResumo !== null && this.pedidoDeResumo !== chaveData(agora)) this.pedidoDeResumo = null;
 			await this.bater(agora);
 			await this.vencerAvisos(agora);
 			await this.limparUmaVezPorDia(agora);
@@ -1099,6 +1111,7 @@ var Servico = class {
 	}
 	/** Evita ler contatos e envios (o banco) a cada minuto do dia: só quando há um evento a considerar. */
 	algoNaHora(agora, janelas) {
+		if (this.pedidoDeResumo === chaveData(agora)) return true;
 		if (eventosFixosNaHora(agora).length) return true;
 		return Object.values(janelas.porCelula).some((js) => janelaDoAntes(js, agora) !== null);
 	}
@@ -1116,25 +1129,58 @@ var Servico = class {
 		const jaReservadas = [...deOntem, ...deHoje];
 		await this.reconciliarPausados(contatos);
 		const aptos = contatos.filter((c) => c.ativo && c.alertaJanela && c.confirmadoEm).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-		const tipos = [...eventosFixosNaHora(agora), "antes"];
+		const comPedido = this.pedidoDeResumo === chaveData(agora);
+		const fixos = eventosFixosNaHora(agora);
+		const tipos = [
+			...comPedido && !fixos.includes("resumo-07") ? ["resumo-07"] : [],
+			...fixos,
+			"antes"
+		];
 		let tentouAlgum = false;
 		for (const tipo of tipos) {
 			const chave = tipo === "antes" ? chaveDoAntes(agora) : chaveEvento(agora, tipo);
+			const doPedido = comPedido && tipo === "resumo-07";
+			const contagem = {
+				enviados: 0,
+				jaTinham: 0,
+				semJanela: 0
+			};
 			for (const contato of aptos) {
-				if (jaReservadas.some((r) => r.contatoId === contato.id && r.chave === chave)) continue;
+				if (jaReservadas.some((r) => r.contatoId === contato.id && r.chave === chave)) {
+					contagem.jaTinham += 1;
+					continue;
+				}
 				let pronto = await this.preparar(tipo, contato, fazendas, janelas);
 				if (pronto === "parar") return;
-				if (pronto === null) continue;
+				if (pronto === null) {
+					if (this.semTextoParaOContato(contato)) contagem.semJanela += 1;
+					continue;
+				}
 				if (tentouAlgum && !this.d.ensaio) {
 					await this.d.dormir(pausaEntrePessoas());
+					if (tipo === "resumo-07" && chaveData(this.d.agora()) !== chaveData(agora)) return;
 					pronto = await this.preparar(tipo, contato, fazendas, janelas);
 					if (pronto === "parar") return;
-					if (pronto === null) continue;
+					if (pronto === null) {
+						if (this.semTextoParaOContato(contato)) contagem.semJanela += 1;
+						continue;
+					}
 				}
 				if (this.d.ensaio) this.ensaiar(contato, tipo, chave, pronto, jaReservadas);
-				else if (await this.mandar(contato, tipo, chave, pronto, jaReservadas)) tentouAlgum = true;
+				else if (await this.mandar(contato, tipo, chave, pronto, jaReservadas)) {
+					tentouAlgum = true;
+					if (jaReservadas.some((r) => r.contatoId === contato.id && r.chave === chave && r.situacao === "enviado")) contagem.enviados += 1;
+				}
+			}
+			if (doPedido) {
+				this.pedidoDeResumo = null;
+				this.registrar(`resumo de hoje (a pedido): ${contagem.enviados} enviado(s), ${contagem.jaTinham} já tinham recebido, ${contagem.semJanela} sem janela hoje`);
 			}
 		}
+	}
+	/** Depois de `preparar` devolver `null`: o contato não tem texto (sem janela) ou foi barrado por outro motivo (SAIR, teto dele)? */
+	semTextoParaOContato(contato) {
+		return !this.estaPausado(contato) && this.contador.podeAlerta(contato.id);
 	}
 	/**
 	* Quem mandou SAIR e o banco ainda mostra ativo: tenta gravar a pausa de novo (uma vez por volta).
@@ -1930,8 +1976,20 @@ async function ligarServico(p) {
 			p.sair(0);
 		})();
 	};
+	/** Uma volta do serviço, pela mesma função do relógio de um minuto e do SIGUSR2: nunca duas ao mesmo tempo. */
+	const dispararVolta = () => {
+		if (voltaEmCurso) return;
+		voltaEmCurso = s.volta().catch((e) => p.registrar(`falha na volta: ${mensagemDe(e)}`)).finally(() => {
+			voltaEmCurso = null;
+		});
+	};
 	p.processo.on("SIGTERM", () => parar("SIGTERM"));
 	p.processo.on("SIGINT", () => parar("SIGINT"));
+	p.processo.on("SIGUSR2", () => {
+		if (parando) return;
+		s.pedirResumoDeHoje();
+		dispararVolta();
+	});
 	p.processo.on("unhandledRejection", (e) => p.registrar(`erro não tratado: ${nomeDoErro(e)}`));
 	p.processo.on("uncaughtException", (e) => {
 		p.registrar(`erro não tratado: ${nomeDoErro(e)}`);
@@ -1945,10 +2003,7 @@ async function ligarServico(p) {
 	if (parando) return;
 	relogio = setInterval(() => {
 		if (!whatsapp && !conectando && p.pareado()) conectar().catch((e) => p.registrar(`falha ao conectar: ${mensagemDe(e)}`));
-		if (voltaEmCurso) return;
-		voltaEmCurso = s.volta().catch((e) => p.registrar(`falha na volta: ${mensagemDe(e)}`)).finally(() => {
-			voltaEmCurso = null;
-		});
+		dispararVolta();
 	}, VOLTA_MS);
 	p.registrar("serviço ligado");
 }

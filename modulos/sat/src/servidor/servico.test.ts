@@ -1487,3 +1487,261 @@ describe('servico: estado, batimento e limpeza', () => {
     expect(c.wpp.enviados).toHaveLength(1)
   })
 })
+
+describe('servico: resumo de hoje a pedido', () => {
+  const RESUMO_HOJE = `${HOJE}:resumo-07`
+  const resumos = (c: ReturnType<typeof montar>) => c.wpp.enviados.filter((e) => e.texto.includes('*Na operação:*'))
+  const linhaDoPedido = (c: ReturnType<typeof montar>) => c.registro.filter((l) => l.startsWith('resumo de hoje (a pedido):'))
+  /** Põe o relógio na hora e faz o pedido (o que o sinal faz na VM). */
+  const pedir = (c: ReturnType<typeof montar>, h: number, m = 0, dia = 6) => {
+    c.relogio.agora = em(h, m, dia)
+    c.servico.pedirResumoDeHoje()
+  }
+
+  it('às 11:40, com dois contatos aptos e janela à noite, os dois recebem o resumo pela chave de hoje, com a pausa entre eles', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    pedir(c, 11, 40)
+    expect(c.registro).toContain('resumo de hoje pedido à mão')
+    expect(c.wpp.enviados).toEqual([]) // o pedido em si não envia nada
+    await c.volta(11, 40)
+    expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990001'), jidDe('5565999990002')])
+    expect(c.banco.reservas).toEqual([['c-ana', RESUMO_HOJE, 'resumo-07'], ['c-bruno', RESUMO_HOJE, 'resumo-07']])
+    expect(c.wpp.enviados[0].texto).toContain('Janelas de risco de cintilação hoje entre 19:00 e 20:00 em Nebraska.')
+    expect(c.pausasEntrePessoas()).toHaveLength(1)
+    expect(c.ordem.filter((o) => o !== 'fechar')).toEqual(['reservar', 'enviar', 'pausa', 'reservar', 'enviar'])
+    expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 2 enviado(s), 0 já tinham recebido, 0 sem janela hoje'])
+    semNumerosNoRegistro(c.registro)
+  })
+
+  it('sem pedido, às 11:40 nada sai e o banco nem é lido (controle)', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    await c.volta(11, 40)
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.reservas).toEqual([])
+    expect(c.banco.chamadas).not.toContain('contatos')
+  })
+
+  it('segundo pedido no mesmo dia: ninguém recebe de novo, e quem já tinha recebido é contado', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(resumos(c)).toHaveLength(2)
+    pedir(c, 11, 50)
+    await c.volta(11, 50)
+    expect(c.wpp.enviados).toHaveLength(2)
+    expect(c.banco.reservas).toHaveLength(2)
+    expect(linhaDoPedido(c)).toEqual([
+      'resumo de hoje (a pedido): 2 enviado(s), 0 já tinham recebido, 0 sem janela hoje',
+      'resumo de hoje (a pedido): 0 enviado(s), 2 já tinham recebido, 0 sem janela hoje',
+    ])
+  })
+
+  it('o pedido é consumido: sem novo pedido, as voltas seguintes não leem nem enviam nada', async () => {
+    const c = montar({ contatos: [ANA] })
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    const leituras = c.banco.chamadas.filter((x) => x === 'contatos').length
+    await c.volta(11, 41)
+    await c.volta(11, 42)
+    expect(c.banco.chamadas.filter((x) => x === 'contatos')).toHaveLength(leituras)
+    expect(linhaDoPedido(c)).toHaveLength(1)
+  })
+
+  it('contato sem confirmação, inativo ou pausado por SAIR não recebe; quem pode, recebe', async () => {
+    const naoConfirmado = contato({ id: 'c-carla', nome: 'Carla', telefone: '5565999990003', confirmadoEm: null, confirmadoPor: null })
+    const inativo = contato({ id: 'c-diego', nome: 'Diego', telefone: '5565999990004', ativo: false })
+    const saiu = contato({ id: 'c-bruno', nome: 'Bruno', telefone: '5565999990002' })
+    const apto = contato({ id: 'c-edu', nome: 'Edu', telefone: '5565999990005' })
+    const c = montar({ contatos: [naoConfirmado, inativo, saiu, apto] })
+    await c.recebida(saiu, 'SAIR')
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990005')])
+    expect(c.banco.reservas.map((r) => r[0])).toEqual(['c-edu'])
+    expect(c.pausasEntrePessoas()).toEqual([])
+  })
+
+  it('SAIR cuja pausa o banco ainda não gravou também segura o resumo pedido', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.banco.pausarLanca = true
+    await c.recebida(ANA, 'SAIR')
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990002')])
+    expect(c.banco.reservas.map((r) => r[0])).toEqual(['c-bruno'])
+  })
+
+  it('SAIR que chega durante a pausa entre as pessoas: a próxima não recebe o resumo', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.gancho.aoDormir = async (ms) => {
+      if (ms >= 20_000 && ms < PRAZO_DO_WHATSAPP) await c.recebida(BRUNO, 'SAIR')
+    }
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990001')])
+    expect(c.banco.reservas.map((r) => r[0])).toEqual(['c-ana'])
+  })
+
+  it('com o WhatsApp desconectado nada é reservado e o pedido espera; ao conectar, a volta seguinte envia', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.wpp.conectado = false
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    await c.volta(11, 41)
+    expect(c.banco.reservas).toEqual([])
+    expect(c.wpp.enviados).toEqual([])
+    expect(linhaDoPedido(c)).toEqual([])
+    c.wpp.conectado = true
+    await c.volta(11, 42)
+    expect(resumos(c)).toHaveLength(2)
+    expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 2 enviado(s), 0 já tinham recebido, 0 sem janela hoje'])
+  })
+
+  it('com a conta restrita pelo WhatsApp nada sai; passada a restrição, o pedido vale', async () => {
+    const c = montar({ contatos: [ANA] })
+    c.relogio.agora = em(11, 40)
+    await c.servico.restricao(em(15), 'teste')
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    await c.volta(14, 59)
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.reservas).toEqual([])
+    await c.volta(15, 1)
+    expect(resumos(c)).toHaveLength(1)
+  })
+
+  it('o WhatsApp cai no meio da lista: o pedido continua, e a volta seguinte manda só a quem faltou', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.gancho.aoDormir = async (ms) => {
+      if (ms >= 20_000 && ms < PRAZO_DO_WHATSAPP) c.wpp.conectado = false
+    }
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990001')])
+    expect(linhaDoPedido(c)).toEqual([]) // interrompido: ainda não deu a volta inteira
+    c.gancho.aoDormir = undefined
+    c.wpp.conectado = true
+    await c.volta(11, 41)
+    expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990001'), jidDe('5565999990002')])
+    expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 1 enviado(s), 1 já tinham recebido, 0 sem janela hoje'])
+  })
+
+  it('o teto do dia estourado para o resumo pedido; ninguém recebe', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    for (const _ of vezes(TETO_DO_DIA)) c.contador().contar(null)
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.reservas).toEqual([])
+  })
+
+  it('o teto por pessoa vale: com 3 alertas no dia, essa pessoa não recebe o resumo pedido', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    for (const _ of vezes(3)) c.contador().contar('c-ana')
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990002')])
+    expect(c.banco.reservas.map((r) => r[0])).toEqual(['c-bruno'])
+  })
+
+  it('pedido às 23:50 e volta às 00:10 do dia seguinte: nada é enviado, em silêncio, e o pedido não volta', async () => {
+    const c = montar({ contatos: [ANA] })
+    pedir(c, 23, 50)
+    await c.volta(0, 10, 7)
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.chamadas).not.toContain('contatos')
+    await c.volta(11, 40, 7)
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.banco.reservas).toEqual([])
+    expect(linhaDoPedido(c)).toEqual([])
+  })
+
+  it('o dia vira no meio da lista: quem falta não recebe e o pedido não passa para o dia seguinte', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.trimble.series['-12.5_-50'] = serieComJanela(23 * 60, 24 * 60)
+    c.gancho.aoDormir = async (ms) => {
+      if (ms >= 20_000 && ms < PRAZO_DO_WHATSAPP) c.relogio.agora = em(0, 0, 7) + 20_000
+    }
+    pedir(c, 23, 58)
+    await c.volta(23, 58)
+    expect(resumos(c).map((e) => e.jid)).toEqual([jidDe('5565999990001')])
+    expect(c.banco.reservas.map((r) => r[0])).toEqual(['c-ana'])
+    c.gancho.aoDormir = undefined
+    await c.volta(11, 40, 7)
+    expect(c.wpp.enviados).toHaveLength(1)
+  })
+
+  it('às 12:10, depois de o lembrete das 12:00 ter saído, o resumo sai sem a linha do SAIR', async () => {
+    const c = montar({ contatos: [ANA] })
+    await c.volta(12)
+    expect(c.wpp.enviados).toHaveLength(1)
+    expect(c.wpp.enviados[0].texto).toContain('Lembrete: janela de risco')
+    pedir(c, 12, 10)
+    await c.volta(12, 10)
+    expect(c.banco.reservas.map((r) => r[1])).toEqual([`${HOJE}:lembrete-12`, RESUMO_HOJE])
+    expect(c.wpp.enviados).toHaveLength(2)
+    expect(c.wpp.enviados[1].texto).toContain('*Na operação:*')
+    expect(c.wpp.enviados[1].texto).not.toContain('SAIR')
+    expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 1 enviado(s), 0 já tinham recebido, 0 sem janela hoje'])
+  })
+
+  it('o resumo é o da chave normal: pedido às 07:10, com o resumo já na janela, entra uma vez só', async () => {
+    const c = montar({ contatos: [ANA] })
+    pedir(c, 7, 10)
+    await c.volta(7, 10)
+    expect(c.banco.reservas).toEqual([['c-ana', RESUMO_HOJE, 'resumo-07']])
+    expect(c.wpp.enviados).toHaveLength(1)
+    expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 1 enviado(s), 0 já tinham recebido, 0 sem janela hoje'])
+  })
+
+  it('o resumo normal das 07:00 já enviado vale como recebido: o pedido depois não manda de novo', async () => {
+    const c = montar({ contatos: [ANA] })
+    await c.volta(7)
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(c.wpp.enviados).toHaveLength(1)
+    expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 0 enviado(s), 1 já tinham recebido, 0 sem janela hoje'])
+  })
+
+  it('quem não tem janela nas fazendas dele é contado como sem janela, e passada a última janela do dia ninguém recebe', async () => {
+    const semJanela = contato({ id: 'c-bruno', nome: 'Bruno', telefone: '5565999990002', fazendas: [4] }) // Boa Vista: sem janela
+    const c = montar({ contatos: [ANA, semJanela] })
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(linhaDoPedido(c)).toEqual(['resumo de hoje (a pedido): 1 enviado(s), 0 já tinham recebido, 1 sem janela hoje'])
+
+    const d = montar({ contatos: [ANA, BRUNO] })
+    pedir(d, 21, 0)
+    await d.volta(21, 0)
+    expect(d.wpp.enviados).toEqual([])
+    expect(d.banco.reservas).toEqual([])
+    expect(linhaDoPedido(d)).toEqual(['resumo de hoje (a pedido): 0 enviado(s), 0 já tinham recebido, 2 sem janela hoje'])
+  })
+
+  it('pedido com as janelas calculadas ontem (Trimble fora hoje): não envia e continua pendente até a Trimble voltar', async () => {
+    const c = montar({ contatos: [ANA] }, em(12))
+    await c.volta(12) // cálculo bom no dia 6
+    expect(c.wpp.enviados).toHaveLength(1)
+    c.trimble.sempreFalha = true
+    pedir(c, 11, 40, 7)
+    await c.volta(11, 40, 7)
+    expect(c.wpp.enviados).toHaveLength(1)
+    expect(c.banco.reservas).toHaveLength(1)
+    c.trimble.sempreFalha = false
+    await c.volta(11, 50, 7)
+    expect(c.wpp.enviados).toHaveLength(2)
+    expect(c.banco.reservas[1]).toEqual(['c-ana', `${AMANHA}:resumo-07`, 'resumo-07'])
+    expect(c.wpp.enviados[1].texto).toContain('*Na operação:*')
+  })
+
+  it('no ensaio o pedido não muda nada: não registra, não reserva e não envia', async () => {
+    const c = montar({ ensaio: true, contatos: [ANA] })
+    pedir(c, 11, 40)
+    await c.volta(11, 40)
+    expect(c.registro.join('\n')).not.toContain('a pedido')
+    expect(c.registro.join('\n')).not.toContain('pedido à mão')
+    expect(c.registro.filter((l) => l.includes('enviaria'))).toEqual([])
+    expect(c.banco.escritas).toBe(0)
+    expect(c.wpp.enviados).toEqual([])
+  })
+})

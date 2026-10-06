@@ -264,8 +264,23 @@ export async function ligarServico(p: PecasDoServico): Promise<void> {
       p.sair(0)
     })()
   }
+  /** Uma volta do serviço, pela mesma função do relógio de um minuto e do SIGUSR2: nunca duas ao mesmo tempo. */
+  const dispararVolta = (): void => {
+    if (voltaEmCurso) return
+    voltaEmCurso = s.volta()
+      .catch((e) => p.registrar(`falha na volta: ${mensagemDe(e)}`))
+      .finally(() => { voltaEmCurso = null })
+  }
+
   p.processo.on('SIGTERM', () => parar('SIGTERM'))
   p.processo.on('SIGINT', () => parar('SIGINT'))
+  // `systemctl kill -s SIGUSR2`: o resumo de hoje fora do horário. Registrado cedo: sem tratador, o sinal encerraria o processo.
+  // Com uma volta em curso o pedido fica guardado para a próxima (em no máximo um minuto).
+  p.processo.on('SIGUSR2', () => {
+    if (parando) return
+    s.pedirResumoDeHoje()
+    dispararVolta()
+  })
   // Um erro que escapou não pode virar queda em laço (cada queda é uma reconexão ao WhatsApp), nem levar texto de fora ao registro.
   p.processo.on('unhandledRejection', (e) => p.registrar(`erro não tratado: ${nomeDoErro(e)}`))
   p.processo.on('uncaughtException', (e) => {
@@ -284,10 +299,7 @@ export async function ligarServico(p: PecasDoServico): Promise<void> {
   relogio = setInterval(() => {
     // a sessão apareceu (alguém pareou com o serviço ligado): conecta
     if (!whatsapp && !conectando && p.pareado()) conectar().catch((e) => p.registrar(`falha ao conectar: ${mensagemDe(e)}`))
-    if (voltaEmCurso) return
-    voltaEmCurso = s.volta()
-      .catch((e) => p.registrar(`falha na volta: ${mensagemDe(e)}`))
-      .finally(() => { voltaEmCurso = null })
+    dispararVolta()
   }, VOLTA_MS)
   p.registrar('serviço ligado')
 }

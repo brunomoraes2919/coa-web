@@ -139,10 +139,22 @@ export class Servico {
   private readonly avisos = new Map<TipoAviso, string>()
   /** O que está gravado em `ultimo_erro`; `undefined` = não se sabe (uma gravação falhou, ou está lá o motivo de uma queda). */
   private avisoGravado: string | null | undefined = null
+  /** O dia (`chaveData`) para o qual alguém pediu o resumo à mão; `null` = nenhum pedido pendente. */
+  private pedidoDeResumo: string | null = null
 
   constructor(d: Dependencias) {
     this.d = d
     this.contador = new ContadorDoDia(d.agora)
+  }
+
+  /**
+   * Pede o resumo de hoje fora do horário (o sinal da VM). Só guarda o pedido: quem envia é a volta,
+   * pelo caminho normal, com todos os freios. No ensaio não muda nada (o ensaio já mostra o resumo).
+   */
+  pedirResumoDeHoje(): void {
+    if (this.d.ensaio) return
+    this.pedidoDeResumo = chaveData(this.d.agora())
+    this.registrar('resumo de hoje pedido à mão')
   }
 
   /** Uma volta do laço: calcula se precisa, manda o que está na hora, grava o batimento a cada 5 min. */
@@ -151,6 +163,8 @@ export class Servico {
     this.emVolta = true
     try {
       const agora = this.d.agora()
+      // pedido de um dia que já virou não vale: o resumo é "de hoje"
+      if (this.pedidoDeResumo !== null && this.pedidoDeResumo !== chaveData(agora)) this.pedidoDeResumo = null
       await this.bater(agora)
       await this.vencerAvisos(agora)
       await this.limparUmaVezPorDia(agora)
@@ -476,6 +490,7 @@ export class Servico {
 
   /** Evita ler contatos e envios (o banco) a cada minuto do dia: só quando há um evento a considerar. */
   private algoNaHora(agora: number, janelas: JanelasCalculadas): boolean {
+    if (this.pedidoDeResumo === chaveData(agora)) return true
     if (eventosFixosNaHora(agora).length) return true
     return Object.values(janelas.porCelula).some((js) => janelaDoAntes(js, agora) !== null)
   }
@@ -498,26 +513,55 @@ export class Servico {
     const aptos = contatos
       .filter((c) => c.ativo && c.alertaJanela && c.confirmadoEm)
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-    const tipos: TipoEvento[] = [...eventosFixosNaHora(agora), 'antes']
+    // Pedido à mão: o resumo entra na volta mesmo fora das 07:00–08:00 (sem repetir se já está), com a chave de hoje.
+    const comPedido = this.pedidoDeResumo === chaveData(agora)
+    const fixos = eventosFixosNaHora(agora)
+    const tipos: TipoEvento[] = [...(comPedido && !fixos.includes('resumo-07') ? ['resumo-07' as const] : []), ...fixos, 'antes']
     let tentouAlgum = false
     for (const tipo of tipos) {
       const chave = tipo === 'antes' ? chaveDoAntes(agora) : chaveEvento(agora, tipo)
+      const doPedido = comPedido && tipo === 'resumo-07'
+      const contagem = { enviados: 0, jaTinham: 0, semJanela: 0 }
       for (const contato of aptos) {
-        if (jaReservadas.some((r) => r.contatoId === contato.id && r.chave === chave)) continue
+        if (jaReservadas.some((r) => r.contatoId === contato.id && r.chave === chave)) {
+          contagem.jaTinham += 1
+          continue
+        }
         let pronto = await this.preparar(tipo, contato, fazendas, janelas)
         if (pronto === 'parar') return
-        if (pronto === null) continue
+        if (pronto === null) {
+          if (this.semTextoParaOContato(contato)) contagem.semJanela += 1
+          continue
+        }
         if (tentouAlgum && !this.d.ensaio) {
           await this.d.dormir(pausaEntrePessoas())
+          // o resumo diz "hoje": se o dia virou durante a espera, as janelas e a chave são as de ontem
+          if (tipo === 'resumo-07' && chaveData(this.d.agora()) !== chaveData(agora)) return
           // passou tempo (e a pessoa pode ter mandado SAIR, o WhatsApp cair, o teto estourar): confere tudo de novo
           pronto = await this.preparar(tipo, contato, fazendas, janelas)
           if (pronto === 'parar') return
-          if (pronto === null) continue
+          if (pronto === null) {
+            if (this.semTextoParaOContato(contato)) contagem.semJanela += 1
+            continue
+          }
         }
         if (this.d.ensaio) this.ensaiar(contato, tipo, chave, pronto, jaReservadas)
-        else if (await this.mandar(contato, tipo, chave, pronto, jaReservadas)) tentouAlgum = true
+        else if (await this.mandar(contato, tipo, chave, pronto, jaReservadas)) {
+          tentouAlgum = true
+          if (jaReservadas.some((r) => r.contatoId === contato.id && r.chave === chave && r.situacao === 'enviado')) contagem.enviados += 1
+        }
+      }
+      if (doPedido) {
+        // percorreu todos sem que nada o parasse: o pedido foi atendido (se parou no meio, continua pendente para quem faltou)
+        this.pedidoDeResumo = null
+        this.registrar(`resumo de hoje (a pedido): ${contagem.enviados} enviado(s), ${contagem.jaTinham} já tinham recebido, ${contagem.semJanela} sem janela hoje`)
       }
     }
+  }
+
+  /** Depois de `preparar` devolver `null`: o contato não tem texto (sem janela) ou foi barrado por outro motivo (SAIR, teto dele)? */
+  private semTextoParaOContato(contato: ContatoWpp): boolean {
+    return !this.estaPausado(contato) && this.contador.podeAlerta(contato.id)
   }
 
   /**

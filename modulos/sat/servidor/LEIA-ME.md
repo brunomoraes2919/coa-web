@@ -174,6 +174,20 @@ sudo systemctl start locks-sat-whatsapp-atualizar.service && sudo journalctl -u 
 
 A atualização automática troca o programa e as bibliotecas. Ela **não** troca os arquivos de serviço do sistema (os `.service` e o `.timer`) nem o próprio atualizador: quando esses mudarem no repositório, rode de novo o comando do passo 1 (instalar). Ele não mexe na chave nem no pareamento e reinicia o serviço se ele estiver ligado.
 
+**Mandar o resumo de hoje agora**, para o dia em que o serviço foi ligado depois das 07:00, ou quando se quer o resumo fora de hora. É o mesmo resumo das 07:00 (com "Na operação" e "O que fazer"), mandado pelo serviço que já está ligado: não pára nada e não abre outra conexão com o WhatsApp. Não aparece nada na tela:
+
+```bash
+sudo systemctl kill -s SIGUSR2 locks-sat-whatsapp
+```
+
+O envio começa em até um minuto e leva cerca de meio minuto por pessoa. Para acompanhar, rode o comando "Ver o que o serviço fez" acima: aparece **resumo de hoje pedido à mão** e, quando a lista termina, **resumo de hoje (a pedido): N enviado(s), M já tinham recebido, K sem janela hoje**. Pontos que importam:
+
+- Rodar o comando duas vezes **não** manda duas vezes: quem já recebeu o resumo de hoje (às 07:00 ou por este comando) é pulado.
+- Conta como um dos **três avisos do dia** de cada pessoa, e todos os freios de sempre valem (teto do dia, pausa entre pessoas, WhatsApp restringindo os envios).
+- Só recebe quem está **ativo e confirmado**, com "Janela de risco" ligada e janela hoje nas fazendas dele. Quem mandou **SAIR** não recebe.
+- Se o WhatsApp estiver desconectado, ou a Trimble ainda sem dados de hoje, o pedido espera e é tentado a cada minuto; um pedido feito num dia não vale no dia seguinte.
+- Só funciona depois de a atualização que traz este comando chegar à VM (use "Atualizar agora" acima e confira **mudou**). Antes disso o programa não conhece o sinal: ele encerra, e o sistema o liga de novo sozinho em 1 minuto (sem resumo nenhum).
+
 **Desligar** o serviço e as atualizações. Os alertas param até você ligar de novo (passo 6). Não aparece nada na tela:
 
 ```bash

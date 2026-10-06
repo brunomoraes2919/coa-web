@@ -11,6 +11,7 @@ import type { Banco } from './banco'
 import {
   calarBibliotecas, ensaio, fusoCerto, horariosDoEnsaio, lerAmbiente, lerArgumentos, ligarServico, limparPareamentoIncompleto, linhaDeRegistro, rodandoComoPrograma, sessaoPareada,
 } from './principal'
+import { Servico } from './servico'
 import type { ContatoWpp, FazendaServidor, SituacaoEnvio } from './tipos'
 import type { OpcoesWhatsapp, Whatsapp } from './whatsapp'
 
@@ -362,6 +363,15 @@ describe('ensaio (rede simulada)', () => {
     expect(ordem).toEqual(['consulta 1', 'pausa 2000', 'consulta 2', 'pausa 2000', 'consulta 2'])
   })
 
+  it('o ensaio (como o pareamento e o teste) não registra tratador de SIGUSR2: só o modo serviço atende o pedido', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(2026, 9, 6, 10, 0) })
+    simular()
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const antes = process.listenerCount('SIGUSR2')
+    expect(await ensaio(ambiente, 'America/Cuiaba', async () => {})).toBe(0)
+    expect(process.listenerCount('SIGUSR2')).toBe(antes)
+  })
+
   it('sem o fuso certo não faz nada', async () => {
     const chamadas = simular()
     await expect(ensaio(ambiente, 'UTC')).rejects.toThrow('America/Cuiaba')
@@ -383,9 +393,9 @@ describe('ligarServico (tudo falso)', () => {
     instante: new Date(2026, 9, dia, 19, min).getTime(), indice: 8, tec: 50, cintilacao: 80, previsto: false,
   })))
 
-  /** O serviço ligado às 06:59:30 de um dia com janela: a primeira volta (07:00:30) manda o resumo a Ana e depois a Bia. */
-  async function ligar(opcoes: { pareado?: boolean; segurarEnvios?: boolean; segurarPausa?: boolean } = {}) {
-    vi.useFakeTimers({ now: new Date(2026, 9, 6, 6, 59, 30) })
+  /** O serviço ligado (por padrão às 06:59:30) de um dia com janela: a primeira volta (07:00:30) manda o resumo a Ana e depois a Bia. */
+  async function ligar(opcoes: { pareado?: boolean; segurarEnvios?: boolean; segurarPausa?: boolean; inicio?: Date } = {}) {
+    vi.useFakeTimers({ now: opcoes.inicio ?? new Date(2026, 9, 6, 6, 59, 30) })
     const ordem: string[] = []
     const linhas: string[] = []
     const estados: Parameters<Banco['gravarEstado']>[0][] = []
@@ -643,6 +653,63 @@ describe('ligarServico (tudo falso)', () => {
     expect(s.linhas).toContain('O WhatsApp fechou a conexão (sessão em uso em outro lugar) e o serviço não tenta de novo sozinho: ver "Se algo der errado" no LEIA-ME.')
     await s.opcoesDaConexao()?.aoMudarConexao(false, 'sessão encerrada no celular')
     expect(s.linhas).toContain('Sessão encerrada: é preciso parear de novo (ver LEIA-ME).')
+  })
+
+  describe('SIGUSR2: resumo de hoje a pedido', () => {
+    const MEIO_DO_DIA = new Date(2026, 9, 6, 11, 39, 30)
+
+    it('chama pedirResumoDeHoje e dispara uma volta na hora, sem esperar o relógio de um minuto', async () => {
+      const pedido = vi.spyOn(Servico.prototype, 'pedirResumoDeHoje')
+      const s = await ligar({ inicio: MEIO_DO_DIA })
+      await passar(0)
+      expect(s.ordem).toEqual([])
+
+      s.processo.emit('SIGUSR2')
+      await passar(0)
+      expect(pedido).toHaveBeenCalledTimes(1)
+      expect(s.linhas).toContain('resumo de hoje pedido à mão')
+      expect(s.ordem).toEqual(['enviar 0001: começo', 'enviar 0001: fim', 'fechar enviado'])
+
+      await passar(45_000) // a pausa entre as duas pessoas
+      expect(s.ordem.filter((o) => o.startsWith('enviar') && o.endsWith('começo'))).toEqual(['enviar 0001: começo', 'enviar 0002: começo'])
+      expect(s.linhas).toContain('resumo de hoje (a pedido): 2 enviado(s), 0 já tinham recebido, 0 sem janela hoje')
+    })
+
+    it('com uma volta em curso o pedido fica para a próxima, que sai em no máximo um minuto', async () => {
+      const pedido = vi.spyOn(Servico.prototype, 'pedirResumoDeHoje')
+      const s = await ligar({ segurarEnvios: true })
+      await passar(60_000) // a volta das 07:00 está parada no envio à Ana
+      expect(s.ordem).toEqual(['enviar 0001: começo'])
+
+      s.processo.emit('SIGUSR2')
+      await passar(0)
+      expect(pedido).toHaveBeenCalledTimes(1)
+      expect(s.ordem).toEqual(['enviar 0001: começo']) // nenhuma segunda volta, nenhum envio a mais
+
+      s.soltar[0]()
+      await passar(45_000)
+      s.soltar[1]()
+      await passar(60_000)
+      expect(s.ordem.filter((o) => o.endsWith('começo'))).toEqual(['enviar 0001: começo', 'enviar 0002: começo'])
+      expect(s.linhas).toContain('resumo de hoje (a pedido): 0 enviado(s), 2 já tinham recebido, 0 sem janela hoje')
+    })
+
+    it('durante a parada o sinal é ignorado', async () => {
+      const pedido = vi.spyOn(Servico.prototype, 'pedirResumoDeHoje')
+      const s = await ligar({ inicio: MEIO_DO_DIA })
+      s.processo.emit('SIGTERM')
+      await passar(0)
+      s.processo.emit('SIGUSR2')
+      await passar(0)
+      expect(pedido).not.toHaveBeenCalled()
+      expect(s.linhas).not.toContain('resumo de hoje pedido à mão')
+      expect(s.ordem).toEqual(['encerrar', 'estado serviço parado', 'sair 0'])
+    })
+
+    it('o modo serviço registra o tratador logo ao ligar, antes de conectar (sem tratador o Node sairia com o sinal)', async () => {
+      const s = await ligar({ pareado: false })
+      expect(s.processo.listenerCount('SIGUSR2')).toBe(1)
+    })
   })
 })
 
