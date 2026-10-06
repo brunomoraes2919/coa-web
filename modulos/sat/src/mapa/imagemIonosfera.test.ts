@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { definirFonteDoToken, urlOverlay } from '../api/gnssApi'
 import { COR_NIVEL } from '../logic/niveis'
 import { ALFA_NIVEL } from '../logic/recolorir'
-import { carregarIonosfera, limparCacheIonosfera, precarregarIonosfera } from './imagemIonosfera'
+import { carregarIonosfera, carregarIonosferaNoRitmo, INTERVALO_MINIMO_PEDIDO_MS, limparCacheIonosfera, precarregarIonosfera } from './imagemIonosfera'
 
 const T = Date.UTC(2026, 8, 24, 21, 30)
 
@@ -113,5 +113,116 @@ describe('precarregarIonosfera', () => {
     precarregarIonosfera('tec', T)
     await carregarIonosfera('tec', T)
     expect(fetchFalso).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('carregarIonosferaNoRitmo', () => {
+  const PASSO = 600_000
+  const INICIO = Date.UTC(2026, 8, 24, 21, 0)
+  /** Os instantes (do relógio falso) em que cada pedido saiu para a ponte. */
+  let saidas: number[]
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+    vi.setSystemTime(INICIO)
+    limparCacheIonosfera()
+    saidas = []
+    fetchFalso.mockImplementation(async () => {
+      saidas.push(Date.now() - INICIO)
+      return new Response(new Blob(['x']), { status: 200 })
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('o limite é de um pedido novo a cada 500 ms', () => {
+    expect(INTERVALO_MINIMO_PEDIDO_MS).toBe(500)
+  })
+
+  it('imagem já no cache: devolve a mesma promessa na hora, sem timer e sem pedido novo', async () => {
+    const primeira = carregarIonosfera('sci', T)
+    await vi.advanceTimersByTimeAsync(0)
+    const repetida = carregarIonosferaNoRitmo('sci', T)
+    expect(repetida).toBe(primeira)
+    expect(vi.getTimerCount()).toBe(0)
+    await repetida
+    expect(fetchFalso).toHaveBeenCalledTimes(1)
+  })
+
+  it('o primeiro pedido novo sai na hora', async () => {
+    const pedido = carregarIonosferaNoRitmo('sci', T)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(saidas).toEqual([0])
+    await expect(pedido).resolves.toBeInstanceOf(HTMLCanvasElement)
+  })
+
+  it('pedidos novos seguidos saem a pelo menos 500 ms um do outro', async () => {
+    const pedidos = [0, 1, 2].map((i) => carregarIonosferaNoRitmo('sci', T + i * PASSO))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(saidas).toEqual([0])
+    await vi.advanceTimersByTimeAsync(499)
+    expect(saidas).toEqual([0])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(saidas).toEqual([0, 500])
+    await vi.advanceTimersByTimeAsync(500)
+    expect(saidas).toEqual([0, 500, 1000])
+    await Promise.all(pedidos)
+  })
+
+  it('depois de uma pausa maior que 500 ms o pedido novo sai na hora', async () => {
+    await carregarIonosferaNoRitmo('sci', T)
+    await vi.advanceTimersByTimeAsync(2_000)
+    const pedido = carregarIonosferaNoRitmo('sci', T + PASSO)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(saidas).toEqual([0, 2_000])
+    await pedido
+  })
+
+  it('o mesmo passo pedido duas vezes enquanto espera é um pedido só', async () => {
+    carregarIonosferaNoRitmo('sci', T)
+    const a = carregarIonosferaNoRitmo('sci', T + PASSO)
+    const b = carregarIonosferaNoRitmo('sci', T + PASSO)
+    expect(b).toBe(a)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(saidas).toEqual([0, 500])
+  })
+
+  it('pedido em cache no meio da fila não conta nem espera', async () => {
+    await carregarIonosfera('tec', T)
+    carregarIonosferaNoRitmo('sci', T)
+    const emCache = carregarIonosferaNoRitmo('tec', T)
+    await vi.advanceTimersByTimeAsync(0)
+    await emCache
+    expect(saidas).toEqual([0, 0])
+  })
+
+  it('falha não trava o próximo: ele sai 500 ms depois e o passo que falhou pode ser pedido de novo', async () => {
+    fetchFalso.mockImplementationOnce(async () => {
+      saidas.push(Date.now() - INICIO)
+      return new Response(null, { status: 406 })
+    })
+    const falho = carregarIonosferaNoRitmo('sci', T)
+    const seguinte = carregarIonosferaNoRitmo('sci', T + PASSO)
+    const falhou = expect(falho).rejects.toThrow(/406/)
+    await vi.advanceTimersByTimeAsync(500)
+    await falhou
+    await expect(seguinte).resolves.toBeInstanceOf(HTMLCanvasElement)
+    expect(saidas).toEqual([0, 500])
+
+    const denovo = carregarIonosferaNoRitmo('sci', T)
+    await vi.advanceTimersByTimeAsync(500)
+    await expect(denovo).resolves.toBeInstanceOf(HTMLCanvasElement)
+    expect(saidas).toEqual([0, 500, 1000])
+  })
+
+  it('limpar o cache (só de testes) também zera o relógio dos pedidos', async () => {
+    carregarIonosferaNoRitmo('sci', T)
+    await vi.advanceTimersByTimeAsync(0)
+    limparCacheIonosfera()
+    carregarIonosferaNoRitmo('sci', T + PASSO)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(saidas).toEqual([0, 0])
   })
 })

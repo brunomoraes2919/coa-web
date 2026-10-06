@@ -11,9 +11,11 @@ export interface MemoriaDoMapa {
   escolhido: number | null
   /** Ao vivo: hoje, seguindo o passo mais novo. `dia: null` com `aoVivo: false` é o Hoje, escolhido à mão. */
   aoVivo: boolean
+  /** Velocidade do play (1×, 2×, 4× ou 8×). Escrita à mão: este arquivo não importa nada. */
+  velocidade: 1 | 2 | 4 | 8
 }
 
-const PADRAO: MemoriaDoMapa = { camada: 'sci', dia: null, escolhido: null, aoVivo: true }
+const PADRAO: MemoriaDoMapa = { camada: 'sci', dia: null, escolhido: null, aoVivo: true, velocidade: 1 }
 let memoria: MemoriaDoMapa = { ...PADRAO }
 
 export function lerMemoriaDoMapa(): MemoriaDoMapa {

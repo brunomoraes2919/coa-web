@@ -341,15 +341,15 @@ describe('App', () => {
 
     it('outro usuário não herda o dia e a camada do mapa do anterior; o mesmo usuário (token renovado) mantém', async () => {
       await montar()
-      guardarMemoriaDoMapa({ camada: 'tec', dia: new Date(2026, 8, 23).getTime(), escolhido: 5, aoVivo: false })
+      guardarMemoriaDoMapa({ camada: 'tec', dia: new Date(2026, 8, 23).getTime(), escolhido: 5, aoVivo: false, velocidade: 4 })
 
       sessao = { fase: 'com', usuarioId: 'u1' }
       await montar()
-      expect(lerMemoriaDoMapa()).toEqual({ camada: 'tec', dia: new Date(2026, 8, 23).getTime(), escolhido: 5, aoVivo: false })
+      expect(lerMemoriaDoMapa()).toEqual({ camada: 'tec', dia: new Date(2026, 8, 23).getTime(), escolhido: 5, aoVivo: false, velocidade: 4 })
 
       sessao = { fase: 'com', usuarioId: 'u2' }
       await montar()
-      expect(lerMemoriaDoMapa()).toEqual({ camada: 'sci', dia: null, escolhido: null, aoVivo: true })
+      expect(lerMemoriaDoMapa()).toEqual({ camada: 'sci', dia: null, escolhido: null, aoVivo: true, velocidade: 1 })
     })
 
     it('sem sessão não limpa nada (nada foi montado)', async () => {

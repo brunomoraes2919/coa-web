@@ -58,3 +58,27 @@ export function proximoPassoAoVivo(total: number, atual: number): { indice: numb
   if (atual < inicio) return { indice: inicio, segurar: false }
   return { indice: atual + 1, segurar: false }
 }
+
+/** Um passo por segundo na velocidade 1×: dá tempo de a imagem chegar e segura o ritmo dos pedidos. */
+export const INTERVALO_PLAY_MS = 1000
+/** Passado isto sem a imagem do próximo passo chegar, o play avança assim mesmo. */
+export const ESPERA_MAXIMA_IMAGEM_MS = 3000
+
+export const VELOCIDADES = [1, 2, 4, 8] as const
+export type Velocidade = (typeof VELOCIDADES)[number]
+
+/** A velocidade seguinte do botão; depois da última (ou com valor desconhecido) volta a 1×. */
+export function proximaVelocidade(atual: Velocidade): Velocidade {
+  const i = VELOCIDADES.indexOf(atual)
+  return i < 0 ? VELOCIDADES[0] : VELOCIDADES[(i + 1) % VELOCIDADES.length]
+}
+
+/** Quanto o play espera num passo: a base dividida pela velocidade. */
+export function intervaloDoPlay(velocidade: Velocidade): number {
+  return INTERVALO_PLAY_MS / velocidade
+}
+
+/** Próximo passo do play num dia normal (hoje à mão ou dia passado): um a mais; depois do último, o primeiro. */
+export function proximoPassoDoDia(total: number, atual: number): number {
+  return atual >= total - 1 ? 0 : atual + 1
+}

@@ -14,6 +14,10 @@ import type { ValorVigia } from '../vigia/vigiaContexto'
 
 const m = vi.hoisted(() => ({
   pedidas: [] as string[],
+  /** As imagens que o play pediu (a do PRÓXIMO passo), na ordem. */
+  noRitmo: [] as string[],
+  /** O que o play espera por cada imagem: por padrão ela já está pronta. */
+  imagem: ((_url: string): Promise<unknown> => Promise.resolve()) as (url: string) => Promise<unknown>,
   chamadasSerie: [] as { dia: number | null; celulas: string[] }[],
   /** A lista de quadrados (a referência) de cada chamada: tem de ser a mesma entre renders. */
   listasDeCelulas: [] as unknown[],
@@ -51,7 +55,14 @@ vi.mock('../mapa/CamadaIonosfera', async () => {
 })
 vi.mock('../mapa/imagemIonosfera', async () => {
   const { urlOverlay } = await import('../api/gnssApi')
-  return { precarregarIonosfera: (camada: 'sci' | 'tec', instante: number) => m.pedidas.push(urlOverlay(camada, instante)) }
+  return {
+    precarregarIonosfera: (camada: 'sci' | 'tec', instante: number) => m.pedidas.push(urlOverlay(camada, instante)),
+    carregarIonosferaNoRitmo: (camada: 'sci' | 'tec', instante: number) => {
+      const url = urlOverlay(camada, instante)
+      m.noRitmo.push(url)
+      return m.imagem(url)
+    },
+  }
 })
 vi.mock('../mapa/useSerieDoDia', () => ({
   useSerieDoDia: (dia: number | null, celulas: { id: string }[]) => {
@@ -107,6 +118,10 @@ function play(): HTMLButtonElement {
   return container.querySelector<HTMLButtonElement>('button[aria-label="Reproduzir o dia"]')!
 }
 
+function botaoVelocidade(): HTMLButtonElement {
+  return container.querySelector<HTMLButtonElement>('button.gnss-velocidade')!
+}
+
 function pausa(): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>('button[aria-label="Pausar a animação do dia"]')
 }
@@ -136,6 +151,8 @@ beforeEach(async () => {
   m.mapa.fitBounds.mockClear()
   m.mapa.getZoom.mockReturnValue(5)
   m.pedidas.length = 0
+  m.noRitmo.length = 0
+  m.imagem = () => Promise.resolve()
   m.chamadasSerie.length = 0
   m.listasDeCelulas.length = 0
   m.serie = { series: {}, carregando: false, erro: false }
@@ -542,7 +559,9 @@ describe('mapa da ionosfera', () => {
         fireEvent.change(barra(), { target: { value: '0' } })
       })
       await act(async () => play().click())
-      await act(async () => vi.advanceTimersByTime(2_000))
+      // Um passo por render: cada um agenda o seguinte, então o avanço vai em fatias de 1 s.
+      await act(async () => vi.advanceTimersByTime(1_000))
+      await act(async () => vi.advanceTimersByTime(1_000))
       expect(hora()).toContain(horaDe(PASSOS[2]))
       await act(async () => pausa()!.click())
 
@@ -587,13 +606,13 @@ describe('mapa da ionosfera', () => {
 
     it('a memória é gravada nas mudanças: camada, dia e passo', async () => {
       await act(async () => chip('Off').click())
-      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: null, escolhido: null, aoVivo: true })
+      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: null, escolhido: null, aoVivo: true, velocidade: 1 })
       await act(async () => botaoDia('Ontem').click())
-      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: ONTEM, escolhido: 0, aoVivo: false })
+      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: ONTEM, escolhido: 0, aoVivo: false, velocidade: 1 })
       await act(async () => {
         fireEvent.change(barra(), { target: { value: '9' } })
       })
-      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: ONTEM, escolhido: 9, aoVivo: false })
+      expect(lerMemoriaDoMapa()).toEqual({ camada: 'off', dia: ONTEM, escolhido: 9, aoVivo: false, velocidade: 1 })
     })
   })
 
@@ -879,6 +898,242 @@ describe('mapa da ionosfera', () => {
       expect(pausa()).toBeNull()
       expect(pressionados()).toEqual(['Ao vivo'])
       expect(hora()).toBe(rotuloVivo(ULTIMO))
+    })
+  })
+  describe('velocidade do play', () => {
+    const INICIO_JANELA = PASSOS.length - 18
+    const rotuloVivo = (passo: number) => `AO VIVO · ${horaDe(passo)}`
+    const urlDe = (i: number) => urlOverlay('sci', PASSOS[i])
+
+    /** Hoje à mão, parado no passo `i`, com a velocidade escolhida pelo botão. */
+    async function prepararHoje(i: number, velocidade: 1 | 2 | 4 | 8) {
+      await remontarComTimersFalsos()
+      await act(async () => {
+        fireEvent.change(barra(), { target: { value: String(i) } })
+      })
+      for (let v = 1; v !== velocidade; v *= 2) await act(async () => botaoVelocidade().click())
+      await act(async () => vi.advanceTimersByTime(250))
+    }
+    /** Avança em fatias de `fatia` ms: o React precisa renderizar entre um passo e o agendamento do seguinte. */
+    async function avancar(ms: number, fatia = 125) {
+      for (let restante = ms; restante > 0; restante -= fatia) {
+        await act(async () => vi.advanceTimersByTime(Math.min(fatia, restante)))
+      }
+    }
+
+    it('o botão abre em 1× e cada clique vai a 2×, 4×, 8× e volta a 1×', async () => {
+      expect(botaoVelocidade().textContent).toBe('1×')
+      const vistos: string[] = []
+      for (let k = 0; k < 4; k++) {
+        await act(async () => botaoVelocidade().click())
+        vistos.push(botaoVelocidade().textContent!)
+      }
+      expect(vistos).toEqual(['2×', '4×', '8×', '1×'])
+      expect(botaoVelocidade().getAttribute('aria-label')).toBe('Velocidade da reprodução: 1×')
+    })
+
+    it('a velocidade é gravada na memória a cada troca', async () => {
+      await act(async () => botaoVelocidade().click())
+      expect(lerMemoriaDoMapa().velocidade).toBe(2)
+      await act(async () => botaoVelocidade().click())
+      expect(lerMemoriaDoMapa().velocidade).toBe(4)
+    })
+
+    it('4×: com as imagens prontas o play anda um passo a cada 250 ms', async () => {
+      await prepararHoje(0, 4)
+      await act(async () => play().click())
+      for (let i = 1; i <= 4; i++) {
+        await act(async () => vi.advanceTimersByTime(249))
+        expect(hora()).toContain(horaDe(PASSOS[i - 1]))
+        await act(async () => vi.advanceTimersByTime(1))
+        expect(hora()).toContain(horaDe(PASSOS[i]))
+        expect(overlay()).toBe(urlDe(i)) // a imagem acompanha sem a espera da barra
+      }
+    })
+
+    it('2× e 8× andam a 500 ms e a 125 ms por passo', async () => {
+      await prepararHoje(0, 2)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(499))
+      expect(hora()).toContain(horaDe(PASSOS[0]))
+      await act(async () => vi.advanceTimersByTime(1))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+
+      await act(async () => pausa()!.click())
+      await act(async () => botaoVelocidade().click()) // 4×
+      await act(async () => botaoVelocidade().click()) // 8×
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(124))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+      await act(async () => vi.advanceTimersByTime(1))
+      expect(hora()).toContain(horaDe(PASSOS[2]))
+    })
+
+    it('o play pede a imagem do PRÓXIMO passo, e depois do último passo do dia volta ao primeiro', async () => {
+      await prepararHoje(PASSOS.length - 2, 8)
+      await act(async () => play().click())
+      expect(m.noRitmo).toEqual([urlDe(PASSOS.length - 1)])
+      await avancar(125)
+      expect(hora()).toContain(horaDe(ULTIMO))
+      expect(m.noRitmo.at(-1)).toBe(urlDe(0))
+      await avancar(125)
+      expect(hora()).toContain(horaDe(PASSOS[0]))
+    })
+
+    it('imagem do próximo passo pendente: o play espera por ela e avança no teto de 3 s', async () => {
+      m.imagem = (url) => (url === urlDe(1) ? new Promise(() => {}) : Promise.resolve())
+      await prepararHoje(0, 4)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(2_999))
+      expect(hora()).toContain(horaDe(PASSOS[0]))
+      expect(m.noRitmo).toEqual([urlDe(1)]) // um pedido só, não um a cada espera
+      await act(async () => vi.advanceTimersByTime(1))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+      // E o passo seguinte, com imagem pronta, volta ao ritmo de 250 ms.
+      await act(async () => vi.advanceTimersByTime(250))
+      expect(hora()).toContain(horaDe(PASSOS[2]))
+    })
+
+    it('imagem que chega depois da espera do passo, antes do teto: avança na hora em que ela chega', async () => {
+      let chegou!: () => void
+      m.imagem = (url) => (url === urlDe(1) ? new Promise<void>((r) => (chegou = r)) : Promise.resolve())
+      await prepararHoje(0, 4)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(1_200))
+      expect(hora()).toContain(horaDe(PASSOS[0]))
+      await act(async () => chegou())
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+    })
+
+    it('imagem que chega ANTES da espera do passo: o passo cumpre a espera inteira', async () => {
+      let chegou!: () => void
+      m.imagem = (url) => (url === urlDe(1) ? new Promise<void>((r) => (chegou = r)) : Promise.resolve())
+      await prepararHoje(0, 1)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(300))
+      await act(async () => chegou())
+      expect(hora()).toContain(horaDe(PASSOS[0]))
+      await act(async () => vi.advanceTimersByTime(699))
+      expect(hora()).toContain(horaDe(PASSOS[0]))
+      await act(async () => vi.advanceTimersByTime(1))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+    })
+
+    it('imagem que falha conta como pronta: o passo avança e marca "indisponível" quando aparece', async () => {
+      m.imagem = (url) => (url === urlDe(1) ? Promise.reject(new Error('406')) : Promise.resolve())
+      await prepararHoje(0, 4)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(250))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+    })
+
+    it('em 1× com a imagem pendente também espera: avança aos 3 s, não aos 1 s', async () => {
+      m.imagem = (url) => (url === urlDe(1) ? new Promise(() => {}) : Promise.resolve())
+      await prepararHoje(0, 1)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(2_999))
+      expect(hora()).toContain(horaDe(PASSOS[0]))
+      await act(async () => vi.advanceTimersByTime(1))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+    })
+
+    it('camada Off: não pede imagem nem espera por ela', async () => {
+      m.imagem = () => new Promise(() => {})
+      await remontarComTimersFalsos()
+      await act(async () => chip('Off').click())
+      await act(async () => {
+        fireEvent.change(barra(), { target: { value: '0' } })
+      })
+      await act(async () => botaoVelocidade().click()) // 2×
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(500))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+      expect(m.noRitmo).toEqual([])
+    })
+
+    it('pausar com a imagem ainda pendente cancela: ela chegando depois não move o passo', async () => {
+      let chegou!: () => void
+      m.imagem = (url) => (url === urlDe(1) ? new Promise<void>((r) => (chegou = r)) : Promise.resolve())
+      await prepararHoje(0, 4)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(1_000))
+      await act(async () => pausa()!.click())
+      await act(async () => chegou())
+      await act(async () => vi.advanceTimersByTime(5_000))
+      expect(hora()).toContain(horaDe(PASSOS[0]))
+    })
+
+    it('trocar a velocidade tocando vale a partir do passo seguinte: sem pular nem repetir passo', async () => {
+      await prepararHoje(0, 1)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(400))
+      await act(async () => botaoVelocidade().click()) // 2×, no meio do passo 0
+      await act(async () => vi.advanceTimersByTime(599))
+      expect(hora()).toContain(horaDe(PASSOS[0])) // o passo em curso ainda dura o 1 s de 1×
+      await act(async () => vi.advanceTimersByTime(1))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+      await act(async () => vi.advanceTimersByTime(499))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+      await act(async () => vi.advanceTimersByTime(1))
+      expect(hora()).toContain(horaDe(PASSOS[2]))
+    })
+
+    it('a velocidade escolhida sobrevive a sair e voltar para a tela', async () => {
+      await act(async () => botaoVelocidade().click())
+      await act(async () => botaoVelocidade().click()) // 4×
+      await act(async () => root.unmount())
+      root = createRoot(container)
+      await act(async () => root.render(<MapaPage />))
+      expect(botaoVelocidade().textContent).toBe('4×')
+    })
+
+    it('limpar a memória (outro usuário) volta a 1×', async () => {
+      await act(async () => botaoVelocidade().click())
+      limparMemoriaDoMapa()
+      await act(async () => root.unmount())
+      root = createRoot(container)
+      await act(async () => root.render(<MapaPage />))
+      expect(botaoVelocidade().textContent).toBe('1×')
+    })
+
+    it('ao vivo em 8×: um passo a cada 125 ms, mas a pausa de 3 s no passo mais novo não encurta', async () => {
+      await remontarComTimersFalsos()
+      for (let k = 0; k < 3; k++) await act(async () => botaoVelocidade().click()) // 8×
+      await act(async () => play().click())
+      expect(hora()).toBe(rotuloVivo(PASSOS[INICIO_JANELA]))
+      await avancar(17 * 125)
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+
+      await avancar(2_999, 1_000)
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+      await avancar(1)
+      expect(hora()).toBe(rotuloVivo(PASSOS[INICIO_JANELA]))
+      await avancar(125)
+      expect(hora()).toBe(rotuloVivo(PASSOS[INICIO_JANELA + 1]))
+    })
+
+    it('ao vivo: durante a pausa no passo mais novo já pede a imagem do início da janela', async () => {
+      await remontarComTimersFalsos()
+      await act(async () => botaoVelocidade().click()) // 2×
+      await act(async () => play().click())
+      await avancar(17 * 500, 500)
+      expect(hora()).toBe(rotuloVivo(ULTIMO))
+      expect(m.noRitmo.at(-1)).toBe(urlDe(INICIO_JANELA))
+    })
+
+    it('escondido, o play em 4× não anda e não pede imagem', async () => {
+      await prepararHoje(0, 4)
+      await act(async () => play().click())
+      await act(async () => vi.advanceTimersByTime(250))
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+      await act(async () => {
+        tamanho(0, 0)
+        window.dispatchEvent(new Event('resize'))
+      })
+      m.noRitmo.length = 0
+      await avancar(5_000, 250)
+      expect(hora()).toContain(horaDe(PASSOS[1]))
+      expect(m.noRitmo).toEqual([])
     })
   })
 })

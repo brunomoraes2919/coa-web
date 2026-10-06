@@ -20,17 +20,22 @@ import type { LimiteFazenda } from '../logic/limites'
 import { COR_NIVEL, nivelCintilacao, ROTULO_NIVEL } from '../logic/niveis'
 import {
   diaDentroDoMapa,
+  ESPERA_MAXIMA_IMAGEM_MS,
   inicioDaJanelaAoVivo,
+  intervaloDoPlay,
   passosDoDia,
   passosDoDiaPassado,
   PAUSA_NO_ULTIMO_MS,
+  proximaVelocidade,
   proximoPassoAoVivo,
+  proximoPassoDoDia,
+  type Velocidade,
 } from '../logic/passosMapa'
 import { dataCurta, horaDe } from '../logic/tempo'
 import CamadaIonosfera from '../mapa/CamadaIonosfera'
 import ControleFundo from '../mapa/ControleFundo'
 import { FUNDOS, gravarFundo, lerFundo, type ChaveFundo } from '../mapa/fundos'
-import { precarregarIonosfera } from '../mapa/imagemIonosfera'
+import { carregarIonosferaNoRitmo, precarregarIonosfera } from '../mapa/imagemIonosfera'
 import { guardarMemoriaDoMapa, lerMemoriaDoMapa, type MemoriaDoMapa } from '../mapa/memoriaDoMapa'
 import TileLayerEsri from '../mapa/TileLayerEsri'
 import { useLimitesFazendas } from '../mapa/useLimitesFazendas'
@@ -45,8 +50,6 @@ const CAMADAS: { id: Camada; rotulo: string }[] = [
   { id: 'tec', rotulo: 'TEC' },
   { id: 'sci', rotulo: 'Cintilação' },
 ]
-/** Um passo por segundo (no laço do ao vivo também): dá tempo de a imagem chegar e segura o ritmo dos pedidos. */
-const INTERVALO_PLAY_MS = 1000
 const PRECARREGAR = 3
 /** Arrastar a barra passa por dezenas de passos: só pede a imagem do horário em que ela parou. */
 const ESPERA_IMAGEM_MS = 250
@@ -153,7 +156,14 @@ export default function MapaPage() {
     const lembrada = lerMemoriaDoMapa()
     const dia = diaDentroDoMapa(lembrada.dia, agora)
     const aoVivo = lembrada.dia != null ? dia == null : lembrada.aoVivo
-    return { agora, camada: lembrada.camada, dia, aoVivo, escolhido: aoVivo || dia !== lembrada.dia ? null : lembrada.escolhido }
+    return {
+      agora,
+      camada: lembrada.camada,
+      dia,
+      aoVivo,
+      escolhido: aoVivo || dia !== lembrada.dia ? null : lembrada.escolhido,
+      velocidade: lembrada.velocidade,
+    }
   })
   const [camada, setCamada] = useState<Camada>(inicio.camada)
   const [fundo, setFundo] = useState<ChaveFundo>(() => lerFundo())
@@ -172,6 +182,9 @@ export default function MapaPage() {
   /** Passo escolhido à mão (ou onde o laço está); `null` = o último. */
   const [escolhido, setEscolhido] = useState<number | null>(inicio.escolhido)
   const [tocando, setTocando] = useState(false)
+  const [velocidade, setVelocidade] = useState<Velocidade>(inicio.velocidade)
+  /** O laço do play lê a velocidade no começo de cada passo: trocar com o play tocando vale a partir do seguinte. */
+  const velocidadeDoPlay = useRef<Velocidade>(inicio.velocidade)
   const ultimo = passos.length - 1
   // Ao vivo parado acompanha o passo mais novo; só o laço (play) anda por `escolhido`.
   const indice = (aoVivo && !tocando) || escolhido == null ? ultimo : Math.min(escolhido, ultimo)
@@ -190,26 +203,45 @@ export default function MapaPage() {
 
   // Escondido (outra categoria do COA WEB) o play para: ninguém está vendo, e cada passo é um pedido.
   const tocandoDeFato = tocando && visivel
+  /* O play é um laço de um passo por vez. No passo `indice` calcula o próximo (dia normal: o seguinte, e
+     depois do último o primeiro; ao vivo: o do laço das últimas 3 h) e só avança quando duas coisas
+     terminam: a espera do passo (a base dividida pela velocidade; no passo mais novo do ao vivo, a pausa
+     cheia, que não encurta) e a imagem do próximo passo, para a velocidade alta não correr à frente das
+     imagens. A espera pela imagem tem teto: passado ele avança assim mesmo. Cada passo reagenda o seguinte,
+     e no ao vivo a janela desliza sozinha quando sai um passo novo. */
+  const total = passos.length
+  // `passos` ganha outra lista a cada minuto: só o tamanho reinicia a espera (o conteúdo depende só dele).
   useEffect(() => {
-    if (!tocandoDeFato || aoVivo) return
-    const t = window.setInterval(() => {
-      setEscolhido((v) => {
-        const i = v ?? passos.length - 1
-        return i >= passos.length - 1 ? 0 : i + 1
-      })
-    }, INTERVALO_PLAY_MS)
-    return () => window.clearInterval(t)
-  }, [tocandoDeFato, aoVivo, passos.length])
-
-  /* Ao vivo, o play é um laço das últimas 3 h: um passo por segundo até o mais novo, onde segura
-     alguns segundos antes de recomeçar. Cada passo reagenda o próximo, e a janela desliza sozinha
-     quando sai um passo novo. */
-  useEffect(() => {
-    if (!tocandoDeFato || !aoVivo) return
-    const { indice: proximo, segurar } = proximoPassoAoVivo(passos.length, indice)
-    const t = window.setTimeout(() => setEscolhido(proximo), segurar ? PAUSA_NO_ULTIMO_MS : INTERVALO_PLAY_MS)
-    return () => window.clearTimeout(t)
-  }, [tocandoDeFato, aoVivo, indice, passos.length])
+    if (!tocandoDeFato) return
+    const { indice: proximo, segurar } = aoVivo
+      ? proximoPassoAoVivo(total, indice)
+      : { indice: proximoPassoDoDia(total, indice), segurar: false }
+    let cancelado = false
+    let esperaVenceu = false
+    let imagemPronta = camada === 'off'
+    const avancar = () => {
+      if (!cancelado && esperaVenceu && imagemPronta) setEscolhido(proximo)
+    }
+    const timers = [
+      window.setTimeout(() => {
+        esperaVenceu = true
+        avancar()
+      }, segurar ? PAUSA_NO_ULTIMO_MS : intervaloDoPlay(velocidadeDoPlay.current)),
+    ]
+    if (camada !== 'off') {
+      const liberar = () => {
+        imagemPronta = true
+        avancar()
+      }
+      timers.push(window.setTimeout(liberar, ESPERA_MAXIMA_IMAGEM_MS))
+      // Falha também libera: o passo aparece e marca "imagem indisponível".
+      carregarIonosferaNoRitmo(camada, passos[proximo]).then(liberar, liberar)
+    }
+    return () => {
+      cancelado = true
+      for (const t of timers) window.clearTimeout(t)
+    }
+  }, [tocandoDeFato, aoVivo, indice, total, camada])
 
   // Escondido, o laço ao vivo larga o passo em que estava: ao voltar mostra o mais novo e segue dali.
   useEffect(() => {
@@ -271,6 +303,12 @@ export default function MapaPage() {
       setEscolhido(0)
       guardarMemoriaDoMapa({ dia: modo, aoVivo: false, escolhido: 0 })
     }
+  }
+  const mudarVelocidade = () => {
+    const proxima = proximaVelocidade(velocidade)
+    velocidadeDoPlay.current = proxima
+    setVelocidade(proxima)
+    guardarMemoriaDoMapa({ velocidade: proxima })
   }
   const alternarPlay = () => {
     if (!tocando) {
@@ -389,11 +427,13 @@ export default function MapaPage() {
           passos={passos}
           indice={indice}
           tocando={tocando}
+          velocidade={velocidade}
           comData={dia != null}
           aoVivo={aoVivo}
           indisponivel={camada !== 'off' && falhas.has(`${camada}:${passo}`)}
           aoMudar={escolherPasso}
           aoAlternar={alternarPlay}
+          aoMudarVelocidade={mudarVelocidade}
         />
       </div>
     </div>

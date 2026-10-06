@@ -5,11 +5,16 @@ import {
   diasDoMapa,
   FOLGA_ULTIMO_PASSO_MS,
   inicioDaJanelaAoVivo,
+  INTERVALO_PLAY_MS,
+  intervaloDoPlay,
   passosDoDia,
   passosDoDiaPassado,
   PASSOS_AO_VIVO,
   PAUSA_NO_ULTIMO_MS,
+  proximaVelocidade,
   proximoPassoAoVivo,
+  proximoPassoDoDia,
+  VELOCIDADES,
 } from './passosMapa'
 import { inicioDoDiaLocal, PASSO_MS, passoAnterior } from './tempo'
 
@@ -118,5 +123,51 @@ describe('laço do ao vivo (as últimas 3 h)', () => {
     expect(Math.min(...vistos)).toBe(82)
     expect(Math.max(...vistos)).toBe(99)
     expect(vistos.slice(0, 19)).toEqual([...Array.from({ length: 18 }, (_, k) => 82 + k), 82])
+  })
+})
+
+describe('velocidade do play', () => {
+  it('as velocidades são 1×, 2×, 4× e 8×; a base é um passo por segundo', () => {
+    expect([...VELOCIDADES]).toEqual([1, 2, 4, 8])
+    expect(INTERVALO_PLAY_MS).toBe(1000)
+  })
+
+  it('proximaVelocidade: 1 → 2 → 4 → 8 → volta a 1', () => {
+    expect(proximaVelocidade(1)).toBe(2)
+    expect(proximaVelocidade(2)).toBe(4)
+    expect(proximaVelocidade(4)).toBe(8)
+    expect(proximaVelocidade(8)).toBe(1)
+  })
+
+  it('proximaVelocidade: valor desconhecido volta a 1', () => {
+    expect(proximaVelocidade(3 as never)).toBe(1)
+    expect(proximaVelocidade(Number.NaN as never)).toBe(1)
+  })
+
+  it('intervaloDoPlay: 1000 ms divididos pela velocidade', () => {
+    expect(intervaloDoPlay(1)).toBe(1000)
+    expect(intervaloDoPlay(2)).toBe(500)
+    expect(intervaloDoPlay(4)).toBe(250)
+    expect(intervaloDoPlay(8)).toBe(125)
+  })
+})
+
+describe('proximoPassoDoDia', () => {
+  it('avança um passo', () => {
+    expect(proximoPassoDoDia(144, 0)).toBe(1)
+    expect(proximoPassoDoDia(144, 142)).toBe(143)
+  })
+
+  it('depois do último, volta ao primeiro', () => {
+    expect(proximoPassoDoDia(144, 143)).toBe(0)
+    expect(proximoPassoDoDia(10, 9)).toBe(0)
+  })
+
+  it('índice além do último (a lista encolheu) também volta ao primeiro', () => {
+    expect(proximoPassoDoDia(10, 40)).toBe(0)
+  })
+
+  it('um passo só: fica nele', () => {
+    expect(proximoPassoDoDia(1, 0)).toBe(0)
   })
 })

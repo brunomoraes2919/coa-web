@@ -153,6 +153,8 @@
 .gnss-legenda-rotulos { display: flex; flex-direction: column; justify-content: space-between; color: var(--tinta-2); }
 .gnss-barra-horario { display: flex; align-items: center; gap: 12px; }
 .gnss-barra-horario input[type='range'] { flex: 1; accent-color: var(--verde); }
+/* Largura fixa: a barra não pula quando o texto vai de 1× a 8×. */
+.gnss-velocidade { min-width: 44px; padding-left: 8px; padding-right: 8px; font-variant-numeric: tabular-nums; font-weight: 600; }
 .gnss-barra-hora { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 5ch; }
 .gnss-barra-hora small { font-weight: 400; color: var(--erro); }
 

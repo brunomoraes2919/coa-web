@@ -61,7 +61,44 @@ export function precarregarIonosfera(camada: CamadaTrimble, instante: number): v
   carregarIonosfera(camada, instante).catch(() => {})
 }
 
+/** Pedido novo para a Trimble só a cada tanto: a rajada de pedidos é bloqueada (e derruba os dados de todos). */
+export const INTERVALO_MINIMO_PEDIDO_MS = 500
+/** Quando saiu (ou vai sair) o último pedido novo disparado pelo play. */
+let ultimoPedidoNovo = Number.NEGATIVE_INFINITY
+/** Pedidos do play que esperam a vez: o mesmo passo pedido de novo não ocupa outra vaga. */
+const agendados = new Map<string, { timer: ReturnType<typeof setTimeout>; pedido: Promise<HTMLCanvasElement> }>()
+
+/**
+ * Como `carregarIonosfera`, para o play: imagem já no cache vem na hora; imagem nova só sai
+ * quando já passaram `INTERVALO_MINIMO_PEDIDO_MS` do pedido novo anterior, em qualquer velocidade.
+ * Falha de um pedido não segura o seguinte (a vaga é reservada ao pedir, não ao terminar).
+ */
+export function carregarIonosferaNoRitmo(camada: CamadaTrimble, instante: number): Promise<HTMLCanvasElement> {
+  const url = urlOverlay(camada, instante)
+  if (cache.has(url)) return carregarIonosfera(camada, instante)
+  const esperando = agendados.get(url)
+  if (esperando) return esperando.pedido
+
+  const agora = Date.now()
+  const saida = Math.max(agora, ultimoPedidoNovo + INTERVALO_MINIMO_PEDIDO_MS)
+  ultimoPedidoNovo = saida
+  if (saida <= agora) return carregarIonosfera(camada, instante)
+
+  let timer!: ReturnType<typeof setTimeout>
+  const pedido = new Promise<HTMLCanvasElement>((resolve, reject) => {
+    timer = setTimeout(() => {
+      agendados.delete(url)
+      carregarIonosfera(camada, instante).then(resolve, reject)
+    }, saida - agora)
+  })
+  agendados.set(url, { timer, pedido })
+  return pedido
+}
+
 /** Só para testes. */
 export function limparCacheIonosfera(): void {
   cache.clear()
+  for (const { timer } of agendados.values()) clearTimeout(timer)
+  agendados.clear()
+  ultimoPedidoNovo = Number.NEGATIVE_INFINITY
 }
