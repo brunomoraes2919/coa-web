@@ -792,6 +792,8 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 }
 /* ---------- categoria VALIDAÇÃO PIMS: módulo num iframe (validacao/index.html?embed=1) ---------- */
 .app.modo-validacao{min-height:0;}
+/* um seletor de fazenda só: vale o do cabeçalho do módulo (tem "Todas as fazendas" e as unidades que só existem no PIMS) */
+.app.modo-validacao .sb-fazenda-select{display:none;}
 .app.modo-validacao main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
 .app.modo-validacao .topbar{flex:none;margin-bottom:0;}
 .app.modo-validacao .page[data-page="validacao"].active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin:0 -34px -60px;}
