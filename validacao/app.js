@@ -189,7 +189,7 @@
 
   function cartaoCoordenador(g, hoje) {
     const selos = [
-      g.atraso ? '<span class="selo atraso">' + g.atraso + (g.atraso === 1 ? ' atrasada' : ' atrasadas') + '</span>' : '',
+      g.atraso ? '<span class="selo atraso">' + g.atraso + ' em alerta' + '</span>' : '',
       g.atencao ? '<span class="selo atencao">' + g.atencao + ' em atenção</span>' : '',
       g.ok ? '<span class="selo ok">' + g.ok + ' no prazo</span>' : '',
       g.excedidas ? '<span class="selo alerta">' + g.excedidas + (g.excedidas === 1 ? ' com área excedida' : ' com área excedida') + '</span>' : '',
@@ -210,7 +210,7 @@
       cartaoResumo('Ordens abertas', t.ordens, '', t.coordenadores === 1 ? '1 coordenador' : t.coordenadores + ' coordenadores') +
       cartaoResumo('No prazo', t.ok, 'ok', 'até 2 dias em aberto') +
       cartaoResumo('Atenção', t.atencao, 'atencao', 'de 3 a 5 dias em aberto') +
-      cartaoResumo('Atrasadas', t.atraso, 'atraso', 'mais de 5 dias em aberto') +
+      cartaoResumo('Em alerta', t.atraso, 'atraso', 'mais de 5 dias em aberto') +
       cartaoResumo('Área excedida', t.excedidas, t.excedidas ? 'alerta' : '', 'apontado maior que o planejado');
     // as ordens abertas antes da safra atual ficam fora até o usuário pedir
     const semFiltroAntigas = L.abertasPorCoordenador(linhas, hoje, Object.assign({}, filtro(), { antigas: false }));

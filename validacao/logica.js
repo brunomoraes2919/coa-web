@@ -66,13 +66,13 @@
     };
   }
 
-  /** "faltam 3 dias" / "vence hoje" / "2 dias de atraso". */
+  /** "faltam 3 dias" / "vence hoje" / "2 dias acima do prazo" (alerta, sem chamar de atraso). */
   function textoFalta(falta) {
     if (falta === null || falta === undefined) return 'sem data de abertura';
     if (falta > 1) return 'faltam ' + falta + ' dias';
     if (falta === 1) return 'falta 1 dia';
     if (falta === 0) return 'vence hoje';
-    return falta === -1 ? '1 dia de atraso' : (-falta) + ' dias de atraso';
+    return falta === -1 ? '1 dia acima do prazo' : (-falta) + ' dias acima do prazo';
   }
   /** "hoje" / "1 dia" / "12 dias". */
   function textoDias(dias) {

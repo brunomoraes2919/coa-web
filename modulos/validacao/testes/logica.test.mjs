@@ -36,8 +36,8 @@ test('ordem aberta: falta = 5 − dias em aberto e os textos acompanham', () => 
   assert.equal(L.textoFalta(3), 'faltam 3 dias');
   assert.equal(L.textoFalta(1), 'falta 1 dia');
   assert.equal(L.textoFalta(0), 'vence hoje');
-  assert.equal(L.textoFalta(-1), '1 dia de atraso');
-  assert.equal(L.textoFalta(-4), '4 dias de atraso');
+  assert.equal(L.textoFalta(-1), '1 dia acima do prazo');
+  assert.equal(L.textoFalta(-4), '4 dias acima do prazo');
 });
 
 test('área apontada maior que a planejada: a realizar negativa e alerta', () => {
