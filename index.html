@@ -120,10 +120,17 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 /* curvas de nível ao fundo: o produto é feito de mapas de fazenda */
 .login-contornos{position:absolute;right:-26%;bottom:-20%;width:clamp(640px,56vw,1180px);height:auto;opacity:.9;pointer-events:none;}
 .login-contornos path{fill:none;stroke:rgba(255,255,255,.07);stroke-width:1.2;
-  stroke-dasharray:1500;stroke-dashoffset:1500;animation:login-tracar 3.2s cubic-bezier(.3,.6,.3,1) forwards;animation-delay:calc(var(--i) * .22s);}
+  stroke-dasharray:1;stroke-dashoffset:1;animation:login-tracar 26s linear infinite;animation-delay:calc(var(--i) * 1.5s);}
 .login-contornos path.forte{stroke:rgba(240,178,74,.3);}
-@keyframes login-tracar{to{stroke-dashoffset:0;}}
-@media (prefers-reduced-motion: reduce){ .login-contornos path{stroke-dashoffset:0;} }
+/* em laço, devagar: cada curva se desenha, fica um tempo e se desfaz pelo começo, uma depois da outra
+   (pathLength="1" no SVG: o traço vai de 1 a -1 seja qual for o comprimento da curva) */
+@keyframes login-tracar{
+  0%{stroke-dashoffset:1;animation-timing-function:cubic-bezier(.4,0,.3,1);}
+  40%{stroke-dashoffset:0;animation-timing-function:linear;}
+  62%{stroke-dashoffset:0;animation-timing-function:cubic-bezier(.6,0,.6,1);}
+  100%{stroke-dashoffset:-1;}
+}
+@media (prefers-reduced-motion: reduce){ .login-contornos path{stroke-dashoffset:0;animation:none;} }
 .login-form{display:flex;align-items:center;justify-content:center;padding:40px 24px;}
 .login-card{width:360px;max-width:100%;background:var(--fundo-card);border:1px solid var(--linha);border-radius:12px;padding:32px 32px 28px;box-shadow:var(--sombra);}
 .login-card h2{margin:0 0 4px;font-size:22px;letter-spacing:-.01em;color:var(--verde-escuro);}
@@ -794,14 +801,14 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     </div>
     <div class="login-rodape">Acesso restrito a usuários cadastrados pelo administrador.</div>
     <svg class="login-contornos" viewBox="0 0 640 640" aria-hidden="true">
-      <path style="--i:0" d="M40 600c60-120 40-230 150-290s260-20 330-130 60-200 120-250"/>
-      <path style="--i:1" d="M90 620c60-110 50-210 150-262s240-30 310-130 70-190 130-240"/>
-      <path style="--i:2" class="forte" d="M140 640c60-100 60-190 150-234s220-40 290-130 80-180 140-230"/>
-      <path style="--i:3" d="M190 660c60-90 70-170 150-206s200-50 270-130 90-170 150-220"/>
-      <path style="--i:4" d="M240 680c60-80 80-150 150-178s180-60 250-130 100-160 160-210"/>
-      <path style="--i:5" d="M290 700c60-70 90-130 150-150s160-70 230-130 110-150 170-200"/>
-      <path style="--i:6" d="M340 720c60-60 100-110 150-122s140-80 210-130 120-140 180-190"/>
-      <path style="--i:7" d="M390 740c60-50 110-90 150-94s120-90 190-130 130-130 190-180"/>
+      <path pathLength="1" style="--i:0" d="M40 600c60-120 40-230 150-290s260-20 330-130 60-200 120-250"/>
+      <path pathLength="1" style="--i:1" d="M90 620c60-110 50-210 150-262s240-30 310-130 70-190 130-240"/>
+      <path pathLength="1" style="--i:2" class="forte" d="M140 640c60-100 60-190 150-234s220-40 290-130 80-180 140-230"/>
+      <path pathLength="1" style="--i:3" d="M190 660c60-90 70-170 150-206s200-50 270-130 90-170 150-220"/>
+      <path pathLength="1" style="--i:4" d="M240 680c60-80 80-150 150-178s180-60 250-130 100-160 160-210"/>
+      <path pathLength="1" style="--i:5" d="M290 700c60-70 90-130 150-150s160-70 230-130 110-150 170-200"/>
+      <path pathLength="1" style="--i:6" d="M340 720c60-60 100-110 150-122s140-80 210-130 120-140 180-190"/>
+      <path pathLength="1" style="--i:7" d="M390 740c60-50 110-90 150-94s120-90 190-130 130-130 190-180"/>
     </svg>
   </aside>
   <section class="login-form">
