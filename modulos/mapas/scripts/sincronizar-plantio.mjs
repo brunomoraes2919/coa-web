@@ -1200,11 +1200,14 @@ WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '${d}'
 ORDER BY 1, 2, 7`;
 }
 
-/** Aplicações desde `desdeDia` em que a dose real fugiu da programada além da tolerância. */
+/**
+ * Aplicações desde `desdeDia` em que a dose real fugiu da programada além da tolerância, com a Observação do boletim
+ * (APAPLINSUMO.DE_OBSERVACAO): é nela que o coordenador justifica, no PIMS, a variação que aconteceu de verdade.
+ */
 export function montarSqlDoseValidacao(desdeDia) {
   const d = String(desdeDia).replace(/[^0-9-]/g, '');
   return `SELECT u.DE_UNI_ADM AS unidade, a.NO_BOLETIM AS boletim, CONVERT(varchar(10), a.DT_OPERACAO, 23) AS dia, os.NO_BOLETIM AS os, COALESCE(eo.DE_EQUIPE, ea.DE_EQUIPE) AS equipe,
-  up.CD_UPNIVEL3 AS talhao, i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, l.QT_DOSE_PROG AS prog, l.QT_DOSE_REAL AS dose_real, l.QT_AREA_EXEC AS ha, l.QT_CONS_TOTAL AS total
+  up.CD_UPNIVEL3 AS talhao, i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, l.QT_DOSE_PROG AS prog, l.QT_DOSE_REAL AS dose_real, l.QT_AREA_EXEC AS ha, l.QT_CONS_TOTAL AS total, a.DE_OBSERVACAO AS obs
 FROM ${PIMS}APAPLINSUMO a
 JOIN ${PIMS}APAPLINS_INSLC l ON l.ID_APAPLINSUMO = a.ID_APAPLINSUMO
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = a.ID_UNIDADEADM
@@ -1217,19 +1220,40 @@ WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.
 ORDER BY 1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8`;
 }
 
-/** Boletins que vieram do coletor (celular) e ainda estão na área de espera do PIMS, com a mensagem de validação. */
+/**
+ * Boletins que já estão no PIMS, na tela de validação, aguardando a importação (tabelas *_TMP), com a mensagem que o
+ * PIMS registrou e o que a conferência precisa para prever o erro da importação: a ordem (se existe, se está aberta,
+ * as datas), o planejado e o já apontado no talhão, e se o número do boletim já existe entre os apontamentos.
+ */
 export function montarSqlColetorValidacao(desde) {
   const d = String(desde).replace(/[^0-9-]/g, '');
-  const parte = (tipo, tabela, os, operacao) => `SELECT u.DE_UNI_ADM AS unidade, '${tipo}' AS tipo, t.NO_BOLETIM AS boletim, CONVERT(varchar(10), t.DT_OPERACAO, 23) AS dia, ${os} AS os, t.DE_EQUIPE AS equipe,
-  ${operacao} AS operacao_de, t.FG_STATUS AS st, t.DE_MENSAGEM AS msg, CONVERT(varchar(16), t.LAST_UPDATE, 120) AS lancado, t.CHANGED_BY_MOBIL AS por
-FROM ${PIMS}${tabela} t JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = t.ID_UNIDADEADM WHERE t.DT_OPERACAO >= '${d}'`;
-  return `${parte('I', 'APAPLINSUMO_TMP', 'CONVERT(varchar(20), t.NO_APORDSERVICO)', 't.DE_OPERACAO')}
+  // `final` = tabela onde o boletim cai depois de importado; `area` = a coluna de hectares do boletim e da tabela final
+  const parte = (tipo, tabela, final, area) => {
+    const comOrdem = tipo !== 'M';
+    const comTalhao = Boolean(area);
+    const os = comOrdem ? `LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = COALESCE(t.ID_APORDSERVICO,
+    (SELECT MAX(o2.ID_APORDSERVICO) FROM ${PIMS}APORDSERVICO o2 WHERE o2.ID_UNIDADEADM = t.ID_UNIDADEADM AND o2.NO_BOLETIM = t.NO_APORDSERVICO))
+LEFT JOIN ${PIMS}EQUIPE eo ON eo.ID_EQUIPE = os.ID_EQUIPE` : '';
+    return `SELECT u.DE_UNI_ADM AS unidade, '${tipo}' AS tipo, t.NO_BOLETIM AS boletim, CONVERT(varchar(10), t.DT_OPERACAO, 23) AS dia,
+  ${comOrdem ? 'CONVERT(varchar(20), t.NO_APORDSERVICO)' : 'NULL'} AS os, ${comOrdem ? 'COALESCE(eo.DE_EQUIPE, t.DE_EQUIPE)' : 't.DE_EQUIPE'} AS equipe, ${comOrdem ? 't.DE_OPERACAO' : 'NULL'} AS operacao_de,
+  t.FG_STATUS AS st, t.DE_MENSAGEM AS msg, CONVERT(varchar(16), t.LAST_UPDATE, 120) AS lancado, t.CHANGED_BY_MOBIL AS por,
+  ${comTalhao ? 't.CD_UPNIVEL3' : 'NULL'} AS talhao, ${comTalhao ? `t.${area}` : 'NULL'} AS ha,
+  ${comOrdem ? 'os.FG_SITUACAO' : 'NULL'} AS os_sit, ${comOrdem ? 'CONVERT(varchar(10), os.DT_ABERTURA, 23)' : 'NULL'} AS os_ab, ${comOrdem ? 'CONVERT(varchar(10), os.DT_ENCERRA, 23)' : 'NULL'} AS os_enc,
+  ${comTalhao ? `(SELECT SUM(lc.QT_AREA) FROM ${PIMS}APORDSERVICO_LC lc WHERE lc.ID_APORDSERVICO = os.ID_APORDSERVICO AND lc.ID_UPNIVEL3 = t.ID_UPNIVEL3)` : 'NULL'} AS plan_talhao,
+  ${comTalhao ? `(SELECT SUM(f.${area}) FROM ${PIMS}${final} f WHERE f.ID_APORDSERVICO = os.ID_APORDSERVICO AND f.ID_UPNIVEL3 = t.ID_UPNIVEL3)` : 'NULL'} AS exec_talhao,
+  (SELECT COUNT(*) FROM ${PIMS}${final} f WHERE f.NO_BOLETIM = t.NO_BOLETIM AND f.ID_UNIDADEADM = t.ID_UNIDADEADM) AS ja_no_pims
+FROM ${PIMS}${tabela} t
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = t.ID_UNIDADEADM
+${os}
+WHERE t.DT_OPERACAO >= '${d}'`;
+  };
+  return `${parte('I', 'APAPLINSUMO_TMP', 'APAPLINSUMO', null)}
 UNION ALL
-${parte('P', 'APPLANTIO_TMP', 'CONVERT(varchar(20), t.NO_APORDSERVICO)', 't.DE_OPERACAO')}
+${parte('P', 'APPLANTIO_TMP', 'APPLANTIO', 'QT_AREA')}
 UNION ALL
-${parte('A', 'APATIVPROD_TMP', 'CONVERT(varchar(20), t.NO_APORDSERVICO)', 't.DE_OPERACAO')}
+${parte('A', 'APATIVPROD_TMP', 'APATIVPROD', 'QT_AREA_EXEC')}
 UNION ALL
-${parte('M', 'APATIVMEC_TMP', 'NULL', 'NULL')}
+${parte('M', 'APATIVMEC_TMP', 'APATIVMEC', null)}
 ORDER BY 1, 4 DESC, 3`;
 }
 
@@ -1240,8 +1264,9 @@ const numOuNulo = (v) => (v === null || v === undefined || v === '' ? null : Num
  *   ap   [{ os, s, ab, enc, eq, opn, t tipo, b boletim, d dia, tl talhão, ha, la lançado, por, it itens (insumo),
  *           pt planejado do talhão na ordem (null = fora da ordem), xt total apontado no talhão }]
  *   nec  [{ os, eq, ab, opn, c item, nm, pl planejado, co consumido }]
- *   dose [{ b, d, os, eq, tl, c, nm, pg programada, re real, ha, q total }]
- *   col  [{ t, b, d, os, eq, opn, st, m mensagem, la, por }]
+ *   dose [{ b, d, os, eq, tl, c, nm, pg programada, re real, ha, q total, ju justificativa (Observação do boletim) }]
+ *   col  [{ t, b, d, os, eq, opn, st, m mensagem do PIMS, la, por, tl talhão, ha, oss situação da ordem (null = não existe),
+ *           oab/oenc abertura e encerramento da ordem, pt planejado no talhão (null = fora da ordem), xt já apontado, dup 1 = nº já usado }]
  */
 export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], coletor = [] }) {
   const porUnidade = new Map();
@@ -1269,12 +1294,24 @@ export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], c
   for (const r of dose) {
     const x = de(r.unidade);
     if (!x) continue;
-    x.dose.push({ b: numOuNulo(r.boletim), d: txt(r.dia), os: numOuNulo(r.os), eq: txt(r.equipe), tl: txt(r.talhao), c: txt(r.item), nm: txt(r.nome) ?? '', pg: arred(r.prog, 4), re: arred(r.dose_real, 4), ha: arred(r.ha), q: arred(r.total, 3) });
+    const linhaDose = { b: numOuNulo(r.boletim), d: txt(r.dia), os: numOuNulo(r.os), eq: txt(r.equipe), tl: txt(r.talhao), c: txt(r.item), nm: txt(r.nome) ?? '', pg: arred(r.prog, 4), re: arred(r.dose_real, 4), ha: arred(r.ha), q: arred(r.total, 3) };
+    const justificativa = txt(r.obs);
+    if (justificativa) linhaDose.ju = justificativa.replace(/\s+/g, ' ').slice(0, 300);
+    x.dose.push(linhaDose);
   }
   for (const r of coletor) {
     const x = de(r.unidade);
     if (!x) continue;
-    x.col.push({ t: txt(r.tipo), b: numOuNulo(r.boletim), d: txt(r.dia), os: txt(r.os), eq: txt(r.equipe), opn: txt(r.operacao_de) ?? '', st: txt(r.st), m: (txt(r.msg) ?? '').slice(0, 600), la: txt(r.lancado), por: txt(r.por) });
+    const c = { t: txt(r.tipo), b: numOuNulo(r.boletim), d: txt(r.dia), os: txt(r.os), eq: txt(r.equipe), opn: txt(r.operacao_de) ?? '', st: txt(r.st), m: (txt(r.msg) ?? '').slice(0, 600), la: txt(r.lancado), por: txt(r.por) };
+    if (txt(r.talhao)) { c.tl = txt(r.talhao); c.ha = arred(r.ha); }
+    if (c.os) {
+      c.oss = txt(r.os_sit);
+      c.oab = txt(r.os_ab);
+      c.oenc = txt(r.os_enc);
+      if (c.tl) { c.pt = r.plan_talhao === null || r.plan_talhao === undefined ? null : arred(r.plan_talhao); c.xt = arred(r.exec_talhao); }
+    }
+    if (Number(r.ja_no_pims) > 0) c.dup = 1;
+    x.col.push(c);
   }
   return Object.fromEntries(porUnidade);
 }
@@ -1340,7 +1377,7 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
     const apontRecentes = await paginar((pular) => montarSqlApontamentosRecentes(diaAnterior(agora, VALID_DIAS_APONT - 1), pular), 'apontamentos feitos ou lançados nos últimos dias (validação)', 'apontamentos recentes');
     const necessidade = objetosDe(await cliente.consultar(montarSqlNecessidadeValidacao(desde), 'produtos planejados e já consumidos nas ordens abertas (validação)', 'necessidade das ordens'));
     const dose = objetosDe(await cliente.consultar(montarSqlDoseValidacao(diaAnterior(agora, VALID_DIAS_DOSE)), 'aplicações com dose real fora da programada (validação)', 'dose real x programada'));
-    const coletor = objetosDe(await cliente.consultar(montarSqlColetorValidacao(desde), 'boletins do coletor que não entraram no PIMS (validação)', 'coletor'));
+    const coletor = objetosDe(await cliente.consultar(montarSqlColetorValidacao(desde), 'boletins na tela de validação do PIMS, aguardando a importação (validação)', 'boletins em validação'));
 
     const avisos = [];
     const depositosSap = {};

@@ -85,11 +85,13 @@ function dadosFicticios() {
           ],
           dose: [
             { b: 900020, d: dia(2), os: 103, eq: 'COORDENADOR UM', tl: 'T01', c: '000015', nm: 'DESSECANTE TESTE', pg: 1.5, re: 0.5, ha: 156, q: 78 },
-            { b: 900021, d: dia(1), os: 101, eq: 'COORDENADOR UM', tl: 'T02', c: '000002', nm: 'ADJUVANTE TESTE', pg: 0.03, re: 0.0385, ha: 260, q: 10 },
+            { b: 900021, d: dia(1), os: 101, eq: 'COORDENADOR UM', tl: 'T02', c: '000002', nm: 'ADJUVANTE TESTE', pg: 0.03, re: 0.0385, ha: 260, q: 10, ju: 'Dose superior: fechamento do tanque na última carga.' },
           ],
           col: [
-            { t: 'I', b: 5501, d: dia(3), os: '9999', eq: 'COORDENADOR UM', opn: 'APLIC HERBICIDA PRE-EME. AUTOP', st: 'I', m: 'Ordem de Serviço de Campo 9999 inexistente.\nDepósito 9099 inexistente.\n', la: `${dia(3)} 18:00`, por: 'coletor.teste' },
-            { t: 'A', b: 5502, d: dia(7), os: '104', eq: 'COORDENADOR DOIS', opn: 'ADUBACAO', st: null, m: '', la: `${dia(7)} 08:34`, por: 'coletor.teste' },
+            { t: 'I', b: 5501, d: dia(3), os: '9999', eq: 'COORDENADOR UM', opn: 'APLIC HERBICIDA PRE-EME. AUTOP', st: 'I', m: 'Ordem de Serviço de Campo 9999 inexistente.\nDepósito 9099 inexistente.\n', la: `${dia(3)} 18:00`, por: 'coletor.teste', oss: null, oab: null, oenc: null },
+            { t: 'A', b: 5502, d: dia(7), os: '80', eq: 'COORDENADOR UM', opn: 'ADUBACAO', st: null, m: '', la: `${dia(7)} 08:34`, por: 'coletor.teste', tl: 'T01', ha: 5, oss: 'F', oab: dia(9), oenc: dia(3), pt: 5, xt: 0 },
+            { t: 'P', b: 5503, d: dia(0), os: '104', eq: 'COORDENADOR DOIS', opn: 'PLANTIO DB', st: null, m: '', la: `${dia(0)} 19:15`, por: 'coletor.teste', tl: 'T01', ha: 68, oss: 'A', oab: dia(2), oenc: null, pt: 126, xt: 108 },
+            { t: 'P', b: 5504, d: dia(0), os: '104', eq: 'COORDENADOR DOIS', opn: 'PLANTIO DB', st: null, m: '', la: `${dia(0)} 19:16`, por: 'coletor.teste', tl: 'T02', ha: 10, oss: 'A', oab: dia(2), oenc: null, pt: 84, xt: 0 },
           ],
         },
         boletins: [

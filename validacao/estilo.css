@@ -235,7 +235,14 @@ tr[aria-expanded="true"] .seta { transform: rotate(45deg); border-color: var(--v
 .tabela .bom { color: var(--bom); }
 .confere .alerta-linha { display: block; color: var(--ruim); font-weight: 500; }
 .confere b + .alerta-linha { margin-top: 2px; font-weight: 400; }
+.confere .previsto-rotulo { display: block; margin-top: 6px; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--texto-fraco); }
+.confere .previsto-rotulo + .alerta-linha, .confere .previsto-rotulo ~ .alerta-linha { font-weight: 400; }
+.confere .bom { display: block; }
 .tabela-nec td.falta b { color: var(--ruim); }
+.tabela tr.justificada > td:first-child { box-shadow: inset 4px 0 0 var(--bom); }
+.tabela tr.justificada > td { background: #F4FAF6; }
+.tabela-doses tr.justificada .desvio b { color: var(--bom); }
+.tabela-doses .just { min-width: 150px; max-width: 280px; }
 .tabela-doses .desvio.mais b { color: var(--ruim); }
 .tabela-doses .desvio.menos b { color: var(--atencao); }
 .pronta { color: var(--bom); font-weight: 600; }
@@ -398,6 +405,8 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
   .tabela-cartoes thead { display: none; }
   .tabela-cartoes tr { display: block; padding: 12px 14px; border-bottom: 1px solid var(--linha-suave); }
   .tabela-cartoes tr.com-alerta { box-shadow: inset 3px 0 0 var(--ruim); }
+  .tabela-cartoes tr.justificada { box-shadow: inset 3px 0 0 var(--bom); background: #F4FAF6; }
+  .tabela-doses .just { max-width: none; }
   .tabela-cartoes td { display: flex; justify-content: space-between; gap: 14px; padding: 2px 0 !important; border: 0; box-shadow: none !important; text-align: right; font-size: 13px; }
   .tabela-cartoes td::before { content: attr(data-rotulo); flex: none; text-align: left; font-size: 11.5px; color: var(--texto-fraco); }
   .tabela-cartoes td small { display: block; }

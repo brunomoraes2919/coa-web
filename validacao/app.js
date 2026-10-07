@@ -458,8 +458,8 @@
       cartao('abertas', p.prontas, 'Ordens prontas para fechar', 'Toda a área planejada já foi apontada: é só encerrar no PIMS.', 'ok') +
       cartao('fechadas', p.fechadas, 'Fechadas com diferença', 'Encerradas faltando área ou com área a mais, no período.', 'atencao') +
       cartao('estoque', p.emFalta, 'Produtos em falta para as ordens', 'O que as ordens abertas ainda vão consumir não cabe no saldo do depósito do coordenador.', 'ruim') +
-      cartao('doses', p.doses, 'Doses fora do programado', 'Aplicações dos últimos 10 dias com a dose real mais de 10% diferente da receita.', 'atencao') +
-      cartao('coletor', p.coletor, 'Boletins do coletor travados', 'Vieram do celular e não entraram no PIMS.', 'atencao');
+      cartao('doses', p.doses, 'Doses fora do programado sem justificativa', 'Aplicações dos últimos 10 dias com a dose real mais de 10% diferente da receita e sem a Observação preenchida no boletim.', 'atencao') +
+      cartao('coletor', p.coletor, 'Boletins em validação com problema', 'Estão na tela de validação do PIMS com erro registrado ou previsto para a importação.', 'atencao');
   }
 
   /* ------------------------------ apontamentos do dia ------------------------------ */
@@ -514,31 +514,41 @@
   /* ------------------------------ dose real x programada ------------------------------ */
   function desenharDoses() {
     const lista = L.dosesFora(linhas, filtro());
-    $('explica-doses').innerHTML = 'Aplicações dos últimos 10 dias (dentro do período escolhido) em que a <b>dose real</b> lançada no boletim ficou mais de 10% diferente da <b>dose programada</b> na ordem. Costuma ser área ou quantidade digitada errada.';
+    const semJust = lista.filter((d) => !d.justificada).length;
+    $('explica-doses').innerHTML = 'Aplicações dos últimos 10 dias (dentro do período escolhido) em que a <b>dose real</b> lançada no boletim ficou mais de 10% diferente da <b>dose programada</b> na ordem. ' +
+      'Quando a variação aconteceu de verdade, o coordenador justifica no campo <b>Observação</b> do boletim no PIMS: essas ficam em verde. As demais costumam ser área ou quantidade digitada errada.' +
+      (lista.length ? ' <b>' + semJust + '</b> sem justificativa e <b>' + (lista.length - semJust) + '</b> justificada' + (lista.length - semJust === 1 ? '' : 's') + '.' : '');
     if (!lista.length) { $('tab-doses').innerHTML = '<p class="vazio">Nenhuma aplicação com a dose fora do programado neste período.</p>'; return; }
-    $('tab-doses').innerHTML = '<table class="tabela tabela-cartoes tabela-doses"><thead><tr><th>Produto</th><th>Boletim</th><th>Ordem e coordenador</th><th>Talhão</th><th class="n">Programada</th><th class="n">Real</th><th class="n">Desvio</th><th class="n">Área</th><th class="n">Consumo</th></tr></thead><tbody>' +
-      lista.map((d) => '<tr><td class="principal"><small>' + esc(d.c || '') + '</small> ' + esc(L.titulo(d.nm)) + '</td>' +
+    $('tab-doses').innerHTML = '<table class="tabela tabela-cartoes tabela-doses"><thead><tr><th>Produto</th><th>Boletim</th><th>Ordem e coordenador</th><th>Talhão</th><th class="n">Programada</th><th class="n">Real</th><th class="n">Desvio</th><th class="n">Área</th><th class="n">Consumo</th><th>Justificativa</th></tr></thead><tbody>' +
+      lista.map((d) => '<tr class="' + (d.justificada ? 'justificada' : 'com-alerta') + '"><td class="principal"><small>' + esc(d.c || '') + '</small> ' + esc(L.titulo(d.nm)) + '</td>' +
         '<td data-rotulo="Boletim"><b>' + esc(d.b) + '</b><small>' + fmtData(d.d) + '</small></td>' +
         '<td data-rotulo="Ordem">' + (d.os === null ? '<span class="fraco">sem ordem</span>' : 'OS <b>' + esc(d.os) + '</b>') + '<small>' + (d.eq ? esc(L.titulo(d.eq)) : '—') + (estado.unidade ? '' : ' · ' + esc(L.titulo(d.unidade))) + '</small></td>' +
         '<td data-rotulo="Talhão"><b>' + esc(d.tl || '—') + '</b></td>' +
         '<td class="n" data-rotulo="Programada">' + fmtQtd(d.pg) + '</td><td class="n" data-rotulo="Real">' + fmtQtd(d.re) + '</td>' +
         '<td class="n desvio ' + (d.desvio > 0 ? 'mais' : 'menos') + '" data-rotulo="Desvio"><b>' + (d.desvio > 0 ? '+' : '−') + Math.round(Math.abs(d.desvio) * 100) + '%</b></td>' +
-        '<td class="n" data-rotulo="Área">' + fmtHa(d.ha) + ' ha</td><td class="n" data-rotulo="Consumo">' + fmtQtd(d.q) + '</td></tr>').join('') +
+        '<td class="n" data-rotulo="Área">' + fmtHa(d.ha) + ' ha</td><td class="n" data-rotulo="Consumo">' + fmtQtd(d.q) + '</td>' +
+        '<td class="confere just" data-rotulo="Justificativa">' + (d.justificada ? '<span class="bom">' + esc(d.ju) + '</span>' : '<span class="alerta-linha">sem justificativa</span>') + '</td></tr>').join('') +
       '</tbody></table>';
   }
 
-  /* ------------------------------ boletins do coletor que não entraram ------------------------------ */
+  /* ------------------------------ boletins em validação no PIMS ------------------------------ */
   function desenharColetor() {
     const lista = L.coletorTravados(linhas, L.hojeIso(), { unidade: estado.unidade, equipe: estado.equipe });
-    $('explica-coletor').innerHTML = 'Boletins lançados no coletor (celular) desde ' + fmtData(L.inicioSafra(L.hojeIso())) + ' que ainda estão na área de espera do PIMS: não viraram apontamento. Os recusados trazem o motivo que o próprio PIMS registrou.';
-    if (!lista.length) { $('tab-coletor').innerHTML = '<p class="vazio">Nenhum boletim do coletor parado.</p>'; return; }
-    $('tab-coletor').innerHTML = '<table class="tabela tabela-cartoes tabela-coletor"><thead><tr><th>Boletim</th><th>Data</th><th>Ordem e coordenador</th><th>Situação</th><th>Parado</th><th>Lançado</th></tr></thead><tbody>' +
-      lista.map((c) => '<tr class="' + (c.recusado ? 'com-alerta' : '') + '"><td class="principal"><b>' + (c.b === null ? '—' : esc(c.b)) + '</b> <small>' + esc(c.tipo) + '</small></td>' +
+    $('explica-coletor').innerHTML = 'Boletins que <b>já estão no PIMS, na tela de validação</b>, aguardando a importação (lançados desde ' + fmtData(L.inicioSafra(L.hojeIso())) + '). ' +
+      'Enquanto não são importados, não contam como apontamento. A lista mostra o erro que o PIMS registrou, quando houve, e os <b>possíveis erros</b> que a conferência prevê para a importação.';
+    if (!lista.length) { $('tab-coletor').innerHTML = '<p class="vazio">Nenhum boletim na tela de validação do PIMS.</p>'; return; }
+    $('tab-coletor').innerHTML = '<table class="tabela tabela-cartoes tabela-coletor"><thead><tr><th>Boletim</th><th>Data</th><th>Ordem e coordenador</th><th>Talhão</th><th>Situação e possíveis erros</th><th>Parado</th><th>Última alteração</th></tr></thead><tbody>' +
+      lista.map((c) => '<tr class="' + (c.comProblema ? 'com-alerta' : '') + '"><td class="principal"><b>' + (c.b === null ? '—' : esc(c.b)) + '</b> <small>' + esc(c.tipo) + '</small></td>' +
         '<td data-rotulo="Data">' + fmtData(c.d) + '</td>' +
-        '<td data-rotulo="Ordem">' + (c.os ? 'OS <b>' + esc(c.os) + '</b>' : '<span class="fraco">sem ordem</span>') + '<small>' + (c.eq ? esc(L.titulo(c.eq)) : '—') + (estado.unidade ? '' : ' · ' + esc(L.titulo(c.unidade))) + (c.opn ? ' · ' + esc(L.titulo(c.opn)) : '') + '</small></td>' +
-        '<td class="confere" data-rotulo="Situação"><b>' + esc(c.situacao) + '</b>' + c.motivos.map((m) => '<span class="alerta-linha">' + esc(m) + '</span>').join('') + '</td>' +
+        '<td data-rotulo="Ordem">' + (c.os ? 'OS <b>' + esc(c.os) + '</b>' + (c.oss === 'F' ? ' <small class="fraco">(fechada)</small>' : '') : '<span class="fraco">sem ordem</span>') +
+          '<small>' + (c.eq ? esc(L.titulo(c.eq)) : '—') + (estado.unidade ? '' : ' · ' + esc(L.titulo(c.unidade))) + (c.opn ? ' · ' + esc(L.titulo(c.opn)) : '') + '</small></td>' +
+        '<td data-rotulo="Talhão">' + (c.tl ? '<b>' + esc(c.tl) + '</b><small>' + fmtHa(c.ha) + ' ha' + (c.pt !== null && c.pt !== undefined ? ' · ' + fmtHa(c.xt) + ' de ' + fmtHa(c.pt) + ' ha já apontados' : '') + '</small>' : '—') + '</td>' +
+        '<td class="confere" data-rotulo="Situação"><b>' + esc(c.situacao) + '</b>' +
+          c.motivos.map((m) => '<span class="alerta-linha">' + esc(m) + '</span>').join('') +
+          (c.previstos.length ? '<span class="previsto-rotulo">' + (c.previstos.length === 1 ? 'Possível erro na importação' : 'Possíveis erros na importação') + '</span>' + c.previstos.map((x) => '<span class="alerta-linha">' + esc(x.texto) + '</span>').join('')
+            : (c.recusado ? '' : '<span class="bom">nenhum erro previsto</span>')) + '</td>' +
         '<td data-rotulo="Parado">' + textoHa(c.dias) + '</td>' +
-        '<td data-rotulo="Lançado">' + (c.la ? fmtDataHora(c.la) : '—') + '<small>' + esc(c.por || '') + '</small></td></tr>').join('') +
+        '<td data-rotulo="Última alteração">' + (c.la ? fmtDataHora(c.la) : '—') + '<small>' + esc(c.por || '') + '</small></td></tr>').join('') +
       '</tbody></table>';
   }
 
@@ -653,8 +663,8 @@
     $('conta-boletins').textContent = bol.falhas.length + bol.vaoFalhar.length;
     $('conta-apontamentos').textContent = L.conferirApontamentos(linhas, { unidade: estado.unidade, equipe: estado.equipe, soAlertas: true }).length;
     $('conta-estoque').textContent = L.necessidadePorCoordenador(linhas, vinculos, filtro()).reduce((s, g) => s + g.emFalta, 0);
-    $('conta-doses').textContent = L.dosesFora(linhas, filtro()).length;
-    $('conta-coletor').textContent = L.coletorTravados(linhas, hoje, { unidade: estado.unidade, equipe: estado.equipe }).length;
+    $('conta-doses').textContent = L.dosesFora(linhas, filtro()).filter((d) => !d.justificada).length;
+    $('conta-coletor').textContent = L.coletorTravados(linhas, hoje, { unidade: estado.unidade, equipe: estado.equipe }).filter((c) => c.comProblema).length;
     if (estado.vista === 'pendencias') desenharPendencias();
     else if (estado.vista === 'abertas') desenharAbertas();
     else if (estado.vista === 'fechadas') desenharFechadas();

@@ -468,7 +468,11 @@
     return grupos;
   }
 
-  /** Aplicações com a dose real fora da programada: `desvio` = (real − programada) / programada. Maior desvio primeiro. */
+  /**
+   * Aplicações com a dose real fora da programada: `desvio` = (real − programada) / programada. `justificada` = o boletim
+   * tem a Observação preenchida no PIMS (`ju`): a variação aconteceu de verdade e o coordenador explicou. As sem
+   * justificativa primeiro, do maior desvio para o menor.
+   */
   function dosesFora(linhas, filtro) {
     const f = filtro || {};
     const saida = [];
@@ -478,30 +482,66 @@
         if (f.equipe && d.eq !== f.equipe) return;
         if (!noPeriodo(d.d, f)) return;
         const pg = Number(d.pg) || 0;
-        saida.push(Object.assign({}, d, { unidade: l.unidade, desvio: pg > 0 ? ((Number(d.re) || 0) - pg) / pg : null }));
+        saida.push(Object.assign({}, d, { unidade: l.unidade, desvio: pg > 0 ? ((Number(d.re) || 0) - pg) / pg : null, justificada: !!(d.ju && String(d.ju).trim()) }));
       });
     });
-    saida.sort(function (a, b) { return Math.abs(b.desvio || 0) - Math.abs(a.desvio || 0) || (b.d || '').localeCompare(a.d || ''); });
+    saida.sort(function (a, b) { return (a.justificada ? 1 : 0) - (b.justificada ? 1 : 0) || Math.abs(b.desvio || 0) - Math.abs(a.desvio || 0) || (b.d || '').localeCompare(a.d || ''); });
     return saida;
   }
 
-  const SITUACOES_COLETOR = { I: 'Recusado pelo PIMS', V: 'Validado, aguardando entrada' };
-  /** Boletins que vieram do coletor e não entraram no PIMS, com a situação, os motivos (um por linha) e há quantos dias. */
+  const SITUACOES_COLETOR = { I: 'Recusado na validação', V: 'Validado, aguardando a importação' };
+  /**
+   * Boletins em validação no PIMS: já estão no PIMS, na tela de validação, aguardando a importação. Cada um vem com a
+   * situação, os erros que o próprio PIMS registrou (`motivos`, um por linha, sem repetição) e os POSSÍVEIS ERROS que a
+   * conferência prevê para a importação (`previstos` = [{ c, texto }]): ordem que não existe ou já foi encerrada, data
+   * anterior à abertura, talhão fora da ordem, área acima do planejado no talhão (contando os outros boletins em
+   * validação) e número de boletim já usado. `comProblema` = tem erro registrado ou previsto. Esses primeiro.
+   */
   function coletorTravados(linhas, hoje, filtro) {
     const f = filtro || {};
+    const br = function (iso) { return iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : ''; };
+    const num = function (v) { return (Math.round((Number(v) || 0) * 10) / 10).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }); };
     const saida = [];
     (linhas || []).forEach(function (l) {
       if (f.unidade && l.unidade !== f.unidade) return;
-      extrasDa(l, 'col').forEach(function (c) {
+      const naFila = new Map(); // 'ordem|talhão' → hectares dos boletins em validação já contados (do mais antigo para o mais novo)
+      extrasDa(l, 'col').slice().sort(function (a, b) { return (a.d || '').localeCompare(b.d || '') || (a.b || 0) - (b.b || 0); }).forEach(function (c) {
+        const previstos = [];
+        const add = function (codigo, texto) { previstos.push({ c: codigo, texto: texto }); };
+        if (c.t !== 'M') {
+          if (!c.os) add('sem-ordem', 'Boletim sem ordem de serviço.');
+          else if (!Object.prototype.hasOwnProperty.call(c, 'oss')) { /* retrato gravado antes de o servidor conferir a ordem: sem previsão */ }
+          else if (c.oss === null) add('os-inexistente', 'A ordem de serviço ' + c.os + ' não existe nesta fazenda.');
+          else {
+            if (c.oss === 'F') add('os-fechada', 'A ordem ' + c.os + ' já foi encerrada' + (c.oenc ? ' em ' + br(c.oenc) : '') + ': é preciso reabrir a ordem ou trocar a ordem do boletim.');
+            if (c.oab && c.d && c.d < c.oab) add('antes-da-abertura', 'A data do boletim é anterior à abertura da ordem (' + br(c.oab) + ').');
+            if (c.tl) {
+              if (c.pt === null || c.pt === undefined) add('talhao-fora', 'O talhão ' + c.tl + ' não está na ordem ' + c.os + '.');
+              else {
+                const k = c.os + '|' + c.tl;
+                const antes = naFila.get(k) || 0;
+                const ja = Number(c.xt) || 0, este = Number(c.ha) || 0, plan = Number(c.pt) || 0;
+                if (ja + antes + este > plan + FOLGA_HA) {
+                  add('excede-talhao', 'A área passa do planejado no talhão ' + c.tl + ': ' + num(plan) + ' ha planejados, ' + num(ja) + ' ha já apontados' +
+                    (antes ? ', ' + num(antes) + ' ha em outros boletins em validação' : '') + ' e ' + num(este) + ' ha neste boletim.');
+                }
+                naFila.set(k, antes + este);
+              }
+            }
+          }
+        }
+        if (c.dup === 1) add('ja-importado', 'Já existe apontamento com o número de boletim ' + c.b + ' no PIMS: pode ser duplicidade.');
         if (f.equipe && semAcento(c.eq) !== semAcento(f.equipe)) return;
         const motivos = String(c.m || '').split(/\r?\n/).map(function (t) { return t.trim(); }).filter(Boolean);
+        const recusado = c.st === 'I';
         saida.push(Object.assign({}, c, {
-          unidade: l.unidade, tipo: TIPOS_APONT[c.t] || c.t, situacao: SITUACOES_COLETOR[c.st] || 'Aguardando validação', recusado: c.st === 'I',
-          motivos: motivos.filter(function (m, i) { return motivos.indexOf(m) === i; }), dias: diasEmAberto(c.d, hoje),
+          unidade: l.unidade, tipo: TIPOS_APONT[c.t] || c.t, situacao: SITUACOES_COLETOR[c.st] || 'Aguardando validação', recusado: recusado,
+          motivos: motivos.filter(function (m, i) { return motivos.indexOf(m) === i; }), previstos: previstos, comProblema: recusado || previstos.length > 0,
+          dias: diasEmAberto(c.d, hoje),
         }));
       });
     });
-    saida.sort(function (a, b) { return (b.recusado ? 1 : 0) - (a.recusado ? 1 : 0) || (b.dias || 0) - (a.dias || 0); });
+    saida.sort(function (a, b) { return (b.recusado ? 1 : 0) - (a.recusado ? 1 : 0) || (b.comProblema ? 1 : 0) - (a.comProblema ? 1 : 0) || (b.dias || 0) - (a.dias || 0) || (a.b || 0) - (b.b || 0); });
     return saida;
   }
 
@@ -526,8 +566,8 @@
       recusados: bol.falhas.length, vaoFalhar: bol.vaoFalhar.length,
       apontamentos: apont.length,
       emFalta: nec.reduce(function (s, g) { return s + g.emFalta; }, 0),
-      doses: dosesFora(linhas, f).length,
-      coletor: coletorTravados(linhas, hoje, { unidade: f.unidade, equipe: f.equipe }).length,
+      doses: dosesFora(linhas, f).filter(function (d) { return !d.justificada; }).length,
+      coletor: coletorTravados(linhas, hoje, { unidade: f.unidade, equipe: f.equipe }).filter(function (c) { return c.comProblema; }).length,
     };
   }
 

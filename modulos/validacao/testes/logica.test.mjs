@@ -328,24 +328,51 @@ test('dose real x programada: desvio e ordem do maior para o menor', () => {
     { b: 1, d: '2026-10-05', os: 10, eq: 'COORD A', tl: 'T01', c: 'I1', nm: 'A', pg: 1.2, re: 0.4, ha: 100, q: 40 },
     { b: 2, d: '2026-10-04', os: 11, eq: 'COORD B', tl: 'T02', c: 'I2', nm: 'B', pg: 0.5, re: 0.6, ha: 50, q: 30 },
     { b: 3, d: '2026-09-20', os: 12, eq: 'COORD A', tl: 'T03', c: 'I3', nm: 'C', pg: 2, re: 5, ha: 10, q: 50 },
+    { b: 4, d: '2026-10-06', os: 13, eq: 'COORD A', tl: 'T04', c: 'I4', nm: 'D', pg: 1, re: 4, ha: 10, q: 40, ju: 'Dose superior: reaplicação na bordadura.' },
   ] } }];
   const r = L.dosesFora(linhas, {});
-  assert.deepEqual(r.map((d) => [d.b, Math.round(d.desvio * 100)]), [[3, 150], [1, -67], [2, 20]]);
-  assert.deepEqual(L.dosesFora(linhas, { de: '2026-10-01', ate: '2026-10-06' }).map((d) => d.b), [1, 2]);
+  // as justificadas (Observação preenchida no PIMS) vão para o fim, mesmo com desvio maior
+  assert.deepEqual(r.map((d) => [d.b, Math.round(d.desvio * 100), d.justificada]), [[3, 150, false], [1, -67, false], [2, 20, false], [4, 300, true]]);
+  assert.deepEqual(L.dosesFora(linhas, { de: '2026-10-01', ate: '2026-10-06' }).map((d) => d.b), [1, 2, 4]);
   assert.deepEqual(L.dosesFora(linhas, { equipe: 'COORD B' }).map((d) => d.b), [2]);
 });
 
-test('coletor: situação, motivos sem repetição e os recusados primeiro', () => {
+test('boletins em validação no PIMS: erros registrados e possíveis erros da importação', () => {
+  const b = (o) => Object.assign({ t: 'A', b: 1, d: '2026-10-05', os: '10', eq: 'COORD A', opn: 'ADUBACAO', st: null, m: '', la: '2026-10-05 08:00', por: 'u', tl: 'T01', ha: 5, oss: 'A', oab: '2026-10-01', oenc: null, pt: 50, xt: 0 }, o);
   const linhas = [{ unidade: 'FAZENDA X', extras: { col: [
-    { t: 'A', b: 1502, d: '2026-09-29', os: '1762', eq: 'COORD A', opn: 'ADUBACAO', st: null, m: '', la: '2026-09-29 08:34', por: 'u' },
-    { t: 'I', b: 77, d: '2026-10-03', os: '188', eq: 'COORD B', opn: 'APLIC', st: 'I', m: 'Ordem de Serviço de Campo 188 inexistente.\nDepósito 1340 inexistente.\nDepósito 1340 inexistente.\n', la: null, por: null },
+    b({ b: 1 }), // sem problema
+    b({ b: 2, os: '11', oss: 'F', oab: '2026-09-24', oenc: '2026-10-01', d: '2026-09-29' }), // a ordem foi encerrada depois do lançamento
+    b({ b: 3, os: '99', oss: null, oab: null, pt: null }), // a ordem não existe
+    b({ b: 4, tl: 'T09', pt: null }), // talhão fora da ordem
+    b({ b: 5, tl: 'T02', ha: 30, pt: 50, xt: 15 }), b({ b: 6, tl: 'T02', ha: 10, pt: 50, xt: 15 }), // o segundo estoura contando o primeiro
+    b({ b: 7, d: '2026-09-28', tl: 'T03' }), // antes da abertura
+    b({ b: 8, dup: 1, tl: 'T04' }), // número já usado
+    b({ b: 9, os: null, tl: 'T05' }), // sem ordem
+    b({ t: 'I', b: 77, os: '188', eq: 'COORD B', st: 'I', oss: null, tl: undefined, ha: undefined, m: 'Ordem de Serviço de Campo 188 inexistente.\nDepósito 1340 inexistente.\nDepósito 1340 inexistente.\n' }),
+    b({ t: 'M', b: 300, os: null, tl: undefined, ha: undefined, eq: 'COORD B' }), // mecanizada: sem conferência de ordem
   ] } }];
   const r = L.coletorTravados(linhas, HOJE, {});
-  assert.deepEqual(r.map((c) => [c.b, c.situacao, c.dias, c.motivos]), [
-    [77, 'Recusado pelo PIMS', 3, ['Ordem de Serviço de Campo 188 inexistente.', 'Depósito 1340 inexistente.']],
-    [1502, 'Aguardando validação', 7, []],
-  ]);
-  assert.equal(L.coletorTravados(linhas, HOJE, { equipe: 'coord a' }).length, 1); // o nome vem do coletor: compara sem acento nem caixa
+  const de = (n) => r.find((c) => c.b === n);
+  assert.deepEqual(de(1).previstos, []);
+  assert.equal(de(1).comProblema, false);
+  assert.deepEqual(de(2).previstos, [{ c: 'os-fechada', texto: 'A ordem 11 já foi encerrada em 01/10/2026: é preciso reabrir a ordem ou trocar a ordem do boletim.' }]);
+  assert.deepEqual(de(3).previstos.map((x) => x.c), ['os-inexistente']);
+  assert.deepEqual(de(4).previstos, [{ c: 'talhao-fora', texto: 'O talhão T09 não está na ordem 10.' }]);
+  assert.deepEqual(de(5).previstos, []); // 15 + 30 = 45 de 50
+  assert.deepEqual(de(6).previstos, [{ c: 'excede-talhao', texto: 'A área passa do planejado no talhão T02: 50,0 ha planejados, 15,0 ha já apontados, 30,0 ha em outros boletins em validação e 10,0 ha neste boletim.' }]);
+  assert.deepEqual(de(7).previstos.map((x) => x.c), ['antes-da-abertura']);
+  assert.deepEqual(de(8).previstos.map((x) => x.c), ['ja-importado']);
+  assert.deepEqual(de(9).previstos.map((x) => x.c), ['sem-ordem']);
+  assert.deepEqual([de(77).situacao, de(77).recusado, de(77).motivos], ['Recusado na validação', true, ['Ordem de Serviço de Campo 188 inexistente.', 'Depósito 1340 inexistente.']]);
+  assert.deepEqual(de(300).previstos, []);
+  assert.equal(r[0].b, 77); // o recusado vem primeiro; depois os que têm erro previsto; os sem problema por último
+  assert.deepEqual(r.slice(-3).map((c) => c.comProblema), [false, false, false]);
+  assert.equal(r.filter((c) => c.comProblema).length, 8);
+  assert.deepEqual(L.coletorTravados(linhas, HOJE, { equipe: 'coord b' }).map((c) => c.b), [77, 300]); // compara o nome sem acento nem caixa
+  assert.equal(de(2).dias, 7);
+  // retrato gravado antes de o servidor conferir a ordem (sem a chave oss): nenhuma previsão, em vez de "ordem não existe"
+  const antigo = L.coletorTravados([{ unidade: 'X', extras: { col: [{ t: 'A', b: 1, d: '2026-10-05', os: '10', eq: 'A', opn: 'X', st: null, m: '', la: null, por: null }] } }], HOJE, {});
+  assert.deepEqual(antigo[0].previstos, []);
 });
 
 test('pendências: os números de cada página e a ordem pronta para fechar', () => {
@@ -360,7 +387,7 @@ test('pendências: os números de cada página e a ordem pronta para fechar', ()
     extras: {
       ap: [{ os: null, s: null, ab: null, enc: null, eq: 'COORD A', opn: 'X', t: 'P', b: 9, d: '2026-10-05', tl: 'T1', ha: 1, la: '2026-10-05 10:00', por: 'u', pt: null, xt: 1 }],
       dose: [{ b: 1, d: '2026-10-05', os: 1, eq: 'COORD A', tl: 'T01', c: 'I1', nm: 'A', pg: 1, re: 2, ha: 1, q: 2 }],
-      col: [{ t: 'A', b: 5, d: '2026-10-01', os: '1', eq: 'COORD A', opn: 'X', st: 'I', m: 'erro', la: null, por: null }],
+      col: [{ t: 'A', b: 5, d: '2026-10-01', os: '1', eq: 'COORD A', opn: 'X', st: 'I', m: 'erro', la: null, por: null, oss: 'A' }, { t: 'A', b: 6, d: '2026-10-05', os: '1', eq: 'COORD A', opn: 'X', st: null, m: '', la: null, por: null, oss: 'A' }],
       nec: [{ os: 2, eq: 'COORD A', ab: '2026-10-05', opn: 'X', c: 'I1', nm: 'A', pl: 10, co: 0 }],
     },
     depositos: [], estoque: { 1001: [] },
