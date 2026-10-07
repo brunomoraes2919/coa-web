@@ -4032,12 +4032,24 @@ async function criarNovoUsuario(){
   btn.textContent = 'Criando…';
 
   const { data, error } = await sbCriarUsuario.auth.signUp({ email, password: senhaDoLogin });
-  if(error){
+  let novoId = data && data.user && data.user.id;
+  if(error && /already (been )?registered/i.test(error.message)){
+    // O login já existe em Authentication. Se o perfil dele foi removido antes ("remover perfil" apaga só o perfil),
+    // o banco deixa reaproveitar: troca a senha pela deste cadastro (ou pela padrão) e devolve o id.
+    const r = await sb.rpc('admin_reaproveitar_login', { p_email: email, p_senha: usarSenhaPadrao ? null : senha });
+    if(r.error || !r.data){
+      btn.disabled = false; btn.textContent = 'Criar usuário';
+      alert(r.error && !/schema cache|could not find the function/i.test(r.error.message)
+        ? 'Não foi possível criar o login: ' + r.error.message
+        : 'Este e-mail já tem um login no Supabase (o perfil dele foi removido antes). Para cadastrar de novo, rode o script supabase/0012_reaproveitar_login.sql no SQL Editor do Supabase.');
+      return;
+    }
+    novoId = r.data;
+  } else if(error){
     btn.disabled = false; btn.textContent = 'Criar usuário';
     alert('Não foi possível criar o login: '+error.message);
     return;
   }
-  const novoId = data && data.user && data.user.id;
   if(!novoId){
     btn.disabled = false; btn.textContent = 'Criar usuário';
     alert('O login pode já existir, ou a confirmação de e-mail ainda está ativada no Supabase (Authentication → Providers → Email → desative "Confirm email").');
