@@ -960,17 +960,16 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       </div>
       <label class="senha-mostrar"><input type="checkbox" id="trocar-ver"> Mostrar as senhas</label>
       <ul class="senha-regras" id="trocar-regras" aria-label="Regras da senha">
-        <li data-regra="tamanho">pelo menos 8 caracteres</li>
+        <li data-regra="tamanho">pelo menos 6 caracteres</li>
         <li data-regra="maiuscula">uma letra maiúscula</li>
         <li data-regra="minuscula">uma letra minúscula</li>
         <li data-regra="numero">um número</li>
-        <li data-regra="simbolo">um símbolo (! @ # $ % …)</li>
         <li data-regra="iguais">as duas senhas iguais</li>
       </ul>
       <p class="mec-pims-erro" id="trocar-erro" role="alert" hidden></p>
     </div>
     <div class="dlg-mec-rodape">
-      <span>Se esquecer a senha, peça ao administrador do COA para voltar à senha padrão.</span>
+      <span>Símbolos (! @ # $ %) são opcionais. Se esquecer a senha, peça ao administrador do COA para voltar à senha padrão.</span>
       <div class="mec-pims-acoes">
         <button type="button" class="btn fantasma" id="trocar-sair">Sair</button>
         <button type="submit" class="btn" id="trocar-salvar" disabled>Salvar senha</button>
@@ -3681,7 +3680,7 @@ function abrirJanelaSenha(modo, alvo){
   document.getElementById('senha-mostrar-wrap').hidden = !comCampos;
   document.getElementById('senha-nova').type = 'password';
   document.getElementById('senha-confirma').type = 'password';
-  document.getElementById('senha-nova').placeholder = modo === 'definir' ? 'de 8 a 72 caracteres' : 'mínimo de 6 caracteres';
+  document.getElementById('senha-nova').placeholder = 'mínimo de 6 caracteres';
   const erro = document.getElementById('senha-erro');
   erro.hidden = true;
   document.getElementById('senha-ok').hidden = true;
@@ -3740,8 +3739,7 @@ document.getElementById('form-senha').addEventListener('submit', async e=>{
   const nova = document.getElementById('senha-nova').value;
   const confirma = document.getElementById('senha-confirma').value;
   if(senhaModo !== 'voltar'){
-    const minimo = senhaModo === 'definir' ? 8 : 6;
-    if(nova.length < minimo){ erro.textContent = 'A senha precisa ter pelo menos ' + minimo + ' caracteres.'; erro.hidden = false; return; }
+    if(nova.length < 6){ erro.textContent = 'A senha precisa ter pelo menos 6 caracteres.'; erro.hidden = false; return; }
     if(nova !== confirma){ erro.textContent = 'As duas senhas não são iguais.'; erro.hidden = false; return; }
   }
   const btn = document.getElementById('senha-salvar');
@@ -3768,11 +3766,10 @@ document.getElementById('form-senha').addEventListener('submit', async e=>{
 /* ---- senha definitiva: quem entra com a senha padrão (marca em senha_provisoria) só continua depois de criar a sua.
    A troca é feita pela função definir_minha_senha, que confere as regras de novo no banco. ---- */
 const REGRAS_SENHA = {
-  tamanho: t=>t.length >= 8 && t.length <= 72,
+  tamanho: t=>t.length >= 6 && t.length <= 72,
   maiuscula: t=>/[A-Z]/.test(t),
   minuscula: t=>/[a-z]/.test(t),
-  numero: t=>/[0-9]/.test(t),
-  simbolo: t=>/[^A-Za-z0-9]/.test(t)
+  numero: t=>/[0-9]/.test(t)
 };
 function conferirSenhaDefinitiva(){
   const nova = document.getElementById('trocar-nova').value;

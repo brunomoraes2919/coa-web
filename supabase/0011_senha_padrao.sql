@@ -61,6 +61,7 @@ create trigger senha_provisoria_ao_criar_trg
   for each row execute function public.senha_provisoria_ao_criar();
 
 -- ---------- regras da senha definitiva ----------
+-- 6 caracteres ou mais, com maiúscula, minúscula e número. Símbolo é opcional (decisão do usuário em 07/10/2026).
 -- Devolve o que falta (texto) ou null quando a senha serve.
 create or replace function public.senha_o_que_falta(p_senha text)
 returns text
@@ -68,12 +69,11 @@ language sql
 immutable
 as $$
   select case
-    when p_senha is null or length(p_senha) < 8 then 'A senha precisa ter pelo menos 8 caracteres.'
+    when p_senha is null or length(p_senha) < 6 then 'A senha precisa ter pelo menos 6 caracteres.'
     when length(p_senha) > 72 then 'A senha pode ter no máximo 72 caracteres.'
     when p_senha !~ '[A-Z]' then 'A senha precisa ter pelo menos uma letra maiúscula.'
     when p_senha !~ '[a-z]' then 'A senha precisa ter pelo menos uma letra minúscula.'
     when p_senha !~ '[0-9]' then 'A senha precisa ter pelo menos um número.'
-    when p_senha !~ '[^A-Za-z0-9]' then 'A senha precisa ter pelo menos um símbolo (por exemplo: ! @ # $ %).'
     else null
   end;
 $$;
@@ -120,8 +120,8 @@ begin
   if not public.is_super() then
     raise exception 'Só o ADMINISTRADOR+ define a senha padrão.';
   end if;
-  if p_senha is null or length(p_senha) < 8 or length(p_senha) > 72 then
-    raise exception 'A senha padrão precisa ter de 8 a 72 caracteres.';
+  if p_senha is null or length(p_senha) < 6 or length(p_senha) > 72 then
+    raise exception 'A senha padrão precisa ter de 6 a 72 caracteres.';
   end if;
   insert into public.senha_padrao (id, hash, definida_em, definida_por)
   values (true, extensions.crypt(p_senha, extensions.gen_salt('bf')), now(), auth.uid())
