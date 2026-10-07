@@ -279,6 +279,7 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .perfil-pill{display:inline-block;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;padding:3px 9px;border-radius:20px;}
 .perfil-pill.admin{background:rgba(219,138,8,.14);color:#8A5A05;}
 .perfil-pill.colaborador{background:rgba(42,111,151,.14);color:#1F5C82;}
+.perfil-pill.coordenador{background:rgba(12,90,80,.13);color:#0C5A50;}
 .perfil-pill.super{box-shadow:inset 0 0 0 1px rgba(219,138,8,.55);font-weight:700;}
 .fazendas-permitidas-tag{display:inline-block;font-size:11px;background:var(--fundo);border:1px solid var(--linha);
   border-radius:20px;padding:2px 9px;margin:2px 3px 2px 0;color:var(--texto-suave);}
@@ -1032,6 +1033,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <button class="nav-btn" data-page="controle" data-ctrl="estoque"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8 12 3.5 20.5 8v8L12 20.5 3.5 16V8Z"/><path d="M3.5 8 12 12.5 20.5 8M12 12.5v8"/></svg>Estoque</button>
         <button class="nav-btn" data-page="controle" data-ctrl="boletins"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="m10.5 12.5 4 4M14.5 12.5l-4 4"/></svg>Boletins com falha</button>
         <button class="nav-btn" data-page="controle" data-ctrl="doses"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4a2 2 0 0 0 1.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>Dose real x programada</button>
+        <button class="nav-btn" data-page="controle" data-ctrl="coletor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H7v18h4"/><path d="M13 3l5 5v2.5"/><path d="M13 3v5h5"/><circle cx="16.5" cy="17" r="4.5"/><path d="M16.5 14.8V17l1.5 1.2"/></svg>Boletins em Validação PIMS</button>
         <button class="nav-btn" data-page="controle" data-ctrl="fechadas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2.5 20h19L12 3Z"/><path d="M12 10v4M12 17.5v.5"/></svg>Fechadas com diferença</button>
       </nav>
     </div>
@@ -1309,9 +1311,18 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
               <label>Perfil</label>
               <select id="nu-perfil">
                 <option value="colaborador">Colaborador</option>
+                <option value="coordenador">Coordenador (Controle Técnico)</option>
                 <option value="admin">Administrador</option>
               </select>
             </div>
+          </div>
+          <div class="campo-fazendas" id="nu-equipe-wrap" style="display:none">
+            <label>Equipe do PIMS</label>
+            <div class="form-grid" style="margin-bottom:6px">
+              <div class="campo"><label for="nu-equipe-unidade">Fazenda (unidade do PIMS)</label><select id="nu-equipe-unidade"></select></div>
+              <div class="campo"><label for="nu-equipe">Equipe (coordenador)</label><select id="nu-equipe"></select></div>
+            </div>
+            <div class="desc" id="nu-equipe-nota">O coordenador entra só no Controle Técnico e vê apenas as ordens, os apontamentos e o estoque da equipe escolhida.</div>
           </div>
           <div class="campo-fazendas" id="nu-fazendas-wrap">
             <label>Fazendas permitidas</label>
@@ -1332,7 +1343,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <div class="section-head"><div><h2>Usuários cadastrados</h2></div></div>
         <div class="card tabela-wrap">
           <table>
-            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Fazendas permitidas</th><th>Categorias</th><th></th></tr></thead>
+            <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Fazendas ou equipe</th><th>Categorias</th><th></th></tr></thead>
             <tbody id="tbl-usuarios"></tbody>
           </table>
         </div>
@@ -1600,6 +1611,9 @@ function podeGerenciarUsuario(u){
   if(!sessao) return false;
   if(sessao.super) return true;
   return u.perfil === 'colaborador';
+}
+function escaparHtmlUsuario(t){
+  return String(t == null ? '' : t).replace(/[&<>"]/g, c=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
 }
 function nomeDoPerfil(perfil, ehSuper){
   if(perfil !== 'admin') return 'Colaborador';
@@ -3565,6 +3579,9 @@ function renderUsuarios(){
       ? '<span class="fazendas-permitidas-tag">Todas</span>'
       : (CATEGORIAS.filter(c=>u.categoriasPermitidas.includes(c.chave)).map(c=>`<span class="fazendas-permitidas-tag">${c.nome}</span>`).join('')
           || '<span class="fazendas-permitidas-tag">Nenhuma</span>');
+    // Coordenador = colaborador com uma Equipe do PIMS vinculada (Controle Técnico)
+    const ehCoordenador = u.perfil !== 'admin' && (u.equipes || []).length > 0;
+    const equipesTxt = ehCoordenador ? u.equipes.map(e=>`<span class="fazendas-permitidas-tag">${escaparHtmlUsuario(e.equipe)} · ${escaparHtmlUsuario(e.unidade)}</span>`).join('') : '';
     const podeEditar = podeGerenciarUsuario(u);
     const podeRemover = podeEditar && !(sessao && sessao.id===u.id) && !u.super;
     // a senha do ADMINISTRADOR+ só ele mesmo troca (a função no banco confere de novo)
@@ -3573,8 +3590,8 @@ function renderUsuarios(){
     return `<tr>
       <td><b>${u.nome}</b></td>
       <td>${u.email||'–'}</td>
-      <td><span class="perfil-pill ${u.perfil}${ehSuperAqui?' super':''}">${nomeDoPerfil(u.perfil, u.super)}</span></td>
-      <td>${fazendasTxt}</td>
+      <td><span class="perfil-pill ${ehCoordenador ? 'coordenador' : u.perfil}${ehSuperAqui?' super':''}">${ehCoordenador ? 'Coordenador' : nomeDoPerfil(u.perfil, u.super)}</span></td>
+      <td>${ehCoordenador ? equipesTxt : fazendasTxt}</td>
       <td>${categoriasTxt}</td>
       <td class="acoes-usuario">
         ${podeEditar ? `<button class="editar" data-id="${u.id}">editar</button>` : ''}
@@ -3658,6 +3675,47 @@ document.getElementById('form-senha').addEventListener('submit', async e=>{
   setTimeout(fecharRedefinirSenha, 1800);
 });
 
+/* Equipes do PIMS para o perfil Coordenador: vêm do retrato da Validação PIMS (valid_pims.coordenadores).
+   nuEquipe guarda o que está escolhido, porque renderTudo() refaz as listas a cada mudança em tempo real. */
+let nuEquipe = { unidade:'', equipe:'' };
+function preencherEquipesDoForm(){
+  const selU = document.getElementById('nu-equipe-unidade');
+  const selE = document.getElementById('nu-equipe');
+  const nota = document.getElementById('nu-equipe-nota');
+  const unidades = state.equipesPims || [];
+  const opcao = (valor, texto, escolhido) => {
+    const o = document.createElement('option');
+    o.value = valor; o.textContent = texto; o.selected = valor === escolhido;
+    return o;
+  };
+  selU.innerHTML = ''; selE.innerHTML = '';
+  selU.appendChild(opcao('', unidades.length ? '— escolha a fazenda —' : '— sem dados do PIMS —', nuEquipe.unidade));
+  unidades.forEach(u=>selU.appendChild(opcao(u.unidade, u.unidade, nuEquipe.unidade)));
+  // equipe já vinculada que saiu do retrato (sem ordem na safra) continua aparecendo, para não sumir ao editar
+  if(nuEquipe.unidade && !unidades.some(u=>u.unidade===nuEquipe.unidade)) selU.appendChild(opcao(nuEquipe.unidade, nuEquipe.unidade, nuEquipe.unidade));
+  const daUnidade = (unidades.find(u=>u.unidade===nuEquipe.unidade) || { equipes:[] }).equipes.slice();
+  if(nuEquipe.equipe && !daUnidade.includes(nuEquipe.equipe)) daUnidade.push(nuEquipe.equipe);
+  selE.appendChild(opcao('', nuEquipe.unidade ? '— escolha a equipe —' : '— escolha a fazenda primeiro —', nuEquipe.equipe));
+  daUnidade.sort((a,b)=>a.localeCompare(b,'pt-BR')).forEach(e=>selE.appendChild(opcao(e, e, nuEquipe.equipe)));
+  selE.disabled = !nuEquipe.unidade;
+  nota.textContent = state.equipesDisponiveis === false
+    ? 'O banco ainda não tem o vínculo de equipe (rode o script supabase/0010_controle_por_equipe.sql no Supabase).'
+    : (!unidades.length
+        ? 'Não consegui ler as equipes do PIMS: é preciso ter a categoria Validação PIMS liberada para ver a lista.'
+        : 'O coordenador entra só no Controle Técnico e vê apenas as ordens, os apontamentos e o estoque da equipe escolhida.');
+}
+document.getElementById('nu-equipe-unidade').addEventListener('change', e=>{ nuEquipe = { unidade:e.target.value, equipe:'' }; preencherEquipesDoForm(); });
+document.getElementById('nu-equipe').addEventListener('change', e=>{ nuEquipe = { unidade:nuEquipe.unidade, equipe:e.target.value }; });
+/* Grava a equipe do coordenador (ou tira, quando o usuário deixa de ser coordenador). Devolve a mensagem de erro, ou null. */
+async function salvarEquipeDoUsuario(usuarioId, equipe){
+  if(state.equipesDisponiveis === false) return equipe ? 'o banco ainda não tem o vínculo de equipe (script 0010)' : null;
+  const apagar = await sb.from('controle_equipes').delete().eq('usuario_id', usuarioId);
+  if(apagar.error) return apagar.error.message;
+  if(!equipe) return null;
+  const { error } = await sb.from('controle_equipes').insert({ usuario_id: usuarioId, unidade: equipe.unidade, equipe: equipe.equipe });
+  return error ? error.message : null;
+}
+
 let usuarioEditandoId = null;
 function iniciarEdicaoUsuario(id){
   const u = state.usuarios.find(x=>x.id===id);
@@ -3666,7 +3724,9 @@ function iniciarEdicaoUsuario(id){
   document.getElementById('nu-email-wrap').style.display = 'none';
   document.getElementById('nu-senha-wrap').style.display = 'none';
   document.getElementById('nu-nome').value = u.nome;
-  document.getElementById('nu-perfil').value = u.perfil;
+  const equipeDoUsuario = u.perfil !== 'admin' && (u.equipes || [])[0];
+  document.getElementById('nu-perfil').value = equipeDoUsuario ? 'coordenador' : u.perfil;
+  nuEquipe = equipeDoUsuario ? { unidade: equipeDoUsuario.unidade, equipe: equipeDoUsuario.equipe } : { unidade:'', equipe:'' };
   document.getElementById('nu-todas-fazendas').checked = u.perfil==='admin' ? (u.super || u.todasFazendas) : true;
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = u.fazendasPermitidas.includes(parseInt(c.value)); });
   document.querySelectorAll('.nu-categoria-chk').forEach(c=>{ c.checked = u.categoriasPermitidas === null || u.categoriasPermitidas.includes(c.value); });
@@ -3685,12 +3745,13 @@ function cancelarEdicaoUsuario(){
   document.getElementById('nu-email').value = '';
   document.getElementById('nu-senha').value = '';
   document.getElementById('nu-perfil').value = 'colaborador';
+  nuEquipe = { unidade:'', equipe:'' };
   document.getElementById('nu-todas-fazendas').checked = true;
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{ c.checked = false; });
   document.querySelectorAll('.nu-categoria-chk').forEach(c=>{ c.checked = false; });
   ajustarFormUsuario();
   document.getElementById('nu-titulo').textContent = 'Novo usuário';
-  document.getElementById('nu-desc').textContent = 'Cria o login e já define o perfil, as fazendas e as categorias permitidas';
+  document.getElementById('nu-desc').textContent = 'Cria o login e já define o perfil, as fazendas e as categorias permitidas (ou a equipe do PIMS, para o coordenador)';
   document.getElementById('btn-add-usuario').textContent = 'Criar usuário';
 }
 document.getElementById('btn-cancelar-edicao-usuario').addEventListener('click', cancelarEdicaoUsuario);
@@ -3710,8 +3771,12 @@ function ajustarFormUsuario(){
   const somenteNome = !!(state.adminMaisDisponivel && u && sessao && (u.id===sessao.id || u.super));
   sel.disabled = somenteNome;
   const comoAdmin = sel.value==='admin';
+  // Coordenador: só a equipe do PIMS (a categoria Controle Técnico entra sozinha; fazendas e categorias somem)
+  const comoCoordenador = sel.value==='coordenador' && !somenteNome;
+  document.getElementById('nu-equipe-wrap').style.display = comoCoordenador ? '' : 'none';
+  if(comoCoordenador) preencherEquipesDoForm();
   const layoutAdmin = !!state.adminMaisDisponivel && comoAdmin && !somenteNome;
-  const mostrar = !somenteNome && (!comoAdmin || layoutAdmin);
+  const mostrar = !somenteNome && !comoCoordenador && (!comoAdmin || layoutAdmin);
   document.getElementById('nu-fazendas-wrap').style.display = mostrar ? '' : 'none';
   document.getElementById('nu-categorias-wrap').style.display = mostrar ? '' : 'none';
   document.getElementById('nu-todas-wrap').style.display = layoutAdmin ? '' : 'none';
@@ -3732,15 +3797,22 @@ document.getElementById('nu-perfil').addEventListener('change', e=>{
 /* o que o formulário manda gravar. u = usuário em edição (null = novo). */
 function lerFormUsuario(u){
   let perfil = document.getElementById('nu-perfil').value;
+  // Coordenador é um colaborador com uma Equipe do PIMS e só a categoria Controle Técnico
+  const coordenador = perfil === 'coordenador';
+  if(coordenador) perfil = 'colaborador';
   if(!(sessao && sessao.super)) perfil = 'colaborador'; // administrador comum só cria/edita colaborador
   const somenteNome = !!(state.adminMaisDisponivel && u && (u.id===sessao.id || u.super));
+  if(coordenador && !somenteNome){
+    const equipe = nuEquipe.unidade && nuEquipe.equipe ? { unidade: nuEquipe.unidade, equipe: nuEquipe.equipe } : null;
+    return { perfil, somenteNome, todasFazendas: true, fazendasPermitidas: [], categoriasPermitidas: ['controle'], coordenador: true, equipe };
+  }
   const alvoAdmin = !!state.adminMaisDisponivel && perfil==='admin' && !somenteNome;
   const todasFazendas = alvoAdmin ? document.getElementById('nu-todas-fazendas').checked : true;
   const fazendasPermitidas = (perfil==='admin' && !alvoAdmin) || (alvoAdmin && todasFazendas) ? [] :
     [...document.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>parseInt(c.value));
   const categoriasPermitidas = perfil==='admin' && !alvoAdmin ? [] :
     [...document.querySelectorAll('.nu-categoria-chk:checked')].map(c=>c.value);
-  return { perfil, somenteNome, todasFazendas, fazendasPermitidas, categoriasPermitidas };
+  return { perfil, somenteNome, todasFazendas, fazendasPermitidas, categoriasPermitidas, coordenador: false, equipe: null };
 }
 
 async function salvarEdicaoUsuario(){
@@ -3748,7 +3820,8 @@ async function salvarEdicaoUsuario(){
   if(!nome){ alert('Informe o nome.'); return; }
   const alvo = state.usuarios.find(x=>x.id===usuarioEditandoId);
   if(!alvo || !podeGerenciarUsuario(alvo)){ alert('Você não tem permissão para alterar este usuário.'); return; }
-  const { perfil, somenteNome, todasFazendas, fazendasPermitidas, categoriasPermitidas } = lerFormUsuario(alvo);
+  const { perfil, somenteNome, todasFazendas, fazendasPermitidas, categoriasPermitidas, coordenador, equipe } = lerFormUsuario(alvo);
+  if(coordenador && !equipe){ alert('Escolha a fazenda e a equipe do PIMS do coordenador.'); return; }
 
   const btn = document.getElementById('btn-add-usuario');
   btn.disabled = true;
@@ -3777,6 +3850,9 @@ async function salvarEdicaoUsuario(){
       if(erroCat){ alert('Perfil salvo, mas houve erro nas categorias: '+erroCat.message); }
     }
   }
+  // equipe do coordenador: grava a escolhida; quem deixou de ser coordenador perde o vínculo
+  const erroEquipe = await salvarEquipeDoUsuario(usuarioEditandoId, coordenador ? equipe : null);
+  if(erroEquipe){ alert('Perfil salvo, mas houve erro ao vincular a equipe do PIMS: '+erroEquipe); }
   }
   btn.disabled = false;
 
@@ -3791,7 +3867,9 @@ async function criarNovoUsuario(){
   const senha = document.getElementById('nu-senha').value;
   if(!nome || !email || !senha){ alert('Preencha nome, e-mail e senha.'); return; }
   if(senha.length < 6){ alert('A senha precisa ter pelo menos 6 caracteres.'); return; }
-  const { perfil, todasFazendas, fazendasPermitidas, categoriasPermitidas } = lerFormUsuario(null);
+  const { perfil, todasFazendas, fazendasPermitidas, categoriasPermitidas, coordenador, equipe } = lerFormUsuario(null);
+  if(coordenador && !equipe){ alert('Escolha a fazenda e a equipe do PIMS do coordenador.'); return; }
+  if(coordenador && state.equipesDisponiveis === false){ alert('O banco ainda não tem o vínculo de equipe: rode o script supabase/0010_controle_por_equipe.sql no Supabase antes de criar um coordenador.'); return; }
 
   const btn = document.getElementById('btn-add-usuario');
   btn.disabled = true;
@@ -3842,6 +3920,11 @@ async function criarNovoUsuario(){
     const linhasCat = categoriasPermitidas.map(ch=>({ usuario_id: novoId, categoria: ch }));
     const { error: erroCat } = await sb.from('usuario_categorias').insert(linhasCat);
     if(erroCat){ alert('Usuário criado, mas houve erro nas categorias: '+erroCat.message); }
+  }
+
+  if(coordenador){
+    const erroEquipe = await salvarEquipeDoUsuario(novoId, equipe);
+    if(erroEquipe){ alert('Usuário criado, mas houve erro ao vincular a equipe do PIMS: '+erroEquipe); }
   }
 
   btn.disabled = false; btn.textContent = 'Criar usuário';
@@ -4556,7 +4639,7 @@ window.addEventListener('message', ev=>{
    - módulo → COA: { tipo:'controle-rota', vista }
    Sempre com targetOrigin = location.origin; só aceita mensagens do próprio iframe.
 ===================================================================== */
-const CTRL_VISTAS = ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses'];
+const CTRL_VISTAS = ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor'];
 let ctrlFrame = null;      // iframe #controle-frame (criado na primeira entrada; removido ao sair)
 let ctrlCarregado = false;
 let ctrlVista = 'pendencias';
@@ -4804,11 +4887,20 @@ async function recarregarTudoDoSupabase(){
   state.talhoes = (th.data || []).map(talhaoDoBanco);
 
   if(sessao && sessao.perfil==='admin'){
-    const [pf, uf, uc] = await Promise.all([
+    const [pf, uf, uc, ce, vp] = await Promise.all([
       sb.from('perfis').select('*'),
       sb.from('usuario_fazendas').select('*'),
-      sb.from('usuario_categorias').select('*')
+      sb.from('usuario_categorias').select('*'),
+      sb.from('controle_equipes').select('usuario_id,unidade,equipe'),
+      sb.from('valid_pims').select('unidade,coordenadores').order('unidade')
     ]);
+    // erro = tabela ainda não criada (script 0010): o perfil Coordenador avisa em vez de gravar
+    state.equipesDisponiveis = !ce.error;
+    const equipesDosUsuarios = ce.error ? [] : (ce.data || []);
+    state.equipesPims = vp.error ? [] : (vp.data || []).map(l=>({
+      unidade: l.unidade,
+      equipes: [...new Set((Array.isArray(l.coordenadores) ? l.coordenadores : []).map(c=>c && c.eq).filter(Boolean))]
+    })).filter(l=>l.equipes.length);
     const perfis = pf.data || [];
     const permissoes = uf.data || [];
     // erro na consulta (tabela ainda não criada no banco) = sem controle por categoria: todos veem todas
@@ -4818,7 +4910,8 @@ async function recarregarTudoDoSupabase(){
       id: p.id, nome: p.nome, perfil: p.perfil, email: p.email,
       super: !!p.super, todasFazendas: p.todas_fazendas !== false,
       fazendasPermitidas: permissoes.filter(u=>u.usuario_id===p.id).map(u=>u.fazenda_id),
-      categoriasPermitidas: uc.error ? null : permCategorias.filter(u=>u.usuario_id===p.id).map(u=>u.categoria)
+      categoriasPermitidas: uc.error ? null : permCategorias.filter(u=>u.usuario_id===p.id).map(u=>u.categoria),
+      equipes: equipesDosUsuarios.filter(e=>e.usuario_id===p.id).map(e=>({ unidade: e.unidade, equipe: e.equipe }))
     }));
   } else {
     state.usuarios = [];

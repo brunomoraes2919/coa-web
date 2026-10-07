@@ -18,7 +18,7 @@
   const MODO_CONTROLE = PARAMS.get('modo') === 'controle';
   const PREFIXO = MODO_CONTROLE ? 'controle' : 'validacao'; // das mensagens trocadas com o COA WEB
   const VISTAS = MODO_CONTROLE
-    ? ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses']
+    ? ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor']
     : ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor', 'depositos'];
   const TODAS_AS_VISTAS = ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor', 'depositos'];
   const TODAS = '';
@@ -47,8 +47,8 @@
   let coaFazenda;         // fazenda escolhida no COA WEB, quando o módulo está no iframe
   let coaFazendaNome = '';
   let semColunaBoletins = false; // o banco ainda não tem a coluna dos boletins (script 0008)
-  let depositosControle = [];    // Controle Técnico: depósitos que o usuário pode abrir
-  let depositoControle = PARAMS.get('dep') || ''; // 'unidade|depósito' aberto
+  let equipesControle = [];      // Controle Técnico: equipes do PIMS (coordenadores) que o usuário pode abrir
+  let equipeControle = PARAMS.get('eq') || ''; // 'unidade|equipe' aberta
   let fonte = null;
   let atualizando = false;
 
@@ -70,13 +70,13 @@
       ler: async function () {
         // a coluna dos boletins entra com o script 0008: sem ela, o resto da tela continua funcionando
         if (MODO_CONTROLE) {
-          const deps = conferir(await sb.rpc('controle_meus_depositos'), 'ler os seus depósitos') || [];
-          if (!deps.length) throw new Error('Nenhum depósito foi liberado para o seu usuário. Fale com o administrador do COA.');
-          const atual = deps.find((d) => d.unidade + '|' + d.deposito === depositoControle) || deps[0];
-          const linha = conferir(await sb.rpc('controle_dados', { p_unidade: atual.unidade, p_deposito: atual.deposito }), 'ler os dados do depósito') || {};
+          const eqs = conferir(await sb.rpc('controle_minhas_equipes'), 'ler a sua equipe') || [];
+          if (!eqs.length) throw new Error('Nenhuma equipe do PIMS foi vinculada ao seu usuário. Fale com o administrador do COA.');
+          const atual = eqs.find((x) => x.unidade + '|' + x.equipe === equipeControle) || eqs[0];
+          const linha = conferir(await sb.rpc('controle_dados_equipe', { p_unidade: atual.unidade, p_equipe: atual.equipe }), 'ler os dados da equipe') || {};
           return {
-            linhas: [linha], vinculos: (linha.equipes || []).map((eq) => ({ unidade: atual.unidade, equipe: eq, deposito: atual.deposito })),
-            fazendas: [], admin: false, semBoletins: false, depositosControle: deps, depositoControle: atual.unidade + '|' + atual.deposito,
+            linhas: [linha], vinculos: atual.deposito ? [{ unidade: atual.unidade, equipe: atual.equipe, deposito: atual.deposito }] : [],
+            fazendas: [], admin: false, semBoletins: false, equipesControle: eqs, equipeControle: atual.unidade + '|' + atual.equipe,
           };
         }
         const COLUNAS = 'unidade,gerado_em,ordens,coordenadores,depositos,estoque,avisos';
@@ -104,19 +104,6 @@
         }
         conferir(await sb.from('valid_vinculos').upsert({ unidade: v.unidade, equipe: v.equipe, deposito: v.deposito, deposito_origem: null }, { onConflict: 'unidade,equipe' }), 'salvar o vínculo');
       },
-      // usuários da categoria Controle Técnico e os depósitos liberados para cada um (só administrador lê e altera)
-      lerAcessos: async function () {
-        const cat = conferir(await sb.from('usuario_categorias').select('usuario_id').eq('categoria', 'controle'), 'ler os usuários do Controle Técnico') || [];
-        const ids = cat.map((c) => c.usuario_id);
-        const perfis = ids.length ? (conferir(await sb.from('perfis').select('id,nome,email').in('id', ids), 'ler os usuários') || []) : [];
-        const dados = conferir(await sb.from('controle_depositos').select('usuario_id,unidade,deposito'), 'ler os acessos') || [];
-        perfis.sort((a, b) => String(a.nome || a.email || '').localeCompare(String(b.nome || b.email || ''), 'pt-BR'));
-        return { usuarios: perfis, linhas: dados };
-      },
-      salvarAcesso: async function (a, ligar) {
-        if (ligar) conferir(await sb.from('controle_depositos').upsert(a, { onConflict: 'usuario_id,unidade,deposito' }), 'liberar o depósito');
-        else conferir(await sb.from('controle_depositos').delete().eq('usuario_id', a.usuario_id).eq('unidade', a.unidade).eq('deposito', a.deposito), 'retirar o depósito');
-      },
       pedirAtualizacao: async function () {
         const r = await sb.from('valid_pedidos').insert({}).select('id').single();
         return conferir(r, 'pedir a atualização').id;
@@ -128,26 +115,24 @@
     };
   }
   /* servidor local de testes (modulos/validacao/scripts/servidor-local.mjs) */
-  /** No teste local, faz na tela o recorte que em produção é do banco (função controle_dados). */
+  /** No teste local, faz na tela o recorte que em produção é do banco (função controle_dados_equipe). */
   function recorteLocal(d) {
-    const deps = [];
-    (d.vinculos || []).forEach((v) => {
-      if (!v.deposito) return;
-      let x = deps.find((y) => y.unidade === v.unidade && y.deposito === v.deposito);
-      if (!x) { const l = (d.linhas || []).find((y) => y.unidade === v.unidade) || {}; x = { unidade: v.unidade, deposito: v.deposito, nome: ((l.depositos || []).find((y) => y.c === v.deposito) || {}).n || '', equipes: [] }; deps.push(x); }
-      x.equipes.push(v.equipe);
-    });
-    if (!deps.length) throw new Error('Nenhum depósito foi liberado para o seu usuário. Fale com o administrador do COA.');
-    const atual = deps.find((x) => x.unidade + '|' + x.deposito === depositoControle) || deps[0];
+    const eqs = [];
+    (d.linhas || []).forEach((l) => (l.coordenadores || []).forEach((c) => {
+      const v = (d.vinculos || []).find((x) => x.unidade === l.unidade && x.equipe === c.eq) || {};
+      eqs.push({ unidade: l.unidade, equipe: c.eq, deposito: v.deposito || null, deposito_nome: ((l.depositos || []).find((y) => y.c === v.deposito) || {}).n || null });
+    }));
+    if (!eqs.length) throw new Error('Nenhuma equipe do PIMS foi vinculada ao seu usuário. Fale com o administrador do COA.');
+    const atual = eqs.find((x) => x.unidade + '|' + x.equipe === equipeControle) || eqs.find((x) => x.deposito) || eqs[0];
     const l = (d.linhas || []).find((y) => y.unidade === atual.unidade) || { unidade: atual.unidade };
-    const dele = (lista) => (lista || []).filter((o) => atual.equipes.indexOf(o.eq) >= 0);
+    const dele = (lista) => (lista || []).filter((o) => o.eq === atual.equipe);
     const ex = l.extras || {};
     const linha = {
-      unidade: l.unidade, gerado_em: l.gerado_em || null, equipes: atual.equipes, ordens: dele(l.ordens), coordenadores: dele(l.coordenadores),
-      depositos: (l.depositos || []).filter((x) => x.c === atual.deposito), estoque: (l.estoque || {})[atual.deposito] ? { [atual.deposito]: l.estoque[atual.deposito] } : {},
-      boletins: dele(l.boletins), extras: { ap: dele(ex.ap), nec: dele(ex.nec), dose: dele(ex.dose) }, avisos: l.avisos || [],
+      unidade: l.unidade, gerado_em: l.gerado_em || null, equipes: [atual.equipe], deposito: atual.deposito, ordens: dele(l.ordens), coordenadores: dele(l.coordenadores),
+      depositos: (l.depositos || []).filter((x) => x.c === atual.deposito), estoque: atual.deposito && (l.estoque || {})[atual.deposito] ? { [atual.deposito]: l.estoque[atual.deposito] } : {},
+      boletins: dele(l.boletins), extras: { ap: dele(ex.ap), nec: dele(ex.nec), dose: dele(ex.dose), col: dele(ex.col) }, avisos: l.avisos || [],
     };
-    return { linhas: [linha], vinculos: atual.equipes.map((eq) => ({ unidade: atual.unidade, equipe: eq, deposito: atual.deposito })), fazendas: [], admin: false, depositosControle: deps, depositoControle: atual.unidade + '|' + atual.deposito };
+    return { linhas: [linha], vinculos: atual.deposito ? [{ unidade: atual.unidade, equipe: atual.equipe, deposito: atual.deposito }] : [], fazendas: [], admin: false, equipesControle: eqs, equipeControle: atual.unidade + '|' + atual.equipe };
   }
   function fonteLocal() {
     const api = async (caminho, opcoes) => {
@@ -158,8 +143,6 @@
     return {
       pronto: async function () {},
       ler: async () => { const d = await api('/api/validacao-teste'); return MODO_CONTROLE ? recorteLocal(d) : d; },
-      lerAcessos: async () => ({ usuarios: [{ id: 'u1', nome: 'Usuário de Teste Um', email: 'teste.um@exemplo.local' }, { id: 'u2', nome: 'Usuário de Teste Dois', email: 'teste.dois@exemplo.local' }], linhas: [] }),
-      salvarAcesso: async () => {},
       salvarVinculo: (v) => api('/api/validacao-teste/vinculo', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) }),
       pedirAtualizacao: async () => (await api('/api/validacao-teste/pedido', { method: 'POST' })).id,
       situacaoPedido: async () => ({ atendido_em: new Date().toISOString(), resultado: 'ok' }),
@@ -192,7 +175,7 @@
     const lista = Array.from(nomes).sort((a, b) => a.localeCompare(b, 'pt-BR'));
     if (estado.equipe && lista.indexOf(estado.equipe) < 0) estado.equipe = TODAS;
     const sel = $('sel-equipe');
-    sel.closest('label').hidden = MODO_CONTROLE && lista.length < 2; // um coordenador só: não há o que escolher
+    sel.closest('label').hidden = MODO_CONTROLE; // no Controle Técnico a equipe já é a do usuário
     sel.innerHTML = '<option value="">Todos os coordenadores</option>' + lista.map((n) => '<option value="' + esc(n) + '">' + esc(L.titulo(n)) + '</option>').join('');
     sel.value = estado.equipe;
   }
@@ -552,51 +535,6 @@
       '</tbody></table>';
   }
 
-  /* ------------------------------ acesso ao Controle Técnico (só administrador) ------------------------------ */
-  let acessos = null; // { usuarios: [{ id, nome, email }], linhas: [{ usuario_id, unidade, deposito }] } — lido na primeira vez
-  async function desenharAcessos() {
-    const cartao = $('cartao-acessos');
-    cartao.hidden = !admin || MODO_CONTROLE || !fonte.lerAcessos;
-    if (cartao.hidden) return;
-    if (!acessos) {
-      $('acessos').innerHTML = '<p class="saldo-nota">Lendo os usuários…</p>';
-      try { acessos = await fonte.lerAcessos(); } catch (e) { $('acessos').innerHTML = '<p class="saldo-nota">' + esc(e && e.message ? e.message : 'Não foi possível ler os acessos.') + '</p>'; return; }
-    }
-    const depositos = [];
-    vinculos.forEach((v) => {
-      if (!v.deposito || (estado.unidade && estado.unidade !== SEM_UNIDADE && v.unidade !== estado.unidade)) return;
-      let d = depositos.find((x) => x.unidade === v.unidade && x.deposito === v.deposito);
-      if (!d) { d = { unidade: v.unidade, deposito: v.deposito, equipes: [] }; depositos.push(d); }
-      d.equipes.push(v.equipe);
-    });
-    if (!acessos.usuarios.length) { $('acessos').innerHTML = '<p class="saldo-nota">Nenhum usuário tem a categoria Controle Técnico. Marque a categoria na página Usuários e volte aqui para escolher os depósitos.</p>'; return; }
-    if (!depositos.length) { $('acessos').innerHTML = '<p class="saldo-nota">Nenhum depósito vinculado a coordenador' + (estado.unidade ? ' nesta fazenda' : '') + '. Vincule acima primeiro.</p>'; return; }
-    $('acessos').innerHTML = '<div class="tabela-rolagem"><table class="tabela tabela-acessos"><thead><tr><th>Usuário</th><th>Depósitos que ele pode abrir</th></tr></thead><tbody>' +
-      acessos.usuarios.map((u) => '<tr data-usuario="' + esc(u.id) + '"><td><b>' + esc(u.nome || u.email || '') + '</b><small>' + esc(u.email || '') + '</small></td><td><div class="acessos-lista">' +
-        depositos.map((d) => {
-          const tem = acessos.linhas.some((a) => a.usuario_id === u.id && a.unidade === d.unidade && a.deposito === d.deposito);
-          const nome = ((linhaDa(d.unidade) || {}).depositos || []).find((x) => x.c === d.deposito);
-          return '<label class="acesso"><input type="checkbox" data-unidade="' + esc(d.unidade) + '" data-deposito="' + esc(d.deposito) + '"' + (tem ? ' checked' : '') + '>' +
-            '<span><b>' + esc(d.deposito) + '</b> · ' + esc(L.titulo(nome ? nome.n : '')) + '<small>' + esc(L.titulo(d.unidade)) + ' · ' + d.equipes.map((e) => esc(L.titulo(e))).join(', ') + '</small></span></label>';
-        }).join('') + '</div><span class="situacao" aria-live="polite"></span></td></tr>').join('') +
-      '</tbody></table></div>';
-  }
-  async function alternarAcesso(caixa) {
-    const tr = caixa.closest('tr[data-usuario]');
-    const sit = tr.querySelector('.situacao');
-    const a = { usuario_id: tr.dataset.usuario, unidade: caixa.dataset.unidade, deposito: caixa.dataset.deposito };
-    sit.className = 'situacao'; sit.textContent = 'Salvando…';
-    try {
-      await fonte.salvarAcesso(a, caixa.checked);
-      acessos.linhas = acessos.linhas.filter((x) => !(x.usuario_id === a.usuario_id && x.unidade === a.unidade && x.deposito === a.deposito));
-      if (caixa.checked) acessos.linhas.push(a);
-      sit.className = 'situacao ok'; sit.textContent = caixa.checked ? 'Acesso liberado.' : 'Acesso retirado.';
-    } catch (e) {
-      caixa.checked = !caixa.checked;
-      sit.className = 'situacao erro'; sit.textContent = e && e.message ? e.message : 'Não foi possível salvar.';
-    }
-  }
-
   /* ------------------------------ depósitos dos coordenadores ------------------------------ */
   function opcoesDeposito(linha, escolhido) {
     const lista = (linha.depositos || []).filter((d) => !d.i || d.c === escolhido);
@@ -607,7 +545,8 @@
   }
   function desenharDepositos() {
     $('explica-depositos').innerHTML = admin
-      ? 'Escolha o <b>depósito de cada coordenador no SAP</b>. O saldo aparece no painel do coordenador depois da próxima atualização, e a origem de cada produto vem sozinha das transferências de estoque do SAP.'
+      ? 'Escolha o <b>depósito de cada coordenador no SAP</b>. O saldo aparece no painel do coordenador depois da próxima atualização, e a origem de cada produto vem sozinha das transferências de estoque do SAP. ' +
+        'O acesso do coordenador ao Controle Técnico é dado na página <b>Usuários</b>: perfil Coordenador e a equipe dele no PIMS.'
       : 'Depósito do SAP de cada coordenador. A origem de cada produto vem das transferências de estoque do SAP. Só administradores alteram estes vínculos.';
     const lista = L.coordenadoresComVinculo(linhas, vinculos, { unidade: estado.unidade }).filter((c) => !estado.equipe || c.eq === estado.equipe);
     if (!lista.length) { $('vinculos').innerHTML = '<p class="vazio">Nenhum coordenador com ordem de serviço' + (estado.unidade ? ' nesta fazenda' : '') + '.</p>'; return; }
@@ -673,11 +612,11 @@
     else if (estado.vista === 'estoque') desenharEstoque();
     else if (estado.vista === 'doses') desenharDoses();
     else if (estado.vista === 'coletor') desenharColetor();
-    else { desenharDepositos(); desenharAcessos(); }
+    else desenharDepositos();
     const mais = linhas.reduce((m, l) => (l.gerado_em > m ? l.gerado_em : m), '');
     $('atualizado').innerHTML = mais ? 'PIMS · <b>' + new Date(mais).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</b>' : '';
     const semSap = linhas.some((l) => (l.avisos || []).length);
-    if (!linhas.length || (MODO_CONTROLE && !linhas[0].gerado_em)) avisar(MODO_CONTROLE ? 'Ainda não há dados deste depósito. O servidor grava as ordens a cada hora.' : 'Ainda não há dados da validação. O servidor grava as ordens a cada hora; clique em Atualizar para buscar agora.', '');
+    if (!linhas.length || (MODO_CONTROLE && !linhas[0].gerado_em)) avisar(MODO_CONTROLE ? 'Ainda não há dados desta equipe. O servidor grava as ordens a cada hora.' : 'Ainda não há dados da validação. O servidor grava as ordens a cada hora; clique em Atualizar para buscar agora.', '');
     else if (estado.unidade === SEM_UNIDADE) avisar('A fazenda escolhida no menu não tem ordens de serviço no PIMS (ou você não tem acesso à unidade dela).', '');
     else if (semSap) avisar('O saldo de alguns depósitos do SAP não pôde ser lido na última atualização. As ordens estão atualizadas.', 'alerta');
     else if (!$('aviso').classList.contains('fixo')) avisar('', '');
@@ -705,16 +644,17 @@
     const d = await fonte.ler();
     linhas = (d.linhas || []).map((l) => Object.assign({ ordens: [], coordenadores: [], depositos: [], estoque: {}, boletins: [], avisos: [] }, l));
     semColunaBoletins = !!d.semBoletins;
-    acessos = null;
     if (MODO_CONTROLE) {
-      depositosControle = d.depositosControle || [];
-      depositoControle = d.depositoControle || '';
+      equipesControle = d.equipesControle || [];
+      equipeControle = d.equipeControle || '';
       const sel = $('sel-deposito');
-      sel.innerHTML = depositosControle.map((x) => '<option value="' + esc(x.unidade + '|' + x.deposito) + '">' + esc(x.deposito) + ' · ' + esc(L.titulo(x.nome || '')) + ' (' + esc(L.titulo(x.unidade)) + ')</option>').join('');
-      sel.value = depositoControle;
-      sel.closest('label').hidden = depositosControle.length < 2;
-      const atual = depositosControle.find((x) => x.unidade + '|' + x.deposito === depositoControle);
-      $('marca-sub').textContent = atual ? 'Depósito ' + atual.deposito + ' · ' + L.titulo(atual.nome || '') + ' · ' + L.titulo(atual.unidade) : 'Suas ordens, apontamentos e estoque';
+      sel.innerHTML = equipesControle.map((x) => '<option value="' + esc(x.unidade + '|' + x.equipe) + '">' + esc(L.titulo(x.equipe)) + ' (' + esc(L.titulo(x.unidade)) + ')</option>').join('');
+      sel.value = equipeControle;
+      sel.closest('label').hidden = equipesControle.length < 2; // só o administrador tem mais de uma para escolher
+      const atual = equipesControle.find((x) => x.unidade + '|' + x.equipe === equipeControle);
+      $('marca-sub').textContent = atual
+        ? L.titulo(atual.equipe) + ' · ' + L.titulo(atual.unidade) + ' · ' + (atual.deposito ? 'depósito ' + atual.deposito + (atual.deposito_nome ? ' · ' + L.titulo(atual.deposito_nome) : '') : 'sem depósito vinculado')
+        : 'Suas ordens, apontamentos e estoque';
     }
     vinculos = d.vinculos || [];
     admin = !!d.admin;
@@ -812,11 +752,10 @@
     if (b) irPara('depositos');
   });
   $('chk-so-alertas').addEventListener('change', (e) => { estado.soAlertas = e.target.checked; desenhar(); });
-  $('acessos').addEventListener('change', (e) => { if (e.target.matches('input[type="checkbox"][data-deposito]')) alternarAcesso(e.target); });
   $('sel-deposito').addEventListener('change', async (e) => {
-    depositoControle = e.target.value;
+    equipeControle = e.target.value;
     $('carregando').classList.remove('fora');
-    try { await carregar(); aplicarFazendaCoa(); estado.equipe = TODAS; desenhar(); } catch (err) { avisar(err && err.message ? err.message : 'Não foi possível abrir o depósito.', 'erro'); }
+    try { await carregar(); aplicarFazendaCoa(); estado.equipe = TODAS; desenhar(); } catch (err) { avisar(err && err.message ? err.message : 'Não foi possível abrir a equipe.', 'erro'); }
     $('carregando').classList.add('fora');
   });
   $('coordenadores').addEventListener('click', (e) => {

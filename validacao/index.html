@@ -9,10 +9,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610071100">
-<script src="config.js?v=202610071100"></script>
+<link rel="stylesheet" href="estilo.css?v=202610071400">
+<script src="config.js?v=202610071400"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="logica.js?v=202610071100"></script>
+<script src="logica.js?v=202610071400"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -25,7 +25,7 @@
     </div>
     <div class="filtros">
       <label class="campo-select campo-unidade"><span>Fazenda</span><select id="sel-unidade"></select></label>
-      <label class="campo-select campo-deposito" hidden><span>Depósito</span><select id="sel-deposito"></select></label>
+      <label class="campo-select campo-deposito" hidden><span>Equipe</span><select id="sel-deposito"></select></label>
       <label class="campo-select campo-equipe"><span>Coordenador</span><select id="sel-equipe"></select></label>
       <label class="campo-select campo-data" title="Ordens abertas: data de abertura. Ordens fechadas: data de encerramento."><span>Período de</span><input type="date" id="dt-de"></label>
       <label class="campo-select campo-data" title="Ordens abertas: data de abertura. Ordens fechadas: data de encerramento."><span>até</span><input type="date" id="dt-ate"></label>
@@ -132,15 +132,11 @@
   <main class="vista" id="vista-depositos" hidden>
     <p class="explica" id="explica-depositos"></p>
     <div id="vinculos"></div>
-    <section class="cartao" id="cartao-acessos" hidden>
-      <header class="cartao-cab"><div><h2>Acesso ao Controle Técnico</h2><p>Quais depósitos cada usuário da categoria Controle Técnico pode abrir. Ele vê as ordens, os apontamentos e o saldo dos coordenadores vinculados ao depósito, e nada além disso.</p></div></header>
-      <div id="acessos"></div>
-    </section>
   </main>
 
 </div>
 
 <div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Carregando as ordens</span><i>.</i><i>.</i><i>.</i></p></div></div>
-<script src="app.js?v=202610071100"></script>
+<script src="app.js?v=202610071400"></script>
 </body>
 </html>
