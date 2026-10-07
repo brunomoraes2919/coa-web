@@ -14,7 +14,13 @@
   const CFG = window.VALIDACAO_CONFIG || {};
   const PARAMS = new URLSearchParams(location.search);
   const EMBED = PARAMS.get('embed') === '1';
-  const VISTAS = ['abertas', 'fechadas', 'boletins', 'depositos'];
+  // Controle Técnico: a mesma tela, só com o recorte do coordenador (o banco entrega só o que é dos depósitos dele)
+  const MODO_CONTROLE = PARAMS.get('modo') === 'controle';
+  const PREFIXO = MODO_CONTROLE ? 'controle' : 'validacao'; // das mensagens trocadas com o COA WEB
+  const VISTAS = MODO_CONTROLE
+    ? ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses']
+    : ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor', 'depositos'];
+  const TODAS_AS_VISTAS = ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor', 'depositos'];
   const TODAS = '';
   /** A fazenda do menu lateral não tem unidade no PIMS: nada a mostrar (em vez de mostrar todas). */
   const SEM_UNIDADE = '\u0001';
@@ -31,9 +37,9 @@
   /** 'YYYY-MM-DD HH:MM' → 'DD/MM HH:MM'. */
   const fmtDataHora = (t) => (t ? t.slice(8, 10) + '/' + t.slice(5, 7) + ' ' + t.slice(11, 16) : '—');
 
-  const vistaDoEndereco = () => { const v = location.hash.replace(/^#/, ''); return VISTAS.indexOf(v) >= 0 ? v : 'abertas'; };
+  const vistaDoEndereco = () => { const v = location.hash.replace(/^#/, ''); return VISTAS.indexOf(v) >= 0 ? v : 'pendencias'; };
   // período: por padrão, do primeiro dia do mês até hoje (abertura das ordens abertas; encerramento das fechadas)
-  const estado = { vista: vistaDoEndereco(), unidade: TODAS, equipe: TODAS, de: L.inicioDoMes(L.hojeIso()), ate: L.hojeIso() };
+  const estado = { vista: vistaDoEndereco(), unidade: TODAS, equipe: TODAS, de: L.inicioDoMes(L.hojeIso()), ate: L.hojeIso(), soAlertas: true };
   let linhas = [];        // valid_pims: uma linha por unidade do PIMS
   let vinculos = [];      // valid_vinculos
   let fazendasCoa = [];   // [{ unidade, coaId }] — de que fazenda do COA WEB é cada unidade
@@ -41,6 +47,8 @@
   let coaFazenda;         // fazenda escolhida no COA WEB, quando o módulo está no iframe
   let coaFazendaNome = '';
   let semColunaBoletins = false; // o banco ainda não tem a coluna dos boletins (script 0008)
+  let depositosControle = [];    // Controle Técnico: depósitos que o usuário pode abrir
+  let depositoControle = PARAMS.get('dep') || ''; // 'unidade|depósito' aberto
   let fonte = null;
   let atualizando = false;
 
@@ -61,9 +69,19 @@
       },
       ler: async function () {
         // a coluna dos boletins entra com o script 0008: sem ela, o resto da tela continua funcionando
+        if (MODO_CONTROLE) {
+          const deps = conferir(await sb.rpc('controle_meus_depositos'), 'ler os seus depósitos') || [];
+          if (!deps.length) throw new Error('Nenhum depósito foi liberado para o seu usuário. Fale com o administrador do COA.');
+          const atual = deps.find((d) => d.unidade + '|' + d.deposito === depositoControle) || deps[0];
+          const linha = conferir(await sb.rpc('controle_dados', { p_unidade: atual.unidade, p_deposito: atual.deposito }), 'ler os dados do depósito') || {};
+          return {
+            linhas: [linha], vinculos: (linha.equipes || []).map((eq) => ({ unidade: atual.unidade, equipe: eq, deposito: atual.deposito })),
+            fazendas: [], admin: false, semBoletins: false, depositosControle: deps, depositoControle: atual.unidade + '|' + atual.deposito,
+          };
+        }
         const COLUNAS = 'unidade,gerado_em,ordens,coordenadores,depositos,estoque,avisos';
-        let pims = await sb.from('valid_pims').select(COLUNAS + ',boletins').order('unidade');
-        const semBoletins = !!pims.error && (pims.error.code === '42703' || /boletins/.test(pims.error.message || ''));
+        let pims = await sb.from('valid_pims').select(COLUNAS + ',boletins,extras').order('unidade');
+        const semBoletins = !!pims.error && (pims.error.code === '42703' || /boletins|extras/.test(pims.error.message || ''));
         if (semBoletins) pims = await sb.from('valid_pims').select(COLUNAS).order('unidade');
         const r = await Promise.all([
           pims,
@@ -86,6 +104,19 @@
         }
         conferir(await sb.from('valid_vinculos').upsert({ unidade: v.unidade, equipe: v.equipe, deposito: v.deposito, deposito_origem: null }, { onConflict: 'unidade,equipe' }), 'salvar o vínculo');
       },
+      // usuários da categoria Controle Técnico e os depósitos liberados para cada um (só administrador lê e altera)
+      lerAcessos: async function () {
+        const cat = conferir(await sb.from('usuario_categorias').select('usuario_id').eq('categoria', 'controle'), 'ler os usuários do Controle Técnico') || [];
+        const ids = cat.map((c) => c.usuario_id);
+        const perfis = ids.length ? (conferir(await sb.from('perfis').select('id,nome,email').in('id', ids), 'ler os usuários') || []) : [];
+        const dados = conferir(await sb.from('controle_depositos').select('usuario_id,unidade,deposito'), 'ler os acessos') || [];
+        perfis.sort((a, b) => String(a.nome || a.email || '').localeCompare(String(b.nome || b.email || ''), 'pt-BR'));
+        return { usuarios: perfis, linhas: dados };
+      },
+      salvarAcesso: async function (a, ligar) {
+        if (ligar) conferir(await sb.from('controle_depositos').upsert(a, { onConflict: 'usuario_id,unidade,deposito' }), 'liberar o depósito');
+        else conferir(await sb.from('controle_depositos').delete().eq('usuario_id', a.usuario_id).eq('unidade', a.unidade).eq('deposito', a.deposito), 'retirar o depósito');
+      },
       pedirAtualizacao: async function () {
         const r = await sb.from('valid_pedidos').insert({}).select('id').single();
         return conferir(r, 'pedir a atualização').id;
@@ -97,6 +128,27 @@
     };
   }
   /* servidor local de testes (modulos/validacao/scripts/servidor-local.mjs) */
+  /** No teste local, faz na tela o recorte que em produção é do banco (função controle_dados). */
+  function recorteLocal(d) {
+    const deps = [];
+    (d.vinculos || []).forEach((v) => {
+      if (!v.deposito) return;
+      let x = deps.find((y) => y.unidade === v.unidade && y.deposito === v.deposito);
+      if (!x) { const l = (d.linhas || []).find((y) => y.unidade === v.unidade) || {}; x = { unidade: v.unidade, deposito: v.deposito, nome: ((l.depositos || []).find((y) => y.c === v.deposito) || {}).n || '', equipes: [] }; deps.push(x); }
+      x.equipes.push(v.equipe);
+    });
+    if (!deps.length) throw new Error('Nenhum depósito foi liberado para o seu usuário. Fale com o administrador do COA.');
+    const atual = deps.find((x) => x.unidade + '|' + x.deposito === depositoControle) || deps[0];
+    const l = (d.linhas || []).find((y) => y.unidade === atual.unidade) || { unidade: atual.unidade };
+    const dele = (lista) => (lista || []).filter((o) => atual.equipes.indexOf(o.eq) >= 0);
+    const ex = l.extras || {};
+    const linha = {
+      unidade: l.unidade, gerado_em: l.gerado_em || null, equipes: atual.equipes, ordens: dele(l.ordens), coordenadores: dele(l.coordenadores),
+      depositos: (l.depositos || []).filter((x) => x.c === atual.deposito), estoque: (l.estoque || {})[atual.deposito] ? { [atual.deposito]: l.estoque[atual.deposito] } : {},
+      boletins: dele(l.boletins), extras: { ap: dele(ex.ap), nec: dele(ex.nec), dose: dele(ex.dose) }, avisos: l.avisos || [],
+    };
+    return { linhas: [linha], vinculos: atual.equipes.map((eq) => ({ unidade: atual.unidade, equipe: eq, deposito: atual.deposito })), fazendas: [], admin: false, depositosControle: deps, depositoControle: atual.unidade + '|' + atual.deposito };
+  }
   function fonteLocal() {
     const api = async (caminho, opcoes) => {
       const r = await fetch(caminho, opcoes);
@@ -105,7 +157,9 @@
     };
     return {
       pronto: async function () {},
-      ler: () => api('/api/validacao-teste'),
+      ler: async () => { const d = await api('/api/validacao-teste'); return MODO_CONTROLE ? recorteLocal(d) : d; },
+      lerAcessos: async () => ({ usuarios: [{ id: 'u1', nome: 'Usuário de Teste Um', email: 'teste.um@exemplo.local' }, { id: 'u2', nome: 'Usuário de Teste Dois', email: 'teste.dois@exemplo.local' }], linhas: [] }),
+      salvarAcesso: async () => {},
       salvarVinculo: (v) => api('/api/validacao-teste/vinculo', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) }),
       pedirAtualizacao: async () => (await api('/api/validacao-teste/pedido', { method: 'POST' })).id,
       situacaoPedido: async () => ({ atendido_em: new Date().toISOString(), resultado: 'ok' }),
@@ -138,6 +192,7 @@
     const lista = Array.from(nomes).sort((a, b) => a.localeCompare(b, 'pt-BR'));
     if (estado.equipe && lista.indexOf(estado.equipe) < 0) estado.equipe = TODAS;
     const sel = $('sel-equipe');
+    sel.closest('label').hidden = MODO_CONTROLE && lista.length < 2; // um coordenador só: não há o que escolher
     sel.innerHTML = '<option value="">Todos os coordenadores</option>' + lista.map((n) => '<option value="' + esc(n) + '">' + esc(L.titulo(n)) + '</option>').join('');
     sel.value = estado.equipe;
   }
@@ -192,9 +247,9 @@
             '<span class="n">' + (t.fora || semArea ? '—' : fmtHa(t.falta) + ' ha') + '</span></div>').join('') + '</div>'
         : '<p class="det-nota">A ordem não tem talhões planejados.</p>';
       const apont = d.apontamentos.length
-        ? '<div class="det-grade det-apont"><div class="det-linha cab"><span>Data</span><span>Boletim</span><span>Talhão</span><span class="n">Área</span><span class="c-lanc">Lançado em</span><span class="c-por">Por</span></div>' +
+        ? '<div class="det-grade det-apont"><div class="det-linha cab"><span>Data</span><span>Boletim</span><span>Talhão</span><span class="n">Área</span><span class="c-lanc">Alterado em</span><span class="c-por">Por</span></div>' +
           d.apontamentos.map((a) => '<div class="det-linha"><span>' + fmtDataCurta(a.dia) + '</span><span>' + (a.boletim === null ? '—' : esc(a.boletim)) + '</span><span><b>' + esc(a.talhao) + '</b></span>' +
-            '<span class="n">' + fmtHa(a.ha) + ' ha</span><span class="c-lanc">' + (a.lancado ? '<i>lançado em </i>' + fmtDataHora(a.lancado) : '—') + '</span><span class="c-por">' + esc(a.por || '—') + '</span></div>').join('') + '</div>'
+            '<span class="n">' + fmtHa(a.ha) + ' ha</span><span class="c-lanc">' + (a.lancado ? '<i>alterado em </i>' + fmtDataHora(a.lancado) : '—') + '</span><span class="c-por">' + esc(a.por || '—') + '</span></div>').join('') + '</div>'
         : '<p class="det-nota">Nenhum apontamento nesta ordem.</p>';
       corpo = '<div class="det"><div class="det-bloco"><h3>Talhões da ordem</h3>' + talhoes + '</div>' +
         '<div class="det-bloco"><h3>Apontamentos' + (d.apontamentos.length ? ' (' + d.apontamentos.length + ')' : '') + '</h3>' + apont + '</div></div>';
@@ -217,7 +272,7 @@
       : '';
     return '<tr class="ordem clicavel ' + o.prazo + (o.excedeu ? ' excedeu' : '') + '"' + attrsOrdem(o) + '>' +
       '<td class="os"><span class="seta" aria-hidden="true"></span><b>' + esc(o.os) + '</b></td>' +
-      '<td class="operacao"><span>' + esc(L.titulo(o.opn)) + '</span><small>' + (o.nt === 1 ? '1 talhão' : o.nt + ' talhões') + '</small></td>' +
+      '<td class="operacao"><span>' + esc(L.titulo(o.opn)) + '</span><small>' + (o.nt === 1 ? '1 talhão' : o.nt + ' talhões') + (o.pronta ? ' · <b class="pronta">pronta para fechar</b>' : '') + '</small></td>' +
       '<td class="n">' + fmtData(o.ab) + '</td>' +
       '<td class="prazo"><span class="selo ' + o.prazo + '">' + esc(L.textoDias(o.dias)) + '</span></td>' +
       '<td class="falta ' + o.prazo + '">' + esc(L.textoFalta(o.falta)) + '</td>' +
@@ -386,6 +441,152 @@
     tr.setAttribute('aria-expanded', 'true');
   }
 
+  /* ------------------------------ pendências (por onde começar) ------------------------------ */
+  function desenharPendencias() {
+    const p = L.pendencias(linhas, vinculos, L.hojeIso(), filtro());
+    const cartao = (vista, n, titulo, texto, classe) => (VISTAS.indexOf(vista) < 0 ? ''
+      : '<button type="button" class="pend ' + (n ? classe : 'zero') + '" data-ir-vista="' + vista + '"><b>' + n + '</b><span class="pend-titulo">' + esc(titulo) + '</span><span class="pend-texto">' + esc(texto) + '</span></button>');
+    $('explica-pendencias').textContent = MODO_CONTROLE
+      ? 'O que pede a sua atenção hoje. Toque num quadro para abrir a lista.'
+      : 'O que pede ação hoje, na ordem em que costuma dar problema. Clique num quadro para abrir a lista.';
+    $('pendencias').innerHTML =
+      cartao('boletins', p.recusados, 'Boletins recusados pelo SAP', 'A integração tentou e voltou com erro: corrija o motivo para o boletim passar.', 'ruim') +
+      cartao('boletins', p.vaoFalhar, 'Boletins que vão falhar', 'Ainda não foram enviados, mas o saldo ou o cadastro já mostra que o SAP vai recusar.', 'atencao') +
+      cartao('apontamentos', p.apontamentos, 'Apontamentos com alerta', 'Lançados nos últimos 3 dias com talhão fora da ordem, área acima do planejado, atraso ou duplicidade.', 'ruim') +
+      cartao('abertas', p.excedidas, 'Ordens com área excedida', 'A área apontada passou da planejada: confira o talhão lançado.', 'ruim') +
+      cartao('abertas', p.emAlerta, 'Ordens em alerta', 'Abertas há mais de 5 dias, dentro do período escolhido.', 'atencao') +
+      cartao('abertas', p.prontas, 'Ordens prontas para fechar', 'Toda a área planejada já foi apontada: é só encerrar no PIMS.', 'ok') +
+      cartao('fechadas', p.fechadas, 'Fechadas com diferença', 'Encerradas faltando área ou com área a mais, no período.', 'atencao') +
+      cartao('estoque', p.emFalta, 'Produtos em falta para as ordens', 'O que as ordens abertas ainda vão consumir não cabe no saldo do depósito do coordenador.', 'ruim') +
+      cartao('doses', p.doses, 'Doses fora do programado', 'Aplicações dos últimos 10 dias com a dose real mais de 10% diferente da receita.', 'atencao') +
+      cartao('coletor', p.coletor, 'Boletins do coletor travados', 'Vieram do celular e não entraram no PIMS.', 'atencao');
+  }
+
+  /* ------------------------------ apontamentos do dia ------------------------------ */
+  function desenharApontamentos() {
+    const lista = L.conferirApontamentos(linhas, { unidade: estado.unidade, equipe: estado.equipe, soAlertas: estado.soAlertas });
+    $('explica-apontamentos').innerHTML = 'Apontamentos feitos ou lançados nos <b>últimos 3 dias</b>, com a conferência automática de cada um. Corrigir no mesmo dia evita que o erro chegue ao SAP. A última coluna mostra quem mexeu no registro por último (pode ser a própria integração).';
+    $('chk-so-alertas').checked = estado.soAlertas;
+    if (!lista.length) { $('tab-apontamentos').innerHTML = '<p class="vazio">' + (estado.soAlertas ? 'Nenhum apontamento com alerta nos últimos 3 dias.' : 'Nenhum apontamento nos últimos 3 dias.') + '</p>'; return; }
+    $('tab-apontamentos').innerHTML = '<table class="tabela tabela-cartoes tabela-apont"><thead><tr><th>Boletim</th><th>Data</th><th>Ordem e coordenador</th><th>Talhão</th><th class="n">Área</th><th>Conferência</th><th>Última alteração</th></tr></thead><tbody>' +
+      lista.map((a) => '<tr class="' + (a.alertas.length ? 'com-alerta' : '') + '">' +
+        '<td class="principal"><b>' + (a.b === null ? '—' : esc(a.b)) + '</b> <small>' + esc(a.tipo) + '</small></td>' +
+        '<td data-rotulo="Data">' + fmtData(a.d) + '</td>' +
+        '<td data-rotulo="Ordem">' + (a.os === null ? '<span class="fraco">sem ordem</span>' : 'OS <b>' + esc(a.os) + '</b>' + (a.s === 'F' ? ' <small class="fraco">(fechada)</small>' : '')) +
+          '<small>' + (a.eq ? esc(L.titulo(a.eq)) : '—') + (estado.unidade ? '' : ' · ' + esc(L.titulo(a.unidade))) + ' · ' + esc(L.titulo(a.opn)) + '</small></td>' +
+        '<td data-rotulo="Talhão"><b>' + esc(a.tl || '—') + '</b>' + (a.pt !== null && a.pt !== undefined ? '<small>' + fmtHa(a.xt) + ' de ' + fmtHa(a.pt) + ' ha no talhão</small>' : '') + '</td>' +
+        '<td class="n" data-rotulo="Área">' + fmtHa(a.ha) + ' ha</td>' +
+        '<td class="confere" data-rotulo="Conferência">' + (a.alertas.length ? a.alertas.map((c) => '<span class="alerta-linha">' + esc(L.ALERTAS_APONT[c] || c) + (c === 'atrasado' ? ' (' + a.demora + ' dias depois)' : '') + '</span>').join('') : '<span class="bom">sem alerta</span>') + '</td>' +
+        '<td data-rotulo="Última alteração">' + (a.la ? fmtDataHora(a.la) : '—') + '<small>' + esc(a.por || '') + '</small></td></tr>').join('') +
+      '</tbody></table>';
+  }
+
+  /* ------------------------------ estoque x necessidade ------------------------------ */
+  function desenharEstoque() {
+    const grupos = L.necessidadePorCoordenador(linhas, vinculos, filtro());
+    $('explica-estoque').innerHTML = 'O que as <b>ordens abertas</b> no período ainda vão consumir de cada produto (planejado menos o que já foi lançado), contra o saldo do depósito do coordenador no SAP. ' +
+      'O que falta precisa de transferência antes da aplicação; o que está parado pode voltar para a origem.';
+    if (!grupos.length) { $('necessidade').innerHTML = '<p class="vazio">Nenhuma ordem aberta com produto a consumir neste período.</p>'; return; }
+    $('necessidade').innerHTML = grupos.map((g) => {
+      const cab = '<header class="cartao-cab"><div><h2>' + esc(L.titulo(g.eq)) + '</h2><p>' + esc(L.titulo(g.unidade)) + ' · ' +
+        (g.deposito ? 'depósito ' + esc(g.deposito) + ' · ' + esc(L.titulo(g.depositoNome)) : 'sem depósito vinculado' + (admin ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '')) + '</p></div>' +
+        '<div class="selos">' + (g.emFalta ? '<span class="selo atraso">' + g.emFalta + (g.emFalta === 1 ? ' produto em falta' : ' produtos em falta') + '</span>' : (g.deposito && g.itens.length ? '<span class="selo ok">saldo cobre as ordens</span>' : '')) + '</div></header>';
+      const nota = g.pendente ? '<p class="saldo-nota">O saldo deste depósito ainda não foi lido: entra na próxima atualização.</p>' : '';
+      const itens = g.itens.length
+        ? '<div class="tabela-rolagem"><table class="tabela tabela-cartoes tabela-nec"><thead><tr><th>Produto</th><th class="n">Falta consumir</th><th class="n">Saldo no depósito</th><th class="n">Falta transferir</th><th>Origem</th><th>Ordens</th></tr></thead><tbody>' +
+          g.itens.map((i) => '<tr class="' + (i.falta > 0 ? 'com-alerta' : '') + '"><td class="principal"><small>' + esc(i.c) + '</small> ' + esc(L.titulo(i.nm)) + '</td>' +
+            '<td class="n" data-rotulo="Falta consumir">' + fmtQtd(i.nec) + ' ' + esc(i.u) + '</td>' +
+            '<td class="n" data-rotulo="Saldo no depósito">' + (i.saldo === null ? '—' : fmtQtd(i.saldo) + ' ' + esc(i.u)) + '</td>' +
+            '<td class="n falta" data-rotulo="Falta transferir">' + (i.falta === null ? '—' : i.falta > 0 ? '<b>' + fmtQtd(i.falta) + ' ' + esc(i.u) + '</b>' : '<span class="bom">nada</span>') + '</td>' +
+            '<td data-rotulo="Origem">' + (i.origem ? esc(i.origem) + '<small>' + esc(L.titulo(i.origemNome)) + ' · saldo ' + fmtQtd(i.origemSaldo) + ' ' + esc(i.u) + '</small>' : '<span class="fraco">sem transferência anterior</span>') + '</td>' +
+            '<td data-rotulo="Ordens">' + i.ordens.map(esc).join(', ') + '</td></tr>').join('') + '</tbody></table></div>'
+        : '<p class="saldo-nota">Nenhum produto a consumir nas ordens abertas do período.</p>';
+      const parados = g.parados.length
+        ? '<details class="saldo"><summary class="saldo-cab"><b>Parado no depósito</b><span>' + g.parados.length + (g.parados.length === 1 ? ' produto com saldo e sem ordem aberta que o use' : ' produtos com saldo e sem ordem aberta que os use') + '</span></summary>' +
+          '<div class="tabela-rolagem"><table class="tabela tabela-saldo"><thead><tr><th>Produto</th><th class="n">Saldo no depósito</th><th>Veio de</th></tr></thead><tbody>' +
+          g.parados.map((i) => '<tr><td><span class="cod">' + esc(i.c) + '</span>' + esc(L.titulo(i.nm)) + '</td><td class="n"><b>' + fmtQtd(i.saldo) + '</b> ' + esc(i.u) + '</td><td class="origem">' + (i.origem ? esc(i.origem) + '<span class="origem-nome"> · ' + esc(L.titulo(i.origemNome)) + '</span>' : '—') + '</td></tr>').join('') +
+          '</tbody></table></div></details>'
+        : '';
+      return '<section class="cartao">' + cab + nota + itens + parados + '</section>';
+    }).join('');
+  }
+
+  /* ------------------------------ dose real x programada ------------------------------ */
+  function desenharDoses() {
+    const lista = L.dosesFora(linhas, filtro());
+    $('explica-doses').innerHTML = 'Aplicações dos últimos 10 dias (dentro do período escolhido) em que a <b>dose real</b> lançada no boletim ficou mais de 10% diferente da <b>dose programada</b> na ordem. Costuma ser área ou quantidade digitada errada.';
+    if (!lista.length) { $('tab-doses').innerHTML = '<p class="vazio">Nenhuma aplicação com a dose fora do programado neste período.</p>'; return; }
+    $('tab-doses').innerHTML = '<table class="tabela tabela-cartoes tabela-doses"><thead><tr><th>Produto</th><th>Boletim</th><th>Ordem e coordenador</th><th>Talhão</th><th class="n">Programada</th><th class="n">Real</th><th class="n">Desvio</th><th class="n">Área</th><th class="n">Consumo</th></tr></thead><tbody>' +
+      lista.map((d) => '<tr><td class="principal"><small>' + esc(d.c || '') + '</small> ' + esc(L.titulo(d.nm)) + '</td>' +
+        '<td data-rotulo="Boletim"><b>' + esc(d.b) + '</b><small>' + fmtData(d.d) + '</small></td>' +
+        '<td data-rotulo="Ordem">' + (d.os === null ? '<span class="fraco">sem ordem</span>' : 'OS <b>' + esc(d.os) + '</b>') + '<small>' + (d.eq ? esc(L.titulo(d.eq)) : '—') + (estado.unidade ? '' : ' · ' + esc(L.titulo(d.unidade))) + '</small></td>' +
+        '<td data-rotulo="Talhão"><b>' + esc(d.tl || '—') + '</b></td>' +
+        '<td class="n" data-rotulo="Programada">' + fmtQtd(d.pg) + '</td><td class="n" data-rotulo="Real">' + fmtQtd(d.re) + '</td>' +
+        '<td class="n desvio ' + (d.desvio > 0 ? 'mais' : 'menos') + '" data-rotulo="Desvio"><b>' + (d.desvio > 0 ? '+' : '−') + Math.round(Math.abs(d.desvio) * 100) + '%</b></td>' +
+        '<td class="n" data-rotulo="Área">' + fmtHa(d.ha) + ' ha</td><td class="n" data-rotulo="Consumo">' + fmtQtd(d.q) + '</td></tr>').join('') +
+      '</tbody></table>';
+  }
+
+  /* ------------------------------ boletins do coletor que não entraram ------------------------------ */
+  function desenharColetor() {
+    const lista = L.coletorTravados(linhas, L.hojeIso(), { unidade: estado.unidade, equipe: estado.equipe });
+    $('explica-coletor').innerHTML = 'Boletins lançados no coletor (celular) desde ' + fmtData(L.inicioSafra(L.hojeIso())) + ' que ainda estão na área de espera do PIMS: não viraram apontamento. Os recusados trazem o motivo que o próprio PIMS registrou.';
+    if (!lista.length) { $('tab-coletor').innerHTML = '<p class="vazio">Nenhum boletim do coletor parado.</p>'; return; }
+    $('tab-coletor').innerHTML = '<table class="tabela tabela-cartoes tabela-coletor"><thead><tr><th>Boletim</th><th>Data</th><th>Ordem e coordenador</th><th>Situação</th><th>Parado</th><th>Lançado</th></tr></thead><tbody>' +
+      lista.map((c) => '<tr class="' + (c.recusado ? 'com-alerta' : '') + '"><td class="principal"><b>' + (c.b === null ? '—' : esc(c.b)) + '</b> <small>' + esc(c.tipo) + '</small></td>' +
+        '<td data-rotulo="Data">' + fmtData(c.d) + '</td>' +
+        '<td data-rotulo="Ordem">' + (c.os ? 'OS <b>' + esc(c.os) + '</b>' : '<span class="fraco">sem ordem</span>') + '<small>' + (c.eq ? esc(L.titulo(c.eq)) : '—') + (estado.unidade ? '' : ' · ' + esc(L.titulo(c.unidade))) + (c.opn ? ' · ' + esc(L.titulo(c.opn)) : '') + '</small></td>' +
+        '<td class="confere" data-rotulo="Situação"><b>' + esc(c.situacao) + '</b>' + c.motivos.map((m) => '<span class="alerta-linha">' + esc(m) + '</span>').join('') + '</td>' +
+        '<td data-rotulo="Parado">' + textoHa(c.dias) + '</td>' +
+        '<td data-rotulo="Lançado">' + (c.la ? fmtDataHora(c.la) : '—') + '<small>' + esc(c.por || '') + '</small></td></tr>').join('') +
+      '</tbody></table>';
+  }
+
+  /* ------------------------------ acesso ao Controle Técnico (só administrador) ------------------------------ */
+  let acessos = null; // { usuarios: [{ id, nome, email }], linhas: [{ usuario_id, unidade, deposito }] } — lido na primeira vez
+  async function desenharAcessos() {
+    const cartao = $('cartao-acessos');
+    cartao.hidden = !admin || MODO_CONTROLE || !fonte.lerAcessos;
+    if (cartao.hidden) return;
+    if (!acessos) {
+      $('acessos').innerHTML = '<p class="saldo-nota">Lendo os usuários…</p>';
+      try { acessos = await fonte.lerAcessos(); } catch (e) { $('acessos').innerHTML = '<p class="saldo-nota">' + esc(e && e.message ? e.message : 'Não foi possível ler os acessos.') + '</p>'; return; }
+    }
+    const depositos = [];
+    vinculos.forEach((v) => {
+      if (!v.deposito || (estado.unidade && estado.unidade !== SEM_UNIDADE && v.unidade !== estado.unidade)) return;
+      let d = depositos.find((x) => x.unidade === v.unidade && x.deposito === v.deposito);
+      if (!d) { d = { unidade: v.unidade, deposito: v.deposito, equipes: [] }; depositos.push(d); }
+      d.equipes.push(v.equipe);
+    });
+    if (!acessos.usuarios.length) { $('acessos').innerHTML = '<p class="saldo-nota">Nenhum usuário tem a categoria Controle Técnico. Marque a categoria na página Usuários e volte aqui para escolher os depósitos.</p>'; return; }
+    if (!depositos.length) { $('acessos').innerHTML = '<p class="saldo-nota">Nenhum depósito vinculado a coordenador' + (estado.unidade ? ' nesta fazenda' : '') + '. Vincule acima primeiro.</p>'; return; }
+    $('acessos').innerHTML = '<div class="tabela-rolagem"><table class="tabela tabela-acessos"><thead><tr><th>Usuário</th><th>Depósitos que ele pode abrir</th></tr></thead><tbody>' +
+      acessos.usuarios.map((u) => '<tr data-usuario="' + esc(u.id) + '"><td><b>' + esc(u.nome || u.email || '') + '</b><small>' + esc(u.email || '') + '</small></td><td><div class="acessos-lista">' +
+        depositos.map((d) => {
+          const tem = acessos.linhas.some((a) => a.usuario_id === u.id && a.unidade === d.unidade && a.deposito === d.deposito);
+          const nome = ((linhaDa(d.unidade) || {}).depositos || []).find((x) => x.c === d.deposito);
+          return '<label class="acesso"><input type="checkbox" data-unidade="' + esc(d.unidade) + '" data-deposito="' + esc(d.deposito) + '"' + (tem ? ' checked' : '') + '>' +
+            '<span><b>' + esc(d.deposito) + '</b> · ' + esc(L.titulo(nome ? nome.n : '')) + '<small>' + esc(L.titulo(d.unidade)) + ' · ' + d.equipes.map((e) => esc(L.titulo(e))).join(', ') + '</small></span></label>';
+        }).join('') + '</div><span class="situacao" aria-live="polite"></span></td></tr>').join('') +
+      '</tbody></table></div>';
+  }
+  async function alternarAcesso(caixa) {
+    const tr = caixa.closest('tr[data-usuario]');
+    const sit = tr.querySelector('.situacao');
+    const a = { usuario_id: tr.dataset.usuario, unidade: caixa.dataset.unidade, deposito: caixa.dataset.deposito };
+    sit.className = 'situacao'; sit.textContent = 'Salvando…';
+    try {
+      await fonte.salvarAcesso(a, caixa.checked);
+      acessos.linhas = acessos.linhas.filter((x) => !(x.usuario_id === a.usuario_id && x.unidade === a.unidade && x.deposito === a.deposito));
+      if (caixa.checked) acessos.linhas.push(a);
+      sit.className = 'situacao ok'; sit.textContent = caixa.checked ? 'Acesso liberado.' : 'Acesso retirado.';
+    } catch (e) {
+      caixa.checked = !caixa.checked;
+      sit.className = 'situacao erro'; sit.textContent = e && e.message ? e.message : 'Não foi possível salvar.';
+    }
+  }
+
   /* ------------------------------ depósitos dos coordenadores ------------------------------ */
   function opcoesDeposito(linha, escolhido) {
     const lista = (linha.depositos || []).filter((d) => !d.i || d.c === escolhido);
@@ -441,8 +642,8 @@
   function desenhar() {
     preencherUnidades();
     preencherEquipes();
-    document.querySelectorAll('#abas [data-vista]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.vista === estado.vista)));
-    VISTAS.forEach((v) => { $('vista-' + v).hidden = v !== estado.vista; });
+    document.querySelectorAll('#abas [data-vista]').forEach((b) => { b.hidden = VISTAS.indexOf(b.dataset.vista) < 0; b.setAttribute('aria-selected', String(b.dataset.vista === estado.vista)); });
+    TODAS_AS_VISTAS.forEach((v) => { $('vista-' + v).hidden = v !== estado.vista; });
     const hoje = L.hojeIso();
     // os números das abas valem para o filtro escolhido
     $('conta-abertas').textContent = L.resumoAbertas(L.abertasPorCoordenador(linhas, hoje, filtro()).grupos).ordens;
@@ -450,14 +651,23 @@
     $('conta-fechadas').textContent = f.faltando.length + f.sobrando.length;
     const bol = L.boletinsComProblema(linhas, hoje, filtro());
     $('conta-boletins').textContent = bol.falhas.length + bol.vaoFalhar.length;
-    if (estado.vista === 'abertas') desenharAbertas();
+    $('conta-apontamentos').textContent = L.conferirApontamentos(linhas, { unidade: estado.unidade, equipe: estado.equipe, soAlertas: true }).length;
+    $('conta-estoque').textContent = L.necessidadePorCoordenador(linhas, vinculos, filtro()).reduce((s, g) => s + g.emFalta, 0);
+    $('conta-doses').textContent = L.dosesFora(linhas, filtro()).length;
+    $('conta-coletor').textContent = L.coletorTravados(linhas, hoje, { unidade: estado.unidade, equipe: estado.equipe }).length;
+    if (estado.vista === 'pendencias') desenharPendencias();
+    else if (estado.vista === 'abertas') desenharAbertas();
     else if (estado.vista === 'fechadas') desenharFechadas();
+    else if (estado.vista === 'apontamentos') desenharApontamentos();
     else if (estado.vista === 'boletins') desenharBoletins(bol);
-    else desenharDepositos();
+    else if (estado.vista === 'estoque') desenharEstoque();
+    else if (estado.vista === 'doses') desenharDoses();
+    else if (estado.vista === 'coletor') desenharColetor();
+    else { desenharDepositos(); desenharAcessos(); }
     const mais = linhas.reduce((m, l) => (l.gerado_em > m ? l.gerado_em : m), '');
     $('atualizado').innerHTML = mais ? 'PIMS · <b>' + new Date(mais).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</b>' : '';
     const semSap = linhas.some((l) => (l.avisos || []).length);
-    if (!linhas.length) avisar('Ainda não há dados da validação. O servidor grava as ordens a cada hora; clique em Atualizar para buscar agora.', '');
+    if (!linhas.length || (MODO_CONTROLE && !linhas[0].gerado_em)) avisar(MODO_CONTROLE ? 'Ainda não há dados deste depósito. O servidor grava as ordens a cada hora.' : 'Ainda não há dados da validação. O servidor grava as ordens a cada hora; clique em Atualizar para buscar agora.', '');
     else if (estado.unidade === SEM_UNIDADE) avisar('A fazenda escolhida no menu não tem ordens de serviço no PIMS (ou você não tem acesso à unidade dela).', '');
     else if (semSap) avisar('O saldo de alguns depósitos do SAP não pôde ser lido na última atualização. As ordens estão atualizadas.', 'alerta');
     else if (!$('aviso').classList.contains('fixo')) avisar('', '');
@@ -466,10 +676,11 @@
   function avisarPai() {
     if (!EMBED || window.parent === window) return;
     const f = fazendasCoa.find((x) => x.unidade === estado.unidade);
-    try { window.parent.postMessage({ tipo: 'validacao-rota', vista: estado.vista, coaFazenda: f ? f.coaId : null }, location.origin); } catch (e) { /* fora do COA WEB */ }
+    try { window.parent.postMessage({ tipo: PREFIXO + '-rota', vista: estado.vista, coaFazenda: f && !MODO_CONTROLE ? f.coaId : null }, location.origin); } catch (e) { /* fora do COA WEB */ }
   }
   /** A fazenda do menu lateral do COA WEB manda na unidade: pelo cadastro do Mapas e, sem ele, pelo nome. */
   function aplicarFazendaCoa() {
+    if (MODO_CONTROLE) { estado.unidade = linhas.length ? linhas[0].unidade : TODAS; return; } // o depósito manda, não a fazenda do menu
     if (coaFazenda === undefined) return;
     const anterior = estado.unidade;
     if (coaFazenda === null) estado.unidade = TODAS;
@@ -484,6 +695,17 @@
     const d = await fonte.ler();
     linhas = (d.linhas || []).map((l) => Object.assign({ ordens: [], coordenadores: [], depositos: [], estoque: {}, boletins: [], avisos: [] }, l));
     semColunaBoletins = !!d.semBoletins;
+    acessos = null;
+    if (MODO_CONTROLE) {
+      depositosControle = d.depositosControle || [];
+      depositoControle = d.depositoControle || '';
+      const sel = $('sel-deposito');
+      sel.innerHTML = depositosControle.map((x) => '<option value="' + esc(x.unidade + '|' + x.deposito) + '">' + esc(x.deposito) + ' · ' + esc(L.titulo(x.nome || '')) + ' (' + esc(L.titulo(x.unidade)) + ')</option>').join('');
+      sel.value = depositoControle;
+      sel.closest('label').hidden = depositosControle.length < 2;
+      const atual = depositosControle.find((x) => x.unidade + '|' + x.deposito === depositoControle);
+      $('marca-sub').textContent = atual ? 'Depósito ' + atual.deposito + ' · ' + L.titulo(atual.nome || '') + ' · ' + L.titulo(atual.unidade) : 'Suas ordens, apontamentos e estoque';
+    }
     vinculos = d.vinculos || [];
     admin = !!d.admin;
     fazendasCoa = (d.fazendas || []).filter((f) => f.unidade_pims && typeof f.coa_fazenda_id === 'number')
@@ -524,7 +746,7 @@
 
   /** Troca de tela: guarda no endereço (o botão voltar do navegador funciona) e avisa o COA WEB. */
   function irPara(vista) {
-    estado.vista = VISTAS.indexOf(vista) >= 0 ? vista : 'abertas';
+    estado.vista = VISTAS.indexOf(vista) >= 0 ? vista : 'pendencias';
     if (location.hash.replace(/^#/, '') !== estado.vista) history.replaceState(null, '', '#' + estado.vista);
     desenhar();
     avisarPai();
@@ -570,6 +792,23 @@
     e.preventDefault();
     if (e.target.dataset.boletim) alternarBoletim(e.target); else alternarDetalhe(e.target);
   });
+  // quadros das pendências e botões "Vincular" levam à página certa
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ir-vista]');
+    if (b) irPara(b.dataset.irVista);
+  });
+  $('necessidade').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ir="depositos"]');
+    if (b) irPara('depositos');
+  });
+  $('chk-so-alertas').addEventListener('change', (e) => { estado.soAlertas = e.target.checked; desenhar(); });
+  $('acessos').addEventListener('change', (e) => { if (e.target.matches('input[type="checkbox"][data-deposito]')) alternarAcesso(e.target); });
+  $('sel-deposito').addEventListener('change', async (e) => {
+    depositoControle = e.target.value;
+    $('carregando').classList.remove('fora');
+    try { await carregar(); aplicarFazendaCoa(); estado.equipe = TODAS; desenhar(); } catch (err) { avisar(err && err.message ? err.message : 'Não foi possível abrir o depósito.', 'erro'); }
+    $('carregando').classList.add('fora');
+  });
   $('coordenadores').addEventListener('click', (e) => {
     const b = e.target.closest('[data-ir="depositos"]');
     if (!b) return;
@@ -584,8 +823,8 @@
     if (ev.origin !== location.origin || ev.source !== window.parent) return;
     const d = ev.data;
     if (!d || typeof d !== 'object') return;
-    if (d.tipo === 'validacao-vista') { if (VISTAS.indexOf(d.vista) >= 0 && d.vista !== estado.vista) irPara(d.vista); return; }
-    if (d.tipo !== 'coa-fazenda') return;
+    if (d.tipo === PREFIXO + '-vista') { if (VISTAS.indexOf(d.vista) >= 0 && d.vista !== estado.vista) irPara(d.vista); return; }
+    if (d.tipo !== 'coa-fazenda' || MODO_CONTROLE) return;
     coaFazenda = typeof d.id === 'number' ? d.id : null;
     coaFazendaNome = typeof d.nome === 'string' ? d.nome : '';
     if (!linhas.length) return;
@@ -595,6 +834,13 @@
 
   /* ------------------------------ início ------------------------------ */
   if (EMBED) document.documentElement.classList.add('embed');
+  if (MODO_CONTROLE) {
+    document.documentElement.classList.add('modo-controle');
+    document.title = 'Controle Técnico · COA';
+    $('marca-titulo').textContent = 'Controle Técnico';
+    $('marca-sub').textContent = 'Suas ordens, apontamentos e estoque';
+    $('btn-atualizar').hidden = true; // a carga é a do servidor, de hora em hora
+  }
   (async function iniciar() {
     fonte = CFG.modo === 'local' ? fonteLocal() : fonteSupabase();
     try {
@@ -602,7 +848,7 @@
       await carregar();
     } catch (e) {
       $('carregando').classList.add('erro');
-      $('carregando-texto').textContent = e && e.message ? e.message : 'Não foi possível abrir a Validação PIMS.';
+      $('carregando-texto').textContent = e && e.message ? e.message : (MODO_CONTROLE ? 'Não foi possível abrir o Controle Técnico.' : 'Não foi possível abrir a Validação PIMS.');
       return;
     }
     $('carregando').classList.add('fora');

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { atenderPedidosValidacao } from '../scripts/atender-pedidos.mjs';
 import {
-  depositosVinculados, inicioSafraValidacao, itemDoSaldoSap, linhasBoletins, linhasValidacao, montarSqlApontamentosValidacao, montarSqlBoletinsFalha,
+  depositosVinculados, diaAnterior, inicioSafraValidacao, itemDoSaldoSap, linhasBoletins, linhasExtras, linhasValidacao, montarSqlApontamentosRecentes,
+  montarSqlApontamentosValidacao, montarSqlBoletinsFalha, montarSqlColetorValidacao, montarSqlDoseValidacao, montarSqlNecessidadeValidacao,
   montarSqlBoletinsPendentes, montarSqlLogIntegracaoSap, montarSqlSaldoItensSap, montarSqlCoordenadoresValidacao, montarSqlEstoqueSap,
   montarSqlOrdensValidacao, montarSqlTalhoesValidacao,
 } from '../scripts/sincronizar-plantio.mjs';
@@ -194,6 +195,47 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
     expect(p3.it[0].pr).toEqual(['item-fora-deposito']);
     expect(p4).toMatchObject({ n: '604', sit: 'P', si: 1, it: [] });
     expect(r.SM3[0].it).toEqual([{ c: 'I1', nm: 'NOME DO PIMS', q: 60, u: '', dp: '1001' }]);
+  });
+
+  it('páginas novas: as consultas de apontamentos recentes, necessidade, dose e coletor', () => {
+    expect(diaAnterior(new Date(2026, 9, 6, 21, 40), 2)).toBe('2026-10-04');
+    expect(diaAnterior(new Date(2026, 9, 1, 8, 0), 2)).toBe('2026-09-29');
+    const ap = montarSqlApontamentosRecentes('2026-10-04', 4000, 4000);
+    expect(ap).toContain("(DT_OPERACAO >= '2026-10-04' OR LAST_UPDATE >= '2026-10-04')");
+    expect(ap).toContain("(a.DT_OPERACAO >= '2026-10-04' OR a.LAST_UPDATE >= '2026-10-04')");
+    expect(ap).toContain('lc.ha AS plan_talhao, tot.ha AS exec_talhao');
+    expect(ap).toMatch(/OFFSET 4000 ROWS FETCH NEXT 4000 ROWS ONLY$/);
+    const nec = montarSqlNecessidadeValidacao('2026-08-01');
+    expect(nec).toContain("WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '2026-08-01'");
+    expect(nec).toContain('co.CONSUMO_TOTAL AS planejado, ISNULL(ci.q, 0) + ISNULL(cp.q, 0) AS consumido');
+    expect(montarSqlDoseValidacao('2026-09-26')).toContain("a.DT_OPERACAO >= '2026-09-26' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG > 0.1");
+    const col = montarSqlColetorValidacao('2026-08-01');
+    expect(col.match(/t\.DT_OPERACAO >= '2026-08-01'/g)).toHaveLength(4);
+    expect(col).toContain('APATIVMEC_TMP');
+  });
+
+  it('páginas novas: os dados vão por unidade, com o coordenador em todas as linhas', () => {
+    const r = linhasExtras({
+      apontamentos: [
+        { unidade: 'DOURADO', os: 10, os_sit: 'A', abertura: '2026-10-01', encerramento: null, equipe: 'COORD A', operacao_de: 'PLANTIO', tipo: 'P', boletim: 7001, dia: '2026-10-05', talhao: 'T01', ha: 50.004, lancado: '2026-10-05 18:00', por: 'usuario.um', itens: null, plan_talhao: 100, exec_talhao: 50.004 },
+        { unidade: 'DOURADO', os: null, os_sit: null, abertura: null, encerramento: null, equipe: 'COORD B', operacao_de: 'APLIC', tipo: 'I', boletim: 7002, dia: '2026-10-05', talhao: 'T02', ha: 10, lancado: null, por: null, itens: 0, plan_talhao: null, exec_talhao: null },
+        { unidade: null, os: 1, tipo: 'P', boletim: 1, dia: '2026-10-05' }, // sem unidade: fora
+      ],
+      necessidade: [{ unidade: 'DOURADO', os: 10, equipe: 'COORD A', abertura: '2026-10-01', operacao_de: 'APLIC', item: '000040', nome: 'DUAL HERBICIDA', planejado: 259.9994, consumido: 0 }],
+      dose: [{ unidade: 'SM3', boletim: 9, dia: '2026-10-03', os: 20, equipe: 'COORD C', talhao: '007A', item: '075908', nome: 'CARTAGO', prog: 1.2, dose_real: 0.40071, ha: 156, total: 62.5102 }],
+      coletor: [{ unidade: 'SM3', tipo: 'A', boletim: 1502, dia: '2026-09-29', os: '1762', equipe: 'COORD C', operacao_de: 'ADUBACAO', st: null, msg: null, lancado: '2026-09-29 08:34', por: 'COORD C' }],
+    });
+    expect(Object.keys(r)).toEqual(['DOURADO', 'SM3']);
+    expect(r.DOURADO.ap).toEqual([
+      { os: 10, s: 'A', ab: '2026-10-01', enc: null, eq: 'COORD A', opn: 'PLANTIO', t: 'P', b: 7001, d: '2026-10-05', tl: 'T01', ha: 50, la: '2026-10-05 18:00', por: 'usuario.um', pt: 100, xt: 50 },
+      { os: null, s: null, ab: null, enc: null, eq: 'COORD B', opn: 'APLIC', t: 'I', b: 7002, d: '2026-10-05', tl: 'T02', ha: 10, la: null, por: null, pt: null, xt: 0, it: 0 },
+    ]);
+    expect(r.DOURADO.nec).toEqual([{ os: 10, eq: 'COORD A', ab: '2026-10-01', opn: 'APLIC', c: '000040', nm: 'DUAL HERBICIDA', pl: 259.999, co: 0 }]);
+    expect(r.SM3.dose).toEqual([{ b: 9, d: '2026-10-03', os: 20, eq: 'COORD C', tl: '007A', c: '075908', nm: 'CARTAGO', pg: 1.2, re: 0.4007, ha: 156, q: 62.51 }]);
+    expect(r.SM3.col).toEqual([{ t: 'A', b: 1502, d: '2026-09-29', os: '1762', eq: 'COORD C', opn: 'ADUBACAO', st: null, m: '', la: '2026-09-29 08:34', por: 'COORD C' }]);
+    // e entram na linha da unidade, ao lado das ordens
+    const linhas = linhasValidacao({ ordens: [], evolucao: [], coordenadores: [], depositos: [], extras: r }, '2026-10-06T12:00:00.000Z');
+    expect(linhas.map((l) => [l.unidade, Object.keys(l.extras)])).toEqual([['DOURADO', ['ap', 'nec', 'dose', 'col']], ['SM3', ['ap', 'nec', 'dose', 'col']]]);
   });
 
   it('sem pedido pendente (ou sem a tabela) não consulta o PIMS', async () => {

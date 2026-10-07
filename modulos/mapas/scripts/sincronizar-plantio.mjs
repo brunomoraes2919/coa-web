@@ -898,12 +898,12 @@ const arred = (v, casas = 2) => {
  * diferença), coordenadores, depósitos (nome do SAP quando houver; inativos ficam marcados) e o saldo
  * dos depósitos vinculados. Chaves curtas: a tela lê isso inteiro a cada abertura.
  */
-export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes = [], apontamentos = [], depositosSap = {}, estoque = {}, boletins = {}, avisos = [] }, geradoEm) {
+export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes = [], apontamentos = [], depositosSap = {}, estoque = {}, boletins = {}, extras = {}, avisos = [] }, geradoEm) {
   const linhas = new Map();
   const linha = (unidade) => {
     const u = txt(unidade);
     if (!u) return null;
-    if (!linhas.has(u)) linhas.set(u, { unidade: u, gerado_em: geradoEm, ordens: [], coordenadores: [], depositos: [], estoque: {}, boletins: [], avisos });
+    if (!linhas.has(u)) linhas.set(u, { unidade: u, gerado_em: geradoEm, ordens: [], coordenadores: [], depositos: [], estoque: {}, boletins: [], extras: {}, avisos });
     return linhas.get(u);
   };
   const porOrdem = new Map();
@@ -957,6 +957,10 @@ export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, ta
   for (const [unidade, lista] of Object.entries(boletins)) {
     const l = linha(unidade);
     if (l) l.boletins = lista;
+  }
+  for (const [unidade, dados] of Object.entries(extras)) {
+    const l = linha(unidade);
+    if (l) l.extras = dados;
   }
   for (const l of linhas.values()) l.ordens.sort((a, b) => comparar(a.ab ?? '', b.ab ?? '') || a.os - b.os);
   return [...linhas.values()].sort((a, b) => comparar(a.unidade, b.unidade));
@@ -1128,6 +1132,153 @@ export function linhasBoletins({ falhas = [], pendentes = [], logs = {}, sap = {
   return Object.fromEntries(porUnidade);
 }
 
+/* ---- páginas novas da validação: apontamentos recentes, necessidade de produto, dose e coletor ---- */
+export const VALID_DIAS_APONT = 3; // apontamentos feitos ou lançados nos últimos N dias (hoje incluído)
+export const VALID_DIAS_DOSE = 10;
+export const VALID_DOSE_TOLERANCIA = 0.1; // dose real fora de ±10% da programada
+
+/** 'YYYY-MM-DD' de `dias` dias antes de `agora` (data local do servidor). */
+export function diaAnterior(agora, dias) {
+  const d = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() - dias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Apontamentos feitos ou lançados desde `desdeDia` (de qualquer ordem, aberta ou fechada, e sem ordem),
+ * com o que a conferência precisa: a ordem e as datas dela, o planejado do talhão na ordem (nulo = talhão
+ * fora da ordem), o total já apontado no talhão e, na aplicação de insumo, quantos itens o boletim tem.
+ */
+export function montarSqlApontamentosRecentes(desdeDia, pular = 0, tamanho = VALID_PAGINA) {
+  const d = String(desdeDia).replace(/[^0-9-]/g, '');
+  const cond = (a) => `(${a}DT_OPERACAO >= '${d}' OR ${a}LAST_UPDATE >= '${d}')`;
+  return `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, os.FG_SITUACAO AS os_sit, CONVERT(varchar(10), os.DT_ABERTURA, 23) AS abertura,
+  CONVERT(varchar(10), os.DT_ENCERRA, 23) AS encerramento, COALESCE(eo.DE_EQUIPE, ea.DE_EQUIPE) AS equipe, op.DE_OPERACAO AS operacao_de, ap.tipo, ap.NO_BOLETIM AS boletim,
+  CONVERT(varchar(10), ap.DT_OPERACAO, 23) AS dia, up.CD_UPNIVEL3 AS talhao, ap.ha, CONVERT(varchar(16), ap.LAST_UPDATE, 120) AS lancado, ap.CHANGED_BY AS por, ap.itens,
+  lc.ha AS plan_talhao, tot.ha AS exec_talhao
+FROM (
+  SELECT 'P' AS tipo, ID_APORDSERVICO, ID_UNIDADEADM, ID_EQUIPE, ID_OPERACAO, NO_BOLETIM, DT_OPERACAO, ID_UPNIVEL3, QT_AREA AS ha, LAST_UPDATE, CHANGED_BY, NULL AS itens
+    FROM ${PIMS}APPLANTIO WHERE ${cond('')}
+  UNION ALL SELECT 'A', ID_APORDSERVICO, ID_UNIDADEADM, ID_EQUIPE, ID_OPERACAO, NO_BOLETIM, DT_OPERACAO, ID_UPNIVEL3, QT_AREA_EXEC, LAST_UPDATE, CHANGED_BY, NULL
+    FROM ${PIMS}APATIVPROD WHERE ${cond('')}
+  UNION ALL SELECT 'I', a.ID_APORDSERVICO, a.ID_UNIDADEADM, a.ID_EQUIPE, a.ID_OPERACAO, a.NO_BOLETIM, a.DT_OPERACAO, l.ID_UPNIVEL3, l.QT_AREA_EXEC, a.LAST_UPDATE, a.CHANGED_BY,
+      (SELECT COUNT(*) FROM ${PIMS}APAPLINS_INSLC i WHERE i.ID_APAPLINSUMO = a.ID_APAPLINSUMO)
+    FROM ${PIMS}APAPLINSUMO a LEFT JOIN ${PIMS}APAPLINS_LC l ON l.ID_APAPLINSUMO = a.ID_APAPLINSUMO WHERE ${cond('a.')}
+) ap
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = ap.ID_UNIDADEADM
+LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = ap.ID_APORDSERVICO
+LEFT JOIN ${PIMS}EQUIPE eo ON eo.ID_EQUIPE = os.ID_EQUIPE
+LEFT JOIN ${PIMS}EQUIPE ea ON ea.ID_EQUIPE = ap.ID_EQUIPE
+LEFT JOIN ${PIMS}OPERACAO op ON op.ID_OPERACAO = COALESCE(os.ID_OPERACAO, ap.ID_OPERACAO)
+LEFT JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = ap.ID_UPNIVEL3
+LEFT JOIN (SELECT ID_APORDSERVICO, ID_UPNIVEL3, SUM(QT_AREA) AS ha FROM ${PIMS}APORDSERVICO_LC GROUP BY ID_APORDSERVICO, ID_UPNIVEL3) lc
+  ON lc.ID_APORDSERVICO = ap.ID_APORDSERVICO AND lc.ID_UPNIVEL3 = ap.ID_UPNIVEL3
+LEFT JOIN (SELECT x.ID_APORDSERVICO, x.ID_UPNIVEL3, SUM(x.ha) AS ha FROM (${SQL_APONT_VALIDACAO}) x GROUP BY x.ID_APORDSERVICO, x.ID_UPNIVEL3) tot
+  ON tot.ID_APORDSERVICO = ap.ID_APORDSERVICO AND tot.ID_UPNIVEL3 = ap.ID_UPNIVEL3
+ORDER BY u.DE_UNI_ADM, ap.DT_OPERACAO DESC, ap.NO_BOLETIM, ap.ID_UPNIVEL3
+${paginaSql(pular, tamanho)}`;
+}
+
+/**
+ * Receita das ordens ABERTAS desde `desde`: para cada produto da ordem, o total planejado e o que os
+ * boletins (aplicação de insumo e plantio) já consumiram. O que falta consumir é a necessidade.
+ */
+export function montarSqlNecessidadeValidacao(desde) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  return `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, e.DE_EQUIPE AS equipe, CONVERT(varchar(10), os.DT_ABERTURA, 23) AS abertura, op.DE_OPERACAO AS operacao_de,
+  i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, co.CONSUMO_TOTAL AS planejado, ISNULL(ci.q, 0) + ISNULL(cp.q, 0) AS consumido
+FROM ${PIMS}APORDSERVICO os
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+JOIN ${PIMS}APORDSERVICO_CO co ON co.ID_APORDSERVICO = os.ID_APORDSERVICO
+JOIN ${PIMS}INSUMO i ON i.ID_INSUMO = co.ID_INSUMO
+LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
+LEFT JOIN ${PIMS}OPERACAO op ON op.ID_OPERACAO = os.ID_OPERACAO
+LEFT JOIN (SELECT a.ID_APORDSERVICO, l.ID_INSUMO, SUM(l.QT_CONS_TOTAL) AS q FROM ${PIMS}APAPLINSUMO a JOIN ${PIMS}APAPLINS_INSLC l ON l.ID_APAPLINSUMO = a.ID_APAPLINSUMO
+  WHERE a.ID_APORDSERVICO IS NOT NULL GROUP BY a.ID_APORDSERVICO, l.ID_INSUMO) ci ON ci.ID_APORDSERVICO = os.ID_APORDSERVICO AND ci.ID_INSUMO = co.ID_INSUMO
+LEFT JOIN (SELECT a.ID_APORDSERVICO, l.ID_INSUMO, SUM(l.QT_TOTAL) AS q FROM ${PIMS}APPLANTIO a JOIN ${PIMS}APPLANTIO_IN l ON l.ID_APPLANTIO = a.ID_APPLANTIO
+  WHERE a.ID_APORDSERVICO IS NOT NULL GROUP BY a.ID_APORDSERVICO, l.ID_INSUMO) cp ON cp.ID_APORDSERVICO = os.ID_APORDSERVICO AND cp.ID_INSUMO = co.ID_INSUMO
+WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '${d}'
+ORDER BY 1, 2, 7`;
+}
+
+/** Aplicações desde `desdeDia` em que a dose real fugiu da programada além da tolerância. */
+export function montarSqlDoseValidacao(desdeDia) {
+  const d = String(desdeDia).replace(/[^0-9-]/g, '');
+  return `SELECT u.DE_UNI_ADM AS unidade, a.NO_BOLETIM AS boletim, CONVERT(varchar(10), a.DT_OPERACAO, 23) AS dia, os.NO_BOLETIM AS os, COALESCE(eo.DE_EQUIPE, ea.DE_EQUIPE) AS equipe,
+  up.CD_UPNIVEL3 AS talhao, i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, l.QT_DOSE_PROG AS prog, l.QT_DOSE_REAL AS dose_real, l.QT_AREA_EXEC AS ha, l.QT_CONS_TOTAL AS total
+FROM ${PIMS}APAPLINSUMO a
+JOIN ${PIMS}APAPLINS_INSLC l ON l.ID_APAPLINSUMO = a.ID_APAPLINSUMO
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = a.ID_UNIDADEADM
+LEFT JOIN ${PIMS}INSUMO i ON i.ID_INSUMO = l.ID_INSUMO
+LEFT JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = l.ID_UPNIVEL3
+LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO
+LEFT JOIN ${PIMS}EQUIPE eo ON eo.ID_EQUIPE = os.ID_EQUIPE
+LEFT JOIN ${PIMS}EQUIPE ea ON ea.ID_EQUIPE = a.ID_EQUIPE
+WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG > ${VALID_DOSE_TOLERANCIA}
+ORDER BY 1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8`;
+}
+
+/** Boletins que vieram do coletor (celular) e ainda estão na área de espera do PIMS, com a mensagem de validação. */
+export function montarSqlColetorValidacao(desde) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  const parte = (tipo, tabela, os, operacao) => `SELECT u.DE_UNI_ADM AS unidade, '${tipo}' AS tipo, t.NO_BOLETIM AS boletim, CONVERT(varchar(10), t.DT_OPERACAO, 23) AS dia, ${os} AS os, t.DE_EQUIPE AS equipe,
+  ${operacao} AS operacao_de, t.FG_STATUS AS st, t.DE_MENSAGEM AS msg, CONVERT(varchar(16), t.LAST_UPDATE, 120) AS lancado, t.CHANGED_BY_MOBIL AS por
+FROM ${PIMS}${tabela} t JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = t.ID_UNIDADEADM WHERE t.DT_OPERACAO >= '${d}'`;
+  return `${parte('I', 'APAPLINSUMO_TMP', 'CONVERT(varchar(20), t.NO_APORDSERVICO)', 't.DE_OPERACAO')}
+UNION ALL
+${parte('P', 'APPLANTIO_TMP', 'CONVERT(varchar(20), t.NO_APORDSERVICO)', 't.DE_OPERACAO')}
+UNION ALL
+${parte('A', 'APATIVPROD_TMP', 'CONVERT(varchar(20), t.NO_APORDSERVICO)', 't.DE_OPERACAO')}
+UNION ALL
+${parte('M', 'APATIVMEC_TMP', 'NULL', 'NULL')}
+ORDER BY 1, 4 DESC, 3`;
+}
+
+const numOuNulo = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
+
+/**
+ * Junta, por unidade, os dados das páginas novas (chaves curtas, todas com `eq` = coordenador):
+ *   ap   [{ os, s, ab, enc, eq, opn, t tipo, b boletim, d dia, tl talhão, ha, la lançado, por, it itens (insumo),
+ *           pt planejado do talhão na ordem (null = fora da ordem), xt total apontado no talhão }]
+ *   nec  [{ os, eq, ab, opn, c item, nm, pl planejado, co consumido }]
+ *   dose [{ b, d, os, eq, tl, c, nm, pg programada, re real, ha, q total }]
+ *   col  [{ t, b, d, os, eq, opn, st, m mensagem, la, por }]
+ */
+export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], coletor = [] }) {
+  const porUnidade = new Map();
+  const de = (unidade) => {
+    const u = txt(unidade);
+    if (!u) return null;
+    if (!porUnidade.has(u)) porUnidade.set(u, { ap: [], nec: [], dose: [], col: [] });
+    return porUnidade.get(u);
+  };
+  for (const r of apontamentos) {
+    const x = de(r.unidade);
+    if (!x || !txt(r.dia)) continue;
+    const a = {
+      os: numOuNulo(r.os), s: txt(r.os_sit), ab: txt(r.abertura), enc: txt(r.encerramento), eq: txt(r.equipe), opn: txt(r.operacao_de) ?? '', t: txt(r.tipo), b: numOuNulo(r.boletim),
+      d: txt(r.dia), tl: txt(r.talhao), ha: arred(r.ha), la: txt(r.lancado), por: txt(r.por), pt: r.plan_talhao === null || r.plan_talhao === undefined ? null : arred(r.plan_talhao), xt: arred(r.exec_talhao),
+    };
+    if (a.t === 'I') a.it = Number(r.itens) || 0;
+    x.ap.push(a);
+  }
+  for (const r of necessidade) {
+    const x = de(r.unidade);
+    if (!x || !txt(r.item)) continue;
+    x.nec.push({ os: numOuNulo(r.os), eq: txt(r.equipe), ab: txt(r.abertura), opn: txt(r.operacao_de) ?? '', c: txt(r.item), nm: txt(r.nome) ?? '', pl: arred(r.planejado, 3), co: arred(r.consumido, 3) });
+  }
+  for (const r of dose) {
+    const x = de(r.unidade);
+    if (!x) continue;
+    x.dose.push({ b: numOuNulo(r.boletim), d: txt(r.dia), os: numOuNulo(r.os), eq: txt(r.equipe), tl: txt(r.talhao), c: txt(r.item), nm: txt(r.nome) ?? '', pg: arred(r.prog, 4), re: arred(r.dose_real, 4), ha: arred(r.ha), q: arred(r.total, 3) });
+  }
+  for (const r of coletor) {
+    const x = de(r.unidade);
+    if (!x) continue;
+    x.col.push({ t: txt(r.tipo), b: numOuNulo(r.boletim), d: txt(r.dia), os: txt(r.os), eq: txt(r.equipe), opn: txt(r.operacao_de) ?? '', st: txt(r.st), m: (txt(r.msg) ?? '').slice(0, 600), la: txt(r.lancado), por: txt(r.por) });
+  }
+  return Object.fromEntries(porUnidade);
+}
+
 /** Vínculos coordenador ↔ depósito cadastrados na tela (valid_vinculos); sem a tabela → []. */
 export async function lerVinculosValidacao({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
   const resp = await fetchImpl(`${url}/rest/v1/valid_vinculos?select=unidade,deposito`, { headers: cabecalhosSupabase(chave) });
@@ -1186,6 +1337,10 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
     const pendentes = objetosDe(await cliente.consultar(montarSqlBoletinsPendentes(desde), 'boletins ainda não enviados ao SAP (validação)', 'boletins pendentes'));
     const logs = {};
     const sapItens = {};
+    const apontRecentes = await paginar((pular) => montarSqlApontamentosRecentes(diaAnterior(agora, VALID_DIAS_APONT - 1), pular), 'apontamentos feitos ou lançados nos últimos dias (validação)', 'apontamentos recentes');
+    const necessidade = objetosDe(await cliente.consultar(montarSqlNecessidadeValidacao(desde), 'produtos planejados e já consumidos nas ordens abertas (validação)', 'necessidade das ordens'));
+    const dose = objetosDe(await cliente.consultar(montarSqlDoseValidacao(diaAnterior(agora, VALID_DIAS_DOSE)), 'aplicações com dose real fora da programada (validação)', 'dose real x programada'));
+    const coletor = objetosDe(await cliente.consultar(montarSqlColetorValidacao(desde), 'boletins do coletor que não entraram no PIMS (validação)', 'coletor'));
 
     const avisos = [];
     const depositosSap = {};
@@ -1237,7 +1392,8 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
     }
     const geradoEm = agora.toISOString();
     const boletins = linhasBoletins({ falhas, pendentes, logs, sap: sapItens, depositosSap });
-    return { geradoEm, linhas: linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes, apontamentos, depositosSap, estoque, boletins, avisos }, geradoEm), avisos };
+    const extras = linhasExtras({ apontamentos: apontRecentes, necessidade, dose, coletor });
+    return { geradoEm, linhas: linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes, apontamentos, depositosSap, estoque, boletins, extras, avisos }, geradoEm), avisos };
   } finally {
     await cliente.fechar();
   }
@@ -1256,9 +1412,9 @@ export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchI
   });
   let resp = await enviar(dados.linhas);
   if (!resp.ok && /PGRST204/.test(await resp.clone().text().catch(() => ''))) {
-    // banco ainda sem a coluna dos boletins (script 0008): grava o resto, para as ordens não pararem
-    console.warn('Validação: a coluna valid_pims.boletins ainda não existe (rode supabase/0008_validacao_boletins.sql); gravando sem os boletins.');
-    resp = await enviar(dados.linhas.map(({ boletins: _fora, ...resto }) => resto));
+    // banco ainda sem as colunas novas (scripts 0008 e 0009): grava o resto, para as ordens não pararem
+    console.warn('Validação: faltam colunas em valid_pims (rode supabase/0008_validacao_boletins.sql e 0009_controle_tecnico.sql); gravando sem os boletins e as páginas novas.');
+    resp = await enviar(dados.linhas.map(({ boletins: _b, extras: _e, ...resto }) => resto));
   }
   if (!resp.ok) {
     const texto = await resp.clone().text().catch(() => '');

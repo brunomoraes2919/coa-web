@@ -210,6 +210,7 @@ export interface LinhaValidScript {
   depositos: { c: string; n: string; i?: number }[];
   estoque: Record<string, ItemSaldoScript[]>;
   boletins: BoletimValidScript[];
+  extras: Record<string, Record<string, unknown>[]>;
   avisos: string[];
 }
 export interface ItemSaldoScript { c: string | null; n: string; q: number; u: string; o?: string; on?: string; oq?: number; od?: string }
@@ -230,6 +231,20 @@ export function linhasBoletins(dados: {
   sap?: Record<string, { itens: Map<string, { nome: string; un: string; inativo: boolean }>; saldo: Map<string, number> }>;
   depositosSap?: Record<string, Map<string, { nome: string | null; inativo: boolean }>>;
 }): Record<string, BoletimValidScript[]>;
+export const VALID_DIAS_APONT: number;
+export const VALID_DIAS_DOSE: number;
+export const VALID_DOSE_TOLERANCIA: number;
+export function diaAnterior(agora: Date, dias: number): string;
+export function montarSqlApontamentosRecentes(desdeDia: string, pular?: number, tamanho?: number): string;
+export function montarSqlNecessidadeValidacao(desde: string): string;
+export function montarSqlDoseValidacao(desdeDia: string): string;
+export function montarSqlColetorValidacao(desde: string): string;
+export function linhasExtras(dados: {
+  apontamentos?: Record<string, unknown>[];
+  necessidade?: Record<string, unknown>[];
+  dose?: Record<string, unknown>[];
+  coletor?: Record<string, unknown>[];
+}): Record<string, Record<string, Record<string, unknown>[]>>;
 export const VALID_TOLERANCIA_HA: number;
 export const SAP_EMPRESA_DA_UNIDADE: Record<string, string>;
 export const SQL_EVOLUCAO_VALIDACAO: string;
@@ -252,6 +267,7 @@ export function linhasValidacao(
     depositosSap?: Record<string, Map<string, { nome: string | null; inativo: boolean }>>;
     estoque?: Record<string, Record<string, ItemSaldoScript[]>>;
     boletins?: Record<string, BoletimValidScript[]>;
+    extras?: Record<string, Record<string, Record<string, unknown>[]>>;
     avisos?: string[];
   },
   geradoEm: string,

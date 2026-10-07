@@ -76,6 +76,8 @@
       pl: pl, ex: ex, ev: o.ev || [], semArea: semArea,
       dias: dias, falta: dias === null ? null : PRAZO_DIAS - dias, prazo: classificarPrazo(dias),
       aRealizar: aRealizar, excedeu: !semArea && ex > pl + FOLGA_HA, pct: pl > 0 ? ex / pl : (ex > 0 ? 1 : 0),
+      // toda a área planejada já foi apontada (sem passar): a ordem está pronta para ser fechada no PIMS
+      pronta: !semArea && pl > 0 && ex >= pl - FOLGA_HA && ex <= pl + FOLGA_HA,
     };
   }
 
@@ -339,6 +341,196 @@
     return r;
   }
 
+  /* ---- páginas novas: apontamentos recentes, estoque x necessidade, dose e coletor (linha.extras) ---- */
+  /** O que a conferência automática acusa num apontamento. */
+  const ALERTAS_APONT = {
+    'sem-ordem': 'Apontamento sem ordem de serviço',
+    'fora-da-ordem': 'Talhão que não está na ordem',
+    'excede-talhao': 'Área apontada passou do planejado no talhão',
+    'ordem-fechada': 'Data posterior ao encerramento da ordem',
+    'antes-da-abertura': 'Data anterior à abertura da ordem',
+    'sem-insumo': 'Aplicação sem nenhum insumo lançado',
+    'duplicado': 'Possível lançamento em duplicidade',
+    'atrasado': 'Lançado com atraso',
+  };
+  const TIPOS_APONT = { P: 'Plantio', A: 'Atividade', I: 'Aplicação de insumo', M: 'Atividade mecanizada' };
+  /** A partir de quantos dias entre a operação e o lançamento o apontamento conta como lançado com atraso. */
+  const ATRASO_LANCAMENTO_DIAS = 2;
+
+  const extrasDa = function (l, chave) { return (l.extras && Array.isArray(l.extras[chave])) ? l.extras[chave] : []; };
+
+  /**
+   * Apontamentos feitos ou lançados nos últimos dias, cada um com os `alertas` da conferência. Com alerta
+   * primeiro; depois, do lançamento mais recente para o mais antigo. `filtro`: { unidade, equipe, soAlertas }.
+   */
+  function conferirApontamentos(linhas, filtro) {
+    const f = filtro || {};
+    const todos = [];
+    (linhas || []).forEach(function (l) {
+      if (f.unidade && l.unidade !== f.unidade) return;
+      const lista = extrasDa(l, 'ap');
+      // duplicidade: a mesma ordem, o mesmo talhão, o mesmo dia e a mesma área em boletins diferentes
+      const vistos = new Map();
+      lista.forEach(function (a) {
+        if (a.os === null || a.os === undefined || !a.tl) return;
+        const k = a.os + '|' + a.tl + '|' + a.d + '|' + a.ha;
+        if (!vistos.has(k)) vistos.set(k, new Set());
+        vistos.get(k).add(a.b);
+      });
+      lista.forEach(function (a) {
+        if (f.equipe && a.eq !== f.equipe) return;
+        const alertas = [];
+        const semOrdem = a.os === null || a.os === undefined;
+        if (semOrdem) alertas.push('sem-ordem');
+        else {
+          if (a.tl && (a.pt === null || a.pt === undefined)) alertas.push('fora-da-ordem');
+          else if (a.tl && (Number(a.xt) || 0) > (Number(a.pt) || 0) + FOLGA_HA) alertas.push('excede-talhao');
+          if (a.s === 'F' && a.enc && a.d > a.enc) alertas.push('ordem-fechada');
+          if (a.ab && a.d < a.ab) alertas.push('antes-da-abertura');
+          if (a.tl && vistos.get(a.os + '|' + a.tl + '|' + a.d + '|' + a.ha).size > 1) alertas.push('duplicado');
+        }
+        if (a.t === 'I' && a.it === 0) alertas.push('sem-insumo');
+        // "la" é a última alteração do registro: quando quem alterou foi a integração (usuário BRG_…), a data
+        // não diz quando o boletim foi lançado, e o atraso não pode ser cobrado
+        const daIntegracao = /^BRG_/i.test(String(a.por || ''));
+        const demora = a.la && !daIntegracao ? diasEmAberto(a.d, String(a.la).slice(0, 10)) : null;
+        if (demora !== null && demora >= ATRASO_LANCAMENTO_DIAS) alertas.push('atrasado');
+        if (f.soAlertas && !alertas.length) return;
+        todos.push(Object.assign({}, a, { unidade: l.unidade, tipo: TIPOS_APONT[a.t] || a.t, alertas: alertas, demora: demora }));
+      });
+    });
+    todos.sort(function (a, b) {
+      return (b.alertas.length ? 1 : 0) - (a.alertas.length ? 1 : 0) || (b.la || b.d || '').localeCompare(a.la || a.d || '') || (a.b || 0) - (b.b || 0);
+    });
+    return todos;
+  }
+
+  /**
+   * Estoque x necessidade, por coordenador: o que as ordens ABERTAS ainda vão consumir de cada produto
+   * (planejado − já consumido) contra o saldo do depósito vinculado a ele e o saldo na origem.
+   *   itens   = [{ c, nm, u, nec, saldo, falta, origem, origemNome, origemSaldo, ordens [nº] }], em falta primeiro;
+   *   parados = produtos com saldo no depósito sem necessidade nas ordens abertas (candidatos a devolver).
+   * Coordenador sem depósito vinculado vem com `deposito: null` (necessidade sem comparação de saldo).
+   * `filtro`: { unidade, equipe, de, ate } — de/ate = período da abertura da ordem.
+   */
+  function necessidadePorCoordenador(linhas, vinculos, filtro) {
+    const f = filtro || {};
+    const grupos = [];
+    (linhas || []).forEach(function (l) {
+      if (f.unidade && l.unidade !== f.unidade) return;
+      const porEq = new Map();
+      extrasDa(l, 'nec').forEach(function (n) {
+        if (!n.eq || (f.equipe && n.eq !== f.equipe)) return;
+        if (!noPeriodo(n.ab, f)) return;
+        const resta = Math.max(0, (Number(n.pl) || 0) - (Number(n.co) || 0));
+        if (!porEq.has(n.eq)) porEq.set(n.eq, new Map());
+        const itens = porEq.get(n.eq);
+        if (!itens.has(n.c)) itens.set(n.c, { c: n.c, nm: n.nm || '', nec: 0, ordens: [] });
+        const i = itens.get(n.c);
+        i.nec += resta;
+        if (resta > 0 && i.ordens.indexOf(n.os) < 0) i.ordens.push(n.os);
+      });
+      // coordenador com depósito vinculado aparece mesmo sem necessidade (para mostrar o que está parado)
+      (vinculos || []).forEach(function (v) {
+        if (v.unidade !== l.unidade || !v.deposito || (f.equipe && v.equipe !== f.equipe)) return;
+        if (!porEq.has(v.equipe)) porEq.set(v.equipe, new Map());
+      });
+      porEq.forEach(function (itens, eq) {
+        const vinculo = (vinculos || []).find(function (v) { return v.unidade === l.unidade && v.equipe === eq; }) || null;
+        const saldo = saldoDoCoordenador(l, vinculo);
+        const noDeposito = new Map(((saldo && !saldo.pendente && saldo.itens) || []).map(function (i) { return [i.c, i]; }));
+        const lista = [];
+        itens.forEach(function (i) {
+          const nec = Math.round(i.nec * 100) / 100;
+          if (nec <= 0) return;
+          const s = noDeposito.get(i.c);
+          const tem = saldo && !saldo.pendente ? (s ? Number(s.q) || 0 : 0) : null;
+          lista.push({
+            c: i.c, nm: (s && s.n) || i.nm, u: (s && s.u) || '', nec: nec, saldo: tem, falta: tem === null ? null : Math.round(Math.max(0, nec - tem) * 100) / 100,
+            origem: s ? s.origem : null, origemNome: s ? s.origemNome : '', origemSaldo: s ? s.origemSaldo : null, ordens: i.ordens.slice().sort(function (a, b) { return a - b; }),
+          });
+        });
+        lista.sort(function (a, b) { return (b.falta || 0) - (a.falta || 0) || b.nec - a.nec || (a.nm < b.nm ? -1 : 1); });
+        const parados = [];
+        noDeposito.forEach(function (s, c) {
+          const precisa = itens.get(c);
+          if ((Number(s.q) || 0) > 0 && (!precisa || precisa.nec <= 0)) parados.push({ c: c, nm: s.n, u: s.u, saldo: Number(s.q) || 0, origem: s.origem, origemNome: s.origemNome });
+        });
+        parados.sort(function (a, b) { return (a.nm < b.nm ? -1 : a.nm > b.nm ? 1 : 0); });
+        if (!lista.length && !parados.length) return;
+        grupos.push({
+          unidade: l.unidade, eq: eq, deposito: saldo ? saldo.deposito : null, depositoNome: saldo ? saldo.depositoNome : '', pendente: !!(saldo && saldo.pendente),
+          itens: lista, parados: parados, emFalta: lista.filter(function (i) { return i.falta > 0; }).length,
+        });
+      });
+    });
+    grupos.sort(function (a, b) { return b.emFalta - a.emFalta || (a.unidade < b.unidade ? -1 : a.unidade > b.unidade ? 1 : 0) || (a.eq < b.eq ? -1 : 1); });
+    return grupos;
+  }
+
+  /** Aplicações com a dose real fora da programada: `desvio` = (real − programada) / programada. Maior desvio primeiro. */
+  function dosesFora(linhas, filtro) {
+    const f = filtro || {};
+    const saida = [];
+    (linhas || []).forEach(function (l) {
+      if (f.unidade && l.unidade !== f.unidade) return;
+      extrasDa(l, 'dose').forEach(function (d) {
+        if (f.equipe && d.eq !== f.equipe) return;
+        if (!noPeriodo(d.d, f)) return;
+        const pg = Number(d.pg) || 0;
+        saida.push(Object.assign({}, d, { unidade: l.unidade, desvio: pg > 0 ? ((Number(d.re) || 0) - pg) / pg : null }));
+      });
+    });
+    saida.sort(function (a, b) { return Math.abs(b.desvio || 0) - Math.abs(a.desvio || 0) || (b.d || '').localeCompare(a.d || ''); });
+    return saida;
+  }
+
+  const SITUACOES_COLETOR = { I: 'Recusado pelo PIMS', V: 'Validado, aguardando entrada' };
+  /** Boletins que vieram do coletor e não entraram no PIMS, com a situação, os motivos (um por linha) e há quantos dias. */
+  function coletorTravados(linhas, hoje, filtro) {
+    const f = filtro || {};
+    const saida = [];
+    (linhas || []).forEach(function (l) {
+      if (f.unidade && l.unidade !== f.unidade) return;
+      extrasDa(l, 'col').forEach(function (c) {
+        if (f.equipe && semAcento(c.eq) !== semAcento(f.equipe)) return;
+        const motivos = String(c.m || '').split(/\r?\n/).map(function (t) { return t.trim(); }).filter(Boolean);
+        saida.push(Object.assign({}, c, {
+          unidade: l.unidade, tipo: TIPOS_APONT[c.t] || c.t, situacao: SITUACOES_COLETOR[c.st] || 'Aguardando validação', recusado: c.st === 'I',
+          motivos: motivos.filter(function (m, i) { return motivos.indexOf(m) === i; }), dias: diasEmAberto(c.d, hoje),
+        }));
+      });
+    });
+    saida.sort(function (a, b) { return (b.recusado ? 1 : 0) - (a.recusado ? 1 : 0) || (b.dias || 0) - (a.dias || 0); });
+    return saida;
+  }
+
+  /**
+   * Pendências do dia: os números de cada página, para o analista saber por onde começar. As ordens abertas e as
+   * fechadas com diferença seguem o período; o restante vale para tudo o que está pendente.
+   */
+  function pendencias(linhas, vinculos, hoje, filtro) {
+    const f = filtro || {};
+    const abertas = resumoAbertas(abertasPorCoordenador(linhas, hoje, f).grupos);
+    let prontas = 0;
+    abertasPorCoordenador(linhas, hoje, { unidade: f.unidade, equipe: f.equipe }).grupos.forEach(function (g) {
+      g.ordens.forEach(function (o) { if (o.pronta) prontas += 1; });
+    });
+    const fechadas = fechadasComDiferenca(linhas, f);
+    const bol = boletinsComProblema(linhas, hoje, f);
+    const apont = conferirApontamentos(linhas, { unidade: f.unidade, equipe: f.equipe, soAlertas: true });
+    const nec = necessidadePorCoordenador(linhas, vinculos, { unidade: f.unidade, equipe: f.equipe });
+    return {
+      emAlerta: abertas.atraso, excedidas: abertas.excedidas, prontas: prontas,
+      fechadas: fechadas.faltando.length + fechadas.sobrando.length,
+      recusados: bol.falhas.length, vaoFalhar: bol.vaoFalhar.length,
+      apontamentos: apont.length,
+      emFalta: nec.reduce(function (s, g) { return s + g.emFalta; }, 0),
+      doses: dosesFora(linhas, f).length,
+      coletor: coletorTravados(linhas, hoje, { unidade: f.unidade, equipe: f.equipe }).length,
+    };
+  }
+
   /** Unidade do PIMS de uma fazenda do COA WEB pelo nome ("Fazenda Três Flechas" → "TRES FLECHAS"); sem igual → null. */
   function unidadeDaFazenda(nomeFazenda, unidades) {
     const alvo = semAcento(nomeFazenda).replace(/^(FAZENDA|FAZ\.?)\s+/, '');
@@ -359,6 +551,8 @@
     textoFalta: textoFalta, textoDias: textoDias, abertasPorCoordenador: abertasPorCoordenador, resumoAbertas: resumoAbertas,
     fechadasComDiferenca: fechadasComDiferenca, coordenadoresComVinculo: coordenadoresComVinculo, saldoDoCoordenador: saldoDoCoordenador,
     detalheDaOrdem: detalheDaOrdem, explicarFalha: explicarFalha, boletinsComProblema: boletinsComProblema, PROBLEMAS_ITEM: PROBLEMAS_ITEM,
+    ALERTAS_APONT: ALERTAS_APONT, conferirApontamentos: conferirApontamentos, necessidadePorCoordenador: necessidadePorCoordenador, dosesFora: dosesFora,
+    coletorTravados: coletorTravados, pendencias: pendencias,
     unidadeDaFazenda: unidadeDaFazenda, titulo: titulo,
   };
 });

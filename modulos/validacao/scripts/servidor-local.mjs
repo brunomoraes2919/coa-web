@@ -69,6 +69,29 @@ function dadosFicticios() {
         ],
         coordenadores: [{ eq: 'COORDENADOR UM', ab: 3, n: 20 }, { eq: 'COORDENADOR DOIS', ab: 2, n: 14 }, { eq: 'COORDENADOR TRES', ab: 0, n: 5 }],
         depositos: [{ c: '9001', n: 'APLICACAO TERRESTRE' }, { c: '9002', n: 'PLANTIO EQUIPE 1' }, { c: '9003', n: 'DEFENSIVOS - TESTE NORTE' }, { c: '9004', n: 'DEPOSITO ANTIGO', i: 1 }],
+        extras: {
+          ap: [
+            { os: 102, s: 'A', ab: dia(4), enc: null, eq: 'COORDENADOR UM', opn: 'PLANTIO DB', t: 'P', b: 900010, d: dia(1), tl: 'T02', ha: 97.5, la: `${dia(0)} 07:10`, por: 'usuario.teste', pt: 58.7, xt: 97.5 },
+            { os: 102, s: 'A', ab: dia(4), enc: null, eq: 'COORDENADOR UM', opn: 'PLANTIO DB', t: 'P', b: 900011, d: dia(1), tl: 'T09', ha: 12, la: `${dia(0)} 07:12`, por: 'usuario.teste', pt: null, xt: 12 },
+            { os: 103, s: 'A', ab: dia(9), enc: null, eq: 'COORDENADOR UM', opn: 'APLIC DESSECACAO PLANTIO AUTOP', t: 'I', b: 900012, d: dia(4), tl: 'T01', ha: 60, la: `${dia(0)} 09:40`, por: 'outro.usuario', it: 0, pt: 300, xt: 186 },
+            { os: 104, s: 'A', ab: dia(2), enc: null, eq: 'COORDENADOR DOIS', opn: 'PLANTIO DB', t: 'P', b: 900013, d: dia(0), tl: 'T01', ha: 72, la: `${dia(0)} 11:02`, por: 'usuario.teste', pt: 126, xt: 108 },
+            { os: null, s: null, ab: null, enc: null, eq: 'COORDENADOR DOIS', opn: 'GRADAGEM 36', t: 'A', b: 900014, d: dia(0), tl: 'T05', ha: 20, la: `${dia(0)} 12:15`, por: 'usuario.teste', pt: null, xt: 20 },
+          ],
+          nec: [
+            { os: 101, eq: 'COORDENADOR UM', ab: dia(0), opn: 'APLIC HERBICIDA PRE-EME. AUTOP', c: '000001', nm: 'HERBICIDA TESTE', pl: 384, co: 0 },
+            { os: 101, eq: 'COORDENADOR UM', ab: dia(0), opn: 'APLIC HERBICIDA PRE-EME. AUTOP', c: '000002', nm: 'ADJUVANTE TESTE', pl: 9.6, co: 0 },
+            { os: 103, eq: 'COORDENADOR UM', ab: dia(9), opn: 'APLIC DESSECACAO PLANTIO AUTOP', c: '000015', nm: 'DESSECANTE TESTE', pl: 750, co: 465 },
+            { os: 104, eq: 'COORDENADOR DOIS', ab: dia(2), opn: 'PLANTIO DB', c: '000011', nm: 'SEMENTE TESTE', pl: 15015, co: 12870 },
+          ],
+          dose: [
+            { b: 900020, d: dia(2), os: 103, eq: 'COORDENADOR UM', tl: 'T01', c: '000015', nm: 'DESSECANTE TESTE', pg: 1.5, re: 0.5, ha: 156, q: 78 },
+            { b: 900021, d: dia(1), os: 101, eq: 'COORDENADOR UM', tl: 'T02', c: '000002', nm: 'ADJUVANTE TESTE', pg: 0.03, re: 0.0385, ha: 260, q: 10 },
+          ],
+          col: [
+            { t: 'I', b: 5501, d: dia(3), os: '9999', eq: 'COORDENADOR UM', opn: 'APLIC HERBICIDA PRE-EME. AUTOP', st: 'I', m: 'Ordem de Serviço de Campo 9999 inexistente.\nDepósito 9099 inexistente.\n', la: `${dia(3)} 18:00`, por: 'coletor.teste' },
+            { t: 'A', b: 5502, d: dia(7), os: '104', eq: 'COORDENADOR DOIS', opn: 'ADUBACAO', st: null, m: '', la: `${dia(7)} 08:34`, por: 'coletor.teste' },
+          ],
+        },
         boletins: [
           { o: 'P', n: '700101', d: dia(4), os: 102, eq: 'COORDENADOR UM', sit: 'F', em: `${dia(3)} 16:57`, t: 6, p1: dia(3), ul: dia(0),
             m: ['Error -10 - Quantity falls into negative inventory [IGE1.ItemCode][line: 2]'],

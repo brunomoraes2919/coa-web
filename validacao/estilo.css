@@ -212,6 +212,40 @@ tr[aria-expanded="true"] .seta { transform: rotate(45deg); border-color: var(--v
 .det-nota { font-size: 12.5px; color: var(--texto-suave); }
 @media (max-width: 1100px) { .det { grid-template-columns: 1fr; } }
 
+/* ---- pendências: um quadro por assunto, do mais urgente para o menos ---- */
+.pend-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.pend { display: grid; gap: 2px; text-align: left; padding: 14px 16px 15px; background: #fff; border: 1px solid var(--linha); border-top: 3px solid var(--linha); border-radius: var(--raio); cursor: pointer; font: inherit; color: var(--texto); box-shadow: 0 1px 2px rgba(16, 54, 50, .05); }
+.pend:hover { border-color: #AAB8AE; }
+.pend:focus-visible { outline: 2px solid var(--verde-teal); outline-offset: 2px; }
+.pend b { font-size: 30px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.pend-titulo { font-size: 14px; font-weight: 600; }
+.pend-texto { font-size: 12px; color: var(--texto-suave); line-height: 1.4; }
+.pend.ruim { border-top-color: var(--ruim); } .pend.ruim b { color: var(--ruim); }
+.pend.atencao { border-top-color: var(--atencao-marca); } .pend.atencao b { color: var(--atencao); }
+.pend.ok { border-top-color: var(--bom); } .pend.ok b { color: var(--bom); }
+.pend.zero b { color: var(--texto-fraco); }
+.pend.zero .pend-titulo { color: var(--texto-suave); font-weight: 500; }
+
+/* ---- páginas novas: apontamentos, estoque x necessidade, dose e coletor ---- */
+#vista-estoque .cartao, #cartao-acessos { margin-bottom: 14px; }
+#vista-apontamentos .linha-opcoes { margin-bottom: 10px; align-items: flex-start; }
+#vista-apontamentos .explica { margin: 0; flex: 1 1 420px; }
+.tabela tr.com-alerta > td:first-child { box-shadow: inset 4px 0 0 var(--ruim); }
+.tabela .fraco { color: var(--texto-fraco); }
+.tabela .bom { color: var(--bom); }
+.confere .alerta-linha { display: block; color: var(--ruim); font-weight: 500; }
+.confere b + .alerta-linha { margin-top: 2px; font-weight: 400; }
+.tabela-nec td.falta b { color: var(--ruim); }
+.tabela-doses .desvio.mais b { color: var(--ruim); }
+.tabela-doses .desvio.menos b { color: var(--atencao); }
+.pronta { color: var(--bom); font-weight: 600; }
+.tabela-acessos td { vertical-align: top; }
+.acessos-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 14px; }
+.acesso { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
+.acesso input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--verde-teal); flex: none; }
+.acesso small { display: block; font-size: 11.5px; color: var(--texto-suave); }
+html.modo-controle .campo-unidade { display: none; }
+
 /* ---- boletins com falha de integração ---- */
 .resumo.resumo-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 14px; }
 #vista-boletins .cartao { margin-bottom: 14px; }
@@ -355,6 +389,24 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
   .det-apont .det-linha .c-lanc { grid-column: 1 / 3; font-size: 11.5px; }
   .det-apont .det-linha .c-lanc i { display: inline; }
   .det-apont .det-linha .c-por { grid-column: 3 / -1; text-align: right; font-size: 11.5px; }
+
+  /* tabelas das páginas novas: cada linha vira um bloco, com o nome do campo na frente do valor */
+  .pend-grade { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pend { padding: 12px 12px 13px; }
+  .pend b { font-size: 26px; }
+  .tabela-cartoes, .tabela-cartoes tbody { display: block; }
+  .tabela-cartoes thead { display: none; }
+  .tabela-cartoes tr { display: block; padding: 12px 14px; border-bottom: 1px solid var(--linha-suave); }
+  .tabela-cartoes tr.com-alerta { box-shadow: inset 3px 0 0 var(--ruim); }
+  .tabela-cartoes td { display: flex; justify-content: space-between; gap: 14px; padding: 2px 0 !important; border: 0; box-shadow: none !important; text-align: right; font-size: 13px; }
+  .tabela-cartoes td::before { content: attr(data-rotulo); flex: none; text-align: left; font-size: 11.5px; color: var(--texto-fraco); }
+  .tabela-cartoes td small { display: block; }
+  .tabela-cartoes td.principal { display: block; text-align: left; font-size: 14.5px; margin-bottom: 3px; }
+  .tabela-cartoes td.principal::before { content: none; }
+  .tabela-cartoes td.principal small { display: inline; }
+  .tabela-cartoes td.confere { display: block; text-align: left; }
+  .tabela-cartoes td.confere::before { display: block; margin-bottom: 1px; }
+  .acessos-lista { grid-template-columns: 1fr; }
 
   /* boletins: cada um vira um bloco, com o motivo sempre à vista */
   .resumo.resumo-3 { grid-template-columns: 1fr; }

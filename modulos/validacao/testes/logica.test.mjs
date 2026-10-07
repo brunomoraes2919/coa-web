@@ -255,6 +255,123 @@ test('boletins com problema: recusados, pendentes que vão falhar e pendentes se
   assert.deepEqual(L.boletinsComProblema([{ unidade: 'X' }], HOJE, {}), { falhas: [], vaoFalhar: [], aguardando: [] });
 });
 
+test('apontamentos recentes: a conferência acusa o que precisa de correção', () => {
+  const ap = (o) => Object.assign({ os: 10, s: 'A', ab: '2026-10-01', enc: null, eq: 'COORD A', opn: 'PLANTIO', t: 'P', b: 1, d: '2026-10-05', tl: 'T01', ha: 50, la: '2026-10-05 18:00', por: 'u', pt: 100, xt: 50 }, o);
+  const linhas = [{ unidade: 'FAZENDA X', extras: { ap: [
+    ap({ b: 1 }), // correto
+    ap({ b: 2, tl: 'T09', pt: null, xt: 30 }), // talhão fora da ordem
+    ap({ b: 3, tl: 'T02', pt: 80, xt: 95 }), // passou do planejado no talhão
+    ap({ b: 4, d: '2026-10-02', la: '2026-10-06 07:00', tl: 'T03' }), // lançado 4 dias depois
+    ap({ b: 5, s: 'F', enc: '2026-10-03', d: '2026-10-05', tl: 'T04' }), // depois do encerramento
+    ap({ b: 6, d: '2026-09-28', la: '2026-09-28 17:00', tl: 'T05' }), // antes da abertura
+    ap({ b: 7, t: 'I', it: 0, tl: 'T06' }), // aplicação sem insumo
+    ap({ b: 8, tl: 'T07', ha: 12 }), ap({ b: 9, tl: 'T07', ha: 12 }), // duplicidade
+    ap({ b: 10, os: null, pt: null, tl: 'T08', eq: 'COORD B' }), // sem ordem
+    ap({ b: 11, d: '2026-10-01', la: '2026-10-06 14:30', por: 'BRG_EAI20261006', tl: 'T10' }), // a integração mexeu depois: não é atraso
+  ] } }];
+  const r = L.conferirApontamentos(linhas, {});
+  const de = (b) => r.find((a) => a.b === b).alertas;
+  assert.deepEqual(de(1), []);
+  assert.deepEqual(de(2), ['fora-da-ordem']);
+  assert.deepEqual(de(3), ['excede-talhao']);
+  assert.deepEqual(de(4), ['atrasado']);
+  assert.equal(r.find((a) => a.b === 4).demora, 4);
+  assert.deepEqual(de(5), ['ordem-fechada']);
+  assert.deepEqual(de(6), ['antes-da-abertura']);
+  assert.deepEqual(de(7), ['sem-insumo']);
+  assert.deepEqual(de(8), ['duplicado']);
+  assert.deepEqual(de(9), ['duplicado']);
+  assert.deepEqual(de(10), ['sem-ordem']);
+  assert.deepEqual(de(11), []);
+  assert.deepEqual(r.slice(-2).map((a) => a.alertas.length), [0, 0]); // os que não têm alerta ficam por último
+  assert.equal(L.conferirApontamentos(linhas, { soAlertas: true }).length, 9);
+  assert.deepEqual(L.conferirApontamentos(linhas, { equipe: 'COORD B' }).map((a) => a.b), [10]);
+  assert.deepEqual(L.conferirApontamentos([{ unidade: 'X' }], {}), []); // retrato antigo
+});
+
+test('estoque x necessidade: o que falta para as ordens abertas e o que está parado', () => {
+  const linhas = [{
+    unidade: 'FAZENDA X',
+    depositos: [{ c: '1001', n: 'DEP COORD A' }],
+    estoque: { 1001: [
+      { c: 'I1', n: 'HERBICIDA', q: 100, u: 'LT', o: '1000', on: 'DEFENSIVOS', oq: 5000 },
+      { c: 'I2', n: 'ADJUVANTE', q: 40, u: 'LT', o: '1000', on: 'DEFENSIVOS', oq: 10 },
+      { c: 'I9', n: 'PRODUTO PARADO', q: 7, u: 'KG', o: '1000', on: 'DEFENSIVOS', oq: 0 },
+    ] },
+    extras: { nec: [
+      { os: 10, eq: 'COORD A', ab: '2026-10-01', opn: 'APLIC', c: 'I1', nm: 'HERBICIDA', pl: 260, co: 60 }, // faltam 200 → tem 100
+      { os: 11, eq: 'COORD A', ab: '2026-10-03', opn: 'APLIC', c: 'I1', nm: 'HERBICIDA', pl: 50, co: 0 }, // + 50
+      { os: 10, eq: 'COORD A', ab: '2026-10-01', opn: 'APLIC', c: 'I2', nm: 'ADJUVANTE', pl: 20, co: 0 }, // tem 40: sobra
+      { os: 10, eq: 'COORD A', ab: '2026-10-01', opn: 'APLIC', c: 'I3', nm: 'SEM SALDO', pl: 5, co: 0 }, // não está no depósito
+      { os: 12, eq: 'COORD A', ab: '2026-10-02', opn: 'APLIC', c: 'I9', nm: 'PRODUTO PARADO', pl: 30, co: 30 }, // já consumiu tudo
+      { os: 20, eq: 'COORD B', ab: '2026-10-02', opn: 'PLANTIO', c: 'I5', nm: 'SEMENTE', pl: 900, co: 100 },
+    ] },
+  }];
+  const vinculos = [{ unidade: 'FAZENDA X', equipe: 'COORD A', deposito: '1001' }];
+  const r = L.necessidadePorCoordenador(linhas, vinculos, {});
+  assert.deepEqual(r.map((g) => [g.eq, g.deposito, g.emFalta]), [['COORD A', '1001', 2], ['COORD B', null, 0]]);
+  assert.deepEqual(r[0].itens.map((i) => [i.c, i.nec, i.saldo, i.falta, i.ordens]), [
+    ['I1', 250, 100, 150, [10, 11]],
+    ['I3', 5, 0, 5, [10]],
+    ['I2', 20, 40, 0, [10]],
+  ]);
+  assert.equal(r[0].itens[0].origemSaldo, 5000); // a origem tem para transferir
+  assert.deepEqual(r[0].parados.map((p) => [p.c, p.saldo]), [['I9', 7]]);
+  // sem depósito vinculado: mostra a necessidade, sem saldo para comparar
+  assert.deepEqual(r[1].itens.map((i) => [i.c, i.nec, i.saldo, i.falta]), [['I5', 800, null, null]]);
+  // o período vale pela abertura da ordem
+  assert.deepEqual(L.necessidadePorCoordenador(linhas, vinculos, { equipe: 'COORD A', de: '2026-10-03' })[0].itens.map((i) => [i.c, i.nec]), [['I1', 50]]);
+});
+
+test('dose real x programada: desvio e ordem do maior para o menor', () => {
+  const linhas = [{ unidade: 'FAZENDA X', extras: { dose: [
+    { b: 1, d: '2026-10-05', os: 10, eq: 'COORD A', tl: 'T01', c: 'I1', nm: 'A', pg: 1.2, re: 0.4, ha: 100, q: 40 },
+    { b: 2, d: '2026-10-04', os: 11, eq: 'COORD B', tl: 'T02', c: 'I2', nm: 'B', pg: 0.5, re: 0.6, ha: 50, q: 30 },
+    { b: 3, d: '2026-09-20', os: 12, eq: 'COORD A', tl: 'T03', c: 'I3', nm: 'C', pg: 2, re: 5, ha: 10, q: 50 },
+  ] } }];
+  const r = L.dosesFora(linhas, {});
+  assert.deepEqual(r.map((d) => [d.b, Math.round(d.desvio * 100)]), [[3, 150], [1, -67], [2, 20]]);
+  assert.deepEqual(L.dosesFora(linhas, { de: '2026-10-01', ate: '2026-10-06' }).map((d) => d.b), [1, 2]);
+  assert.deepEqual(L.dosesFora(linhas, { equipe: 'COORD B' }).map((d) => d.b), [2]);
+});
+
+test('coletor: situação, motivos sem repetição e os recusados primeiro', () => {
+  const linhas = [{ unidade: 'FAZENDA X', extras: { col: [
+    { t: 'A', b: 1502, d: '2026-09-29', os: '1762', eq: 'COORD A', opn: 'ADUBACAO', st: null, m: '', la: '2026-09-29 08:34', por: 'u' },
+    { t: 'I', b: 77, d: '2026-10-03', os: '188', eq: 'COORD B', opn: 'APLIC', st: 'I', m: 'Ordem de Serviço de Campo 188 inexistente.\nDepósito 1340 inexistente.\nDepósito 1340 inexistente.\n', la: null, por: null },
+  ] } }];
+  const r = L.coletorTravados(linhas, HOJE, {});
+  assert.deepEqual(r.map((c) => [c.b, c.situacao, c.dias, c.motivos]), [
+    [77, 'Recusado pelo PIMS', 3, ['Ordem de Serviço de Campo 188 inexistente.', 'Depósito 1340 inexistente.']],
+    [1502, 'Aguardando validação', 7, []],
+  ]);
+  assert.equal(L.coletorTravados(linhas, HOJE, { equipe: 'coord a' }).length, 1); // o nome vem do coletor: compara sem acento nem caixa
+});
+
+test('pendências: os números de cada página e a ordem pronta para fechar', () => {
+  const linhas = [{
+    unidade: 'FAZENDA X',
+    ordens: [
+      ordem({ os: 1, eq: 'COORD A', ab: '2026-09-20', pl: 100, ex: 100 }), // em alerta e pronta para fechar
+      ordem({ os: 2, eq: 'COORD A', ab: '2026-10-05', pl: 100, ex: 130 }), // área excedida
+      ordem({ os: 3, eq: 'COORD A', s: 'F', enc: '2026-10-02', pl: 100, ex: 20 }),
+    ],
+    boletins: [{ o: 'P', n: '501', d: '2026-10-02', os: 1, eq: 'COORD A', sit: 'F', em: null, m: ['Error -10 - Quantity falls into negative inventory [IGE1.ItemCode][line: 1]'], it: [] }],
+    extras: {
+      ap: [{ os: null, s: null, ab: null, enc: null, eq: 'COORD A', opn: 'X', t: 'P', b: 9, d: '2026-10-05', tl: 'T1', ha: 1, la: '2026-10-05 10:00', por: 'u', pt: null, xt: 1 }],
+      dose: [{ b: 1, d: '2026-10-05', os: 1, eq: 'COORD A', tl: 'T01', c: 'I1', nm: 'A', pg: 1, re: 2, ha: 1, q: 2 }],
+      col: [{ t: 'A', b: 5, d: '2026-10-01', os: '1', eq: 'COORD A', opn: 'X', st: 'I', m: 'erro', la: null, por: null }],
+      nec: [{ os: 2, eq: 'COORD A', ab: '2026-10-05', opn: 'X', c: 'I1', nm: 'A', pl: 10, co: 0 }],
+    },
+    depositos: [], estoque: { 1001: [] },
+  }];
+  assert.equal(L.ordemAberta(linhas[0].ordens[0], HOJE).pronta, true);
+  assert.equal(L.ordemAberta(linhas[0].ordens[1], HOJE).pronta, false);
+  assert.deepEqual(L.pendencias(linhas, [{ unidade: 'FAZENDA X', equipe: 'COORD A', deposito: '1001' }], HOJE, {}), {
+    emAlerta: 1, excedidas: 1, prontas: 1, fechadas: 1, recusados: 1, vaoFalhar: 0, apontamentos: 1, emFalta: 1, doses: 1, coletor: 1,
+  });
+});
+
 test('início da safra, unidade da fazenda e título', () => {
   assert.equal(L.inicioSafra('2026-10-06'), '2026-08-01');
   assert.equal(L.inicioSafra('2026-07-31'), '2025-08-01');
