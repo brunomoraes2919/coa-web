@@ -459,6 +459,14 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .editar,.remover,.redefinir-senha{padding:0;text-align:left;}
 /* janela de redefinir senha */
 .dlg-mec.dlg-senha{width:min(460px,calc(100vw - 32px));}
+#dlg-trocar-senha .btn:disabled, #dlg-senha .btn:disabled{opacity:.5;cursor:not-allowed;}
+/* regras da senha definitiva: cada uma fica verde quando é atendida */
+.senha-regras{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;font-size:12.5px;color:#6B7A72;}
+.senha-regras li::before{content:"\25CB";display:inline-block;width:16px;}
+.senha-regras li.ok{color:#1B7A4B;font-weight:600;}
+.senha-regras li.ok::before{content:"\2713";}
+@media (max-width:480px){.senha-regras{grid-template-columns:1fr;}}
+.senha-provisoria-tag{display:inline-block;margin-top:4px;font-size:10.5px;letter-spacing:.03em;text-transform:uppercase;padding:2px 8px;border-radius:20px;background:rgba(219,138,8,.14);color:#8A5A05;}
 .senha-campos{display:grid;gap:12px;}
 .senha-campos label{display:flex;flex-direction:column;gap:5px;font-size:12.5px;font-weight:600;color:var(--texto-suave);}
 .senha-campos input{height:38px;padding:0 10px;border:1px solid #CBD5CE;border-radius:6px;font:inherit;color:var(--texto);}
@@ -940,6 +948,37 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   </div>
 </div>
 
+<dialog class="dlg-mec dlg-senha" id="dlg-trocar-senha" aria-labelledby="dlg-trocar-titulo">
+  <form id="form-trocar-senha" novalidate>
+    <div class="dlg-mec-cab">
+      <div><h3 id="dlg-trocar-titulo">Crie a sua senha definitiva</h3><p>Você entrou com a senha padrão. Para continuar, escolha uma senha só sua: ninguém mais, nem o administrador, consegue ver essa senha.</p></div>
+    </div>
+    <div class="dlg-mec-corpo">
+      <div class="senha-campos">
+        <label>Nova senha<input type="password" id="trocar-nova" autocomplete="new-password"></label>
+        <label>Repita a nova senha<input type="password" id="trocar-confirma" autocomplete="new-password"></label>
+      </div>
+      <label class="senha-mostrar"><input type="checkbox" id="trocar-ver"> Mostrar as senhas</label>
+      <ul class="senha-regras" id="trocar-regras" aria-label="Regras da senha">
+        <li data-regra="tamanho">pelo menos 8 caracteres</li>
+        <li data-regra="maiuscula">uma letra maiúscula</li>
+        <li data-regra="minuscula">uma letra minúscula</li>
+        <li data-regra="numero">um número</li>
+        <li data-regra="simbolo">um símbolo (! @ # $ % …)</li>
+        <li data-regra="iguais">as duas senhas iguais</li>
+      </ul>
+      <p class="mec-pims-erro" id="trocar-erro" role="alert" hidden></p>
+    </div>
+    <div class="dlg-mec-rodape">
+      <span>Se esquecer a senha, peça ao administrador do COA para voltar à senha padrão.</span>
+      <div class="mec-pims-acoes">
+        <button type="button" class="btn fantasma" id="trocar-sair">Sair</button>
+        <button type="submit" class="btn" id="trocar-salvar" disabled>Salvar senha</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
 <div class="app" id="app-shell" style="display:none">
 
   <aside class="sidebar">
@@ -1306,7 +1345,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
           <div class="form-grid">
             <div class="campo"><label>Nome</label><input type="text" id="nu-nome" placeholder="Ex: João Silva"></div>
             <div class="campo" id="nu-email-wrap"><label>E-mail</label><input type="email" id="nu-email" placeholder="ex: joao.silva@grupolocks.com.br"></div>
-            <div class="campo" id="nu-senha-wrap"><label>Senha</label><input type="text" id="nu-senha" placeholder="Defina uma senha (mín. 6 caracteres)"></div>
+            <div class="campo" id="nu-senha-wrap"><label>Senha do primeiro acesso</label><input type="text" id="nu-senha" placeholder="Defina uma senha (mín. 6 caracteres)"></div>
             <div class="campo">
               <label>Perfil</label>
               <select id="nu-perfil">
@@ -1340,7 +1379,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         </div>
       </div>
       <div class="section">
-        <div class="section-head"><div><h2>Usuários cadastrados</h2></div></div>
+        <div class="section-head"><div><h2>Usuários cadastrados</h2></div><button type="button" class="btn fantasma" id="btn-senha-padrao" hidden>Senha padrão</button></div>
         <div class="card tabela-wrap">
           <table>
             <thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Fazendas ou equipe</th><th>Categorias</th><th></th></tr></thead>
@@ -1394,20 +1433,20 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <dialog class="dlg-mec dlg-senha" id="dlg-senha" aria-labelledby="dlg-senha-titulo">
         <form id="form-senha" novalidate>
           <div class="dlg-mec-cab">
-            <div><h3 id="dlg-senha-titulo">Redefinir senha</h3><p>Nova senha de acesso para <b id="senha-alvo"></b>. Ela passa a valer na próxima entrada.</p></div>
+            <div><h3 id="dlg-senha-titulo">Redefinir senha</h3><p id="senha-texto"></p></div>
             <button type="button" class="dlg-mec-fechar" id="senha-fechar" aria-label="Fechar">×</button>
           </div>
           <div class="dlg-mec-corpo">
-            <div class="senha-campos">
+            <div class="senha-campos" id="senha-campos">
               <label>Nova senha<input type="password" id="senha-nova" autocomplete="new-password" placeholder="mínimo de 6 caracteres"></label>
               <label>Repita a nova senha<input type="password" id="senha-confirma" autocomplete="new-password"></label>
             </div>
-            <label class="senha-mostrar"><input type="checkbox" id="senha-ver"> Mostrar as senhas</label>
+            <label class="senha-mostrar" id="senha-mostrar-wrap"><input type="checkbox" id="senha-ver"> Mostrar as senhas</label>
             <p class="mec-pims-erro" id="senha-erro" role="alert" hidden></p>
             <p class="aviso-ok" id="senha-ok" role="status" hidden></p>
           </div>
           <div class="dlg-mec-rodape">
-            <span>Passe a nova senha para a pessoa por um canal seguro.</span>
+            <span id="senha-rodape">Passe a nova senha para a pessoa por um canal seguro.</span>
             <div class="mec-pims-acoes">
               <button type="button" class="btn fantasma" id="senha-cancelar">Cancelar</button>
               <button type="submit" class="btn" id="senha-salvar">Redefinir senha</button>
@@ -3561,6 +3600,11 @@ function renderUsuarios(){
     });
   }
   ajustarFormUsuario();
+  // senha padrão: só o ADMINISTRADOR+ define; com ela definida, a senha do cadastro pode ficar em branco
+  const btnPadrao = document.getElementById('btn-senha-padrao');
+  btnPadrao.hidden = !(state.senhaPadraoDisponivel && sessao && sessao.super);
+  btnPadrao.textContent = state.temSenhaPadrao ? 'Trocar a senha padrão' : 'Definir a senha padrão';
+  document.getElementById('nu-senha').placeholder = state.temSenhaPadrao ? 'Em branco = senha padrão' : 'Defina uma senha (mín. 6 caracteres)';
 
   const tbody = document.getElementById('tbl-usuarios');
   tbody.innerHTML = state.usuarios.map(u=>{
@@ -3588,14 +3632,14 @@ function renderUsuarios(){
     const podeSenha = podeEditar && !(u.super && !(sessao && sessao.id===u.id));
     const ehSuperAqui = !!(state.adminMaisDisponivel && u.super);
     return `<tr>
-      <td><b>${u.nome}</b></td>
+      <td><b>${u.nome}</b>${u.senhaProvisoria ? '<br><span class="senha-provisoria-tag" title="Ainda não criou a senha definitiva: vai criar na próxima entrada">senha provisória</span>' : ''}</td>
       <td>${u.email||'–'}</td>
       <td><span class="perfil-pill ${ehCoordenador ? 'coordenador' : u.perfil}${ehSuperAqui?' super':''}">${ehCoordenador ? 'Coordenador' : nomeDoPerfil(u.perfil, u.super)}</span></td>
       <td>${ehCoordenador ? equipesTxt : fazendasTxt}</td>
       <td>${categoriasTxt}</td>
       <td class="acoes-usuario">
         ${podeEditar ? `<button class="editar" data-id="${u.id}">editar</button>` : ''}
-        ${podeSenha ? `<button class="redefinir-senha" data-id="${u.id}">redefinir senha</button>` : ''}
+        ${podeSenha ? `<button class="redefinir-senha" data-id="${u.id}">${state.senhaPadraoDisponivel ? 'voltar à senha padrão' : 'redefinir senha'}</button>` : ''}
         ${podeRemover ? `<button class="remover" data-id="${u.id}">remover perfil</button>` : ''}
       </td>
     </tr>`;
@@ -3619,25 +3663,62 @@ function renderUsuarios(){
   renderContatosWhatsapp();
 }
 
-/* ---- redefinir a senha de um usuário: função admin_redefinir_senha no banco (supabase/0005_redefinir_senha.sql).
-   O site não tem a chave de serviço; a função roda como dono e confere quem chama e de quem é a senha. ---- */
+/* ---- senhas pelo administrador (funções no banco: supabase/0005_redefinir_senha.sql e 0011_senha_padrao.sql).
+   O site não tem a chave de serviço; as funções rodam como dono e conferem quem chama e de quem é a senha.
+   Três usos da mesma janela:
+   - 'voltar'    : volta a senha do usuário para a SENHA PADRÃO (um clique); ele cria a definitiva ao entrar;
+   - 'definir'   : o ADMINISTRADOR+ define a senha padrão da plataforma (o banco guarda só o hash);
+   - 'redefinir' : o jeito antigo (digitar uma senha), usado só enquanto o script 0011 não foi rodado. ---- */
 let senhaAlvoId = null;
+let senhaModo = 'redefinir';
+function abrirJanelaSenha(modo, alvo){
+  senhaModo = modo;
+  senhaAlvoId = alvo ? alvo.id : null;
+  const quem = alvo ? alvo.nome + (alvo.email ? ' ('+alvo.email+')' : '') : '';
+  const comCampos = modo !== 'voltar';
+  document.getElementById('form-senha').reset();
+  document.getElementById('senha-campos').hidden = !comCampos;
+  document.getElementById('senha-mostrar-wrap').hidden = !comCampos;
+  document.getElementById('senha-nova').type = 'password';
+  document.getElementById('senha-confirma').type = 'password';
+  document.getElementById('senha-nova').placeholder = modo === 'definir' ? 'de 8 a 72 caracteres' : 'mínimo de 6 caracteres';
+  const erro = document.getElementById('senha-erro');
+  erro.hidden = true;
+  document.getElementById('senha-ok').hidden = true;
+  const btn = document.getElementById('senha-salvar');
+  btn.disabled = false;
+  const titulo = document.getElementById('dlg-senha-titulo'), texto = document.getElementById('senha-texto'), rodape = document.getElementById('senha-rodape');
+  if(modo === 'voltar'){
+    titulo.textContent = 'Voltar à senha padrão';
+    texto.textContent = 'A senha de ' + quem + ' volta a ser a senha padrão. Na próxima entrada, a pessoa terá de criar uma senha definitiva nova.';
+    rodape.textContent = 'A senha que a pessoa usava deixa de valer na hora.';
+    btn.textContent = 'Voltar à senha padrão';
+    if(!state.temSenhaPadrao){
+      erro.textContent = 'A senha padrão ainda não foi definida. ' + (sessao && sessao.super ? 'Use o botão "Definir a senha padrão", acima da lista.' : 'Peça ao ADMINISTRADOR+ para definir.');
+      erro.hidden = false; btn.disabled = true;
+    }
+  } else if(modo === 'definir'){
+    titulo.textContent = 'Senha padrão da plataforma';
+    texto.textContent = 'É a senha do primeiro acesso de todo usuário novo e de quem tiver a senha voltada para a padrão. Quem entra com ela é obrigado a criar a senha definitiva.';
+    rodape.textContent = 'O banco guarda só o código da senha (hash), nunca o texto.';
+    btn.textContent = 'Definir senha padrão';
+  } else {
+    titulo.textContent = 'Redefinir senha';
+    texto.textContent = 'Nova senha de acesso para ' + quem + '. Ela passa a valer na próxima entrada.';
+    rodape.textContent = 'Passe a nova senha para a pessoa por um canal seguro.';
+    btn.textContent = 'Redefinir senha';
+  }
+  btn.dataset.rotulo = btn.textContent;
+  const dlg = document.getElementById('dlg-senha');
+  if(typeof dlg.showModal === 'function'){ if(!dlg.open) dlg.showModal(); } else dlg.setAttribute('open','');
+  if(comCampos) document.getElementById('senha-nova').focus();
+}
 function abrirRedefinirSenha(id){
   const u = state.usuarios.find(x=>x.id===id);
   if(!u || !podeGerenciarUsuario(u)) return;
-  senhaAlvoId = id;
-  document.getElementById('senha-alvo').textContent = u.nome + (u.email ? ' ('+u.email+')' : '');
-  document.getElementById('form-senha').reset();
-  document.getElementById('senha-nova').type = 'password';
-  document.getElementById('senha-confirma').type = 'password';
-  document.getElementById('senha-erro').hidden = true;
-  document.getElementById('senha-ok').hidden = true;
-  const btn = document.getElementById('senha-salvar');
-  btn.disabled = false; btn.textContent = 'Redefinir senha';
-  const dlg = document.getElementById('dlg-senha');
-  if(typeof dlg.showModal === 'function'){ if(!dlg.open) dlg.showModal(); } else dlg.setAttribute('open','');
-  document.getElementById('senha-nova').focus();
+  abrirJanelaSenha(state.senhaPadraoDisponivel ? 'voltar' : 'redefinir', u);
 }
+document.getElementById('btn-senha-padrao').addEventListener('click', ()=>{ if(sessao && sessao.super) abrirJanelaSenha('definir', null); });
 function fecharRedefinirSenha(){
   const dlg = document.getElementById('dlg-senha');
   if(dlg.open) dlg.close(); else dlg.removeAttribute('open');
@@ -3654,25 +3735,97 @@ document.getElementById('form-senha').addEventListener('submit', async e=>{
   e.preventDefault();
   const erro = document.getElementById('senha-erro'), ok = document.getElementById('senha-ok');
   erro.hidden = true; ok.hidden = true;
-  const alvo = state.usuarios.find(x=>x.id===senhaAlvoId);
-  if(!alvo){ fecharRedefinirSenha(); return; }
+  const alvo = senhaModo === 'definir' ? null : state.usuarios.find(x=>x.id===senhaAlvoId);
+  if(senhaModo !== 'definir' && !alvo){ fecharRedefinirSenha(); return; }
   const nova = document.getElementById('senha-nova').value;
   const confirma = document.getElementById('senha-confirma').value;
-  if(nova.length < 6){ erro.textContent = 'A senha precisa ter pelo menos 6 caracteres.'; erro.hidden = false; return; }
-  if(nova !== confirma){ erro.textContent = 'As duas senhas não são iguais.'; erro.hidden = false; return; }
+  if(senhaModo !== 'voltar'){
+    const minimo = senhaModo === 'definir' ? 8 : 6;
+    if(nova.length < minimo){ erro.textContent = 'A senha precisa ter pelo menos ' + minimo + ' caracteres.'; erro.hidden = false; return; }
+    if(nova !== confirma){ erro.textContent = 'As duas senhas não são iguais.'; erro.hidden = false; return; }
+  }
   const btn = document.getElementById('senha-salvar');
-  btn.disabled = true; btn.textContent = 'Redefinindo…';
-  const { error } = await sb.rpc('admin_redefinir_senha', { p_usuario: senhaAlvoId, p_senha: nova });
+  btn.disabled = true; btn.textContent = 'Gravando…';
+  const chamada = senhaModo === 'voltar' ? sb.rpc('admin_voltar_senha_padrao', { p_usuario: senhaAlvoId })
+    : senhaModo === 'definir' ? sb.rpc('admin_definir_senha_padrao', { p_senha: nova })
+    : sb.rpc('admin_redefinir_senha', { p_usuario: senhaAlvoId, p_senha: nova });
+  const { error } = await chamada;
   if(error){
-    erro.textContent = /admin_redefinir_senha|schema cache/i.test(error.message)
-      ? 'Rode o script supabase/0005_redefinir_senha.sql no SQL Editor do Supabase para ligar a redefinição de senha.'
+    erro.textContent = /schema cache|could not find the function/i.test(error.message)
+      ? 'Rode os scripts supabase/0005_redefinir_senha.sql e 0011_senha_padrao.sql no SQL Editor do Supabase para ligar esta função.'
       : error.message;
-    erro.hidden = false; btn.disabled = false; btn.textContent = 'Redefinir senha';
+    erro.hidden = false; btn.disabled = false; btn.textContent = btn.dataset.rotulo;
     return;
   }
-  ok.textContent = 'Senha de ' + alvo.nome + ' redefinida. Já vale na próxima entrada.';
+  ok.textContent = senhaModo === 'voltar' ? 'Senha de ' + alvo.nome + ' voltou para a padrão. Na próxima entrada ele cria a definitiva.'
+    : senhaModo === 'definir' ? 'Senha padrão definida. Vale para os próximos cadastros e para quem tiver a senha voltada para a padrão.'
+    : 'Senha de ' + alvo.nome + ' redefinida. Já vale na próxima entrada.';
   ok.hidden = false; btn.textContent = 'Pronto';
-  setTimeout(fecharRedefinirSenha, 1800);
+  if(senhaModo === 'definir') state.temSenhaPadrao = true;
+  setTimeout(async ()=>{ fecharRedefinirSenha(); await recarregarTudoDoSupabase(); }, 1600);
+});
+
+/* ---- senha definitiva: quem entra com a senha padrão (marca em senha_provisoria) só continua depois de criar a sua.
+   A troca é feita pela função definir_minha_senha, que confere as regras de novo no banco. ---- */
+const REGRAS_SENHA = {
+  tamanho: t=>t.length >= 8 && t.length <= 72,
+  maiuscula: t=>/[A-Z]/.test(t),
+  minuscula: t=>/[a-z]/.test(t),
+  numero: t=>/[0-9]/.test(t),
+  simbolo: t=>/[^A-Za-z0-9]/.test(t)
+};
+function conferirSenhaDefinitiva(){
+  const nova = document.getElementById('trocar-nova').value;
+  const confirma = document.getElementById('trocar-confirma').value;
+  let tudo = true;
+  document.querySelectorAll('#trocar-regras li').forEach(li=>{
+    const regra = li.dataset.regra;
+    const ok = regra === 'iguais' ? (nova.length > 0 && nova === confirma) : REGRAS_SENHA[regra](nova);
+    li.classList.toggle('ok', ok);
+    if(!ok) tudo = false;
+  });
+  document.getElementById('trocar-salvar').disabled = !tudo;
+  return tudo;
+}
+function abrirTrocaDeSenha(){
+  const dlg = document.getElementById('dlg-trocar-senha');
+  document.getElementById('form-trocar-senha').reset();
+  document.getElementById('trocar-nova').type = 'password';
+  document.getElementById('trocar-confirma').type = 'password';
+  document.getElementById('trocar-erro').hidden = true;
+  document.getElementById('trocar-salvar').textContent = 'Salvar senha';
+  conferirSenhaDefinitiva();
+  if(typeof dlg.showModal === 'function'){ if(!dlg.open) dlg.showModal(); } else dlg.setAttribute('open','');
+  document.getElementById('trocar-nova').focus();
+}
+function fecharTrocaDeSenha(){
+  const dlg = document.getElementById('dlg-trocar-senha');
+  if(dlg.open) dlg.close(); else dlg.removeAttribute('open');
+}
+// a janela não fecha com Esc: só criando a senha ou saindo
+document.getElementById('dlg-trocar-senha').addEventListener('cancel', e=>e.preventDefault());
+['trocar-nova','trocar-confirma'].forEach(id=>document.getElementById(id).addEventListener('input', conferirSenhaDefinitiva));
+document.getElementById('trocar-ver').addEventListener('change', e=>{
+  const tipo = e.target.checked ? 'text' : 'password';
+  document.getElementById('trocar-nova').type = tipo;
+  document.getElementById('trocar-confirma').type = tipo;
+});
+document.getElementById('trocar-sair').addEventListener('click', ()=>{ fecharTrocaDeSenha(); sair(); });
+document.getElementById('form-trocar-senha').addEventListener('submit', async e=>{
+  e.preventDefault();
+  if(!conferirSenhaDefinitiva()) return;
+  const erro = document.getElementById('trocar-erro');
+  const btn = document.getElementById('trocar-salvar');
+  erro.hidden = true; btn.disabled = true; btn.textContent = 'Salvando…';
+  const { error } = await sb.rpc('definir_minha_senha', { p_nova: document.getElementById('trocar-nova').value });
+  if(error){
+    erro.textContent = error.message; erro.hidden = false;
+    btn.disabled = false; btn.textContent = 'Salvar senha';
+    return;
+  }
+  if(sessao) sessao.trocarSenha = false;
+  document.getElementById('form-trocar-senha').reset();
+  fecharTrocaDeSenha();
 });
 
 /* Equipes do PIMS para o perfil Coordenador: vêm do retrato da Validação PIMS (valid_pims.coordenadores).
@@ -3865,8 +4018,14 @@ async function criarNovoUsuario(){
   const nome = document.getElementById('nu-nome').value.trim();
   const email = document.getElementById('nu-email').value.trim();
   const senha = document.getElementById('nu-senha').value;
-  if(!nome || !email || !senha){ alert('Preencha nome, e-mail e senha.'); return; }
-  if(senha.length < 6){ alert('A senha precisa ter pelo menos 6 caracteres.'); return; }
+  // com a senha padrão definida, o campo pode ficar em branco: o login nasce com uma senha aleatória (que ninguém vê)
+  // e o banco troca pela senha padrão logo em seguida
+  const usarSenhaPadrao = !senha && !!state.temSenhaPadrao;
+  if(!nome || !email || (!senha && !usarSenhaPadrao)){ alert(state.temSenhaPadrao ? 'Preencha nome e e-mail.' : 'Preencha nome, e-mail e senha.'); return; }
+  if(!usarSenhaPadrao && senha.length < 6){ alert('A senha precisa ter pelo menos 6 caracteres.'); return; }
+  const senhaDoLogin = usarSenhaPadrao
+    ? Array.from(crypto.getRandomValues(new Uint8Array(24)), b=>('0'+b.toString(16)).slice(-2)).join('') + 'Aa!'
+    : senha;
   const { perfil, todasFazendas, fazendasPermitidas, categoriasPermitidas, coordenador, equipe } = lerFormUsuario(null);
   if(coordenador && !equipe){ alert('Escolha a fazenda e a equipe do PIMS do coordenador.'); return; }
   if(coordenador && state.equipesDisponiveis === false){ alert('O banco ainda não tem o vínculo de equipe: rode o script supabase/0010_controle_por_equipe.sql no Supabase antes de criar um coordenador.'); return; }
@@ -3875,7 +4034,7 @@ async function criarNovoUsuario(){
   btn.disabled = true;
   btn.textContent = 'Criando…';
 
-  const { data, error } = await sbCriarUsuario.auth.signUp({ email, password: senha });
+  const { data, error } = await sbCriarUsuario.auth.signUp({ email, password: senhaDoLogin });
   if(error){
     btn.disabled = false; btn.textContent = 'Criar usuário';
     alert('Não foi possível criar o login: '+error.message);
@@ -3925,6 +4084,11 @@ async function criarNovoUsuario(){
   if(coordenador){
     const erroEquipe = await salvarEquipeDoUsuario(novoId, equipe);
     if(erroEquipe){ alert('Usuário criado, mas houve erro ao vincular a equipe do PIMS: '+erroEquipe); }
+  }
+
+  if(usarSenhaPadrao){
+    const { error: erroPadrao } = await sb.rpc('admin_voltar_senha_padrao', { p_usuario: novoId });
+    if(erroPadrao){ alert('Usuário criado, mas não foi possível aplicar a senha padrão ('+erroPadrao.message+'). Use "voltar à senha padrão" na lista para ele conseguir entrar.'); }
   }
 
   btn.disabled = false; btn.textContent = 'Criar usuário';
@@ -4887,13 +5051,19 @@ async function recarregarTudoDoSupabase(){
   state.talhoes = (th.data || []).map(talhaoDoBanco);
 
   if(sessao && sessao.perfil==='admin'){
-    const [pf, uf, uc, ce, vp] = await Promise.all([
+    const [pf, uf, uc, ce, vp, sp, tp] = await Promise.all([
       sb.from('perfis').select('*'),
       sb.from('usuario_fazendas').select('*'),
       sb.from('usuario_categorias').select('*'),
       sb.from('controle_equipes').select('usuario_id,unidade,equipe'),
-      sb.from('valid_pims').select('unidade,coordenadores').order('unidade')
+      sb.from('valid_pims').select('unidade,coordenadores').order('unidade'),
+      sb.from('senha_provisoria').select('usuario_id'),
+      sb.rpc('admin_tem_senha_padrao')
     ]);
+    // erro = script 0011 ainda não rodado: o site segue com o "redefinir senha" antigo
+    state.senhaPadraoDisponivel = !sp.error && !tp.error;
+    state.temSenhaPadrao = !tp.error && tp.data === true;
+    const comSenhaProvisoria = new Set(sp.error ? [] : (sp.data || []).map(l=>l.usuario_id));
     // erro = tabela ainda não criada (script 0010): o perfil Coordenador avisa em vez de gravar
     state.equipesDisponiveis = !ce.error;
     const equipesDosUsuarios = ce.error ? [] : (ce.data || []);
@@ -4911,7 +5081,8 @@ async function recarregarTudoDoSupabase(){
       super: !!p.super, todasFazendas: p.todas_fazendas !== false,
       fazendasPermitidas: permissoes.filter(u=>u.usuario_id===p.id).map(u=>u.fazenda_id),
       categoriasPermitidas: uc.error ? null : permCategorias.filter(u=>u.usuario_id===p.id).map(u=>u.categoria),
-      equipes: equipesDosUsuarios.filter(e=>e.usuario_id===p.id).map(e=>({ unidade: e.unidade, equipe: e.equipe }))
+      equipes: equipesDosUsuarios.filter(e=>e.usuario_id===p.id).map(e=>({ unidade: e.unidade, equipe: e.equipe })),
+      senhaProvisoria: comSenhaProvisoria.has(p.id)
     }));
   } else {
     state.usuarios = [];
@@ -4973,6 +5144,10 @@ async function carregarSessaoEDados(){
     super: temAdminMais ? !!perfil.super : perfil.perfil === 'admin',
     todasFazendas: perfil.todas_fazendas !== false
   };
+  // senha provisória (usuário novo, ou senha voltada para a padrão): só continua depois de criar a definitiva.
+  // Erro na consulta = script 0011 ainda não rodado: segue como antes.
+  const provisoria = await sb.from('senha_provisoria').select('usuario_id').eq('usuario_id', user.id).maybeSingle();
+  sessao.trocarSenha = !provisoria.error && !!provisoria.data;
 
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('login-senha').value = '';
@@ -4985,10 +5160,12 @@ async function carregarSessaoEDados(){
   // tem a categoria, e só onde existe a ponte /api/gnss (na cópia do GitHub Pages não há função)
   if(!satFrame && podeCategoria('sat') && !location.hostname.endsWith('github.io')) criarSatFrame(SAT_ROTA_INICIAL);
   mostrarCategoriaScreen();
+  if(sessao.trocarSenha) abrirTrocaDeSenha();
 }
 
 function mostrarTelaLogin(){
   coaLoader.esconder();
+  fecharTrocaDeSenha(); // a janela da senha definitiva não fica por cima da tela de entrada
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('login-screen').style.display = ''; // a grade (painel + formulário) vem do CSS
