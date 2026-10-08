@@ -30,7 +30,7 @@
   const estado = {
     vista: ['mapa', 'diario', 'pics'].indexOf(PARAMS.get('vista')) >= 0 ? PARAMS.get('vista') : 'mapa',
     fazenda: null, periodo: PARAMS.get('periodo') || '7',
-    de: PARAMS.get('de'), ate: PARAMS.get('ate'), limites: 'auto', modo: PARAMS.get('modo') === 'seca' ? 'seca' : 'chuva', pics: true, sel: null,
+    de: PARAMS.get('de'), ate: PARAMS.get('ate'), limites: ['zeus', 'base'].indexOf(PARAMS.get('limites')) >= 0 ? PARAMS.get('limites') : 'auto', modo: PARAMS.get('modo') === 'seca' ? 'seca' : 'chuva', pics: true, sel: null,
     ordem: { col: 'codigo', desc: false }, busca: '',
   };
   let fonte = null;
@@ -76,7 +76,11 @@
           tudo(() => sb.from('mapas_talhoes').select('codigo,nome,area_ha,geom').eq('fazenda_id', f.id).order('id'), 200),
           tudo(() => sb.from('mapas_areas_cultura').select('safra_id,codigo,area_ha,geom').eq('fazenda_id', f.id).order('id'), 200),
           chuva(colunas + ',ultimo_dia,lidos,talhoes,ciclos'),
+          // os contornos dos talhões cadastrados na ZEUS (só algumas fazendas têm); sem a tabela, a opção não aparece
+          f.unidade ? sb.from('chuva_limites_zeus').select('talhoes').eq('unidade', f.unidade).limit(1) : Promise.resolve({ data: [] }),
         ]);
+        const z = r[3];
+        const zeus = !z.error && z.data && z.data[0] && Array.isArray(z.data[0].talhoes) ? z.data[0].talhoes : [];
         let c = r[2];
         const texto = (e) => (e ? (e.code || '') + ' ' + (e.message || '') : '');
         // sem as colunas da chuva por talhão (script 0014 ainda não aplicado): lê o que existe e avisa
@@ -84,7 +88,7 @@
         if (semColunas) c = await chuva(colunas);
         const semTabela = /PGRST205|42P01|could not find the table/i.test(texto(c.error));
         if (c.error && !semTabela) throw c.error;
-        return { talhoes: r[0], areas: r[1], chuva: (c.data && c.data[0]) || null, semTabela: semTabela, semColunas: semColunas };
+        return { talhoes: r[0], areas: r[1], zeus: zeus, chuva: (c.data && c.data[0]) || null, semTabela: semTabela, semColunas: semColunas };
       },
     };
   }
@@ -104,15 +108,21 @@
     (dados.areas || []).forEach((a) => { tem[a.safra_id] = true; });
     return safras.filter((s) => tem[s.id]);
   }
-  /** Qual conjunto de limites desenhar: 'base' (todos os talhões) ou o id de uma safra com áreas. */
+  /** A fazenda tem os contornos dos talhões cadastrados na ZEUS (os mesmos nomes da tabela de chuva)? */
+  function temLimitesZeus(dados) { return !!(dados.zeus && dados.zeus.length); }
+  /**
+   * Qual conjunto de limites desenhar: 'base' (todos os talhões do Mapas), 'zeus' (os talhões da ZEUS, quando a
+   * fazenda tem) ou o id de uma safra com áreas.
+   */
   function limitesEscolhidos(dados) {
     const comArea = safrasDaFazenda(dados);
-    if (estado.limites !== 'auto' && (estado.limites === 'base' || comArea.some((s) => s.id === estado.limites))) return estado.limites;
+    const vale = estado.limites === 'base' || (estado.limites === 'zeus' && temLimitesZeus(dados)) || comArea.some((s) => s.id === estado.limites);
+    if (estado.limites !== 'auto' && vale) return estado.limites;
     return comArea.length ? comArea[0].id : 'base';
   }
   /** Talhões a desenhar: um por código (pedaços do mesmo talhão viram um só), com centro, caixa e caminho. */
   function montarTalhoes(dados, qual) {
-    const origem = qual === 'base' ? dados.talhoes || [] : (dados.areas || []).filter((a) => a.safra_id === qual);
+    const origem = qual === 'zeus' ? dados.zeus || [] : qual === 'base' ? dados.talhoes || [] : (dados.areas || []).filter((a) => a.safra_id === qual);
     const porCodigo = new Map();
     let semCodigo = 0;
     origem.forEach((t) => {
@@ -654,6 +664,7 @@
     const comArea = dados ? safrasDaFazenda(dados) : [];
     const qual = dados ? limitesEscolhidos(dados) : 'base';
     $('sel-limites').innerHTML = comArea.map((s) => '<option value="' + esc(s.id) + '"' + (s.id === qual ? ' selected' : '') + '>' + esc(s.nome) + '</option>').join('') +
+      (temLimitesZeus(dados || {}) ? '<option value="zeus"' + (qual === 'zeus' ? ' selected' : '') + '>Talhões da ZEUS</option>' : '') +
       '<option value="base"' + (qual === 'base' ? ' selected' : '') + '>Todos os talhões</option>';
   }
   function marcarDatas() {

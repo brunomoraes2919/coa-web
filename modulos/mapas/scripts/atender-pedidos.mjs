@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, ultimoDiaZeus } from './sincronizar-plantio.mjs';
+import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, sincronizarLimitesZeus, ultimoDiaZeus } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -313,6 +313,50 @@ export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl
   return 'ok';
 }
 
+// ---------- limites dos talhões da ZEUS (tabela chuva_limites_zeus, opção "Talhões da ZEUS" da Chuva por talhão) ----------
+
+const TABELA_LIMITES_ZEUS = 'chuva_limites_zeus';
+/** os limites quase não mudam: uma leitura do datalake por dia basta */
+export const LIMITES_ZEUS_HORAS = 24;
+
+/**
+ * Mantém chuva_limites_zeus em dia: o contorno dos talhões da ZEUS (datalake) das fazendas que têm chuva por
+ * talhão. Só consulta quando a última gravação tem mais de 24 h. Devolve 'recente', 'fora-do-passo',
+ * 'sem-tabela' (script 0016 não aplicado), 'vazio' ou 'ok'.
+ */
+export async function atualizarLimitesZeus({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+  const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?select=gerado_em&order=gerado_em.desc&limit=1`, {
+    headers: cabecalhosSupabase(supabase.chave),
+  });
+  if (!resp.ok) {
+    if (await semTabela(resp)) return 'sem-tabela';
+    await erroRest(resp, supabase.chave, 'a leitura dos limites da ZEUS');
+  }
+  const linhas = await resp.json();
+  const momento = agora();
+  const ultima = Array.isArray(linhas) && linhas[0]?.gerado_em ? Date.parse(linhas[0].gerado_em) : NaN;
+  if (Number.isFinite(ultima) && momento.getTime() - ultima < LIMITES_ZEUS_HORAS * 3_600_000) return 'recente';
+  if (momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
+  const novas = await sincronizarLimitesZeus({ url: agrovex.url, token: agrovex.token, fetchImpl, agora: momento });
+  if (!novas.length) return 'vazio';
+  // uma fazenda por pedido: cada linha leva o contorno de todos os talhões
+  for (const linha of novas) {
+    const gravar = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?on_conflict=unidade`, {
+      method: 'POST',
+      headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify([linha]),
+    });
+    if (!gravar.ok) await erroRest(gravar, supabase.chave, 'a gravação dos limites da ZEUS');
+  }
+  const limpeza = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?gerado_em=lt.${encodeURIComponent(novas[0].gerado_em)}`, {
+    method: 'DELETE',
+    headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
+  });
+  if (!limpeza.ok) await erroRest(limpeza, supabase.chave, 'a limpeza dos limites da ZEUS');
+  console.log(`== ${momento.toISOString()} limites da ZEUS: ${novas.length} fazendas, ${novas.reduce((n, l) => n + l.talhoes.length, 0)} talhões.`);
+  return 'ok';
+}
+
 // ---------- pedidos de "Atualizar" da Validação PIMS (tabela valid_pedidos) ----------
 
 const TABELA_VALID = 'valid_pedidos';
@@ -364,7 +408,7 @@ async function main() {
   };
   // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
   let erroConsulta = null;
-  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus, atualizarChuvaTalhao]) {
+  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus, atualizarChuvaTalhao, atualizarLimitesZeus]) {
     try {
       await atender({ supabase, agrovex });
     } catch (e) {

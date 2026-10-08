@@ -36,6 +36,14 @@ export function atualizarChuvaTalhao(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<'recente' | 'fora-do-passo' | 'sem-tabela' | 'sem-coluna' | 'vazio' | 'ok'>;
+export const LIMITES_ZEUS_HORAS: number;
+/** Mantém chuva_limites_zeus em dia (contorno dos talhões da ZEUS no datalake, das fazendas com chuva por talhão). */
+export function atualizarLimitesZeus(opcoes: {
+  supabase: { url: string; chave: string };
+  agrovex: { url: string; token: string };
+  fetch?: FetchLike;
+  agora?: () => Date;
+}): Promise<'recente' | 'fora-do-passo' | 'sem-tabela' | 'vazio' | 'ok'>;
 export interface PedidoMecPendente { id: number; unidade: string; de: string; ate: string }
 export function pedidosMecPendentes(ctx: Ctx): Promise<PedidoMecPendente[]>;
 export function responderPedidoMec(ctx: Ctx, id: number, resultado: string, dados: unknown, agora?: Date): Promise<void>;

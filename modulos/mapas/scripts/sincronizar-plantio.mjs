@@ -13,10 +13,11 @@ const USER_AGENT = 'mapa-chuva-coa/1.0'; // o Cloudflare do Agrovex bloqueia use
 const PROTOCOLO = '2025-06-18';
 const TEMPO_LIMITE_MS = 120_000;
 const SQL_SAFRAS = 'SELECT DE_PER_SAFRA FROM PIMSMCPRD.dbo.PERIODOSAFRA';
-/** Bases do Agrovex usadas aqui: PIMS (SQL Server) e ZEUS (clima, PostgreSQL). */
+/** Bases do Agrovex usadas aqui: PIMS (SQL Server), ZEUS (clima, PostgreSQL) e os talhões da ZEUS (datalake, Athena). */
 const FONTES = {
   pims: { nome: 'PIMS', source: 'sqlserver', database: 'PIMSMCPRD', schema: 'dbo' },
   zeus: { nome: 'ZEUS', source: 'zeus', database: 'LKS_DATABASE_ZEUS', schema: 'DATABASE' },
+  solos: { nome: 'datalake', source: 'athena', database: 'soils_database_database' },
 };
 
 // ---------- regras puras ----------
@@ -2052,6 +2053,152 @@ export async function sincronizarChuvaTalhao({ url, token, fetchImpl = fetch, ag
     const vinculos = await cliente.consultar(SQL_VINCULOS_ZEUS, 'vínculo talhão × pluviômetro da ZEUS (chuva por talhão)', 'vínculos da ZEUS', FONTES.zeus);
     const chuva = await cliente.consultar(montarSqlChuvaDiariaPics(desde), 'chuva diária por pluviômetro (chuva por talhão)', 'chuva diária por pluviômetro', FONTES.zeus);
     return linhasChuvaTalhao({ talhoes, diasComDado, ciclos, vinculos, chuva }, desde, dias, agora.toISOString());
+  } finally {
+    await cliente.fechar();
+  }
+}
+
+// ---------- limites dos talhões da ZEUS (opção "Talhões da ZEUS" da Chuva por talhão) ----------
+// O cadastro de talhões da ZEUS com geometria fica no datalake (soils_database_database.stg_fields, WKT). Os
+// nomes são os mesmos da tabela de chuva por talhão: desenhar por eles mostra exatamente os talhões que têm
+// valor. Só algumas fazendas estão lá; as outras seguem com os limites do cadastro do Mapas.
+
+/** linhas por página da consulta dos limites (cada linha traz um polígono inteiro em texto) */
+export const LIMITES_ZEUS_PAGINA = 50;
+/** pontos a menos disto do anterior saem do contorno (graus; ~4 m): o cadastro vem com muito mais detalhe do que a tela mostra */
+const LIMITES_ZEUS_TOLERANCIA = 0.00004;
+
+/** Fazendas que têm talhões com geometria no datalake. */
+export const SQL_UNIDADES_LIMITES_ZEUS = `SELECT businessunitname, count(*) AS n
+FROM soils_database_database.stg_fields
+GROUP BY businessunitname
+ORDER BY businessunitname`;
+
+/** Talhões de uma fazenda do datalake (nome como está lá: 'Fazenda Guapirama'), paginados. */
+export function montarSqlLimitesZeus(fazenda, pular = 0, tamanho = LIMITES_ZEUS_PAGINA) {
+  return `SELECT idfield, fieldname, fieldgeom
+FROM soils_database_database.stg_fields
+WHERE businessunitname = ${listaSql([fazenda])}
+ORDER BY idfield
+OFFSET ${Math.max(0, Math.floor(pular))} LIMIT ${Math.max(1, Math.floor(tamanho))}`;
+}
+
+/** Os talhões que têm chuva na stg_field_data desde `desde` (unidade + nome). */
+export function montarSqlTalhoesComChuva(desde) {
+  return `SELECT DISTINCT unidade, fieldname
+FROM "DATABASE".stg_field_data
+WHERE data >= DATE '${dataSql(desde)}' AND coalesce(fieldname, '') <> ''`;
+}
+
+/**
+ * WKT de polígono ('POLYGON (...)' ou 'MULTIPOLYGON (...)', com ou sem Z) → GeoJSON MultiPolygon em lon/lat com
+ * seis casas, sem os pontos colados no anterior. Qualquer outra coisa (ou coordenada impossível) → null.
+ */
+export function geometriaDoWkt(wkt, tolerancia = LIMITES_ZEUS_TOLERANCIA) {
+  const m = /^\s*(MULTI)?POLYGON\s*(?:Z\s*|M\s*|ZM\s*)?\((.*)\)\s*$/is.exec(String(wkt ?? ''));
+  if (!m) return null;
+  const corpo = m[1] ? m[2].trim().replace(/^\(/, '').replace(/\)$/, '') : m[2];
+  const poligonos = [];
+  for (const textoPoligono of corpo.split(/\)\s*\)\s*,\s*\(\s*\(/)) {
+    const aneis = [];
+    for (const textoAnel of textoPoligono.replace(/^\s*\(+/, '').replace(/\)+\s*$/, '').split(/\)\s*,\s*\(/)) {
+      const anel = [];
+      for (const ponto of textoAnel.split(',')) {
+        const p = ponto.trim().split(/\s+/);
+        const lon = Number(p[0]);
+        const lat = Number(p[1]);
+        if (p.length < 2 || !Number.isFinite(lon) || !Number.isFinite(lat) || Math.abs(lon) > 180 || Math.abs(lat) > 90) return null;
+        const ultimo = anel[anel.length - 1];
+        if (ultimo && Math.abs(lon - ultimo[0]) < tolerancia && Math.abs(lat - ultimo[1]) < tolerancia) continue;
+        anel.push([Math.round(lon * 1e6) / 1e6, Math.round(lat * 1e6) / 1e6]);
+      }
+      // o anel fecha no primeiro ponto (o último pode ter sido tirado por estar colado nele)
+      const a = anel[0];
+      const z = anel[anel.length - 1];
+      if (a && (a[0] !== z[0] || a[1] !== z[1])) anel.push([a[0], a[1]]);
+      if (anel.length < 4) return null;
+      aneis.push(anel);
+    }
+    if (!aneis.length) return null;
+    poligonos.push(aneis);
+  }
+  return poligonos.length ? { type: 'MultiPolygon', coordinates: poligonos } : null;
+}
+
+/** Área (ha) de um MultiPolygon em lon/lat: plana em torno da latitude do polígono, com os buracos descontados. */
+export function areaHaDaGeometria(geom) {
+  let m2 = 0;
+  for (const poligono of geom.coordinates) {
+    poligono.forEach((anel, i) => {
+      const kx = Math.cos((anel[0][1] * Math.PI) / 180) * 111_320;
+      const ky = 110_570;
+      let soma = 0;
+      for (let a = 0, b = anel.length - 1; a < anel.length; b = a++) {
+        soma += (anel[b][0] - anel[0][0]) * kx * (anel[a][1] - anel[0][1]) * ky - (anel[a][0] - anel[0][0]) * kx * (anel[b][1] - anel[0][1]) * ky;
+      }
+      m2 += (i === 0 ? 1 : -1) * Math.abs(soma) / 2;
+    });
+  }
+  return Math.round((m2 / 10_000) * 100) / 100;
+}
+
+/**
+ * Linhas de chuva_limites_zeus: uma por fazenda que tem limite no datalake E chuva por talhão, só com os
+ * talhões que têm chuva: talhoes [{ codigo, nome, id, area_ha, geom }]. `campos` = Map(nome da fazenda no
+ * datalake → linhas de montarSqlLimitesZeus). Nome cadastrado mais de uma vez fica com o id maior (o mais novo).
+ */
+export function linhasLimitesZeus(campos, comChuva, geradoEm) {
+  const chuva = new Map();
+  for (const r of objetosDe(comChuva)) {
+    const unidade = chaveNome(r.unidade);
+    const codigo = normalizarCodigo(r.fieldname);
+    if (!unidade || !codigo) continue;
+    if (!chuva.has(unidade)) chuva.set(unidade, new Set());
+    chuva.get(unidade).add(codigo);
+  }
+  const linhas = [];
+  for (const [fazenda, registros] of campos) {
+    const unidade = unidadeDaFazendaZeus(fazenda);
+    const codigos = chuva.get(unidade);
+    if (!codigos) continue;
+    const porCodigo = new Map();
+    for (const r of registros) {
+      const codigo = normalizarCodigo(r.fieldname);
+      const id = Number(r.idfield);
+      if (!codigo || !codigos.has(codigo) || !Number.isFinite(id)) continue;
+      const atual = porCodigo.get(codigo);
+      if (atual && atual.id > id) continue;
+      const geom = geometriaDoWkt(r.fieldgeom);
+      if (!geom) continue;
+      porCodigo.set(codigo, { codigo, nome: txt(r.fieldname) ?? codigo, id, area_ha: areaHaDaGeometria(geom), geom });
+    }
+    if (!porCodigo.size) continue;
+    linhas.push({ unidade: unidade.slice(0, 80), gerado_em: geradoEm, talhoes: [...porCodigo.values()].sort((a, b) => comparar(a.codigo, b.codigo)) });
+  }
+  return linhas.sort((a, b) => comparar(a.unidade, b.unidade));
+}
+
+/** Consulta a ZEUS e o datalake pelo Agrovex e devolve as linhas de chuva_limites_zeus (não grava nada). */
+export async function sincronizarLimitesZeus({ url, token, fetchImpl = fetch, agora = new Date() }) {
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    const comChuva = await cliente.consultar(montarSqlTalhoesComChuva(inicioChuvaTalhao(agora)), 'talhões com chuva na ZEUS (stg_field_data)', 'talhões com chuva', FONTES.zeus);
+    const unidades = new Set(objetosDe(comChuva).map((r) => chaveNome(r.unidade)).filter(Boolean));
+    const fazendas = objetosDe(await cliente.consultar(SQL_UNIDADES_LIMITES_ZEUS, 'fazendas com talhões da ZEUS no datalake (chuva por talhão)', 'fazendas com limite', FONTES.solos));
+    const campos = new Map();
+    for (const f of fazendas) {
+      const nome = txt(f.businessunitname);
+      // fazenda sem chuva por talhão não tem o que desenhar
+      if (!nome || !unidades.has(unidadeDaFazendaZeus(nome))) continue;
+      const registros = [];
+      for (let pular = 0; ; pular += LIMITES_ZEUS_PAGINA) {
+        const pagina = objetosDe(await cliente.consultar(montarSqlLimitesZeus(nome, pular), 'limites dos talhões da ZEUS no datalake (chuva por talhão)', 'limites da ZEUS', FONTES.solos));
+        registros.push(...pagina);
+        if (pagina.length < LIMITES_ZEUS_PAGINA) break;
+      }
+      campos.set(nome, registros);
+    }
+    return linhasLimitesZeus(campos, comChuva, agora.toISOString());
   } finally {
     await cliente.fechar();
   }

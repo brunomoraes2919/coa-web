@@ -81,6 +81,11 @@ function dadosFicticios() {
       f1: {
         talhoes,
         areas: [],
+        // os talhões "da ZEUS" de mentira: só os que têm chuva, com o contorno um pouco diferente do cadastro do Mapas
+        zeus: talhoes.filter((t) => chuva[t.codigo]).map((t, i) => ({
+          codigo: t.codigo, nome: t.codigo, id: 100 + i, area_ha: 150,
+          geom: { type: 'MultiPolygon', coordinates: [[t.geom.coordinates[0].map((p) => [p[0] + 0.0006, p[1] - 0.0004])]] },
+        })),
         chuva: {
           unidade: 'TESTE NORTE', gerado_em: new Date().toISOString(), inicio, dias: DIAS, ultimo_dia: dia(FIM), lidos: `0-39,41-${FIM}`,
           talhoes: chuva,

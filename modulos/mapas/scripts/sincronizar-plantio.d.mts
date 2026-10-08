@@ -212,6 +212,19 @@ export function linhasChuvaTalhao(
   desde: string, dias: number, geradoEm: string,
 ): LinhaChuvaTalhao[];
 export function sincronizarChuvaTalhao(opcoes: { url: string; token: string; fetchImpl?: FetchLike; agora?: Date }): Promise<LinhaChuvaTalhao[]>;
+
+/** limite de um talhão da ZEUS (datalake): GeoJSON MultiPolygon em lon/lat */
+export interface GeometriaZeus { type: 'MultiPolygon'; coordinates: number[][][][] }
+export interface TalhaoLimiteZeus { codigo: string; nome: string; id: number; area_ha: number; geom: GeometriaZeus }
+export interface LinhaLimitesZeus { unidade: string; gerado_em: string; talhoes: TalhaoLimiteZeus[] }
+export const LIMITES_ZEUS_PAGINA: number;
+export const SQL_UNIDADES_LIMITES_ZEUS: string;
+export function montarSqlLimitesZeus(fazenda: string, pular?: number, tamanho?: number): string;
+export function montarSqlTalhoesComChuva(desde: string): string;
+export function geometriaDoWkt(wkt: string | null | undefined, tolerancia?: number): GeometriaZeus | null;
+export function areaHaDaGeometria(geom: GeometriaZeus): number;
+export function linhasLimitesZeus(campos: Map<string, Record<string, unknown>[]>, comChuva: ResultadoConsulta, geradoEm: string): LinhaLimitesZeus[];
+export function sincronizarLimitesZeus(opcoes: { url: string; token: string; fetchImpl?: FetchLike; agora?: Date }): Promise<LinhaLimitesZeus[]>;
 export function chuvaPorPicZeus(opcoes: {
   url: string;
   token: string;
