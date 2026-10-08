@@ -183,17 +183,34 @@ export interface LinhaSituacaoZeus { fazenda: string; ultimo_dia: string; /** 'a
 export function linhasSituacaoZeus(res: { columns: string[]; rows: unknown[][] }, agora?: Date): LinhaSituacaoZeus[];
 export function ultimoDiaZeus(opcoes: { url: string; token: string; fetchImpl?: FetchLike; agora?: Date }): Promise<LinhaSituacaoZeus[]>;
 
-/** pluviômetro de chuva_talhao: `d` lista os dias com leitura ('n' ou 'n:mm', n = dias desde `inicio`; 'xQ' no fim = Q leituras no dia, quando difere de `l`) */
-export interface PicChuvaTalhao { id: string; n: string; lat: number | null; lon: number | null; ul: string | null; l: number; d: string }
+/** pluviômetro de chuva_talhao: `d` lista os dias com leitura ('n' ou 'n:mm', n = dias desde `inicio`) */
+export interface PicChuvaTalhao { id: string; n: string; lat: number | null; lon: number | null; ul: string | null; d: string }
+/** chuva de um talhão: primeiro e último dia com registro e os dias com chuva ('n:mm') */
+export interface TalhaoChuva { de: number; ate: number; d: string }
+export interface CicloChuva { s: string; p: string; de: string; ate: string; t: string[] }
 export interface LinhaChuvaTalhao {
-  unidade: string; gerado_em: string; inicio: string; dias: number; ultima_leitura: string | null;
-  pics: PicChuvaTalhao[]; vinculos: Record<string, number[]>;
+  unidade: string; gerado_em: string; inicio: string; dias: number; ultimo_dia: string | null; lidos: string;
+  talhoes: Record<string, TalhaoChuva>; ciclos: CicloChuva[];
+  ultima_leitura: string | null; pics: PicChuvaTalhao[]; vinculos: Record<string, number[]>;
 }
-export const CHUVA_TALHAO_DIAS: number;
+type ResultadoConsulta = { columns: string[]; rows: unknown[][] };
+export const CHUVA_TALHAO_SAFRAS_ANTES: number;
 export const SQL_VINCULOS_ZEUS: string;
 export function inicioChuvaTalhao(agora?: Date): string;
+export function diasDaJanelaChuva(desde: string, agora?: Date): number;
+export function safrasDaJanelaChuva(desde: string, agora?: Date): string[];
+export function montarSqlChuvaTalhoes(desde: string): string;
+export function montarSqlDiasChuvaTalhoes(desde: string): string;
+export const CHUVA_CICLOS_PAGINA: number;
+export function montarSqlCiclosChuva(safras: string[], pular?: number, tamanho?: number): string;
+export interface CicloPims { unidade: string; safra: string; periodo: string; inicio: string; fim: string; talhoes: string[] }
+export function ciclosDoPims(linhas: Record<string, unknown>[]): CicloPims[];
 export function montarSqlChuvaDiariaPics(desde: string): string;
-export function linhasChuvaTalhao(dados: { vinculos: { columns: string[]; rows: unknown[][] }; chuva: { columns: string[]; rows: unknown[][] } }, desde: string, geradoEm: string): LinhaChuvaTalhao[];
+export function faixasDeDias(texto: string | null | undefined): string;
+export function linhasChuvaTalhao(
+  dados: { talhoes: ResultadoConsulta; diasComDado: ResultadoConsulta; ciclos: CicloPims[]; vinculos: ResultadoConsulta; chuva: ResultadoConsulta },
+  desde: string, dias: number, geradoEm: string,
+): LinhaChuvaTalhao[];
 export function sincronizarChuvaTalhao(opcoes: { url: string; token: string; fetchImpl?: FetchLike; agora?: Date }): Promise<LinhaChuvaTalhao[]>;
 export function chuvaPorPicZeus(opcoes: {
   url: string;

@@ -53,7 +53,7 @@ h2, h3, p { margin: 0; }
   height: 36px; padding: 0 10px; border: 1px solid #CBD5CE; border-radius: var(--raio-p); background: #fff;
   font-size: 13.5px; font-weight: 500; color: var(--texto);
 }
-.campo-select select { min-width: 170px; cursor: pointer; }
+.campo-select select { min-width: 170px; max-width: 300px; cursor: pointer; }
 .campo-data input { min-width: 136px; padding: 0 8px; }
 .campo-select select:hover, .campo-data input:hover { border-color: #AAB8AE; }
 html.embed .campo-unidade { display: none; }
@@ -107,11 +107,11 @@ button.resumo-item:hover { border-color: #AAB8AE; }
 .mapa-caixa { position: relative; flex: 1 1 auto; min-height: 0; background: #F7F9F6; overflow: hidden; }
 #mapa { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
 #mapa.arrastando { cursor: grabbing; }
-.talhao { stroke: #fff; stroke-width: 1.4px; vector-effect: non-scaling-stroke; stroke-linejoin: round; cursor: pointer; }
+.talhao { stroke: #8FA5B4; stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-linejoin: round; cursor: pointer; }
 .talhao.est { stroke: #6B7A72; stroke-dasharray: 4 3; stroke-width: 1.1px; }
 .talhao:hover { stroke: var(--verde-escuro); stroke-width: 2px; stroke-dasharray: none; }
 .talhao.sel { stroke: var(--dourado); stroke-width: 3.5px; stroke-dasharray: none; }
-.talhao.apagado { opacity: .45; }
+.talhao.apagado { opacity: .6; stroke: #C2CBC4; }
 #g-rotulos { pointer-events: none; font-family: var(--fonte); text-anchor: middle; font-variant-numeric: tabular-nums; }
 #g-rotulos .cod { font-weight: 500; opacity: .85; }
 #g-rotulos .val { font-weight: 700; }
@@ -138,6 +138,7 @@ button.resumo-item:hover { border-color: #AAB8AE; }
 .legenda-nota { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 3px 12px; }
 .legenda-nota span { display: inline-flex; align-items: center; gap: 5px; }
 .legenda-nota .traco { width: 16px; height: 0; border-top: 2px dashed #6B7A72; }
+.legenda-nota .cinza { width: 14px; height: 10px; border-radius: 2px; background: #E4E7E3; border: 1px solid rgba(23, 37, 31, .18); }
 .legenda-nota .bola { width: 9px; height: 9px; border-radius: 50%; background: var(--verde-escuro); box-shadow: 0 0 0 2px #fff; }
 
 .dica { position: absolute; z-index: 5; pointer-events: none; max-width: 260px; background: #fff; border: 1px solid var(--linha); border-radius: var(--raio-p); box-shadow: 0 4px 14px rgba(16, 54, 50, .16); padding: 8px 10px; font-size: 12.5px; color: var(--texto-suave); }
@@ -172,7 +173,7 @@ button.resumo-item:hover { border-color: #AAB8AE; }
 .marca-est { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 600; color: #6B4500; background: var(--atencao-fundo); border: 1px dashed #D9B45F; border-radius: 4px; padding: 0 5px; vertical-align: 1px; cursor: help; }
 .chuva-cel { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .chuva-cel .barra-mm { flex: 1 1 auto; height: 8px; min-width: 24px; max-width: 90px; background: var(--linha-suave); border-radius: 0 4px 4px 0; overflow: hidden; }
-.chuva-cel .barra-mm i { display: block; height: 100%; border-radius: 0 4px 4px 0; }
+.chuva-cel .barra-mm i { display: block; height: 100%; border-radius: 0 4px 4px 0; background: #54A8E5; }
 .chuva-cel b { min-width: 40px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ---- detalhe do talhão escolhido ---- */

@@ -1785,20 +1785,122 @@ export async function ultimoDiaZeus({ url, token, fetchImpl = fetch, agora = new
 }
 
 // ---------- chuva por talhão (módulo chuva/ do COA WEB) ----------
-// A mesma regra da visão vw_precipitacao_talhao da ZEUS: a chuva do talhão é a soma do dia de cada
-// pluviômetro ligado a ele (stg_zeus_picarea), em média quando há mais de um. A visão não nomeia a Dourado
-// nem a Nebraska e é pesada sem filtro, por isso a rotina lê as duas tabelas que ela usa e grava em
-// chuva_talhao a chuva diária por pluviômetro e o vínculo talhão → pluviômetros; a tela faz a média.
+// A mesma base do relatório Power BI de chuva: a tabela stg_field_data da ZEUS, que já traz a chuva de cada
+// talhão (unidade + código do talhão no PIMS + dia), e os ciclos do PIMS (do início do plantio ao fim da
+// colheita de cada período de safra). A rotina grava em chuva_talhao a chuva diária de cada talhão, os dias
+// que a tabela tem, os ciclos e, como referência, a chuva medida em cada pluviômetro (telemetria da ZEUS).
 
-/** tamanho da janela gravada, em dias (cobre a safra corrente inteira) */
-export const CHUVA_TALHAO_DIAS = 400;
 /** as fazendas ficam em UTC-4: o "hoje" da janela é o delas, não o do servidor */
 const FUSO_FAZENDAS_H = 4;
+/** quantas safras antes da atual entram na janela */
+export const CHUVA_TALHAO_SAFRAS_ANTES = 2;
 
-/** Primeiro dia da janela ('YYYY-MM-DD'): CHUVA_TALHAO_DIAS dias terminando hoje, na data da fazenda. */
+/** Data de hoje na fazenda ('YYYY-MM-DD'). */
+function hojeNaFazenda(agora = new Date()) {
+  return new Date(agora.getTime() - FUSO_FAZENDAS_H * 3_600_000).toISOString().slice(0, 10);
+}
+
+/** Primeiro dia da janela ('YYYY-MM-DD'): 1º de setembro, duas safras antes da atual (a safra vira em setembro). */
 export function inicioChuvaTalhao(agora = new Date()) {
-  const hoje = new Date(agora.getTime() - FUSO_FAZENDAS_H * 3_600_000);
-  return new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate() - (CHUVA_TALHAO_DIAS - 1))).toISOString().slice(0, 10);
+  const hoje = hojeNaFazenda(agora);
+  const ano = Number(hoje.slice(0, 4)) - (Number(hoje.slice(5, 7)) >= 9 ? 0 : 1) - CHUVA_TALHAO_SAFRAS_ANTES;
+  return `${ano}-09-01`;
+}
+
+/** Quantos dias a janela tem, de `desde` até hoje na fazenda (inclusive). */
+export function diasDaJanelaChuva(desde, agora = new Date()) {
+  return Math.round((Date.parse(`${hojeNaFazenda(agora)}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000) + 1;
+}
+
+/** Safras do PIMS que a janela cobre: ['SAFRA 2024/2025', …, a atual]. */
+export function safrasDaJanelaChuva(desde, agora = new Date()) {
+  const hoje = hojeNaFazenda(agora);
+  const ultimo = Number(hoje.slice(0, 4)) - (Number(hoje.slice(5, 7)) >= 9 ? 0 : 1);
+  const lista = [];
+  for (let ano = Number(String(desde).slice(0, 4)); ano <= ultimo; ano++) lista.push(`SAFRA ${ano}/${ano + 1}`);
+  return lista;
+}
+
+const dataSql = (d) => String(d).replace(/[^0-9-]/g, '').slice(0, 10);
+
+/**
+ * Chuva diária de cada talhão desde `desde` (stg_field_data, a tabela do Power BI), uma linha por talhão:
+ * `de` e `ate` = primeiro e último dia com registro e `dias` = só os dias com chuva, como 'n:mm' (n = dias
+ * corridos desde `desde`; mm com duas casas, como no Power BI). Talhão de nome vazio fica de fora.
+ */
+export function montarSqlChuvaTalhoes(desde) {
+  const d = dataSql(desde);
+  return `SELECT unidade, fieldname,
+  (min(data)::date - DATE '${d}') AS de, (max(data)::date - DATE '${d}') AS ate,
+  string_agg((data::date - DATE '${d}')::text || ':' || trim(trailing '.' from trim(trailing '0' from round(pluviometry::numeric, 2)::text)), ',' ORDER BY data)
+    FILTER (WHERE round(pluviometry::numeric, 2) > 0) AS dias
+FROM "DATABASE".stg_field_data
+WHERE data >= DATE '${d}' AND coalesce(fieldname, '') <> ''
+GROUP BY unidade, fieldname
+ORDER BY unidade, fieldname`;
+}
+
+/** Os dias que a stg_field_data tem em cada fazenda (a tabela tem falhas: dia ausente é dia sem dado, não seca). */
+export function montarSqlDiasChuvaTalhoes(desde) {
+  const d = dataSql(desde);
+  return `SELECT unidade, string_agg(n::text, ',' ORDER BY n) AS dias
+FROM (SELECT DISTINCT unidade, (data::date - DATE '${d}') AS n FROM "DATABASE".stg_field_data WHERE data >= DATE '${d}') x
+GROUP BY unidade
+ORDER BY unidade`;
+}
+
+/** linhas por página da consulta dos ciclos (o Agrovex corta o resultado em 5.000 linhas) */
+export const CHUVA_CICLOS_PAGINA = 4000;
+
+/**
+ * Talhões dos ciclos do PIMS, com o filtro do Power BI: safras pedidas, só ALGODAO, SOJA e MILHO e talhões
+ * com mais de 1 ha. Uma linha por talhão × período de safra, com o plantio e a colheita do talhão e as datas
+ * do período; o início e o fim do ciclo saem em ciclosDoPims. Paginada (ORDER BY estável).
+ */
+export function montarSqlCiclosChuva(safras, pular = 0, tamanho = CHUVA_CICLOS_PAGINA) {
+  return `SELECT u.DE_UNI_ADM AS unidade, sf.DE_SAFRA AS safra, ps.DE_PER_SAFRA AS periodo, up.CD_UPNIVEL3 AS talhao,
+  CONVERT(varchar(10), up.DT_PLANT_INI, 120) AS plantio, CONVERT(varchar(10), up.DT_COLH_ENC, 120) AS colheita,
+  CONVERT(varchar(10), ps.DT_INI_PER, 120) AS inicio_per, CONVERT(varchar(10), ps.DT_FIM_PER, 120) AS fim_per
+FROM ${PIMS}UPNIVEL3 up
+JOIN ${PIMS}UPNIVEL2 u2 ON u2.ID_UPNIVEL2 = up.ID_UPNIVEL2
+JOIN ${PIMS}UPNIVEL1 u1 ON u1.ID_UPNIVEL1 = u2.ID_UPNIVEL1
+JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = u1.ID_UNIDADEADM
+JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
+JOIN ${PIMS}SAFRA sf ON sf.ID_SAFRA = ps.ID_SAFRA
+JOIN ${PIMS}OCUPACAO oc ON oc.ID_OCUPACAO = ps.ID_OCUPACAO
+WHERE sf.DE_SAFRA IN (${listaSql(safras)}) AND up.QT_AREA_PROD > 1
+  AND oc.DE_OCUPACAO IN ('ALGODAO', 'SOJA', 'MILHO') AND up.CD_UPNIVEL3 <> '9999'
+ORDER BY u.DE_UNI_ADM, sf.DE_SAFRA, ps.DE_PER_SAFRA, up.CD_UPNIVEL3, up.ID_UPNIVEL3
+OFFSET ${Math.max(0, Math.floor(pular))} ROWS FETCH NEXT ${Math.max(1, Math.floor(tamanho))} ROWS ONLY`;
+}
+
+/**
+ * Ciclos a partir das linhas de montarSqlCiclosChuva, com a regra do Power BI: por unidade × safra × período,
+ * começa no primeiro plantio (sem plantio em nenhum talhão, no início do período) e termina na última colheita
+ * encerrada (sem colheita, no fim do período). Devolve [{ unidade, safra, periodo, inicio, fim, talhoes [códigos] }].
+ */
+export function ciclosDoPims(linhas) {
+  const ciclos = new Map();
+  for (const r of linhas) {
+    const unidade = chaveNome(r.unidade);
+    const safra = txt(r.safra);
+    const periodo = txt(r.periodo);
+    const codigo = normalizarCodigo(r.talhao);
+    if (!unidade || !safra || !periodo || !codigo) continue;
+    const chave = `${unidade}\u0000${safra}\u0000${periodo}`;
+    if (!ciclos.has(chave)) ciclos.set(chave, { unidade, safra, periodo, plantio: null, colheita: null, inicioPer: null, fimPer: null, talhoes: new Set() });
+    const c = ciclos.get(chave);
+    const menor = (a, b) => (b && (!a || b < a) ? b : a);
+    const maior = (a, b) => (b && (!a || b > a) ? b : a);
+    c.plantio = menor(c.plantio, txt(r.plantio));
+    c.colheita = maior(c.colheita, txt(r.colheita));
+    c.inicioPer = menor(c.inicioPer, txt(r.inicio_per));
+    c.fimPer = maior(c.fimPer, txt(r.fim_per));
+    c.talhoes.add(codigo);
+  }
+  return [...ciclos.values()]
+    .map((c) => ({ unidade: c.unidade, safra: c.safra, periodo: c.periodo, inicio: c.plantio ?? c.inicioPer, fim: c.colheita ?? c.fimPer, talhoes: [...c.talhoes].sort(comparar) }))
+    .filter((c) => c.inicio && c.fim);
 }
 
 /** Vínculo talhão → pluviômetro da ZEUS, com o cadastro do pluviômetro (a tabela repete o PIC a cada talhão). */
@@ -1807,29 +1909,23 @@ FROM "DATABASE".stg_zeus_picarea
 WHERE picid IS NOT NULL`;
 
 /**
- * Chuva diária de cada pluviômetro desde `desde`, uma linha por pluviômetro: `dias` lista os dias com
+ * Chuva diária medida em cada pluviômetro desde `desde`, uma linha por pluviômetro: `dias` lista os dias com
  * leitura como 'n' (sem chuva) ou 'n:mm', sendo n os dias corridos desde `desde`. Dia fora da lista =
- * pluviômetro sem leitura. `leituras` = quantas leituras o pluviômetro costuma ter por dia; o dia com outra
- * quantidade leva 'xQ' no fim ('12:3.4x20'): a visão da ZEUS pesa a média do talhão pelo número de leituras
- * de cada pluviômetro no dia. `leitura` = instante da leitura mais recente (aaaammddhhmmss).
+ * pluviômetro sem leitura. `leitura` = instante da leitura mais recente (aaaammddhhmmss).
  */
 export function montarSqlChuvaDiariaPics(desde) {
-  const d = String(desde).replace(/[^0-9-]/g, '').slice(0, 10);
+  const d = dataSql(desde);
   return `WITH por_dia AS (
-  SELECT c.picid, c.data::date AS dia, sum(c.pluviometria) AS mm, count(*) AS n,
+  SELECT c.picid, c.data::date AS dia, sum(c.pluviometria) AS mm,
     max(CASE WHEN right(c.idprecipitation, 14) ~ '^[0-9]{14}$' THEN right(c.idprecipitation, 14) END) AS leitura
   FROM "DATABASE".stg_climatemonitoring2 c
-  WHERE c.data >= DATE '${d}'
-  GROUP BY 1, 2
-  HAVING count(c.pluviometria) > 0),
-moda AS (SELECT picid, mode() WITHIN GROUP (ORDER BY n) AS n FROM por_dia GROUP BY picid)
-SELECT p.picid, max(p.leitura) AS leitura, max(m.n) AS leituras,
-  string_agg((p.dia - DATE '${d}')::text
-    || CASE WHEN round(p.mm::numeric, 1) > 0 THEN ':' || round(p.mm::numeric, 1)::text ELSE '' END
-    || CASE WHEN p.n <> m.n THEN 'x' || p.n::text ELSE '' END, ',' ORDER BY p.dia) AS dias
-FROM por_dia p JOIN moda m ON m.picid = p.picid
-GROUP BY p.picid
-ORDER BY p.picid`;
+  WHERE c.data >= DATE '${d}' AND c.pluviometria IS NOT NULL
+  GROUP BY 1, 2)
+SELECT picid, max(leitura) AS leitura,
+  string_agg((dia - DATE '${d}')::text || CASE WHEN round(mm::numeric, 1) > 0 THEN ':' || round(mm::numeric, 1)::text ELSE '' END, ',' ORDER BY dia) AS dias
+FROM por_dia
+GROUP BY picid
+ORDER BY picid`;
 }
 
 /** 'aaaammddhhmmss' → 'aaaa-mm-ddThh:mm'; fora do padrão → null. */
@@ -1844,56 +1940,118 @@ function codigoDoTalhaoZeus(talhao) {
   return normalizarCodigo(String(talhao ?? '').replace(/\s*\(\d+\)\s*$/, ''));
 }
 
+/** '0,1,2,5,6' → '0-2,5-6' (os dias com dado, em faixas). */
+export function faixasDeDias(texto) {
+  const dias = [...new Set(String(texto ?? '').split(',').filter((x) => /^\d+$/.test(x.trim())).map((x) => Number(x)))].sort((a, b) => a - b);
+  const faixas = [];
+  for (let i = 0; i < dias.length; i++) {
+    let j = i;
+    while (j + 1 < dias.length && dias[j + 1] === dias[j] + 1) j++;
+    faixas.push(i === j ? String(dias[i]) : `${dias[i]}-${dias[j]}`);
+    i = j;
+  }
+  return faixas.join(',');
+}
+
+const somarDiasIso = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
 /**
- * Linhas de chuva_talhao: uma por fazenda da ZEUS (nome como o do PIMS: 'Faz_SM3' → 'SM3'), com
- * pics [{ id, n, lat, lon, ul última leitura, l leituras por dia, d dias }] em ordem de nome e vinculos { código: [índices em pics] }.
- * Pluviômetro sem fazenda no cadastro fica de fora; coordenada inválida vira null.
+ * Linhas de chuva_talhao, uma por fazenda (nome como a unidade do PIMS):
+ *   talhoes  { código: { de, ate, d } } — a chuva de cada talhão (stg_field_data); d = dias com chuva 'n:mm';
+ *   lidos    '0-120,122-742' — os dias que a tabela tem para a fazenda;
+ *   ultimo_dia — o último desses dias;
+ *   ciclos   [{ s safra, p período, de, ate, t [códigos] }] — de ciclosDoPims, mais recentes primeiro;
+ *   pics     [{ id, n, lat, lon, ul última leitura, d dias }] e vinculos { código: [índices em pics] } — a
+ *            chuva medida nos pluviômetros e o cadastro da ZEUS, só como referência.
+ * Fazenda sem talhão na stg_field_data e sem pluviômetro não gera linha.
  */
-export function linhasChuvaTalhao({ vinculos, chuva }, desde, geradoEm) {
-  const porPic = new Map(objetosDe(chuva).map((r) => [txt(r.picid), r]));
+export function linhasChuvaTalhao({ talhoes, diasComDado, ciclos, vinculos, chuva }, desde, dias, geradoEm) {
   const fazendas = new Map();
+  const fazenda = (unidade) => {
+    if (!fazendas.has(unidade)) fazendas.set(unidade, { talhoes: {}, lidos: '', ciclos: [], pics: new Map(), vinc: new Map() });
+    return fazendas.get(unidade);
+  };
+  const ehDia = (n) => Number.isInteger(n) && n >= 0 && n < dias;
+
+  for (const r of objetosDe(talhoes)) {
+    const unidade = chaveNome(r.unidade);
+    const codigo = normalizarCodigo(r.fieldname);
+    const de = Number(r.de);
+    const ate = Number(r.ate);
+    if (!unidade || !codigo || !ehDia(de) || !ehDia(ate)) continue;
+    const d = txt(r.dias) ?? '';
+    fazenda(unidade).talhoes[codigo] = { de, ate, d: /^[0-9:.,]*$/.test(d) ? d : '' };
+  }
+  for (const r of objetosDe(diasComDado)) {
+    const unidade = chaveNome(r.unidade);
+    if (unidade && fazendas.has(unidade)) fazendas.get(unidade).lidos = faixasDeDias(r.dias);
+  }
+  for (const c of ciclos) {
+    // ciclo de fazenda sem chuva por talhão não tem o que mostrar
+    if (!fazendas.has(c.unidade)) continue;
+    fazendas.get(c.unidade).ciclos.push({ s: c.safra, p: c.periodo, de: c.inicio, ate: c.fim, t: c.talhoes });
+  }
+
+  const porPic = new Map(objetosDe(chuva).map((r) => [txt(r.picid), r]));
   for (const r of objetosDe(vinculos)) {
     const unidade = unidadeDaFazendaZeus(r.farm);
     const id = txt(r.picid);
     if (!unidade || !id) continue;
-    if (!fazendas.has(unidade)) fazendas.set(unidade, { pics: new Map(), talhoes: new Map() });
-    const f = fazendas.get(unidade);
+    const f = fazenda(unidade);
     if (!f.pics.has(id)) {
       const lat = Number(String(r.lat ?? '').replace(',', '.'));
       const lon = Number(String(r.lon ?? '').replace(',', '.'));
       const temLugar = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
       const lido = porPic.get(id);
+      const d = txt(lido?.dias) ?? '';
       f.pics.set(id, {
         id, n: txt(r.picname) ?? `PIC ${id}`, lat: temLugar ? lat : null, lon: temLugar ? lon : null,
-        ul: instanteDaLeitura(lido?.leitura), l: Math.max(1, Math.round(Number(lido?.leituras)) || 1),
-        d: /^[0-9:.,x]*$/.test(txt(lido?.dias) ?? '') ? txt(lido?.dias) ?? '' : '',
+        ul: instanteDaLeitura(lido?.leitura), d: /^[0-9:.,]*$/.test(d) ? d : '',
       });
     }
     const codigo = codigoDoTalhaoZeus(r.talhao);
     if (!codigo) continue;
-    if (!f.talhoes.has(codigo)) f.talhoes.set(codigo, new Set());
-    f.talhoes.get(codigo).add(id);
+    if (!f.vinc.has(codigo)) f.vinc.set(codigo, new Set());
+    f.vinc.get(codigo).add(id);
   }
+
   return [...fazendas]
     .sort((a, b) => comparar(a[0], b[0]))
     .map(([unidade, f]) => {
       const pics = [...f.pics.values()].sort((a, b) => comparar(a.n, b.n) || comparar(a.id, b.id));
       const indice = new Map(pics.map((p, i) => [p.id, i]));
       const vinc = {};
-      for (const codigo of [...f.talhoes.keys()].sort(comparar)) vinc[codigo] = [...f.talhoes.get(codigo)].map((id) => indice.get(id)).sort((a, b) => a - b);
+      for (const codigo of [...f.vinc.keys()].sort(comparar)) vinc[codigo] = [...f.vinc.get(codigo)].map((id) => indice.get(id)).sort((a, b) => a - b);
       const ultima = pics.reduce((m, p) => (p.ul && p.ul > m ? p.ul : m), '');
-      return { unidade: unidade.slice(0, 80), gerado_em: geradoEm, inicio: desde, dias: CHUVA_TALHAO_DIAS, ultima_leitura: ultima || null, pics, vinculos: vinc };
+      const ultimoDia = Object.values(f.talhoes).reduce((m, t) => Math.max(m, t.ate), -1);
+      return {
+        unidade: unidade.slice(0, 80), gerado_em: geradoEm, inicio: desde, dias,
+        ultimo_dia: ultimoDia >= 0 ? somarDiasIso(desde, ultimoDia) : null, lidos: f.lidos, talhoes: f.talhoes,
+        ciclos: f.ciclos.sort((a, b) => comparar(b.s, a.s) || comparar(a.de, b.de) || comparar(a.p, b.p)),
+        ultima_leitura: ultima || null, pics, vinculos: vinc,
+      };
     });
 }
 
-/** Consulta a ZEUS pelo Agrovex e devolve as linhas de chuva_talhao (não grava nada). */
+/** Consulta a ZEUS e o PIMS pelo Agrovex e devolve as linhas de chuva_talhao (não grava nada). */
 export async function sincronizarChuvaTalhao({ url, token, fetchImpl = fetch, agora = new Date() }) {
   const desde = inicioChuvaTalhao(agora);
+  const dias = diasDaJanelaChuva(desde, agora);
   const cliente = await abrirSessao(url, token, fetchImpl);
   try {
+    const talhoes = await cliente.consultar(montarSqlChuvaTalhoes(desde), 'chuva diária por talhão da ZEUS (stg_field_data)', 'chuva por talhão', FONTES.zeus);
+    const diasComDado = await cliente.consultar(montarSqlDiasChuvaTalhoes(desde), 'dias com chuva por talhão na ZEUS (stg_field_data)', 'dias da chuva por talhão', FONTES.zeus);
+    const safras = safrasDaJanelaChuva(desde, agora);
+    const talhoesPims = [];
+    for (let pular = 0; ; pular += CHUVA_CICLOS_PAGINA) {
+      const pagina = objetosDe(await cliente.consultar(montarSqlCiclosChuva(safras, pular), 'plantio e colheita dos talhões por unidade, safra e período (chuva por talhão)', 'ciclos do PIMS'));
+      talhoesPims.push(...pagina);
+      if (pagina.length < CHUVA_CICLOS_PAGINA) break;
+    }
+    const ciclos = ciclosDoPims(talhoesPims);
     const vinculos = await cliente.consultar(SQL_VINCULOS_ZEUS, 'vínculo talhão × pluviômetro da ZEUS (chuva por talhão)', 'vínculos da ZEUS', FONTES.zeus);
     const chuva = await cliente.consultar(montarSqlChuvaDiariaPics(desde), 'chuva diária por pluviômetro (chuva por talhão)', 'chuva diária por pluviômetro', FONTES.zeus);
-    return linhasChuvaTalhao({ vinculos, chuva }, desde, agora.toISOString());
+    return linhasChuvaTalhao({ talhoes, diasComDado, ciclos, vinculos, chuva }, desde, dias, agora.toISOString());
   } finally {
     await cliente.fechar();
   }

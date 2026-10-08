@@ -269,9 +269,10 @@ const TABELA_CHUVA_TALHAO = 'chuva_talhao';
 export const CHUVA_TALHAO_MINUTOS = 30;
 
 /**
- * Mantém chuva_talhao em dia: a chuva diária de cada pluviômetro e o vínculo talhão → pluviômetros de cada
- * fazenda. Roda junto da verificação dos pedidos, mas só consulta a ZEUS quando a última gravação tem mais
- * de 30 min. Devolve 'recente', 'fora-do-passo', 'sem-tabela' (script 0013 não aplicado), 'vazio' ou 'ok'.
+ * Mantém chuva_talhao em dia: a chuva diária de cada talhão (stg_field_data da ZEUS), os ciclos do PIMS e a
+ * chuva medida nos pluviômetros de cada fazenda. Roda junto da verificação dos pedidos, mas só consulta quando
+ * a última gravação tem mais de 30 min. Devolve 'recente', 'fora-do-passo', 'sem-tabela' (script 0013 não
+ * aplicado), 'sem-coluna' (script 0014 não aplicado), 'vazio' ou 'ok'.
  */
 export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?select=gerado_em&order=gerado_em.desc&limit=1`, {
@@ -288,18 +289,27 @@ export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl
   if (momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
   const novas = await sincronizarChuvaTalhao({ url: agrovex.url, token: agrovex.token, fetchImpl, agora: momento });
   if (!novas.length) return 'vazio';
-  const gravar = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?on_conflict=unidade`, {
-    method: 'POST',
-    headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
-    body: JSON.stringify(novas),
-  });
-  if (!gravar.ok) await erroRest(gravar, supabase.chave, 'a gravação da chuva por talhão');
+  // uma fazenda por pedido: cada linha leva a chuva de todos os talhões e passa de 300 KB nas maiores
+  for (const linha of novas) {
+    const gravar = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?on_conflict=unidade`, {
+      method: 'POST',
+      headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify([linha]),
+    });
+    if (gravar.ok) continue;
+    const texto = await gravar.clone().text().catch(() => '');
+    if (/PGRST204/.test(texto)) {
+      console.warn('Chuva por talhão: faltam colunas em chuva_talhao (rode supabase/0014_chuva_talhao_field_data.sql no Supabase).');
+      return 'sem-coluna';
+    }
+    await erroRest(gravar, supabase.chave, 'a gravação da chuva por talhão');
+  }
   const limpeza = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?gerado_em=lt.${encodeURIComponent(novas[0].gerado_em)}`, {
     method: 'DELETE',
     headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
   });
   if (!limpeza.ok) await erroRest(limpeza, supabase.chave, 'a limpeza da chuva por talhão');
-  console.log(`== ${momento.toISOString()} chuva por talhão: ${novas.length} fazendas, ${novas.reduce((s, l) => s + l.pics.length, 0)} pluviômetros.`);
+  console.log(`== ${momento.toISOString()} chuva por talhão: ${novas.length} fazendas, ${novas.reduce((n, l) => n + Object.keys(l.talhoes).length, 0)} talhões, ${novas.reduce((n, l) => n + l.pics.length, 0)} pluviômetros.`);
   return 'ok';
 }
 

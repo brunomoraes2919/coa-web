@@ -1,8 +1,9 @@
 /* =====================================================================
    Chuva por talhão — módulo do COA WEB (categoria Mapas)
    Mapa da fazenda pintado pela chuva de cada talhão, com a tabela ao lado: clicar no talhão destaca a linha
-   e aproxima o mapa; clicar na linha aproxima o talhão. A chuva vem da tabela chuva_talhao (retrato da
-   ZEUS gravado pelo servidor) e os limites, do cadastro do Mapas (mapas_talhoes e mapas_areas_cultura).
+   e aproxima o mapa; clicar na linha aproxima o talhão. A chuva de cada talhão vem pronta da ZEUS (tabela
+   stg_field_data, a base do relatório Power BI), gravada pelo servidor em chuva_talhao junto com os ciclos
+   do PIMS; os limites vêm do cadastro do Mapas (mapas_talhoes e mapas_areas_cultura).
    - COA → módulo: { tipo:'coa-fazenda', id, nome }
 ===================================================================== */
 (function () {
@@ -24,7 +25,7 @@
 
   const estado = {
     vista: ['mapa', 'diario', 'pics'].indexOf(PARAMS.get('vista')) >= 0 ? PARAMS.get('vista') : 'mapa',
-    fazenda: null, periodo: L.PERIODOS.some((p) => p[0] === PARAMS.get('periodo')) ? PARAMS.get('periodo') : '7',
+    fazenda: null, periodo: PARAMS.get('periodo') || '7',
     de: PARAMS.get('de'), ate: PARAMS.get('ate'), limites: 'auto', modo: PARAMS.get('modo') === 'seca' ? 'seca' : 'chuva', pics: true, sel: null,
     ordem: { col: 'codigo', desc: false }, busca: '',
   };
@@ -35,6 +36,7 @@
   let atual = null;    // fazenda na tela: { f, dados, faz, talhoes, proj, caixa, per, linhas, limites }
   let coaFazenda;      // fazenda escolhida no COA WEB (quando o módulo está no iframe)
   let pedido = 0;      // só a leitura mais recente desenha a tela
+  let fazendaDoCiclo = null; // de qual fazenda é o ciclo escolhido no Período
   let grafico = null;
 
   /* ------------------------------ dados ------------------------------ */
@@ -64,15 +66,21 @@
       },
       fazenda: async function (f) {
         // páginas pequenas: cada linha traz um polígono inteiro
+        const colunas = 'unidade,gerado_em,inicio,dias,ultima_leitura,pics,vinculos';
+        const chuva = (cols) => (f.unidade ? sb.from('chuva_talhao').select(cols).eq('unidade', f.unidade).limit(1) : Promise.resolve({ data: [] }));
         const r = await Promise.all([
           tudo(() => sb.from('mapas_talhoes').select('codigo,nome,area_ha,geom').eq('fazenda_id', f.id).order('id'), 200),
           tudo(() => sb.from('mapas_areas_cultura').select('safra_id,codigo,area_ha,geom').eq('fazenda_id', f.id).order('id'), 200),
-          f.unidade ? sb.from('chuva_talhao').select('unidade,gerado_em,inicio,dias,ultima_leitura,pics,vinculos').eq('unidade', f.unidade).limit(1) : Promise.resolve({ data: [] }),
+          chuva(colunas + ',ultimo_dia,lidos,talhoes,ciclos'),
         ]);
-        const c = r[2];
-        const semTabela = !!(c.error && /PGRST205|42P01|could not find the table/i.test((c.error.code || '') + ' ' + (c.error.message || '')));
+        let c = r[2];
+        const texto = (e) => (e ? (e.code || '') + ' ' + (e.message || '') : '');
+        // sem as colunas da chuva por talhão (script 0014 ainda não aplicado): lê o que existe e avisa
+        const semColunas = /42703|PGRST204|column .* does not exist/i.test(texto(c.error));
+        if (semColunas) c = await chuva(colunas);
+        const semTabela = /PGRST205|42P01|could not find the table/i.test(texto(c.error));
         if (c.error && !semTabela) throw c.error;
-        return { talhoes: r[0], areas: r[1], chuva: (c.data && c.data[0]) || null, semTabela: semTabela };
+        return { talhoes: r[0], areas: r[1], chuva: (c.data && c.data[0]) || null, semTabela: semTabela, semColunas: semColunas };
       },
     };
   }
@@ -268,16 +276,15 @@
     if (alvo.hasAttribute('data-i')) {
       const l = atual.linhas[Number(alvo.getAttribute('data-i'))];
       html = '<b>Talhão ' + esc(l.nome) + '</b>' +
-        'Chuva no período: <span class="num">' + (l.total === null ? 'sem leitura' : L.fmtMm(l.total) + ' mm') + '</span><br>' +
-        (l.ultima ? 'Última chuva: <span class="num">' + L.fmtDia(L.somarDias(atual.faz.inicio, l.ultima.i)) + ' · ' + L.fmtMm(l.ultima.mm) + ' mm</span> (' + textoDiasSem(l.diasSem) + ')<br>' : '') +
-        (l.pics.length ? esc(l.pics.join(', ')) : 'Sem pluviômetro') +
-        (l.estimado ? '<br><i>' + esc(L.textoDoVinculo(l.vinculo)) + '</i>' : '');
+        (l.semDado ? 'Sem dado: o talhão não está na tabela de chuva por talhão da ZEUS.'
+          : 'Chuva no período: <span class="num">' + (l.total === null ? 'sem dado' : L.fmtMm(l.total) + ' mm') + '</span><br>' +
+            (l.ultima ? 'Última chuva: <span class="num">' + L.fmtDia(L.somarDias(atual.faz.inicio, l.ultima.i)) + ' · ' + L.fmtMm(l.ultima.mm) + ' mm</span> (' + textoDiasSem(l.diasSem) + ')' : 'Sem chuva de 1 mm ou mais na janela')) +
+        (l.foraDoCiclo ? '<br><i>Fora do ciclo escolhido</i>' : '');
     } else {
       const p = atual.pics[Number(alvo.getAttribute('data-p'))];
       html = '<b>' + esc(p.nome) + '</b>' + (p.nomeZeus && p.nomeZeus !== p.nome ? esc(p.nomeZeus) + '<br>' : '') +
-        'Chuva no período: <span class="num">' + (p.total === null ? 'sem leitura' : L.fmtMm(p.total) + ' mm') + '</span><br>' +
-        'Última leitura: <span class="num">' + esc(L.fmtLeitura(p.ul)) + '</span><br>' +
-        p.talhoes.length + ' ' + plural(p.talhoes.length, 'talhão', 'talhões') + (p.estimados.length ? ' + ' + p.estimados.length + ' por estimativa' : '');
+        'Chuva medida no período: <span class="num">' + (p.total === null ? 'sem leitura' : L.fmtMm(p.total) + ' mm') + '</span><br>' +
+        'Última leitura: <span class="num">' + esc(L.fmtLeitura(p.ul)) + '</span>';
     }
     const dica = $('dica');
     dica.innerHTML = html;
@@ -292,19 +299,19 @@
   /* ------------------------------ mapa: desenho ------------------------------ */
   function textoDiasSem(n) {
     if (n === null || n === undefined) return 'sem chuva na janela';
-    if (n === 0) return 'no último dia lido';
+    if (n === 0) return 'no último dia com dado';
     return n + ' ' + plural(n, 'dia', 'dias') + ' sem chuva';
   }
   function corDaLinha(l) {
+    if (l.semDado || l.foraDoCiclo) return L.COR_SEM_DADO;
     if (estado.modo === 'seca') {
-      if (l.total === null && l.diasSem === null && !l.vinculo.tipo) return L.COR_SEM_DADO;
       // sem chuva na janela inteira: a classe mais seca
       return L.CORES_SECA[l.diasSem === null ? L.CORES_SECA.length - 1 : L.classeDe(l.diasSem, L.LIMITES_SECA)];
     }
-    const c = L.classeDe(l.total, atual.limites);
-    return c < 0 ? L.COR_SEM_DADO : L.CORES_CHUVA[c];
+    return atual.escala.cor(l.total);
   }
   function valorDoRotulo(l) {
+    if (l.semDado || l.foraDoCiclo) return '';
     if (estado.modo === 'seca') return l.diasSem === null ? '—' : l.diasSem + ' d';
     return l.total === null ? '—' : L.fmtMm(l.total, l.total >= 100 ? 0 : 1);
   }
@@ -318,7 +325,7 @@
       path.setAttribute('d', t.d);
       path.setAttribute('fill', cor);
       path.setAttribute('fill-rule', 'evenodd');
-      path.setAttribute('class', 'talhao' + (l.estimado ? ' est' : '') + (i === estado.sel ? ' sel' : ''));
+      path.setAttribute('class', 'talhao' + (l.semDado || l.foraDoCiclo ? ' apagado' : '') + (i === estado.sel ? ' sel' : ''));
       path.setAttribute('data-i', i);
       gt.appendChild(path);
       t.path = path;
@@ -350,38 +357,24 @@
     desenharLegenda();
     aplicarVista();
   }
-  /** Linhas do talhão escolhido até os pluviômetros de onde vem a chuva dele. */
+  /** Mostra ou esconde os pluviômetros (a chuva do talhão não vem de um pluviômetro: não há ligação a desenhar). */
   function desenharLigacoes() {
-    const g = $('g-linhas');
-    g.textContent = '';
-    atual.pics.forEach((p) => { if (p.ponto) p.ponto.classList.remove('do-talhao'); });
-    if (estado.sel === null || !atual.talhoes[estado.sel]) return;
-    const t = atual.talhoes[estado.sel], l = atual.linhas[estado.sel];
-    const a = atual.proj(t.centro.lon, t.centro.lat);
-    l.vinculo.pics.forEach((idx) => {
-      const p = atual.pics[idx];
-      if (!p || p.lat === null || p.lon === null) return;
-      const b = atual.proj(p.lon, p.lat);
-      const linha = document.createElementNS(NS, 'path');
-      linha.setAttribute('d', 'M' + a[0].toFixed(1) + ' ' + a[1].toFixed(1) + 'L' + b[0].toFixed(1) + ' ' + b[1].toFixed(1));
-      linha.setAttribute('class', 'liga');
-      g.appendChild(linha);
-      if (p.ponto) p.ponto.classList.add('do-talhao');
-    });
-    $('g-pics').setAttribute('class', estado.pics || l.vinculo.pics.length ? '' : 'fora');
+    $('g-linhas').textContent = '';
+    $('g-pics').setAttribute('class', estado.pics ? '' : 'fora');
   }
   function faixasHtml(cores, rotulos) {
     return '<div class="legenda-faixas">' + cores.map((c, i) => '<span><i style="background:' + c + '"></i>' + esc(rotulos[i]) + '</span>').join('') + '</div>';
   }
   function desenharLegenda() {
     const seca = estado.modo === 'seca';
-    const temEstimado = atual.linhas.some((l) => l.estimado);
+    const semDado = atual.linhas.some((l) => l.semDado && !l.foraDoCiclo);
+    const fora = atual.linhas.some((l) => l.foraDoCiclo);
     $('legenda').innerHTML =
-      '<div class="legenda-titulo">' + (seca ? 'Dias sem chuva (1 mm ou mais)' : 'Chuva no período (mm)') + '</div>' +
-      (seca ? faixasHtml(L.CORES_SECA, L.rotulosClasses(L.LIMITES_SECA, true)) : faixasHtml(L.CORES_CHUVA, L.rotulosClasses(atual.limites))) +
+      '<div class="legenda-titulo">' + (seca ? 'Dias sem chuva (1 mm ou mais)' : atual.escala.titulo) + '</div>' +
+      (seca ? faixasHtml(L.CORES_SECA, L.rotulosClasses(L.LIMITES_SECA, true)) : faixasHtml(atual.escala.cores, atual.escala.rotulos)) +
       '<div class="legenda-nota">' +
-        (temEstimado ? '<span><i class="traco"></i>contorno tracejado: pluviômetro estimado</span>' : '') +
-        (estado.pics ? '<span><i class="bola"></i>pluviômetro</span>' : '') +
+        (semDado || fora ? '<span><i class="cinza"></i>' + [semDado ? 'sem dado na ZEUS' : '', fora ? 'fora do ciclo' : ''].filter(Boolean).join(' ou ') + '</span>' : '') +
+        (estado.pics && atual.pics.length ? '<span><i class="bola"></i>pluviômetro (chuva medida)</span>' : '') +
       '</div>';
   }
 
@@ -415,12 +408,15 @@
   ];
   function desenharTabela() {
     const busca = L.semAcento(estado.busca);
-    const filtradas = atual.linhas.filter((l) => !busca || L.semAcento(l.nome).indexOf(busca) >= 0);
+    // com um ciclo escolhido, a tabela traz só os talhões dele
+    const doPeriodo = atual.linhas.filter((l) => !l.foraDoCiclo);
+    const filtradas = doPeriodo.filter((l) => !busca || L.semAcento(l.nome).indexOf(busca) >= 0);
     const linhas = L.ordenar(filtradas, estado.ordem.col, estado.ordem.desc);
-    const maior = Math.max.apply(null, [1].concat(atual.linhas.map((l) => l.total || 0)));
-    const estimados = atual.linhas.filter((l) => l.estimado).length;
-    $('tabela-conta').textContent = (busca ? linhas.length + ' de ' : '') + atual.linhas.length + ' ' + plural(atual.linhas.length, 'talhão', 'talhões') +
-      (estimados ? ' · ' + estimados + ' com pluviômetro estimado' : '');
+    const maior = Math.max.apply(null, [1].concat(doPeriodo.map((l) => l.total || 0)));
+    const semDado = doPeriodo.filter((l) => l.semDado).length;
+    const fora = atual.linhas.length - doPeriodo.length;
+    $('tabela-conta').textContent = (busca ? linhas.length + ' de ' : '') + doPeriodo.length + ' ' + plural(doPeriodo.length, 'talhão', 'talhões') +
+      (fora ? ' no ciclo · ' + fora + ' fora dele' : '') + (semDado ? ' · ' + semDado + ' sem dado na ZEUS' : '');
     if (!linhas.length) { $('tab-talhoes').innerHTML = '<p class="vazio">Nenhum talhão com esse nome.</p>'; return; }
     const cab = COLUNAS.map((c) => {
       const ord = estado.ordem.col === c[0];
@@ -429,12 +425,10 @@
     }).join('');
     const corpo = linhas.map((l) => {
       const i = atual.linhas.indexOf(l);
-      const cor = L.classeDe(l.total, atual.limites);
       return '<tr data-i="' + i + '"' + (i === estado.sel ? ' class="sel"' : '') + '>' +
-        '<td><span class="cod">' + esc(l.nome) + '</span>' + (l.estimado ? '<span class="marca-est" title="' + esc(L.textoDoVinculo(l.vinculo)) + '">estimado</span>' : '') +
-          '<span class="pic-da-linha">' + (l.pics.length ? esc(l.pics.join(', ')) : 'sem pluviômetro') + '</span></td>' +
-        '<td class="n">' + (l.total === null ? '<span class="fraco">sem leitura</span>'
-          : '<div class="chuva-cel"><span class="barra-mm"><i style="width:' + Math.round((l.total / maior) * 100) + '%;background:' + (cor > 0 ? L.CORES_CHUVA[Math.max(cor, 3)] : 'transparent') + '"></i></span><b>' + L.fmtMm(l.total) + '</b></div>') + '</td>' +
+        '<td><span class="cod">' + esc(l.nome) + '</span></td>' +
+        '<td class="n">' + (l.total === null ? '<span class="fraco">sem dado</span>'
+          : '<div class="chuva-cel"><span class="barra-mm"><i style="width:' + Math.round((l.total / maior) * 100) + '%"></i></span><b>' + L.fmtMm(l.total) + '</b></div>') + '</td>' +
         '<td class="n col-opc">' + (l.total === null ? '<span class="fraco">—</span>' : l.diasChuva) + '</td>' +
         '<td class="junto">' + (l.ultima ? L.fmtDia(L.somarDias(atual.faz.inicio, l.ultima.i)) + ' <span class="peq">· ' + L.fmtMm(l.ultima.mm) + ' mm</span>' : '<span class="fraco">—</span>') + '</td>' +
         '<td class="n junto">' + (l.diasSem === null ? '<span class="fraco">—</span>' : l.diasSem + ' ' + plural(l.diasSem, 'dia', 'dias')) + '</td></tr>';
@@ -501,9 +495,8 @@
     caixa.hidden = false;
     caixa.innerHTML =
       '<div class="detalhe-cab"><div><h2>Talhão ' + esc(l.nome) + '</h2>' +
-        '<p>' + (l.area ? L.fmtMm(l.area, 0) + ' ha · ' : '') + (l.pics.length ? esc(l.pics.join(', ')) : 'sem pluviômetro') +
-        (l.estimado ? ' · <span class="marca-est" title="' + esc(L.textoDoVinculo(l.vinculo)) + '">estimado</span>' : '') + '</p>' +
-        (l.estimado ? '<p>' + esc(L.textoDoVinculo(l.vinculo)) + '.</p>' : '') + '</div>' +
+        '<p>' + [l.area ? L.fmtMm(l.area, 0) + ' ha' : '', l.semDado ? 'sem dado: o talhão não está na tabela de chuva por talhão da ZEUS' : 'chuva por talhão da ZEUS',
+          l.foraDoCiclo ? 'fora do ciclo escolhido' : ''].filter(Boolean).join(' · ') + '</p></div>' +
         '<button type="button" class="detalhe-fechar" id="detalhe-fechar" title="Fechar e ver a fazenda inteira" aria-label="Fechar">×</button></div>' +
       '<div class="detalhe-nums">' +
         '<div><span>Chuva no período</span><b>' + (l.total === null ? '—' : L.fmtMm(l.total)) + ' <small>mm</small></b></div>' +
@@ -514,12 +507,12 @@
       '<div class="detalhe-graf" id="detalhe-graf" role="img" aria-label="Chuva dia a dia do talhão"></div>' +
       (contexto ? '<div class="detalhe-leg"><span><i style="background:var(--azul-chuva)"></i>período escolhido</span><span><i style="background:#C5D3E0"></i>dias anteriores</span></div>' : '');
     $('detalhe-fechar').addEventListener('click', () => selecionar(null, 'detalhe'));
-    if (!window.echarts) return;
+    if (!window.echarts || !l.serie) { $('detalhe-graf').hidden = true; return; }
     const dias = [], valores = [];
     for (let d = de; d <= per.i1; d++) {
       const v = l.serie[d];
       dias.push(L.somarDias(faz.inicio, d));
-      valores.push(v === null || v === undefined ? null : { value: Math.round(v * 10) / 10, itemStyle: { color: d >= per.i0 ? '#3272B5' : '#C5D3E0' } });
+      valores.push(v === null || v === undefined ? null : { value: Math.round(v * 100) / 100, itemStyle: { color: d >= per.i0 ? '#2E8FD8' : '#C5D3E0' } });
     }
     grafico = window.echarts.init($('detalhe-graf'));
     grafico.setOption({
@@ -527,7 +520,7 @@
       grid: { left: 34, right: 8, top: 10, bottom: 22 },
       tooltip: {
         trigger: 'axis', axisPointer: { type: 'shadow' }, confine: true, textStyle: { fontFamily: 'IBM Plex Sans, sans-serif', fontSize: 12, color: '#17251F' },
-        formatter: (ps) => { const p = ps[0]; return L.fmtDia(p.axisValue, true) + '<br><b>' + (p.value === null || p.value === undefined ? 'sem leitura' : L.fmtMm(p.value) + ' mm') + '</b>'; },
+        formatter: (ps) => { const p = ps[0]; return L.fmtDia(p.axisValue, true) + '<br><b>' + (p.value === null || p.value === undefined ? 'sem dado' : L.fmtMm(p.value, 2) + ' mm') + '</b>'; },
       },
       xAxis: {
         type: 'category', data: dias, axisTick: { show: false }, axisLine: { lineStyle: { color: '#DCE3DC' } },
@@ -547,11 +540,10 @@
   function desenharDiario() {
     const per = atual.per, faz = atual.faz;
     const de = Math.max(per.i0, per.i1 - (MAX_DIAS_GRADE - 1));
-    const lim = L.LIMITES_DIA;
     const cortado = de > per.i0;
-    $('explica-diario').innerHTML = 'Chuva de cada talhão em cada dia, em mm. Dia em branco não teve chuva; dia listrado ficou sem leitura do pluviômetro. ' +
+    $('explica-diario').innerHTML = 'Chuva de cada talhão em cada dia, em mm, com as faixas de cor do relatório Power BI. Dia em branco não teve chuva; dia listrado não tem dado na tabela da ZEUS. ' +
       'Clique no talhão para vê-lo no mapa.' + (cortado ? ' <b>O período tem ' + per.dias + ' dias: aparecem os ' + MAX_DIAS_GRADE + ' mais recentes.</b>' : '');
-    $('legenda-diario').innerHTML = '<div class="legenda-titulo">Chuva no dia (mm)</div>' + faixasHtml(L.CORES_CHUVA.slice(1), L.rotulosClasses(lim).slice(1));
+    $('legenda-diario').innerHTML = '<div class="legenda-titulo">Chuva no dia (mm)</div>' + faixasHtml(L.FAIXAS_DIA.map((f) => f.cor), L.FAIXAS_DIA.map((f) => f.rotulo));
     let cab = '<th class="linha-cab">Talhão</th>';
     for (let d = de; d <= per.i1; d++) {
       const iso = L.somarDias(faz.inicio, d);
@@ -562,19 +554,18 @@
         '<small>' + ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'][sem] + '</small></th>';
     }
     cab += '<th class="total">Total</th>';
-    const corpo = L.ordenar(atual.linhas, 'codigo', false).map((l) => {
+    const corpo = L.ordenar(atual.linhas.filter((l) => !l.foraDoCiclo), 'codigo', false).map((l) => {
       let tds = '', total = 0, lidos = 0;
       for (let d = de; d <= per.i1; d++) {
-        const v = l.serie[d];
+        const v = l.serie ? l.serie[d] : null;
         const iso = L.somarDias(faz.inicio, d);
-        if (v === null || v === undefined) { tds += '<td class="sem" title="' + esc(l.nome) + ' · ' + L.fmtDia(iso) + ': sem leitura"></td>'; continue; }
+        if (v === null || v === undefined) { tds += '<td class="sem" title="' + esc(l.nome) + ' · ' + L.fmtDia(iso) + ': sem dado"></td>'; continue; }
         lidos++; total += v;
-        const c = L.classeDe(Math.round(v * 10) / 10, lim);
-        if (c <= 0) { tds += '<td' + (v > 0 ? ' title="' + esc(l.nome) + ' · ' + L.fmtDia(iso) + ': ' + L.fmtMm(v) + ' mm"' : '') + '></td>'; continue; }
-        const cor = L.CORES_CHUVA[c];
-        tds += '<td style="background:' + cor + ';color:' + L.tintaSobre(cor) + '" title="' + esc(l.nome) + ' · ' + L.fmtDia(iso) + ': ' + L.fmtMm(v) + ' mm">' + L.fmtMm(v, v >= 10 ? 0 : 1) + '</td>';
+        if (v <= 0) { tds += '<td></td>'; continue; }
+        const cor = L.corDoDia(v);
+        tds += '<td style="background:' + cor + ';color:' + L.tintaSobre(cor) + '" title="' + esc(l.nome) + ' · ' + L.fmtDia(iso) + ': ' + L.fmtMm(v, 2) + ' mm">' + L.fmtMm(v, v >= 10 ? 0 : 1) + '</td>';
       }
-      return '<tr><th class="linha-cab" data-i="' + atual.linhas.indexOf(l) + '" title="Ver no mapa">' + esc(l.nome) + (l.estimado ? ' <span class="marca-est" title="' + esc(L.textoDoVinculo(l.vinculo)) + '">est.</span>' : '') + '</th>' +
+      return '<tr><th class="linha-cab" data-i="' + atual.linhas.indexOf(l) + '" title="Ver no mapa">' + esc(l.nome) + '</th>' +
         tds + '<td class="total">' + (lidos ? L.fmtMm(total) : '—') + '</td></tr>';
     }).join('');
     $('tab-diario').innerHTML = '<table class="grade"><thead><tr>' + cab + '</tr></thead><tbody>' + corpo + '</tbody></table>';
@@ -592,21 +583,20 @@
     const pics = atual.pics.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
     const comProblema = pics.filter((p) => p.situacao !== 'ok').length;
     $('conta-pics').textContent = comProblema ? String(comProblema) : '';
-    $('explica-pics').innerHTML = 'Chuva de cada pluviômetro da ZEUS no período e os talhões que ele atende. ' +
+    $('explica-pics').innerHTML = 'Chuva <b>medida</b> em cada pluviômetro da ZEUS no período, para comparar: a chuva dos talhões vem de outra tabela da ZEUS, já distribuída por talhão. ' +
       '<b>Atrasado</b> = a última leitura está mais de ' + L.ATRASO_HORAS + ' horas atrás da mais recente da fazenda (' + esc(L.fmtLeitura(atual.faz.ultimaLeitura)) + ').';
     if (!pics.length) { $('tab-pics').innerHTML = '<p class="vazio">A ZEUS não tem pluviômetros para esta fazenda.</p>'; return; }
     const texto = { ok: 'Em dia', atrasado: 'Atrasado', 'sem-leitura': 'Sem leitura' };
     const lista = (cods) => cods.slice().sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).map(esc).join(', ');
     $('tab-pics').innerHTML = '<table class="tabela"><thead><tr><th>Pluviômetro</th><th class="n">Chuva (mm)</th><th class="n">Dias c/ chuva</th><th>Última leitura</th><th>Situação</th>' +
-      '<th class="n">Dias sem leitura</th><th>Talhões atendidos</th></tr></thead><tbody>' +
+      '<th class="n">Dias sem leitura</th><th>Talhões ligados no cadastro da ZEUS</th></tr></thead><tbody>' +
       pics.map((p) => '<tr><td><span class="cod">' + esc(p.nome) + '</span>' + (p.nomeZeus && p.nomeZeus !== p.nome ? '<span class="pic-da-linha">' + esc(p.nomeZeus) + '</span>' : '') + '</td>' +
         '<td class="n">' + (p.total === null ? '<span class="fraco">—</span>' : '<b>' + L.fmtMm(p.total) + '</b>') + '</td>' +
         '<td class="n">' + (p.total === null ? '<span class="fraco">—</span>' : p.diasChuva) + '</td>' +
         '<td>' + esc(L.fmtLeitura(p.ul)) + '</td>' +
         '<td><span class="situacao ' + p.situacao + '">' + texto[p.situacao] + (p.situacao === 'atrasado' ? ' ' + p.atrasoH + ' h' : '') + '</span></td>' +
         '<td class="n">' + (p.semLeitura ? p.semLeitura + ' de ' + atual.per.dias : '<span class="fraco">0</span>') + '</td>' +
-        '<td class="lista-talhoes">' + (p.talhoes.length ? '<b>' + p.talhoes.length + '</b>: ' + lista(p.talhoes) : '<span class="fraco">nenhum pelo cadastro da ZEUS</span>') +
-          (p.estimados.length ? '<br>+ <b>' + p.estimados.length + '</b> por estimativa: ' + lista(p.estimados) : '') + '</td></tr>').join('') +
+        '<td class="lista-talhoes">' + (p.talhoes.length ? '<b>' + p.talhoes.length + '</b>: ' + lista(p.talhoes) : '<span class="fraco">nenhum</span>') + '</td></tr>').join('') +
       '</tbody></table>';
   }
 
@@ -631,7 +621,13 @@
 
   function preencherFiltros() {
     $('sel-fazenda').innerHTML = fazendas.map((f) => '<option value="' + esc(f.id) + '"' + (f.id === estado.fazenda ? ' selected' : '') + '>' + esc(f.nome) + '</option>').join('');
-    $('sel-periodo').innerHTML = L.PERIODOS.map((p) => '<option value="' + p[0] + '"' + (p[0] === estado.periodo ? ' selected' : '') + '>' + p[1] + '</option>').join('');
+  }
+  /** Opções do campo Período da fazenda na tela (as safras e os ciclos mudam de uma fazenda para outra). */
+  function preencherPeriodos() {
+    const grupos = L.opcoesDePeriodo(atual.faz);
+    if (!grupos.some((g) => g.itens.some((i) => i[0] === estado.periodo))) estado.periodo = '7';
+    $('sel-periodo').innerHTML = grupos.map((g) => '<optgroup label="' + esc(g.grupo) + '">' +
+      g.itens.map((i) => '<option value="' + esc(i[0]) + '"' + (i[0] === estado.periodo ? ' selected' : '') + '>' + esc(i[1]) + '</option>').join('') + '</optgroup>').join('');
   }
   function preencherLimites() {
     const dados = atual ? atual.dados : null;
@@ -646,7 +642,9 @@
     $('dt-ate').parentElement.hidden = !livre;
     if (!atual || !atual.faz) return;
     ['dt-de', 'dt-ate'].forEach((id) => { $(id).min = atual.faz.inicio; $(id).max = atual.faz.hoje; });
-    $('periodo-texto').textContent = L.fmtDia(atual.per.de) + ' a ' + L.fmtDia(atual.per.ate, true) + ' · ' + atual.per.dias + ' ' + plural(atual.per.dias, 'dia', 'dias');
+    // o ano aparece nas duas datas quando o período atravessa a virada do ano
+    $('periodo-texto').textContent = L.fmtDia(atual.per.de, atual.per.de.slice(0, 4) !== atual.per.ate.slice(0, 4)) + ' a ' + L.fmtDia(atual.per.ate, true) +
+      ' · ' + atual.per.dias + ' ' + plural(atual.per.dias, 'dia', 'dias');
     $('dt-de').value = atual.per.de;
     $('dt-ate').value = atual.per.ate;
   }
@@ -676,18 +674,24 @@
     const faz = atual.faz;
     const gerado = faz.geradoEm ? new Date(faz.geradoEm) : null;
     const hora = gerado && !isNaN(gerado) ? gerado.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', ' às') : null;
-    // a ZEUS parada há mais de um dia chama atenção
-    const velho = faz.ultimaLeitura && gerado && !isNaN(gerado) && (gerado.getTime() - 4 * 3600000 - Date.parse(faz.ultimaLeitura + ':00Z')) > 26 * 3600000;
-    el.classList.toggle('velho', !!velho);
-    el.innerHTML = 'ZEUS até <b>' + esc(L.fmtLeitura(faz.ultimaLeitura)) + '</b>' + (hora ? '<br>conferido em ' + esc(hora) : '');
+    el.classList.toggle('velho', diasDeAtraso() > 2);
+    el.innerHTML = (faz.temTalhoes ? 'Chuva por talhão até <b>' + esc(L.fmtDia(faz.hoje, true)) + '</b>' : 'Sem chuva por talhão') +
+      (hora ? '<br>conferido em ' + esc(hora) : '');
+  }
+  /** Há quantos dias a tabela de chuva por talhão da ZEUS não recebe dado (pela data em que o servidor conferiu). */
+  function diasDeAtraso() {
+    const faz = atual && atual.faz;
+    const gerado = faz && faz.geradoEm ? new Date(faz.geradoEm) : null;
+    if (!faz || !faz.temTalhoes || !gerado || isNaN(gerado)) return 0;
+    return Math.max(0, L.difDias(faz.hoje, new Date(gerado.getTime() - 4 * 3600000).toISOString().slice(0, 10)));
   }
   /** Refaz as contas do período e redesenha tudo (os limites e a vista do mapa ficam como estão). */
   function recalcular() {
     if (!atual || !atual.faz) return;
     atual.per = L.periodo(estado.periodo, atual.faz, estado.de, estado.ate);
     atual.linhas = L.linhasDosTalhoes(atual.talhoes, atual.faz, atual.per);
-    atual.limites = L.limitesChuva(atual.linhas.map((l) => l.total));
-    atual.pics = L.picsNoPeriodo(atual.faz, atual.per, atual.linhas);
+    atual.escala = L.escalaDoPeriodo(atual.per.dias, atual.linhas.filter((l) => !l.foraDoCiclo).map((l) => l.total));
+    atual.pics = L.picsNoPeriodo(atual.faz, atual.per);
     marcarDatas();
     desenharResumo();
     desenharMapa();
@@ -738,10 +742,17 @@
       if (meu !== pedido) return;
       const dados = cache[f.id];
       atual = { f: f, dados: dados, faz: null };
-      if (dados.semTabela) avisar('A chuva por talhão ainda não foi ativada no banco: falta rodar o script supabase/0013_chuva_talhao.sql no Supabase.');
-      else if (!dados.chuva) avisar('A ZEUS não tem pluviômetros cadastrados para ' + f.nome + ', ou a primeira leitura ainda não chegou (o servidor atualiza a cada 30 minutos).');
-      else avisar('');
       atual.faz = L.prepararFazenda(dados.chuva || { unidade: f.unidade, inicio: new Date().toISOString().slice(0, 10), dias: 1, pics: [], vinculos: {} });
+      const atraso = diasDeAtraso();
+      if (dados.semTabela) avisar('A chuva por talhão ainda não foi ativada no banco: falta rodar o script supabase/0013_chuva_talhao.sql no Supabase.');
+      else if (dados.semColunas) avisar('A chuva por talhão está sendo trocada para a tabela do Power BI: falta rodar o script supabase/0014_chuva_talhao_field_data.sql no Supabase.');
+      else if (!atual.faz.temTalhoes) avisar('A tabela de chuva por talhão da ZEUS (stg_field_data) não tem dados de ' + f.nome + ', ou a primeira carga ainda não chegou (o servidor confere a cada 30 minutos).');
+      else if (atraso > 2) avisar('A tabela de chuva por talhão da ZEUS (stg_field_data, a mesma do Power BI) não recebe dados desde ' + L.fmtDia(atual.faz.hoje, true) + ' (' + atraso + ' dias). Todos os períodos terminam nesse dia.');
+      else avisar('');
+      // o ciclo é da fazenda: ao trocar de fazenda, o período volta para os últimos 7 dias
+      if (/^ciclo:/.test(estado.periodo) && fazendaDoCiclo !== f.id) estado.periodo = '7';
+      fazendaDoCiclo = f.id;
+      preencherPeriodos();
       atualizado();
       mostrarVista(estado.vista);
       montarFazenda();

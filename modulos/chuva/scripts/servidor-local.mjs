@@ -28,61 +28,76 @@ const TIPOS = {
   '.woff2': 'font/woff2',
 };
 
-/** Fazenda de mentira: 12 talhões em grade (um subdividido e um sem vínculo), 3 pluviômetros e 60 dias de chuva. */
+/**
+ * Fazenda de mentira: 12 talhões em grade (um deles sem dado na ZEUS), 3 pluviômetros, 120 dias de janela e
+ * dois ciclos. A "tabela da ZEUS" de mentira para 3 dias antes de hoje e tem um dia faltando.
+ */
 function dadosFicticios() {
-  const DIAS = 60;
+  const DIAS = 120;
+  const FIM = DIAS - 4; // último dia com chuva por talhão
   const hoje = new Date(Date.now() - 4 * 3600000);
   const inicio = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate() - (DIAS - 1))).toISOString().slice(0, 10);
+  const dia = (n) => new Date(Date.parse(inicio) + n * 86400000).toISOString().slice(0, 10);
   const LAT = -13.0, LON = -55.0, PASSO = 0.012;
-  const quadra = (col, lin, larg = 1) => {
-    const o = LON + col * PASSO, l = o + PASSO * larg * 0.96, n = LAT - lin * PASSO, s = n - PASSO * 0.96;
+  const quadra = (col, lin) => {
+    const o = LON + col * PASSO, l = o + PASSO * 0.96, n = LAT - lin * PASSO, s = n - PASSO * 0.96;
     return { type: 'Polygon', coordinates: [[[o, s], [l, s], [l, n], [o, n], [o, s]]] };
   };
+  // chuva de mentira, sempre igual: um "gerador" simples com semente fixa
+  let semente = 7;
+  const sorte = () => { semente = (semente * 1103515245 + 12345) % 2147483648; return semente / 2147483648; };
+  const chuvaDoDia = [];
+  for (let d = 0; d < DIAS; d++) chuvaDoDia.push(sorte() < 0.25 ? sorte() * 45 : 0);
   const talhoes = [];
+  const chuva = {};
   let n = 0;
   for (let lin = 0; lin < 3; lin++) {
     for (let col = 0; col < 4; col++) {
       n++;
-      const codigo = String(n).padStart(3, '0');
-      if (n === 4) {
-        // talhão subdividido: a ZEUS só conhece o '004'
-        talhoes.push({ codigo: '004A', nome: '004A', area_ha: 80, geom: quadra(col, lin, 0.48) });
-        talhoes.push({ codigo: '004B', nome: '004B', area_ha: 80, geom: quadra(col + 0.5, lin, 0.48) });
-      } else talhoes.push({ codigo: n === 12 ? 'P14' : codigo, nome: n === 12 ? 'P14' : codigo, area_ha: 165, geom: quadra(col, lin) });
+      const codigo = n === 12 ? 'P14' : String(n).padStart(3, '0');
+      talhoes.push({ codigo, nome: codigo, area_ha: 165, geom: quadra(col, lin) });
+      if (n === 12) continue; // talhão com limite no mapa, mas fora da tabela da ZEUS
+      const fator = 0.6 + 0.12 * col + 0.1 * lin;
+      const partes = [];
+      for (let d = 0; d <= FIM; d++) { const mm = Math.round(chuvaDoDia[d] * fator * 100) / 100; if (mm > 0) partes.push(`${d}:${mm}`); }
+      chuva[codigo] = { de: 0, ate: FIM, d: partes.join(',') };
     }
   }
-  // chuva de mentira, sempre igual: um "gerador" simples com semente fixa
-  let semente = 7;
-  const sorte = () => { semente = (semente * 1103515245 + 12345) % 2147483648; return semente / 2147483648; };
-  const chuvaDoPic = (fator, parado) => {
+  const medida = (fator, parado) => {
     const partes = [];
     for (let d = 0; d < DIAS; d++) {
       if (parado && d >= DIAS - 2) continue; // pluviômetro sem leitura nos dois últimos dias
-      const chove = sorte() < 0.28;
-      const mm = chove ? Math.round(sorte() * 380 * fator) / 10 : 0;
+      const mm = Math.round(chuvaDoDia[d] * fator * 10) / 10;
       partes.push(mm > 0 ? `${d}:${mm.toFixed(1)}` : String(d));
     }
     return partes.join(',');
   };
-  const leitura = (atras, hora) => `${new Date(Date.parse(inicio) + (DIAS - 1 - atras) * 86400000).toISOString().slice(0, 10)}T${hora}`;
+  const leitura = (atras, hora) => `${dia(DIAS - 1 - atras)}T${hora}`;
+  const anoSafra = Number(dia(FIM).slice(0, 4)) - (Number(dia(FIM).slice(5, 7)) >= 9 ? 0 : 1);
   return {
     fazendas: [{ id: 'f1', nome: 'Teste Norte', unidade_pims: 'TESTE NORTE', coa_fazenda_id: 1 }, { id: 'f2', nome: 'Teste Sul', unidade_pims: 'TESTE SUL', coa_fazenda_id: 2 }],
-    safras: [{ id: 's1', nome: 'Soja de teste', inicio: '2026-09-01' }],
+    safras: [],
     porFazenda: {
       f1: {
         talhoes,
         areas: [],
         chuva: {
-          unidade: 'TESTE NORTE', gerado_em: new Date().toISOString(), inicio, dias: DIAS, ultima_leitura: leitura(0, '07:00'),
+          unidade: 'TESTE NORTE', gerado_em: new Date().toISOString(), inicio, dias: DIAS, ultimo_dia: dia(FIM), lidos: `0-39,41-${FIM}`,
+          talhoes: chuva,
+          ciclos: [
+            { s: `SAFRA ${anoSafra}/${anoSafra + 1}`, p: 'SOJA DE TESTE', de: dia(FIM - 30), ate: dia(DIAS + 120), t: ['001', '002', '003', '005', '006', '007', '009', '010'] },
+            { s: `SAFRA ${anoSafra}/${anoSafra + 1}`, p: 'MILHO DE TESTE', de: dia(20), ate: dia(80), t: ['004', '008', '011'] },
+          ],
+          ultima_leitura: leitura(0, '07:00'),
           pics: [
-            { id: '901', n: 'PIC_901-TESTE_SEDE', lat: LAT - PASSO * 0.5, lon: LON + PASSO * 0.6, ul: leitura(0, '07:00'), l: 24, d: chuvaDoPic(1, false) },
-            { id: '902', n: 'PIC_902-TESTE_TL07', lat: LAT - PASSO * 1.5, lon: LON + PASSO * 2.6, ul: leitura(0, '07:00'), l: 24, d: chuvaDoPic(0.7, false) },
-            { id: '903', n: 'PIC_903-TESTE_TL10', lat: LAT - PASSO * 2.5, lon: LON + PASSO * 1.2, ul: leitura(2, '23:00'), l: 24, d: chuvaDoPic(1.3, true) },
+            { id: '901', n: 'PIC_901-TESTE_NORTE_SEDE', lat: LAT - PASSO * 0.5, lon: LON + PASSO * 0.6, ul: leitura(0, '07:00'), d: medida(0.7, false) },
+            { id: '902', n: 'PIC_902-TESTE_NORTE_TL07', lat: LAT - PASSO * 1.5, lon: LON + PASSO * 2.6, ul: leitura(0, '07:00'), d: medida(0.95, false) },
+            { id: '903', n: 'PIC_903-TESTE_NORTE_TL10', lat: LAT - PASSO * 2.5, lon: LON + PASSO * 1.2, ul: leitura(2, '23:00'), d: medida(0.85, true) },
           ],
           vinculos: { '001': [0], '002': [0], '003': [0, 1], '004': [1], '005': [0], '006': [0, 2], '007': [1], '008': [1], '009': [2], '010': [2], '011': [1, 2] },
         },
       },
-      // fazenda sem limite e sem pluviômetro: as mensagens de "sem dados"
+      // fazenda sem limite e sem chuva: as mensagens de "sem dados"
       f2: { talhoes: [], areas: [], chuva: null },
     },
   };
