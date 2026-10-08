@@ -1784,6 +1784,121 @@ export async function ultimoDiaZeus({ url, token, fetchImpl = fetch, agora = new
   }
 }
 
+// ---------- chuva por talhão (módulo chuva/ do COA WEB) ----------
+// A mesma regra da visão vw_precipitacao_talhao da ZEUS: a chuva do talhão é a soma do dia de cada
+// pluviômetro ligado a ele (stg_zeus_picarea), em média quando há mais de um. A visão não nomeia a Dourado
+// nem a Nebraska e é pesada sem filtro, por isso a rotina lê as duas tabelas que ela usa e grava em
+// chuva_talhao a chuva diária por pluviômetro e o vínculo talhão → pluviômetros; a tela faz a média.
+
+/** tamanho da janela gravada, em dias (cobre a safra corrente inteira) */
+export const CHUVA_TALHAO_DIAS = 400;
+/** as fazendas ficam em UTC-4: o "hoje" da janela é o delas, não o do servidor */
+const FUSO_FAZENDAS_H = 4;
+
+/** Primeiro dia da janela ('YYYY-MM-DD'): CHUVA_TALHAO_DIAS dias terminando hoje, na data da fazenda. */
+export function inicioChuvaTalhao(agora = new Date()) {
+  const hoje = new Date(agora.getTime() - FUSO_FAZENDAS_H * 3_600_000);
+  return new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate() - (CHUVA_TALHAO_DIAS - 1))).toISOString().slice(0, 10);
+}
+
+/** Vínculo talhão → pluviômetro da ZEUS, com o cadastro do pluviômetro (a tabela repete o PIC a cada talhão). */
+export const SQL_VINCULOS_ZEUS = `SELECT DISTINCT farm, talhao, picid, picname, lat, lon
+FROM "DATABASE".stg_zeus_picarea
+WHERE picid IS NOT NULL`;
+
+/**
+ * Chuva diária de cada pluviômetro desde `desde`, uma linha por pluviômetro: `dias` lista os dias com
+ * leitura como 'n' (sem chuva) ou 'n:mm', sendo n os dias corridos desde `desde`. Dia fora da lista =
+ * pluviômetro sem leitura. `leituras` = quantas leituras o pluviômetro costuma ter por dia; o dia com outra
+ * quantidade leva 'xQ' no fim ('12:3.4x20'): a visão da ZEUS pesa a média do talhão pelo número de leituras
+ * de cada pluviômetro no dia. `leitura` = instante da leitura mais recente (aaaammddhhmmss).
+ */
+export function montarSqlChuvaDiariaPics(desde) {
+  const d = String(desde).replace(/[^0-9-]/g, '').slice(0, 10);
+  return `WITH por_dia AS (
+  SELECT c.picid, c.data::date AS dia, sum(c.pluviometria) AS mm, count(*) AS n,
+    max(CASE WHEN right(c.idprecipitation, 14) ~ '^[0-9]{14}$' THEN right(c.idprecipitation, 14) END) AS leitura
+  FROM "DATABASE".stg_climatemonitoring2 c
+  WHERE c.data >= DATE '${d}'
+  GROUP BY 1, 2
+  HAVING count(c.pluviometria) > 0),
+moda AS (SELECT picid, mode() WITHIN GROUP (ORDER BY n) AS n FROM por_dia GROUP BY picid)
+SELECT p.picid, max(p.leitura) AS leitura, max(m.n) AS leituras,
+  string_agg((p.dia - DATE '${d}')::text
+    || CASE WHEN round(p.mm::numeric, 1) > 0 THEN ':' || round(p.mm::numeric, 1)::text ELSE '' END
+    || CASE WHEN p.n <> m.n THEN 'x' || p.n::text ELSE '' END, ',' ORDER BY p.dia) AS dias
+FROM por_dia p JOIN moda m ON m.picid = p.picid
+GROUP BY p.picid
+ORDER BY p.picid`;
+}
+
+/** 'aaaammddhhmmss' → 'aaaa-mm-ddThh:mm'; fora do padrão → null. */
+function instanteDaLeitura(leitura) {
+  const m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/.exec(String(leitura ?? ''));
+  if (!m || Number(m[2]) < 1 || Number(m[2]) > 12 || Number(m[3]) < 1 || Number(m[3]) > 31 || Number(m[4]) > 23 || Number(m[5]) > 59) return null;
+  return `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}`;
+}
+
+/** Código do talhão da ZEUS no formato do PIMS: 'TH19 (0)' → '019', 'PIVO 03' → '03PIVO', '2 (1)' → '002'. */
+function codigoDoTalhaoZeus(talhao) {
+  return normalizarCodigo(String(talhao ?? '').replace(/\s*\(\d+\)\s*$/, ''));
+}
+
+/**
+ * Linhas de chuva_talhao: uma por fazenda da ZEUS (nome como o do PIMS: 'Faz_SM3' → 'SM3'), com
+ * pics [{ id, n, lat, lon, ul última leitura, l leituras por dia, d dias }] em ordem de nome e vinculos { código: [índices em pics] }.
+ * Pluviômetro sem fazenda no cadastro fica de fora; coordenada inválida vira null.
+ */
+export function linhasChuvaTalhao({ vinculos, chuva }, desde, geradoEm) {
+  const porPic = new Map(objetosDe(chuva).map((r) => [txt(r.picid), r]));
+  const fazendas = new Map();
+  for (const r of objetosDe(vinculos)) {
+    const unidade = unidadeDaFazendaZeus(r.farm);
+    const id = txt(r.picid);
+    if (!unidade || !id) continue;
+    if (!fazendas.has(unidade)) fazendas.set(unidade, { pics: new Map(), talhoes: new Map() });
+    const f = fazendas.get(unidade);
+    if (!f.pics.has(id)) {
+      const lat = Number(String(r.lat ?? '').replace(',', '.'));
+      const lon = Number(String(r.lon ?? '').replace(',', '.'));
+      const temLugar = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
+      const lido = porPic.get(id);
+      f.pics.set(id, {
+        id, n: txt(r.picname) ?? `PIC ${id}`, lat: temLugar ? lat : null, lon: temLugar ? lon : null,
+        ul: instanteDaLeitura(lido?.leitura), l: Math.max(1, Math.round(Number(lido?.leituras)) || 1),
+        d: /^[0-9:.,x]*$/.test(txt(lido?.dias) ?? '') ? txt(lido?.dias) ?? '' : '',
+      });
+    }
+    const codigo = codigoDoTalhaoZeus(r.talhao);
+    if (!codigo) continue;
+    if (!f.talhoes.has(codigo)) f.talhoes.set(codigo, new Set());
+    f.talhoes.get(codigo).add(id);
+  }
+  return [...fazendas]
+    .sort((a, b) => comparar(a[0], b[0]))
+    .map(([unidade, f]) => {
+      const pics = [...f.pics.values()].sort((a, b) => comparar(a.n, b.n) || comparar(a.id, b.id));
+      const indice = new Map(pics.map((p, i) => [p.id, i]));
+      const vinc = {};
+      for (const codigo of [...f.talhoes.keys()].sort(comparar)) vinc[codigo] = [...f.talhoes.get(codigo)].map((id) => indice.get(id)).sort((a, b) => a - b);
+      const ultima = pics.reduce((m, p) => (p.ul && p.ul > m ? p.ul : m), '');
+      return { unidade: unidade.slice(0, 80), gerado_em: geradoEm, inicio: desde, dias: CHUVA_TALHAO_DIAS, ultima_leitura: ultima || null, pics, vinculos: vinc };
+    });
+}
+
+/** Consulta a ZEUS pelo Agrovex e devolve as linhas de chuva_talhao (não grava nada). */
+export async function sincronizarChuvaTalhao({ url, token, fetchImpl = fetch, agora = new Date() }) {
+  const desde = inicioChuvaTalhao(agora);
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    const vinculos = await cliente.consultar(SQL_VINCULOS_ZEUS, 'vínculo talhão × pluviômetro da ZEUS (chuva por talhão)', 'vínculos da ZEUS', FONTES.zeus);
+    const chuva = await cliente.consultar(montarSqlChuvaDiariaPics(desde), 'chuva diária por pluviômetro (chuva por talhão)', 'chuva diária por pluviômetro', FONTES.zeus);
+    return linhasChuvaTalhao({ vinculos, chuva }, desde, agora.toISOString());
+  } finally {
+    await cliente.fechar();
+  }
+}
+
 // ---------- execução pela linha de comando ----------
 
 async function main() {

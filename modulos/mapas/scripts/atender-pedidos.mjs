@@ -10,7 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, ultimoDiaZeus } from './sincronizar-plantio.mjs';
+import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, ultimoDiaZeus } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -262,6 +262,47 @@ export async function atualizarSituacaoZeus({ supabase, agrovex, fetch: fetchImp
   return 'ok';
 }
 
+// ---------- chuva por talhão (tabela chuva_talhao, módulo chuva/ do COA WEB) ----------
+
+const TABELA_CHUVA_TALHAO = 'chuva_talhao';
+/** a gravação vale por este tempo; depois, a próxima verificação consulta a ZEUS de novo */
+export const CHUVA_TALHAO_MINUTOS = 30;
+
+/**
+ * Mantém chuva_talhao em dia: a chuva diária de cada pluviômetro e o vínculo talhão → pluviômetros de cada
+ * fazenda. Roda junto da verificação dos pedidos, mas só consulta a ZEUS quando a última gravação tem mais
+ * de 30 min. Devolve 'recente', 'fora-do-passo', 'sem-tabela' (script 0013 não aplicado), 'vazio' ou 'ok'.
+ */
+export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+  const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?select=gerado_em&order=gerado_em.desc&limit=1`, {
+    headers: cabecalhosSupabase(supabase.chave),
+  });
+  if (!resp.ok) {
+    if (await semTabela(resp)) return 'sem-tabela';
+    await erroRest(resp, supabase.chave, 'a leitura da chuva por talhão');
+  }
+  const linhas = await resp.json();
+  const momento = agora();
+  const ultima = Array.isArray(linhas) && linhas[0]?.gerado_em ? Date.parse(linhas[0].gerado_em) : NaN;
+  if (Number.isFinite(ultima) && momento.getTime() - ultima < CHUVA_TALHAO_MINUTOS * 60_000) return 'recente';
+  if (momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
+  const novas = await sincronizarChuvaTalhao({ url: agrovex.url, token: agrovex.token, fetchImpl, agora: momento });
+  if (!novas.length) return 'vazio';
+  const gravar = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?on_conflict=unidade`, {
+    method: 'POST',
+    headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(novas),
+  });
+  if (!gravar.ok) await erroRest(gravar, supabase.chave, 'a gravação da chuva por talhão');
+  const limpeza = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?gerado_em=lt.${encodeURIComponent(novas[0].gerado_em)}`, {
+    method: 'DELETE',
+    headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
+  });
+  if (!limpeza.ok) await erroRest(limpeza, supabase.chave, 'a limpeza da chuva por talhão');
+  console.log(`== ${momento.toISOString()} chuva por talhão: ${novas.length} fazendas, ${novas.reduce((s, l) => s + l.pics.length, 0)} pluviômetros.`);
+  return 'ok';
+}
+
 // ---------- pedidos de "Atualizar" da Validação PIMS (tabela valid_pedidos) ----------
 
 const TABELA_VALID = 'valid_pedidos';
@@ -313,7 +354,7 @@ async function main() {
   };
   // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
   let erroConsulta = null;
-  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus]) {
+  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus, atualizarChuvaTalhao]) {
     try {
       await atender({ supabase, agrovex });
     } catch (e) {

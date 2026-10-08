@@ -182,6 +182,19 @@ export const SQL_ULTIMO_DIA_ZEUS: string;
 export interface LinhaSituacaoZeus { fazenda: string; ultimo_dia: string; /** 'aaaa-mm-ddThh:mm:ss' (hora da fazenda) */ ultima_leitura: string | null; conferido_em: string }
 export function linhasSituacaoZeus(res: { columns: string[]; rows: unknown[][] }, agora?: Date): LinhaSituacaoZeus[];
 export function ultimoDiaZeus(opcoes: { url: string; token: string; fetchImpl?: FetchLike; agora?: Date }): Promise<LinhaSituacaoZeus[]>;
+
+/** pluviômetro de chuva_talhao: `d` lista os dias com leitura ('n' ou 'n:mm', n = dias desde `inicio`; 'xQ' no fim = Q leituras no dia, quando difere de `l`) */
+export interface PicChuvaTalhao { id: string; n: string; lat: number | null; lon: number | null; ul: string | null; l: number; d: string }
+export interface LinhaChuvaTalhao {
+  unidade: string; gerado_em: string; inicio: string; dias: number; ultima_leitura: string | null;
+  pics: PicChuvaTalhao[]; vinculos: Record<string, number[]>;
+}
+export const CHUVA_TALHAO_DIAS: number;
+export const SQL_VINCULOS_ZEUS: string;
+export function inicioChuvaTalhao(agora?: Date): string;
+export function montarSqlChuvaDiariaPics(desde: string): string;
+export function linhasChuvaTalhao(dados: { vinculos: { columns: string[]; rows: unknown[][] }; chuva: { columns: string[]; rows: unknown[][] } }, desde: string, geradoEm: string): LinhaChuvaTalhao[];
+export function sincronizarChuvaTalhao(opcoes: { url: string; token: string; fetchImpl?: FetchLike; agora?: Date }): Promise<LinhaChuvaTalhao[]>;
 export function chuvaPorPicZeus(opcoes: {
   url: string;
   token: string;
