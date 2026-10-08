@@ -5,7 +5,7 @@ import { lonLatToMerc, type MultiPolyXY, type Ring } from '../lib/projection';
 import type { Talhao } from '../lib/types';
 import { tamanhoRotuloTalhaoMm } from './composicao';
 import { ALTURA_MAIUSC, LabelPlacer, caixaTexto, fonte, textoComHalo, type Rect } from './labels';
-import { desenharGota } from './patterns';
+import { desenharGota, LARGURA_GOTA, picSemChuva } from './patterns';
 import { estiloValorPic } from './picStyle';
 import type { RenderInput, Vista } from './types';
 
@@ -67,7 +67,7 @@ export function desenharRotulosEPics(
   reservas.forEach((r) => placer.reserva(r));
 
   const altGota = 5.5 * s;
-  const meiaGota = 0.3 * altGota;
+  const meiaGota = (LARGURA_GOTA / 2) * altGota;
   const pics = inp.pics
     .filter((p) => Number.isFinite(p.lon) && Number.isFinite(p.lat))
     .map((p) => ({ p, xy: v.paraPx(...lonLatToMerc(p.lon, p.lat)) }))
@@ -128,7 +128,7 @@ export function desenharRotulosEPics(
   ctx.textBaseline = 'alphabetic';
   ctx.font = fonte(400, pxTal);
   for (const { txt, r } of rotulos) textoComHalo(ctx, txt, r.x + haloTal, r.y + haloTal + capTal, COR_ROTULO_TALHAO, HALO_ROTULO_TALHAO, haloTal);
-  for (const { xy } of pics) desenharGota(ctx, xy[0], xy[1], altGota, s);
+  for (const { p, xy } of pics) desenharGota(ctx, xy[0], xy[1], altGota, s, picSemChuva(p.chuva));
   ctx.font = fonte(700, pxPic);
   const estilo = estiloValorPic(inp.config.destaquePics);
   for (const { txt, r } of valores) {

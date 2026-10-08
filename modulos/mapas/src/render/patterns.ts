@@ -1,4 +1,4 @@
-/** Padrões de preenchimento dos talhões plantados/plantando e o símbolo (gota) dos PICs. */
+/** Padrões de preenchimento dos talhões plantados/plantando e o símbolo (gota) dos PICs: azul com chuva, cinza riscada sem. */
 import type { EstiloPlantado } from '../lib/types';
 import type { Rect } from './labels';
 
@@ -80,35 +80,66 @@ export function desenharPadrao(
   ctx.restore();
 }
 
+/** largura da gota em relação à altura (para reservar o espaço dela no mapa) */
+export const LARGURA_GOTA = 0.72;
+
+/** PIC sem chuva apontada no período: sem valor, ou com menos de 0,05 mm (aparece como "0"). */
+export function picSemChuva(chuva: number | null | undefined): boolean {
+  return chuva === null || chuva === undefined || !Number.isFinite(chuva) || Math.round(chuva * 10) === 0;
+}
+
 /**
- * Gota azul do PIC com a ponta em (x, y) e o corpo para baixo; `altura` em px.
- * `s` (px por mm) define o traço branco fino.
+ * Gota do PIC com a ponta em (x, y) e o corpo para baixo; `altura` em px. Azul com brilho quando o PIC tem
+ * chuva; com `semChuva`, cinza e riscada. `s` (px por mm) define o traço branco fino em volta.
  */
-export function desenharGota(ctx: CanvasRenderingContext2D, x: number, y: number, altura: number, s: number): void {
+export function desenharGota(ctx: CanvasRenderingContext2D, x: number, y: number, altura: number, s: number, semChuva = false): void {
   if (!(altura > 0)) return;
+  const meia = LARGURA_GOTA / 2;
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(altura, altura);
-  // unidades locais: altura = 1, largura = 0,6, centro do corpo em (0; 0,7)
+  // unidades locais: altura = 1, largura = 0,72, centro do corpo em (0; 0,64)
   ctx.beginPath();
   ctx.moveTo(0, 0);
-  ctx.bezierCurveTo(0.05, 0.12, 0.3, 0.4, 0.3, 0.7);
-  ctx.arc(0, 0.7, 0.3, 0, Math.PI, false);
-  ctx.bezierCurveTo(-0.3, 0.4, -0.05, 0.12, 0, 0);
+  ctx.bezierCurveTo(0.06, 0.1, meia, 0.42, meia, 0.64);
+  ctx.arc(0, 0.64, meia, 0, Math.PI, false);
+  ctx.bezierCurveTo(-meia, 0.42, -0.06, 0.1, 0, 0);
   ctx.closePath();
-  const grad = ctx.createLinearGradient(-0.3, 0.15, 0.3, 1);
-  grad.addColorStop(0, '#1E88E5');
-  grad.addColorStop(1, '#0D5FA8');
+  const grad = ctx.createLinearGradient(-0.3, 0.2, 0.3, 1);
+  if (semChuva) {
+    grad.addColorStop(0, '#D8DCE0');
+    grad.addColorStop(0.5, '#B3B9C0');
+    grad.addColorStop(1, '#848B94');
+  } else {
+    grad.addColorStop(0, '#35DBFF');
+    grad.addColorStop(0.45, '#0FBDF0');
+    grad.addColorStop(1, '#0568A5');
+  }
   ctx.fillStyle = grad;
   ctx.fill();
   ctx.lineJoin = 'round';
   ctx.lineWidth = (0.18 * s) / altura;
   ctx.strokeStyle = '#FFFFFF';
   ctx.stroke();
-  // brilho
+  // brilho: um traço curvo branco do lado esquerdo
+  ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.ellipse(-0.13, 0.68, 0.055, 0.13, 0.25, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  ctx.fill();
+  ctx.moveTo(-0.147, 0.52);
+  ctx.quadraticCurveTo(-0.24, 0.664, -0.127, 0.79);
+  ctx.lineWidth = 0.085;
+  ctx.strokeStyle = semChuva ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.92)';
+  ctx.stroke();
+  if (semChuva) {
+    // risco escuro atravessado, com um fio branco em volta
+    ctx.beginPath();
+    ctx.moveTo(-0.37, 0.87);
+    ctx.lineTo(0.37, 0.15);
+    ctx.lineWidth = 0.1;
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.stroke();
+    ctx.lineWidth = 0.066;
+    ctx.strokeStyle = '#3A3B3E';
+    ctx.stroke();
+  }
   ctx.restore();
 }

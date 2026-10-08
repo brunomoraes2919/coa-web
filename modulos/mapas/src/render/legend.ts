@@ -5,12 +5,12 @@
  */
 import type { StatusPlantio } from '../lib/types';
 import { ALTURA_MAIUSC, fonte, type Rect } from './labels';
-import { desenharGota, desenharPadrao } from './patterns';
+import { desenharGota, desenharPadrao, picSemChuva } from './patterns';
 import { ESTILO_SITUACAO, itensLegendaSituacao } from './situacao';
 import { COR_BORDA_AMOSTRA, COR_TEXTO, COR_VERDE, type RenderInput } from './types';
 
 export type ItemLegenda =
-  | { tipo: 'pic'; texto: string }
+  | { tipo: 'pic'; texto: string; semChuva?: boolean }
   | { tipo: 'situacao'; texto: string; status: StatusPlantio }
   | { tipo: 'titulo'; texto: string }
   | { tipo: 'classe'; texto: string; cor: string };
@@ -45,7 +45,10 @@ export function rotuloClasse(label: string): string {
 /** Itens da legenda na ordem de desenho. `presentes` = classes presentes no grid; null = sem grid. */
 export function itensLegenda(inp: RenderInput, presentes: boolean[] | null): ItemLegenda[] {
   const itens: ItemLegenda[] = [];
-  if (inp.pics.length) itens.push({ tipo: 'pic', texto: 'PICs' });
+  // a gota azul é o PIC com chuva; a cinza riscada só entra na legenda quando há PIC sem chuva no mapa
+  const semChuva = inp.pics.filter((p) => picSemChuva(p.chuva)).length;
+  if (inp.pics.length > semChuva) itens.push({ tipo: 'pic', texto: semChuva ? 'PICs com chuva' : 'PICs' });
+  if (semChuva) itens.push({ tipo: 'pic', texto: 'PICs sem chuva', semChuva: true });
   for (const it of itensLegendaSituacao(inp).itens) itens.push({ tipo: 'situacao', texto: it.texto, status: it.status });
   if (!presentes) return itens; // sem interpolação não há classes a explicar
   const classes = inp.palette.classes.filter((_, i) => !inp.config.legendaCompacta || presentes[i]);
@@ -244,7 +247,7 @@ export function planejarLegenda(
         const r: Rect = { x: xCol, y: cy - (AMOSTRA_H * u) / 2, w: AMOSTRA_W * u, h: AMOSTRA_H * u };
         if (it.tipo === 'pic') {
           const alt = 4.8 * u;
-          desenharGota(ctx, r.x + r.w / 2, cy - alt / 2, alt, s);
+          desenharGota(ctx, r.x + r.w / 2, cy - alt / 2, alt, s, it.semChuva === true);
         } else if (it.tipo === 'situacao') {
           amostraSituacao(ctx, it.status, inp, r, s, u);
         } else {
