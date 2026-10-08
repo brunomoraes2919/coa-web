@@ -17,9 +17,12 @@
   const NS = 'http://www.w3.org/2000/svg';
   /* no "Dia a dia", no máximo estes dias (os mais recentes do período) */
   const MAX_DIAS_GRADE = 45;
-  /* ícone do pluviômetro (o mesmo arquivo no mapa, na legenda e nas abas) e o tamanho dele no mapa, em pixels */
+  /* ícone do pluviômetro. No mapa ele vai sem fundo, só com um contorno branco fino para não sumir sobre talhão
+     escuro; o vermelho é o do pluviômetro atrasado ou sem leitura. ICONE_PIC_PX = tamanho no mapa, em pixels. */
   const ICONE_PIC = 'pluviometro.png?v=1';
-  const ICONE_PIC_PX = 21;
+  const ICONE_PIC_MAPA = 'pluviometro-mapa.png?v=1';
+  const ICONE_PIC_ALERTA = 'pluviometro-alerta.png?v=1';
+  const ICONE_PIC_PX = 30;
   /* o gráfico do talhão mostra pelo menos estes dias, para a chuva do período ter contexto */
   const DIAS_GRAFICO = 30;
 
@@ -367,14 +370,12 @@
       if (p.lat === null || p.lon === null) return;
       const c = atual.proj(p.lon, p.lat);
       const d = 'M' + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + 'h.01';
-      // uma placa branca redonda (o aro fica vermelho quando o pluviômetro está atrasado ou sem leitura) e o ícone em cima
-      const aro = document.createElementNS(NS, 'path');
-      aro.setAttribute('d', d); aro.setAttribute('class', 'pic-aro ' + p.situacao);
+      // só o ícone, sem fundo (vermelho quando o pluviômetro está atrasado ou sem leitura); o ponto invisível é onde o mouse pega
+      const icone = document.createElementNS(NS, 'image');
+      icone.setAttribute('href', p.situacao === 'ok' ? ICONE_PIC_MAPA : ICONE_PIC_ALERTA); icone.setAttribute('class', 'pic-icone');
       const ponto = document.createElementNS(NS, 'path');
       ponto.setAttribute('d', d); ponto.setAttribute('class', 'pic'); ponto.setAttribute('data-p', p.i);
-      const icone = document.createElementNS(NS, 'image');
-      icone.setAttribute('href', ICONE_PIC); icone.setAttribute('class', 'pic-icone');
-      gp.appendChild(aro); gp.appendChild(ponto); gp.appendChild(icone);
+      gp.appendChild(icone); gp.appendChild(ponto);
       p.ponto = ponto; p.icone = icone; p.xy = c;
     });
     gp.setAttribute('class', estado.pics ? '' : 'fora');
@@ -400,7 +401,7 @@
       '<div class="legenda-nota">' +
         (semDado || fora ? '<span><i class="cinza"></i>' + [semDado ? 'sem dado na ZEUS' : '', fora ? 'fora do ciclo' : ''].filter(Boolean).join(' ou ') + '</span>' : '') +
         (estado.pics && atual.pics.length ? '<span><img class="icone-pic" src="' + ICONE_PIC + '" alt="">pluviômetro (chuva medida)' +
-          (atual.pics.some((p) => p.situacao !== 'ok') ? ' · aro vermelho: atrasado ou sem leitura' : '') + '</span>' : '') +
+          (atual.pics.some((p) => p.situacao !== 'ok') ? ' · <img class="icone-pic" src="' + ICONE_PIC_ALERTA + '" alt="">vermelho: atrasado ou sem leitura' : '') + '</span>' : '') +
       '</div>';
   }
 
