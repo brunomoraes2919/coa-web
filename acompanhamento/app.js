@@ -287,9 +287,9 @@
     ops.forEach(function (a) { var k = a.u + '|' + a.t; exT[k] = (exT[k] || 0) + a.a; });
     m.talhoes = tal.map(function (t) {
       var base = Math.max(0, t.area - t.dano), ap = exT[t.u + '|' + t.t] || 0;
-      var enc = o === 'PLANTIO' && !!t.enc;
-      var perc = enc ? 1 : (base > 0 ? Math.min(1, ap / base) : (ap > 0 ? 1 : 0));
-      return { u: t.u, t: t.t, setor: t.setor, variedade: t.variedade, base: base, area: t.area, dano: t.dano, apontado: ap, efetivo: base * perc, perc: perc, enc: enc, k: classe(perc) };
+      var enc = o === 'PLANTIO' && !!t.enc; // só informa no mapa: a área feita vem dos boletins
+      var ex = RelatorioLogica.execucaoDoTalhao(base, ap);
+      return { u: t.u, t: t.t, setor: t.setor, variedade: t.variedade, base: base, area: t.area, dano: t.dano, apontado: ap, efetivo: ex.efetivo, perc: ex.perc, enc: enc, k: classe(ex.perc) };
     });
     m.areaCad = soma(tal, function (t) { return t.area; });
     m.dano = soma(tal, function (t) { return t.dano; });

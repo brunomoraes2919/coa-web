@@ -186,3 +186,14 @@ test('frases: no geral, cita o número de fazendas e a mais adiantada e a mais a
   assert.match(t, /SM3 \(80%\)/)
   assert.match(t, /Globo \(46%\)/)
 })
+
+test('execucaoDoTalhao: a área feita é só a apontada nos boletins, limitada à área do talhão', () => {
+  // talhão de 179 ha com 165 ha apontados: conta 165, mesmo que o plantio esteja encerrado no PIMS
+  const parcial = L.execucaoDoTalhao(179, 165)
+  assert.equal(parcial.efetivo, 165)
+  assert.equal(Math.round(parcial.perc * 1000), 922)
+  assert.deepEqual(L.execucaoDoTalhao(200, 200), { perc: 1, efetivo: 200 })
+  assert.deepEqual(L.execucaoDoTalhao(200, 230), { perc: 1, efetivo: 200 }) // apontado a mais não passa da área
+  assert.deepEqual(L.execucaoDoTalhao(200, 0), { perc: 0, efetivo: 0 })
+  assert.deepEqual(L.execucaoDoTalhao(0, 12), { perc: 1, efetivo: 0 }) // talhão todo em dano
+})

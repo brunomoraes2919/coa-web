@@ -102,6 +102,15 @@
   // ===========================================================================
   // Uma fazenda na tabela do relatório geral ("Todas as fazendas")
   // ===========================================================================
+  /**
+   * Quanto de um talhão já foi feito: só a área apontada nos boletins, limitada à área do talhão.
+   * O encerramento do plantio no PIMS não completa a área (talhão encerrado com menos que o cadastro segue parcial).
+   */
+  function execucaoDoTalhao(base, apontado) {
+    var perc = base > 0 ? Math.min(1, apontado / base) : (apontado > 0 ? 1 : 0);
+    return { perc: perc, efetivo: base * perc };
+  }
+
   function linhaFazenda(u, m, chuvaU, hoje) {
     var comp = comparativoSafras(m, chuvaU, hoje), ant = comp[1] || null, corr = correlacaoChuva(m, chuvaU);
     return { u: u, nome: titulo(u), pct: m.pct, exec: m.exec, areaTotal: m.areaTotal, restante: m.restante,
@@ -240,5 +249,5 @@
     return saida;
   }
 
-  return { CHUVA_MIN: CHUVA_MIN, CHUVA_FORTE: CHUVA_FORTE, correlacaoChuva: correlacaoChuva, comparativoSafras: comparativoSafras, linhaFazenda: linhaFazenda, consolidar: consolidar, frases: frases, trechos: trechos, chuvaNoPeriodo: chuvaNoPeriodo };
+  return { CHUVA_MIN: CHUVA_MIN, CHUVA_FORTE: CHUVA_FORTE, execucaoDoTalhao: execucaoDoTalhao, correlacaoChuva: correlacaoChuva, comparativoSafras: comparativoSafras, linhaFazenda: linhaFazenda, consolidar: consolidar, frases: frases, trechos: trechos, chuvaNoPeriodo: chuvaNoPeriodo };
 });

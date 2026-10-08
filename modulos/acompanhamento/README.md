@@ -109,8 +109,8 @@ para ele. Toda alteração de meta fica em `acomp_metas_historico` (só o admin 
 ## Regras de cálculo
 
 - Área da operação = área produtiva (UPNIVEL3.QT_AREA_PROD) − área de dano.
-- Executado por talhão = apontamentos sem replantio, limitados à área do talhão; talhão com plantio
-  encerrado (DT_PLANT_ENC) conta como 100%.
+- Executado por talhão = apontamentos sem replantio, limitados à área do talhão. O encerramento do
+  plantio (DT_PLANT_ENC) só aparece como aviso no mapa: não completa a área do talhão.
 - Ritmo = média dos dias com operação nos últimos 7 dias corridos até o último apontamento
   (sem operação no período, a média geral). Previsão de término = hoje − 1 + ⌈restante ÷ ritmo⌉.
 - Necessário p/ meta = restante ÷ dias até a data estimada de término.
