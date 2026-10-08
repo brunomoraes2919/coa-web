@@ -799,7 +799,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 @media (max-width:480px){
   .app.modo-previsao .page[data-page="previsao"].active{margin:0 -12px -12px;}
 }
-/* ---------- MAPAS → Chuva por talhão: módulo num iframe (chuva/index.html?embed=1) ---------- */
+/* ---------- categoria CHUVA POR TALHÃO: módulo num iframe (chuva/index.html?embed=1) ---------- */
 .app.modo-chuva{min-height:0;}
 .app.modo-chuva main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
 .app.modo-chuva .page[data-page="chuva"].active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin:0 -34px -60px;}
@@ -944,6 +944,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 16.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.6a3.5 3.5 0 0 1 .5 6.9"/><path d="M8.5 19.5l1-2M12 21l1-2M15.5 19.5l1-2"/></svg>
         <span>Previsão do Tempo</span><small class="categoria-card-desc">Mapa do Windy com os limites das fazendas</small>
       </button>
+      <button class="categoria-card" id="card-chuva">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5c3 3.6 5 6.3 5 9a5 5 0 0 1-10 0c0-2.7 2-5.4 5-9Z"/><path d="M9.8 13.5a2.3 2.3 0 0 0 2.2 2.3"/><path d="M4 20.5h16"/></svg>
+        <span>Chuva por talhão</span><small class="categoria-card-desc">Chuva da ZEUS em cada talhão, com mapa, tabela e ciclos</small>
+      </button>
       <button class="categoria-card" id="card-validacao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3.5h6v3H9z"/><path d="M9 5H6.5A1.5 1.5 0 0 0 5 6.5v12A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-12A1.5 1.5 0 0 0 17.5 5H15"/><path d="m8.8 13.2 2.3 2.3 4.2-4.600"/></svg>
         <span>Validação PIMS</span><small class="categoria-card-desc">Ordens de serviço por coordenador, áreas e depósitos</small>
@@ -1036,10 +1040,6 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <button class="nav-btn" data-page="mapas" data-rota="/mapas/novo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>Novo mapa</button>
         <button class="nav-btn" data-page="mapas" data-rota="/mapas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4Z"/><path d="M9 4v13.5M15 6.5V20"/></svg>Mapas salvos</button>
       </nav>
-      <div class="nav-eyebrow">Dados da ZEUS</div>
-      <nav>
-        <button class="nav-btn" data-page="chuva"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 8.1a3.5 3.5 0 0 1 .5 6.9"/><path d="M9 18l-1 3M13 18l-1 3M17 18l-1 3"/></svg>Chuva por talhão</button>
-      </nav>
       <div class="nav-eyebrow admin-only">Cadastros</div>
       <nav class="admin-only">
         <button class="nav-btn admin-only" data-page="mapas" data-rota="/fazendas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 21 9.5 17.5 20h-11L3 9.5Z"/></svg>Fazendas e shapes</button>
@@ -1067,6 +1067,14 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <div class="nav-eyebrow">Previsão do Tempo</div>
       <nav>
         <button class="nav-btn" data-page="previsao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.6a3.5 3.5 0 0 1 .5 6.9"/><path d="M8.5 19.5l1-2M12 21l1-2M15.5 19.5l1-2"/></svg>Mapa de previsão</button>
+      </nav>
+    </div>
+    <div id="nav-chuva" style="display:none">
+      <div class="nav-eyebrow">Chuva por talhão</div>
+      <nav>
+        <button class="nav-btn" data-page="chuva" data-chuva="mapa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4 3 6.5V20l6-2.5 6 2.5 6-2.5V4l-6 2.5L9 4Z"/><path d="M9 4v13.5M15 6.5V20"/></svg>Mapa e tabela</button>
+        <button class="nav-btn" data-page="chuva" data-chuva="diario"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16"/></svg>Dia a dia</button>
+        <button class="nav-btn" data-page="chuva" data-chuva="pics"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 8.1a3.5 3.5 0 0 1 .5 6.9"/><path d="M9 18l-1 3M13 18l-1 3M17 18l-1 3"/></svg>Pluviômetros</button>
       </nav>
     </div>
     <div id="nav-validacao" style="display:none">
@@ -1645,7 +1653,7 @@ const coaLoader = (()=>{
   }
   return { mostrar, esconder };
 })();
-let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat' | 'previsao' | 'validacao' | 'controle'
+let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat' | 'previsao' | 'chuva' | 'validacao' | 'controle'
 /* categorias que o administrador libera por usuário (tabela usuario_categorias). O admin vê todas. */
 const CATEGORIAS = [
   { chave:'algodao', nome:'Algodão', card:'card-algodao' },
@@ -1654,6 +1662,7 @@ const CATEGORIAS = [
   { chave:'acompanhamento', nome:'Operacional', card:'card-acompanhamento' },
   { chave:'sat', nome:'Locks SAT', card:'card-sat' },
   { chave:'previsao', nome:'Previsão do Tempo', card:'card-previsao' },
+  { chave:'chuva', nome:'Chuva por talhão', card:'card-chuva' },
   { chave:'validacao', nome:'Validação PIMS', card:'card-validacao' },
   { chave:'controle', nome:'Controle Técnico', card:'card-controle' },
 ];
@@ -1802,7 +1811,7 @@ const titulos = {
   acompanhamento:['Acompanhamento Operacional','Plantio e colheita com os dados do PIMS'],
   sat:['Locks SAT','Monitoramento de cintilação RTK'], // o título real vem do módulo (mensagem 'sat-rota')
   previsao:['Previsão do Tempo','Mapa do Windy com os limites das fazendas'],
-  chuva:['Chuva por talhão','Chuva da ZEUS em cada talhão'],
+  chuva:['Chuva por talhão','Chuva da ZEUS em cada talhão'], // o cabeçalho de verdade é o do módulo
   validacao:['Validação PIMS','Ordens de serviço por coordenador, áreas e depósitos'],
   controle:['Controle Técnico','Suas ordens, apontamentos e estoque do depósito'],
 };
@@ -1813,7 +1822,7 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
     else if(btn.dataset.acomp) irParaAcomp(btn.dataset.acomp);
     else if(btn.dataset.sat) irParaSat(btn.dataset.sat);
     else if(btn.dataset.page === 'previsao') irParaPrevisao();
-    else if(btn.dataset.page === 'chuva') irParaChuva();
+    else if(btn.dataset.chuva) irParaChuva(btn.dataset.chuva);
     else if(btn.dataset.valid) irParaValidacao(btn.dataset.valid);
     else if(btn.dataset.ctrl) irParaControle(btn.dataset.ctrl);
     else irPara(btn.dataset.page);
@@ -4564,7 +4573,6 @@ function enviarFazendaMapas(){
 document.getElementById('sb-fazenda').addEventListener('change', enviarFazendaMapas);
 // ao sair: descarrega o módulo e marca para recriar o iframe na próxima entrada
 function descarregarMapas(){
-  descarregarChuva(); // a Chuva por talhão é uma página da mesma categoria
   if(mapasFrame){
     mapasFrame.src = 'about:blank';
     mapasFrame.remove();
@@ -4643,6 +4651,7 @@ function entrarAcompanhamento(){
   document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('nav-controle').style.display = 'none';
+  document.getElementById('nav-chuva').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaAcomp(null); // 1ª entrada: cria o iframe no painel; depois mantém o módulo onde estava
@@ -4675,35 +4684,61 @@ window.addEventListener('message', ev=>{
 });
 
 /* =====================================================================
-   MAPAS → CHUVA POR TALHÃO — módulo num iframe da mesma origem
+   CHUVA POR TALHÃO — categoria própria; módulo num iframe da mesma origem
    (chuva/index.html?embed=1; a sessão do Supabase é a mesma do COA WEB)
-   - COA → módulo: { tipo:'coa-fazenda', id, nome }
+   - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'chuva-vista', vista: uma das CHUVA_VISTAS }
+   - módulo → COA: { tipo:'chuva-rota', vista }
    ===================================================================== */
-let chuvaFrame = null;      // iframe #chuva-frame (criado na primeira entrada; removido ao sair da categoria)
+const CHUVA_VISTAS = ['mapa','diario','pics'];
+let chuvaFrame = null;      // iframe #chuva-frame (criado na primeira entrada; removido ao sair)
 let chuvaCarregado = false;
-function enviarFazendaChuva(){
+let chuvaVista = 'mapa';
+function enviarAChuva(msg){
   if(!chuvaFrame || !chuvaCarregado || !chuvaFrame.contentWindow) return;
-  const f = state.fazendas.find(x=>x.id===fazendaSelecionadaId()) || { id:null, nome:null };
-  try{ chuvaFrame.contentWindow.postMessage({ tipo:'coa-fazenda', id:f.id, nome:f.nome }, location.origin); }
+  try{ chuvaFrame.contentWindow.postMessage(msg, location.origin); }
   catch(e){ console.warn('CHUVA: não foi possível avisar o módulo', e); }
 }
-function irParaChuva(){
+function enviarFazendaChuva(){
+  const f = state.fazendas.find(x=>x.id===fazendaSelecionadaId()) || { id:null, nome:null };
+  enviarAChuva({ tipo:'coa-fazenda', id:f.id, nome:f.nome });
+}
+// o irPara('chuva') destaca todos os botões com data-page="chuva"; deixa só o da tela atual
+function destacarBotaoChuva(){
+  document.querySelectorAll('#nav-chuva .nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.chuva===chuvaVista));
+}
+function irParaChuva(vista){
+  if(vista && CHUVA_VISTAS.includes(vista)) chuvaVista = vista;
   irPara('chuva');
-  if(chuvaFrame){ enviarFazendaChuva(); return; }
-  const frame = document.createElement('iframe');
-  frame.id = 'chuva-frame';
-  frame.title = 'Chuva por talhão';
-  frame.addEventListener('load', ()=>{
-    if(frame !== chuvaFrame) return;
-    coaLoader.esconder();
-    chuvaCarregado = true;
-    enviarFazendaChuva();
-  });
-  coaLoader.mostrar('Abrindo a Chuva por talhão', true);
-  frame.src = 'chuva/index.html?embed=1';
-  chuvaFrame = frame;
-  chuvaCarregado = false;
-  document.querySelector('.page[data-page="chuva"]').appendChild(frame);
+  if(!chuvaFrame){
+    const frame = document.createElement('iframe');
+    frame.id = 'chuva-frame';
+    frame.title = 'Chuva por talhão';
+    frame.addEventListener('load', ()=>{
+      if(frame !== chuvaFrame) return;
+      coaLoader.esconder();
+      chuvaCarregado = true;
+      enviarFazendaChuva();
+    });
+    coaLoader.mostrar('Abrindo a Chuva por talhão', true);
+    frame.src = 'chuva/index.html?embed=1&vista=' + chuvaVista;
+    chuvaFrame = frame;
+    chuvaCarregado = false;
+    document.querySelector('.page[data-page="chuva"]').appendChild(frame);
+  } else if(vista){
+    enviarAChuva({ tipo:'chuva-vista', vista:chuvaVista });
+  }
+  destacarBotaoChuva();
+}
+function entrarChuva(){
+  if(!podeCategoria('chuva')){ mostrarCategoriaScreen(); return; }
+  categoriaAtual = 'chuva';
+  ['nav-algodao','nav-mecanizadas','nav-administracao','nav-mapas','nav-acompanhamento','nav-sat','nav-previsao','nav-validacao','nav-controle']
+    .forEach(id=>{ document.getElementById(id).style.display = 'none'; });
+  document.getElementById('nav-chuva').style.display = '';
+  document.getElementById('categoria-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = '';
+  irParaChuva(null); // 1ª entrada: cria o iframe no mapa; depois mantém o módulo onde estava
+  enviarFazendaChuva();
 }
 function descarregarChuva(){
   if(chuvaFrame){
@@ -4712,8 +4747,18 @@ function descarregarChuva(){
   }
   chuvaFrame = null;
   chuvaCarregado = false;
+  chuvaVista = 'mapa';
 }
 document.getElementById('sb-fazenda').addEventListener('change', enviarFazendaChuva);
+window.addEventListener('message', ev=>{
+  if(ev.origin !== location.origin) return;
+  if(!chuvaFrame || ev.source !== chuvaFrame.contentWindow) return;
+  const d = ev.data;
+  if(!d || typeof d !== 'object' || d.tipo !== 'chuva-rota' || !CHUVA_VISTAS.includes(d.vista)) return;
+  // o módulo trocou de tela pelas abas dele: o menu acompanha
+  chuvaVista = d.vista;
+  if(document.querySelector('.page.active')?.dataset.page === 'chuva') destacarBotaoChuva();
+});
 
 /* =====================================================================
    PREVISÃO DO TEMPO — módulo num iframe da mesma origem
@@ -4760,6 +4805,7 @@ function entrarPrevisao(){
   document.getElementById('nav-previsao').style.display = '';
   document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('nav-controle').style.display = 'none';
+  document.getElementById('nav-chuva').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaPrevisao(); // 1ª entrada: cria o iframe; depois mantém o mapa onde estava
@@ -4921,7 +4967,7 @@ function irParaControle(vista){
 function entrarControle(){
   if(!podeCategoria('controle')){ mostrarCategoriaScreen(); return; }
   categoriaAtual = 'controle';
-  ['nav-algodao','nav-mecanizadas','nav-administracao','nav-mapas','nav-acompanhamento','nav-sat','nav-previsao','nav-validacao']
+  ['nav-algodao','nav-mecanizadas','nav-administracao','nav-mapas','nav-acompanhamento','nav-sat','nav-previsao','nav-chuva','nav-validacao']
     .forEach(id=>{ document.getElementById(id).style.display = 'none'; });
   document.getElementById('nav-controle').style.display = '';
   document.getElementById('categoria-screen').style.display = 'none';
@@ -5031,6 +5077,7 @@ function entrarSat(rota){
   document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('nav-controle').style.display = 'none';
+  document.getElementById('nav-chuva').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaSat(typeof rota === 'string' ? rota : null); // sem rota: mantém o módulo onde estava
@@ -5346,6 +5393,7 @@ function entrarAlgodao(){
   document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('nav-controle').style.display = 'none';
+  document.getElementById('nav-chuva').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('relatorio');
@@ -5362,6 +5410,7 @@ function entrarMecanizadas(){
   document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('nav-controle').style.display = 'none';
+  document.getElementById('nav-chuva').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('importar-mecanizadas');
@@ -5378,6 +5427,7 @@ function entrarAdministracao(){
   document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('nav-controle').style.display = 'none';
+  document.getElementById('nav-chuva').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irPara('usuarios');
@@ -5394,6 +5444,7 @@ function entrarMapas(){
   document.getElementById('nav-previsao').style.display = 'none';
   document.getElementById('nav-validacao').style.display = 'none';
   document.getElementById('nav-controle').style.display = 'none';
+  document.getElementById('nav-chuva').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
   irParaMapas(null); // 1ª entrada: cria o iframe na rota inicial; depois mantém o módulo onde estava
@@ -5406,6 +5457,7 @@ document.getElementById('card-mapas').addEventListener('click', entrarMapas);
 document.getElementById('card-acompanhamento').addEventListener('click', entrarAcompanhamento);
 document.getElementById('card-sat').addEventListener('click', ()=>entrarSat());
 document.getElementById('card-previsao').addEventListener('click', entrarPrevisao);
+document.getElementById('card-chuva').addEventListener('click', entrarChuva);
 document.getElementById('card-validacao').addEventListener('click', entrarValidacao);
 document.getElementById('card-controle').addEventListener('click', entrarControle);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
@@ -5437,6 +5489,7 @@ async function sair(){
   descarregarAcomp();
   descarregarSat();
   descarregarPrevisao();
+  descarregarChuva();
   descarregarValidacao();
   descarregarControle();
   if(canalRealtime){ sb.removeChannel(canalRealtime); canalRealtime = null; }
@@ -5517,7 +5570,7 @@ function renderTudo(){
   else { mostrarTelaLogin(); }
 })();
 sb.auth.onAuthStateChange((event)=>{
-  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = null; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); descarregarValidacao(); descarregarControle(); mostrarTelaLogin(); }
+  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = null; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); descarregarChuva(); descarregarValidacao(); descarregarControle(); mostrarTelaLogin(); }
 });
 
 </script>

@@ -154,6 +154,11 @@ button.resumo-item:hover { border-color: #AAB8AE; }
 .tabela-rolagem { overflow: auto; flex: 1 1 auto; min-height: 0; }
 .tabela { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .tabela th { position: sticky; top: 0; z-index: 2; background: #F6F8F5; text-align: left; font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--texto-suave); padding: 8px 10px; border-bottom: 1px solid var(--linha); white-space: nowrap; }
+/* a tabela por talhão cabe na largura do quadro: os títulos quebram em duas linhas em vez de criar rolagem de lado */
+#tab-talhoes { overflow-x: hidden; }
+#tab-talhoes .tabela th { white-space: normal; line-height: 1.25; vertical-align: bottom; }
+#tab-talhoes .tabela th, #tab-talhoes .tabela td { padding-left: 8px; padding-right: 8px; }
+#tab-talhoes .tabela th:last-child, #tab-talhoes .tabela td:last-child { padding-right: 14px; }
 .tabela th.n, .tabela td.n { text-align: right; font-variant-numeric: tabular-nums; }
 .tabela th button { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
 .tabela th button:hover { color: var(--verde-escuro); }

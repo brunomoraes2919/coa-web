@@ -1,10 +1,11 @@
 /* =====================================================================
-   Chuva por talhão — módulo do COA WEB (categoria Mapas)
+   Chuva por talhão — módulo do COA WEB (categoria própria)
    Mapa da fazenda pintado pela chuva de cada talhão, com a tabela ao lado: clicar no talhão destaca a linha
    e aproxima o mapa; clicar na linha aproxima o talhão. A chuva de cada talhão vem pronta da ZEUS (tabela
    stg_field_data, a base do relatório Power BI), gravada pelo servidor em chuva_talhao junto com os ciclos
    do PIMS; os limites vêm do cadastro do Mapas (mapas_talhoes e mapas_areas_cultura).
-   - COA → módulo: { tipo:'coa-fazenda', id, nome }
+   - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'chuva-vista', vista }
+   - módulo → COA: { tipo:'chuva-rota', vista }
 ===================================================================== */
 (function () {
   'use strict';
@@ -602,6 +603,10 @@
 
   /* ------------------------------ telas e filtros ------------------------------ */
   function mostrarVista(v) {
+    if (v !== estado.vista && EMBED && window.parent !== window) {
+      // o menu do COA WEB acompanha a tela escolhida nas abas
+      try { window.parent.postMessage({ tipo: 'chuva-rota', vista: v }, location.origin); } catch (e) { /* fora do COA WEB */ }
+    }
     estado.vista = v;
     document.querySelectorAll('#abas button').forEach((b) => b.setAttribute('aria-selected', b.getAttribute('data-vista') === v ? 'true' : 'false'));
     ['mapa', 'diario', 'pics'].forEach((x) => { $('vista-' + x).hidden = x !== v || !atual; });
@@ -775,7 +780,9 @@
   }
 
   window.addEventListener('message', (ev) => {
-    if (ev.origin !== location.origin || !ev.data || ev.data.tipo !== 'coa-fazenda') return;
+    if (ev.origin !== location.origin || !ev.data) return;
+    if (ev.data.tipo === 'chuva-vista' && ['mapa', 'diario', 'pics'].indexOf(ev.data.vista) >= 0) { mostrarVista(ev.data.vista); return; }
+    if (ev.data.tipo !== 'coa-fazenda') return;
     coaFazenda = { id: ev.data.id, nome: ev.data.nome };
     if (!fazendas.length) return;
     const f = fazendaDoCoa(coaFazenda);

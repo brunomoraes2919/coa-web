@@ -1,6 +1,6 @@
 # Chuva por talhão
 
-Página da categoria **Mapas** do COA WEB (`chuva/`, sem build: HTML, CSS e JS puros). Mostra a chuva da
+Categoria **Chuva por talhão** do COA WEB (`chuva/`, sem build: HTML, CSS e JS puros). Mostra a chuva da
 ZEUS em cada talhão: mapa da fazenda pintado pela chuva do período, tabela por talhão ao lado (clicar no
 talhão destaca a linha e aproxima o mapa; clicar na linha aproxima o talhão), detalhe dia a dia do talhão
 escolhido, grade "Dia a dia" (talhão × dia) e a chuva medida em cada pluviômetro.
@@ -38,11 +38,12 @@ só para comparar: a chuva dos talhões não sai dali.
 | Leitura da ZEUS e do PIMS | `modulos/mapas/scripts/sincronizar-plantio.mjs` (`sincronizarChuvaTalhao`) |
 | Atualização a cada 30 min | `modulos/mapas/scripts/atender-pedidos.mjs` (`atualizarChuvaTalhao`), no servidor do Google Cloud |
 | Tabela `chuva_talhao` | `supabase/0013_chuva_talhao.sql` e `supabase/0014_chuva_talhao_field_data.sql` |
+| Categoria `chuva` | `supabase/0015_categoria_chuva.sql` |
 | Limites dos talhões | cadastro do Mapas: `mapas_talhoes` (todos) e `mapas_areas_cultura` (por safra) |
 
 A tabela guarda, por fazenda, a chuva diária de cada talhão desde 1º de setembro de duas safras atrás, os
 dias que a ZEUS tem, os ciclos e a chuva dos pluviômetros; as somas são feitas no navegador. Quem vê: quem
-tem a categoria Mapas e a fazenda liberada (mesma regra das outras páginas).
+tem a categoria Chuva por talhão (chave `chuva`, liberada na página Usuários) e a fazenda liberada.
 
 ## Testar no computador
 
