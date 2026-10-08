@@ -17,6 +17,9 @@
   const NS = 'http://www.w3.org/2000/svg';
   /* no "Dia a dia", no máximo estes dias (os mais recentes do período) */
   const MAX_DIAS_GRADE = 45;
+  /* ícone do pluviômetro (o mesmo arquivo no mapa, na legenda e nas abas) e o tamanho dele no mapa, em pixels */
+  const ICONE_PIC = 'pluviometro.png?v=1';
+  const ICONE_PIC_PX = 21;
   /* o gráfico do talhão mostra pelo menos estes dias, para a chuva do período ter contexto */
   const DIAS_GRAFICO = 30;
 
@@ -144,6 +147,14 @@
     svg.setAttribute('viewBox', vb.x.toFixed(1) + ' ' + vb.y.toFixed(1) + ' ' + vb.w.toFixed(1) + ' ' + vb.h.toFixed(1));
     const mpp = vb.w / tela().largura;
     $('g-rotulos').setAttribute('font-size', (11.5 * mpp).toFixed(2));
+    const lado = ICONE_PIC_PX * mpp;
+    (atual && atual.pics ? atual.pics : []).forEach((p) => {
+      if (!p.icone) return;
+      p.icone.setAttribute('x', (p.xy[0] - lado / 2).toFixed(1));
+      p.icone.setAttribute('y', (p.xy[1] - lado / 2).toFixed(1));
+      p.icone.setAttribute('width', lado.toFixed(1));
+      p.icone.setAttribute('height', lado.toFixed(1));
+    });
     // o rótulo só aparece quando cabe no talhão (o escolhido aparece sempre)
     (atual ? atual.talhoes : []).forEach((t, i) => {
       if (!t.rotulo) return;
@@ -283,7 +294,7 @@
         (l.foraDoCiclo ? '<br><i>Fora do ciclo escolhido</i>' : '');
     } else {
       const p = atual.pics[Number(alvo.getAttribute('data-p'))];
-      html = '<b>' + esc(p.nome) + '</b>' + (p.nomeZeus && p.nomeZeus !== p.nome ? esc(p.nomeZeus) + '<br>' : '') +
+      html = '<b><img class="icone-pic" src="' + ICONE_PIC + '" alt="">' + esc(p.nome) + '</b>' + (p.nomeZeus && p.nomeZeus !== p.nome ? esc(p.nomeZeus) + '<br>' : '') +
         'Chuva medida no período: <span class="num">' + (p.total === null ? 'sem leitura' : L.fmtMm(p.total) + ' mm') + '</span><br>' +
         'Última leitura: <span class="num">' + esc(L.fmtLeitura(p.ul)) + '</span>';
     }
@@ -346,12 +357,15 @@
       if (p.lat === null || p.lon === null) return;
       const c = atual.proj(p.lon, p.lat);
       const d = 'M' + c[0].toFixed(1) + ' ' + c[1].toFixed(1) + 'h.01';
+      // uma placa branca redonda (o aro fica vermelho quando o pluviômetro está atrasado ou sem leitura) e o ícone em cima
       const aro = document.createElementNS(NS, 'path');
-      aro.setAttribute('d', d); aro.setAttribute('class', 'pic-aro');
+      aro.setAttribute('d', d); aro.setAttribute('class', 'pic-aro ' + p.situacao);
       const ponto = document.createElementNS(NS, 'path');
-      ponto.setAttribute('d', d); ponto.setAttribute('class', 'pic ' + p.situacao); ponto.setAttribute('data-p', p.i);
-      gp.appendChild(aro); gp.appendChild(ponto);
-      p.ponto = ponto;
+      ponto.setAttribute('d', d); ponto.setAttribute('class', 'pic'); ponto.setAttribute('data-p', p.i);
+      const icone = document.createElementNS(NS, 'image');
+      icone.setAttribute('href', ICONE_PIC); icone.setAttribute('class', 'pic-icone');
+      gp.appendChild(aro); gp.appendChild(ponto); gp.appendChild(icone);
+      p.ponto = ponto; p.icone = icone; p.xy = c;
     });
     gp.setAttribute('class', estado.pics ? '' : 'fora');
     desenharLigacoes();
@@ -375,7 +389,8 @@
       (seca ? faixasHtml(L.CORES_SECA, L.rotulosClasses(L.LIMITES_SECA, true)) : faixasHtml(atual.escala.cores, atual.escala.rotulos)) +
       '<div class="legenda-nota">' +
         (semDado || fora ? '<span><i class="cinza"></i>' + [semDado ? 'sem dado na ZEUS' : '', fora ? 'fora do ciclo' : ''].filter(Boolean).join(' ou ') + '</span>' : '') +
-        (estado.pics && atual.pics.length ? '<span><i class="bola"></i>pluviômetro (chuva medida)</span>' : '') +
+        (estado.pics && atual.pics.length ? '<span><img class="icone-pic" src="' + ICONE_PIC + '" alt="">pluviômetro (chuva medida)' +
+          (atual.pics.some((p) => p.situacao !== 'ok') ? ' · aro vermelho: atrasado ou sem leitura' : '') + '</span>' : '') +
       '</div>';
   }
 
@@ -591,7 +606,7 @@
     const lista = (cods) => cods.slice().sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).map(esc).join(', ');
     $('tab-pics').innerHTML = '<table class="tabela"><thead><tr><th>Pluviômetro</th><th class="n">Chuva (mm)</th><th class="n">Dias c/ chuva</th><th>Última leitura</th><th>Situação</th>' +
       '<th class="n">Dias sem leitura</th><th>Talhões ligados no cadastro da ZEUS</th></tr></thead><tbody>' +
-      pics.map((p) => '<tr><td><span class="cod">' + esc(p.nome) + '</span>' + (p.nomeZeus && p.nomeZeus !== p.nome ? '<span class="pic-da-linha">' + esc(p.nomeZeus) + '</span>' : '') + '</td>' +
+      pics.map((p) => '<tr><td><span class="cod"><img class="icone-pic" src="' + ICONE_PIC + '" alt="">' + esc(p.nome) + '</span>' + (p.nomeZeus && p.nomeZeus !== p.nome ? '<span class="pic-da-linha">' + esc(p.nomeZeus) + '</span>' : '') + '</td>' +
         '<td class="n">' + (p.total === null ? '<span class="fraco">—</span>' : '<b>' + L.fmtMm(p.total) + '</b>') + '</td>' +
         '<td class="n">' + (p.total === null ? '<span class="fraco">—</span>' : p.diasChuva) + '</td>' +
         '<td>' + esc(L.fmtLeitura(p.ul)) + '</td>' +

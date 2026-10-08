@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610081700">
+<link rel="stylesheet" href="estilo.css?v=202610081800">
 <script src="config.js?v=202610081500"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
@@ -37,7 +37,7 @@
     <nav class="abas" id="abas" role="tablist" aria-label="Telas da chuva por talhão">
       <button role="tab" data-vista="mapa" aria-selected="true">Mapa e tabela</button>
       <button role="tab" data-vista="diario" aria-selected="false">Dia a dia</button>
-      <button role="tab" data-vista="pics" aria-selected="false">Pluviômetros <span class="conta" id="conta-pics"></span></button>
+      <button role="tab" data-vista="pics" aria-selected="false"><img class="icone-pic" src="pluviometro.png?v=1" alt="">Pluviômetros <span class="conta" id="conta-pics"></span></button>
     </nav>
   </header>
 
@@ -55,7 +55,7 @@
             <button type="button" data-modo="seca" aria-pressed="false">Dias sem chuva</button>
           </div>
           <span class="periodo-texto" id="periodo-texto" title="Período das contas: termina no último dia com leitura da ZEUS"></span>
-          <label class="chave"><input type="checkbox" id="chk-pics" checked><span>Pluviômetros</span></label>
+          <label class="chave"><input type="checkbox" id="chk-pics" checked><span><img class="icone-pic" src="pluviometro.png?v=1" alt="">Pluviômetros</span></label>
         </header>
         <div class="mapa-caixa" id="mapa-caixa">
           <svg id="mapa" role="img" aria-label="Mapa da fazenda com a chuva de cada talhão">
@@ -107,6 +107,6 @@
 </div>
 
 <div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Carregando as ordens</span><i>.</i><i>.</i><i>.</i></p></div></div>
-<script src="app.js?v=202610081700"></script>
+<script src="app.js?v=202610081800"></script>
 </body>
 </html>
