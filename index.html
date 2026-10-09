@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://pkaxbitsqxjxjlwnhjhd.supabase.co">
 <!-- planilhas, imagem e PDF só são usados em exportar/importar: carregam sem segurar a tela (defer); aguardarBiblioteca() espera se for cedo demais -->
+<script src="assets/curiosidades.js?v=202610091600"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz" crossorigin="anonymous"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
@@ -239,12 +240,29 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 @media (max-width:560px){ .categoria-assinatura img{height:13px;} }
 .categoria-conteudo{
   width:min(1040px,100%);display:grid;grid-template-columns:1fr auto;align-items:center;
-  grid-template-areas:"logo user" "titulo titulo" "cards cards" "vazia vazia";row-gap:0;
+  grid-template-areas:"logo user" "titulo titulo" "curio curio" "secao secao" "cards cards" "vazia vazia";row-gap:0;
 }
 .categoria-logo{grid-area:logo;width:104px;height:auto;display:block;}
 .categoria-rodape{grid-area:user;display:flex;align-items:center;gap:14px;color:#9FB8AF;font-size:13px;}
-.categoria-titulo{grid-area:titulo;color:#fff;font-size:24px;font-weight:600;margin:56px 0 24px;letter-spacing:-.01em;}
-.categoria-titulo small{display:block;margin-top:6px;font-size:14px;font-weight:400;color:#9FB8AF;}
+.categoria-titulo{grid-area:titulo;color:#fff;font-size:28px;font-weight:600;margin:52px 0 20px;letter-spacing:-.015em;}
+.categoria-titulo small{display:block;margin-top:6px;font-size:15px;font-weight:400;letter-spacing:0;color:#B9CDC5;}
+/* boas-vindas: a curiosidade do dia fica entre a saudação e os módulos (mostrarBoasVindas) */
+.categoria-curiosidade{
+  grid-area:curio;display:grid;grid-template-columns:1fr auto;column-gap:18px;align-items:center;
+  margin:0 0 30px;padding:14px 16px 15px 18px;max-width:780px;
+  background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.11);border-radius:10px;backdrop-filter:blur(2px);
+}
+.categoria-curiosidade-rotulo{grid-column:1;font-size:11px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--dourado-claro);}
+.categoria-curiosidade-rotulo span{margin-left:10px;font-weight:500;letter-spacing:.03em;text-transform:none;color:#9FB8AF;}
+.categoria-curiosidade p{grid-column:1;margin:6px 0 0;font-size:14.5px;line-height:1.5;color:#EAF2EF;}
+.categoria-curiosidade button{
+  grid-column:2;grid-row:1 / span 2;background:none;border:1px solid rgba(255,255,255,.2);color:#C9DAD3;
+  font:inherit;font-size:12.5px;padding:7px 12px;border-radius:6px;cursor:pointer;white-space:nowrap;
+}
+.categoria-curiosidade button:hover{background:rgba(255,255,255,.08);}
+.categoria-curiosidade button:focus-visible{outline:2px solid var(--dourado-claro);outline-offset:2px;}
+.categoria-secao{grid-area:secao;margin:0 0 12px;font-size:14px;font-weight:600;color:#EAF2EF;}
+.categoria-secao small{margin-left:10px;font-size:13px;font-weight:400;color:#9FB8AF;}
 .categoria-cards{grid-area:cards;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
 .categoria-card{
   display:grid;grid-template-columns:44px 1fr;column-gap:14px;align-items:center;text-align:left;
@@ -667,7 +685,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .categoria-conteudo{margin:0 auto;}
 @media (max-width:560px){
   .categoria-logo{width:84px;}
-  .categoria-titulo{font-size:20px;margin:32px 0 16px;}
+  .categoria-titulo{font-size:22px;margin:30px 0 16px;}
+  .categoria-curiosidade{grid-template-columns:1fr;margin-bottom:24px;padding:13px 14px;}
+  .categoria-curiosidade button{grid-column:1;grid-row:auto;justify-self:start;margin-top:10px;}
+  .categoria-secao small{display:block;margin:3px 0 0;}
   .categoria-cards{grid-template-columns:1fr;gap:10px;}
   .categoria-card{padding:14px 14px;min-height:0;}
   .categoria-card span{font-size:14px;}
@@ -917,7 +938,13 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   <div class="categoria-assinatura"><span>By:</span><img src="assets/locks-agtech-lab.png" alt="Locks AgTech Lab"><span class="categoria-assinatura-breve">Em breve</span></div>
   <div class="categoria-conteudo">
     <img class="categoria-logo" src="assets/logo-coa-web.png" alt="COA Web">
-    <h1 class="categoria-titulo">Por onde você quer começar?<small>Cada módulo abre com a fazenda escolhida no menu lateral.</small></h1>
+    <h1 class="categoria-titulo"><span id="categoria-saudacao">Olá</span><small id="categoria-saudacao-msg"></small></h1>
+    <aside class="categoria-curiosidade" id="categoria-curiosidade" style="display:none" aria-live="polite">
+      <div class="categoria-curiosidade-rotulo">Você sabia?<span id="categoria-curiosidade-tema"></span></div>
+      <p id="categoria-curiosidade-texto"></p>
+      <button type="button" id="btn-outra-curiosidade">Outra curiosidade</button>
+    </aside>
+    <h2 class="categoria-secao">Por onde você quer começar?<small>Cada módulo abre com a fazenda escolhida no menu lateral.</small></h2>
     <div class="categoria-cards">
       <button class="categoria-card" id="card-algodao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.3 12.6A3.3 3.3 0 0 1 5.6 6.9 3.4 3.4 0 0 1 12 4.6a3.4 3.4 0 0 1 6.4 2.3 3.3 3.3 0 0 1-1.7 5.7"/><path d="M12 14.6c-1.5-2.2-4.6-3-8-1.6 1.1 3.3 4.2 4.7 8 3.6 3.8 1.1 6.9-.3 8-3.6-3.4-1.4-6.5-.6-8 1.6Z"/><path d="M12 16.6v4.9"/></svg>
@@ -5400,11 +5427,91 @@ function montarFundoCategorias(){
     + '<rect width="1440" height="900" fill="url(#cat-luz)"/><g class="cat-curvas">'+curvas+'</g><g class="cat-talhoes">'+poligonos+'</g>'
     + camada + '<g class="cat-estacoes">'+estacoes+'</g>';
 }
+/* ---------- boas-vindas da tela inicial: saudação pela hora do dia e uma curiosidade ---------- */
+const SAUDACOES = {
+  manha: { cumprimento: 'Bom dia', mensagens: [
+    'Que a operação de hoje comece bem.',
+    'Um bom começo de turno para você.',
+    'Dia novo no campo. Bom trabalho.',
+    'Hora de ver como a noite deixou a operação.',
+    'Café tomado, máquinas no campo. Bom trabalho.',
+    'Que o tempo ajude e o dia renda.'
+  ]},
+  tarde: { cumprimento: 'Boa tarde', mensagens: [
+    'Como está o andamento do dia?',
+    'Boa continuação de turno.',
+    'Metade do dia feita. Boa reta da tarde.',
+    'Hora boa para conferir as metas do dia.',
+    'Que a tarde renda no campo.',
+    'Seguimos de olho na operação.'
+  ]},
+  noite: { cumprimento: 'Boa noite', mensagens: [
+    'Bom turno da noite.',
+    'A operação não para. Obrigado por estar de olho.',
+    'Fechando o dia? Confira o andamento antes de sair.',
+    'Que a noite seja tranquila no campo.',
+    'Turno da noite também faz a safra.',
+    'Bom descanso quando o turno acabar.'
+  ]}
+};
+// manhã: das 5h ao meio-dia; tarde: até as 18h; o resto é noite (hora do aparelho de quem está usando)
+function periodoDoDia(agora){
+  const h = agora.getHours();
+  return h >= 5 && h < 12 ? 'manha' : (h >= 12 && h < 18 ? 'tarde' : 'noite');
+}
+/* Primeiro nome para a saudação. O nome do perfil pode ser "Bruno Moraes", "BRUNO" ou o começo do e-mail
+   ("bruno.moraes"): fica só o primeiro pedaço, com a inicial maiúscula. */
+function primeiroNome(nome){
+  const p = String(nome == null ? '' : nome).trim().split(/[\s._-]+/)[0] || '';
+  if(!p) return '';
+  const resto = (p === p.toLocaleUpperCase('pt-BR') || p === p.toLocaleLowerCase('pt-BR')) ? p.slice(1).toLocaleLowerCase('pt-BR') : p.slice(1);
+  return p.charAt(0).toLocaleUpperCase('pt-BR') + resto;
+}
+const TEMAS_CURIOSIDADE = {
+  precisao: 'Agricultura de precisão', digital: 'Agricultura digital', centros: 'Centros de operações',
+  brasil: 'Brasil', campo: 'No campo'
+};
+/* A próxima curiosidade de uma fila embaralhada, guardada neste navegador: a pessoa vê todas antes de alguma
+   repetir. Sem armazenamento (modo privado), ou com a lista trocada por outra de tamanho diferente, sorteia de novo. */
+function proximaCuriosidade(){
+  const lista = Array.isArray(window.COA_CURIOSIDADES) ? window.COA_CURIOSIDADES : [];
+  if(!lista.length) return null;
+  const CHAVE = 'coa.curiosidades.fila';
+  let fila = [];
+  try{ fila = JSON.parse(localStorage.getItem(CHAVE) || '[]'); }catch(e){ fila = []; }
+  fila = Array.isArray(fila) ? fila.filter(i=>Number.isInteger(i) && i >= 0 && i < lista.length) : [];
+  if(!fila.length){
+    fila = lista.map((_, i)=>i);
+    for(let i = fila.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [fila[i], fila[j]] = [fila[j], fila[i]];
+    }
+  }
+  const escolhida = lista[fila.shift()];
+  try{ localStorage.setItem(CHAVE, JSON.stringify(fila)); }catch(e){ /* sem armazenamento */ }
+  return escolhida;
+}
+function mostrarCuriosidade(){
+  const caixa = document.getElementById('categoria-curiosidade');
+  const c = proximaCuriosidade();
+  if(!c || !c.texto){ caixa.style.display = 'none'; return; }
+  document.getElementById('categoria-curiosidade-tema').textContent = TEMAS_CURIOSIDADE[c.tema] || '';
+  document.getElementById('categoria-curiosidade-texto').textContent = c.texto;
+  caixa.style.display = '';
+}
+function mostrarBoasVindas(){
+  const s = SAUDACOES[periodoDoDia(new Date())];
+  const nome = sessao ? primeiroNome(sessao.nome) : '';
+  document.getElementById('categoria-saudacao').textContent = nome ? `${s.cumprimento}, ${nome}` : s.cumprimento;
+  document.getElementById('categoria-saudacao-msg').textContent = s.mensagens[Math.floor(Math.random() * s.mensagens.length)];
+  mostrarCuriosidade();
+}
 function mostrarCategoriaScreen(){
   coaLoader.esconder();
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('categoria-screen').style.display = 'flex';
   montarFundoCategorias();
+  mostrarBoasVindas();
   const cardAdministracao = document.getElementById('card-administracao');
   if(cardAdministracao) cardAdministracao.style.display = sessao && sessao.perfil==='admin' ? '' : 'none';
   // só os cards das categorias liberadas para o usuário
@@ -5503,6 +5610,7 @@ document.getElementById('card-chuva').addEventListener('click', entrarChuva);
 document.getElementById('card-validacao').addEventListener('click', entrarValidacao);
 document.getElementById('card-controle').addEventListener('click', entrarControle);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
+document.getElementById('btn-outra-curiosidade').addEventListener('click', mostrarCuriosidade);
 
 async function tentarLogin(){
   const email = document.getElementById('login-usuario').value.trim();
