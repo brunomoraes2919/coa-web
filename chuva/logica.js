@@ -63,19 +63,25 @@
 
   /**
    * Talhão dividido: no PIMS e nos limites o 019 pode virar 019A e 019B, mas continua o mesmo talhão.
-   * Devolve o código sem a letra da divisão ('019A' → '019'). Só vale número + UMA letra: '019PESQ', '01PIVO'
-   * e 'M1A' são outros talhões e ficam como estão.
+   * Devolve o código sem a letra da divisão ('019A' → '019'). Só vale número + UMA letra: '019PESQ' e 'M1A'
+   * são outros talhões e ficam como estão.
+   * Pivô: '01PIVO' é o pivô inteiro e '1PIVA', '1PIVB' ou '001PIVA' são pedaços dele (cada cadastro escreve o
+   * número com uma quantidade de zeros): todos viram '1PIVO'. O talhão '001' não é o pivô 01.
    */
   function talhaoBase(codigo) {
     var c = String(codigo === null || codigo === undefined ? '' : codigo).trim().toUpperCase();
     var m = /^(\d+)[A-Z]$/.exec(c);
-    return m ? m[1] : c;
+    if (m) return m[1];
+    m = /^0*(\d+)PIV[A-Z]$/.exec(c);
+    return m ? m[1] + 'PIVO' : c;
   }
+  /** O código é o do talhão (ou pivô) inteiro, e não o de um pedaço dele? */
+  function talhaoInteiro(codigo) { return /^\d+(PIVO)?$/.test(String(codigo).trim().toUpperCase()); }
 
   /**
    * A chuva de cada família de talhões ({ base: { serie, de: [códigos] } }): todos os pedaços mostram a do
-   * talhão sem letra. Se a tabela da ZEUS não tem o talhão sem letra, vale a média, dia a dia, dos pedaços que
-   * ela tem (dia sem dado em todos continua sem dado).
+   * talhão inteiro (o sem letra; no pivô, o PIVO). Se a tabela da ZEUS não tem o inteiro, vale a média, dia a
+   * dia, dos pedaços que ela tem (dia sem dado em todos continua sem dado).
    */
   function chuvaDasFamilias(talhoes, dias) {
     var grupos = {};
@@ -83,7 +89,7 @@
     var familias = {};
     Object.keys(grupos).forEach(function (b) {
       var codigos = grupos[b].sort();
-      var inteiro = codigos.filter(function (c) { return c.trim().toUpperCase() === b; })[0];
+      var inteiro = codigos.filter(talhaoInteiro)[0];
       if (inteiro !== undefined || codigos.length === 1) {
         var dono = inteiro !== undefined ? inteiro : codigos[0];
         familias[b] = { serie: talhoes[dono], de: [dono] };

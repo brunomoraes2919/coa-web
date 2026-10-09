@@ -253,7 +253,32 @@ test('talhaoBase: número + uma letra é divisão do talhão; outros finais são
   assert.equal(L.talhaoBase('019A'), '019')
   assert.equal(L.talhaoBase(' 019b '), '019')
   assert.equal(L.talhaoBase('019'), '019')
-  for (const c of ['019PESQ', '019AB', '01PIVO', 'M1A', 'P14', '032PQ', '']) assert.equal(L.talhaoBase(c), c)
+  for (const c of ['019PESQ', '019AB', 'M1A', 'P14', '032PQ', '']) assert.equal(L.talhaoBase(c), c)
+  // pivô: 01PIVO é o pivô inteiro; 1PIVA, 1PIVB e 001PIVA são pedaços dele (o número vale sem os zeros)
+  for (const c of ['01PIVO', '1PIVA', '1pivb', '001PIVA', '001PIVO']) assert.equal(L.talhaoBase(c), '1PIVO')
+  assert.equal(L.talhaoBase('02PIVO'), '2PIVO')
+  assert.notEqual(L.talhaoBase('001'), L.talhaoBase('01PIVO')) // o talhão 001 não é o pivô 01
+})
+
+test('pivô dividido: 001PIVA e 1PIVB mostram a chuva do 01PIVO; sem o pivô inteiro, a média dos pedaços', () => {
+  const f = L.prepararFazenda({
+    unidade: 'TESTE', inicio: '2026-09-01', dias: 3, lidos: '0-2',
+    talhoes: {
+      '01PIVO': { de: 0, ate: 2, d: '0:20.5' }, '001': { de: 0, ate: 2, d: '0:3' },
+      '02PIVO': { de: 0, ate: 2, d: '1:19.1' }, '2PIVA': { de: 0, ate: 2, d: '1:40' },
+      '3PIVA': { de: 0, ate: 2, d: '2:10' }, '3PIVB': { de: 0, ate: 2, d: '2:20' },
+    },
+    ciclos: [{ s: 'SAFRA 2026/2027', p: 'SOJA 26/27', de: '2026-09-01', ate: '2027-08-31', t: ['1PIVA', '1PIVB'] }], pics: [], vinculos: {},
+  })
+  const codigos = ['01PIVO', '001PIVA', '1PIVB', '001', '02PIVO', '002PIVA', '003PIVA', '04PIVO']
+  const linhas = L.linhasDosTalhoes(codigos.map(c => ({ codigo: c, nome: c, area: 10 })), f, L.periodo('livre', f, '2026-09-01', '2026-09-03'))
+  assert.deepEqual(linhas.map(l => [l.codigo, l.total, l.chuvaDe]), [
+    ['01PIVO', 20.5, null], ['001PIVA', 20.5, ['01PIVO']], ['1PIVB', 20.5, ['01PIVO']], ['001', 3, null],
+    ['02PIVO', 19.1, null], ['002PIVA', 19.1, ['02PIVO']], ['003PIVA', 15, ['3PIVA', '3PIVB']], ['04PIVO', null, null],
+  ])
+  // no ciclo estão só os pedaços 1PIVA e 1PIVB: o limite 01PIVO também é do ciclo
+  const noCiclo = L.linhasDosTalhoes(codigos.map(c => ({ codigo: c, nome: c, area: 10 })), f, L.periodo('ciclo:0', f))
+  assert.deepEqual(noCiclo.filter(l => !l.foraDoCiclo).map(l => l.codigo), ['01PIVO', '001PIVA', '1PIVB'])
 })
 
 test('talhão dividido: 019, 019A e 019B mostram a mesma chuva, a do talhão sem letra', () => {

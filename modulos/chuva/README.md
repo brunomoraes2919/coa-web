@@ -31,7 +31,9 @@ sem receber dado, a página avisa no topo desde quando. Dia que a tabela não te
 o mesmo talhão: todos os pedaços mostram a mesma chuva, a do talhão sem letra, mesmo quando a tabela tem valor
 próprio para um pedaço (aí o número deixa de bater com o do relatório para esse pedaço). Se a tabela não tem o
 talhão sem letra, vale a média, dia a dia, dos pedaços que ela tem. No período por ciclo, o pedaço entra se
-algum da família estiver no ciclo. Outros finais (`019PESQ`, `032PQ`, `01PIVO`) são outro talhão. A regra fica
+algum da família estiver no ciclo. Com os **pivôs** é igual: `01PIVO` é o pivô inteiro e `1PIVA`, `1PIVB` ou
+`001PIVA` são pedaços dele (o número vale sem os zeros à esquerda); todos mostram a chuva do `01PIVO`. O talhão
+`001` não é o pivô 01. Outros finais (`019PESQ`, `032PQ`) são outro talhão. A regra fica
 na tela (`talhaoBase` e `chuvaDasFamilias` em `chuva/logica.js`); o que o servidor grava não muda.
 
 A aba **Pluviômetros** e os pontos no mapa mostram a chuva medida em cada estação (telemetria da ZEUS),
