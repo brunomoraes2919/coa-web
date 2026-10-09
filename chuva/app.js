@@ -293,6 +293,13 @@
   }
 
   /* ------------------------------ mapa: dica ao passar o mouse ------------------------------ */
+  /** De onde vem a chuva do pedaço de um talhão dividido ('' = é a do próprio talhão). Já vem escapado. */
+  function textoChuvaDe(l) {
+    if (!l.chuvaDe) return '';
+    const nomes = l.chuvaDe.map(esc);
+    return nomes.length === 1 ? 'chuva do talhão ' + nomes[0] + ' (talhão dividido)'
+      : 'média dos talhões ' + nomes.slice(0, -1).join(', ') + ' e ' + nomes[nomes.length - 1] + ' (talhão dividido)';
+  }
   function mostrarDica(ev) {
     if (!atual || ev.pointerType === 'touch') return;
     const alvo = ev.target.closest ? ev.target.closest('[data-i],[data-p]') : null;
@@ -304,6 +311,7 @@
         (l.semDado ? 'Sem dado: o talhão não está na tabela de chuva por talhão da ZEUS.'
           : 'Chuva no período: <span class="num">' + (l.total === null ? 'sem dado' : L.fmtMm(l.total) + ' mm') + '</span><br>' +
             (l.ultima ? 'Última chuva: <span class="num">' + L.fmtDia(L.somarDias(atual.faz.inicio, l.ultima.i)) + ' · ' + L.fmtMm(l.ultima.mm) + ' mm</span> (' + textoDiasSem(l.diasSem) + ')' : 'Sem chuva de 1 mm ou mais na janela')) +
+        (l.chuvaDe ? '<br><i>' + textoChuvaDe(l).replace(/^./, (c) => c.toUpperCase()) + '</i>' : '') +
         (l.foraDoCiclo ? '<br><i>Fora do ciclo escolhido</i>' : '');
     } else {
       const p = atual.pics[Number(alvo.getAttribute('data-p'))];
@@ -522,7 +530,7 @@
     caixa.hidden = false;
     caixa.innerHTML =
       '<div class="detalhe-cab"><div><h2>Talhão ' + esc(l.nome) + '</h2>' +
-        '<p>' + [l.area ? L.fmtMm(l.area, 0) + ' ha' : '', l.semDado ? 'sem dado: o talhão não está na tabela de chuva por talhão da ZEUS' : 'chuva por talhão da ZEUS',
+        '<p>' + [l.area ? L.fmtMm(l.area, 0) + ' ha' : '', l.semDado ? 'sem dado: o talhão não está na tabela de chuva por talhão da ZEUS' : (l.chuvaDe ? textoChuvaDe(l) + ', da ZEUS' : 'chuva por talhão da ZEUS'),
           l.foraDoCiclo ? 'fora do ciclo escolhido' : ''].filter(Boolean).join(' · ') + '</p></div>' +
         '<button type="button" class="detalhe-fechar" id="detalhe-fechar" title="Fechar e ver a fazenda inteira" aria-label="Fechar">×</button></div>' +
       '<div class="detalhe-nums">' +

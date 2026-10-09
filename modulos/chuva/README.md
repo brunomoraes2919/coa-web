@@ -26,6 +26,14 @@ Os períodos terminam no **último dia que a tabela tem**, não em "hoje". Quand
 sem receber dado, a página avisa no topo desde quando. Dia que a tabela não tem aparece como "sem dado"
 (listrado no "Dia a dia"), não como zero. Talhão com limite no mapa mas fora da tabela fica em cinza.
 
+**Talhão dividido** (pedido de 09/10/2026): no PIMS e nos limites um talhão pode estar dividido (`019`, `019A`,
+`019B`), enquanto a tabela da ZEUS costuma ter só o `019`. Código com o mesmo número e **uma letra** no fim é
+o mesmo talhão: todos os pedaços mostram a mesma chuva, a do talhão sem letra, mesmo quando a tabela tem valor
+próprio para um pedaço (aí o número deixa de bater com o do relatório para esse pedaço). Se a tabela não tem o
+talhão sem letra, vale a média, dia a dia, dos pedaços que ela tem. No período por ciclo, o pedaço entra se
+algum da família estiver no ciclo. Outros finais (`019PESQ`, `032PQ`, `01PIVO`) são outro talhão. A regra fica
+na tela (`talhaoBase` e `chuvaDasFamilias` em `chuva/logica.js`); o que o servidor grava não muda.
+
 A aba **Pluviômetros** e os pontos no mapa mostram a chuva medida em cada estação (telemetria da ZEUS),
 só para comparar: a chuva dos talhões não sai dali.
 

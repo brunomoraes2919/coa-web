@@ -61,6 +61,45 @@
     });
   }
 
+  /**
+   * Talhão dividido: no PIMS e nos limites o 019 pode virar 019A e 019B, mas continua o mesmo talhão.
+   * Devolve o código sem a letra da divisão ('019A' → '019'). Só vale número + UMA letra: '019PESQ', '01PIVO'
+   * e 'M1A' são outros talhões e ficam como estão.
+   */
+  function talhaoBase(codigo) {
+    var c = String(codigo === null || codigo === undefined ? '' : codigo).trim().toUpperCase();
+    var m = /^(\d+)[A-Z]$/.exec(c);
+    return m ? m[1] : c;
+  }
+
+  /**
+   * A chuva de cada família de talhões ({ base: { serie, de: [códigos] } }): todos os pedaços mostram a do
+   * talhão sem letra. Se a tabela da ZEUS não tem o talhão sem letra, vale a média, dia a dia, dos pedaços que
+   * ela tem (dia sem dado em todos continua sem dado).
+   */
+  function chuvaDasFamilias(talhoes, dias) {
+    var grupos = {};
+    Object.keys(talhoes).forEach(function (codigo) { var b = talhaoBase(codigo); (grupos[b] = grupos[b] || []).push(codigo); });
+    var familias = {};
+    Object.keys(grupos).forEach(function (b) {
+      var codigos = grupos[b].sort();
+      var inteiro = codigos.filter(function (c) { return c.trim().toUpperCase() === b; })[0];
+      if (inteiro !== undefined || codigos.length === 1) {
+        var dono = inteiro !== undefined ? inteiro : codigos[0];
+        familias[b] = { serie: talhoes[dono], de: [dono] };
+        return;
+      }
+      var serie = new Array(dias).fill(null);
+      for (var d = 0; d < dias; d++) {
+        var soma = 0, n = 0;
+        codigos.forEach(function (c) { var v = talhoes[c][d]; if (v !== null && v !== undefined) { soma += v; n++; } });
+        if (n) serie[d] = r2(soma / n);
+      }
+      familias[b] = { serie: serie, de: codigos };
+    });
+    return familias;
+  }
+
   /** Primeiro e último dia ('YYYY-MM-DD') de uma safra do PIMS ('SAFRA 2025/2026' → 01/09/2025 a 31/08/2026). */
   function limitesDaSafra(nome) {
     var m = /(\d{4})\s*\/\s*(\d{4})/.exec(String(nome || ''));
@@ -70,6 +109,8 @@
   /**
    * Linha de chuva_talhao pronta para a conta:
    *   talhoes { código: série } — um valor por dia da janela (null = dia sem dado na tabela da ZEUS);
+   *   familias { código sem a letra da divisão: { serie, de } } — a chuva que vale para o talhão e os pedaços
+   *     dele (019, 019A e 019B mostram a mesma; ver chuvaDasFamilias);
    *   fim / hoje — o último dia com chuva por talhão: os períodos terminam nele (a tabela chega com atraso);
    *   ciclos [{ i, safra, periodo, de, ate, talhoes }] — do PIMS, já cortados na safra deles (como no Power BI)
    *     e só os que têm algum dia dentro do que a tabela já tem;
@@ -138,7 +179,7 @@
     return {
       unidade: linha.unidade, inicio: linha.inicio, dias: dias, fim: fim, hoje: hoje, ultimoDia: fim, temTalhoes: temTalhoes,
       geradoEm: linha.gerado_em || null, ultimaLeitura: linha.ultima_leitura || null,
-      talhoes: talhoes, ciclos: ciclos, safras: safras, pics: pics, vinculos: linha.vinculos || {},
+      talhoes: talhoes, familias: chuvaDasFamilias(talhoes, dias), ciclos: ciclos, safras: safras, pics: pics, vinculos: linha.vinculos || {},
     };
   }
 
@@ -396,16 +437,24 @@
    * Linhas da tabela por talhão. `talhoes` = [{ codigo, nome, area, centro }] (os limites do mapa); devolve, na
    * mesma ordem, { codigo, nome, area, serie, semDado (o talhão não está na tabela da ZEUS), foraDoCiclo (o
    * período é um ciclo e o talhão não faz parte dele), total, diasChuva, maior, ultima, diasSem, semLeitura }.
+   * Talhão dividido (019, 019A, 019B) é um talhão só: os pedaços mostram a mesma chuva e entram no ciclo se
+   * algum deles estiver nele. `chuvaDe` = os códigos da tabela de onde veio a chuva, quando não é o do próprio
+   * talhão (null = é a dele).
    */
   function linhasDosTalhoes(talhoes, faz, per) {
     var doCiclo = null;
-    if (per.talhoes) { doCiclo = {}; per.talhoes.forEach(function (c) { doCiclo[c] = true; }); }
+    if (per.talhoes) { doCiclo = {}; per.talhoes.forEach(function (c) { doCiclo[talhaoBase(c)] = true; }); }
+    var familias = faz.familias || chuvaDasFamilias(faz.talhoes, faz.dias);
     return talhoes.map(function (t) {
-      var serie = faz.talhoes[t.codigo] || null;
+      var base = talhaoBase(t.codigo);
+      var familia = familias[base] || null;
+      var serie = familia ? familia.serie : null;
       var r = resumoDaSerie(serie, per.i0, per.i1, faz.ultimoDia);
+      var dele = !!familia && familia.de.length === 1 && familia.de[0].trim().toUpperCase() === String(t.codigo).trim().toUpperCase();
       return {
         codigo: t.codigo, nome: t.nome || t.codigo, area: t.area || 0, serie: serie, semDado: !serie,
-        foraDoCiclo: !!doCiclo && !doCiclo[t.codigo],
+        chuvaDe: familia && !dele ? familia.de.slice() : null,
+        foraDoCiclo: !!doCiclo && !doCiclo[base],
         total: r.total, diasChuva: r.diasChuva, maior: r.maior, ultima: r.ultima, diasSem: r.diasSem, semLeitura: r.semLeitura,
       };
     });
@@ -484,7 +533,7 @@
     CHUVA_MIN: CHUVA_MIN, ATRASO_HORAS: ATRASO_HORAS, FAIXAS_DIA: FAIXAS_DIA, COR_SEM_CHUVA: COR_SEM_CHUVA, COR_SEM_DADO: COR_SEM_DADO,
     CORES_PERIODO: CORES_PERIODO, CORES_SECA: CORES_SECA, LIMITES_SECA: LIMITES_SECA,
     somarDias: somarDias, difDias: difDias, fmtMm: fmtMm, fmtDia: fmtDia, fmtLeitura: fmtLeitura, semAcento: semAcento,
-    nomeDoPic: nomeDoPic, limitesDaSafra: limitesDaSafra, prepararFazenda: prepararFazenda, resumoDaSerie: resumoDaSerie,
+    nomeDoPic: nomeDoPic, limitesDaSafra: limitesDaSafra, talhaoBase: talhaoBase, prepararFazenda: prepararFazenda, resumoDaSerie: resumoDaSerie,
     opcoesDePeriodo: opcoesDePeriodo, periodo: periodo,
     limitesChuva: limitesChuva, classeDe: classeDe, rotulosClasses: rotulosClasses, corDoDia: corDoDia, escalaDoPeriodo: escalaDoPeriodo, tintaSobre: tintaSobre,
     poligonos: poligonos, caixaGeom: caixaGeom, juntarCaixas: juntarCaixas, centroGeom: centroGeom, projetor: projetor, caminhoSvg: caminhoSvg,

@@ -231,3 +231,58 @@ test('unidadeDaFazenda: casa a fazenda do COA WEB com a unidade, sem acento nem 
   assert.equal(L.unidadeDaFazenda('Fazenda Três Flechas', ['GLOBO', 'TRES FLECHAS']), 'TRES FLECHAS')
   assert.equal(L.unidadeDaFazenda('Fazenda Inexistente', ['GLOBO']), null)
 })
+
+/**
+ * Talhões divididos: no PIMS e nos limites o 019 vira 019A e 019B, mas a tabela da ZEUS costuma ter só o 019.
+ * Janela de 5 dias, todos com dado.
+ */
+const LINHA_DIVIDIDA = {
+  unidade: 'TESTE', gerado_em: '2026-09-05T12:00:00.000Z', inicio: '2026-09-01', dias: 5, ultimo_dia: '2026-09-05', lidos: '0-4',
+  talhoes: {
+    '019': { de: 0, ate: 4, d: '1:10,3:5' }, // só o talhão sem letra tem chuva
+    '020': { de: 0, ate: 4, d: '1:8' }, '020A': { de: 0, ate: 4, d: '1:30' }, // os dois têm: vale o sem letra
+    '021A': { de: 0, ate: 4, d: '1:4,2:1' }, '021B': { de: 2, ate: 4, d: '2:3' }, // sem o 021: a média dos pedaços
+    '022B': { de: 0, ate: 4, d: '4:7' }, // um pedaço só
+    '001': { de: 0, ate: 4, d: '0:2' }, '01PIVO': { de: 0, ate: 4, d: '0:9' }, '019PESQ': { de: 0, ate: 4, d: '0:6' },
+  },
+  ciclos: [{ s: 'SAFRA 2026/2027', p: 'SOJA 26/27', de: '2026-09-01', ate: '2027-08-31', t: ['019A', '020'] }],
+  pics: [], vinculos: {},
+}
+
+test('talhaoBase: número + uma letra é divisão do talhão; outros finais são outro talhão', () => {
+  assert.equal(L.talhaoBase('019A'), '019')
+  assert.equal(L.talhaoBase(' 019b '), '019')
+  assert.equal(L.talhaoBase('019'), '019')
+  for (const c of ['019PESQ', '019AB', '01PIVO', 'M1A', 'P14', '032PQ', '']) assert.equal(L.talhaoBase(c), c)
+})
+
+test('talhão dividido: 019, 019A e 019B mostram a mesma chuva, a do talhão sem letra', () => {
+  const f = L.prepararFazenda(LINHA_DIVIDIDA)
+  const codigos = ['019', '019A', '019B', '020', '020A', '020C', '021', '021A', '021B', '022', '022A', '001', '01PIVO', '019PESQ', '077A']
+  const linhas = L.linhasDosTalhoes(codigos.map(c => ({ codigo: c, nome: c, area: 10 })), f, L.periodo('livre', f, '2026-09-01', '2026-09-05'))
+  const de = c => linhas[codigos.indexOf(c)]
+  // só o 019 na tabela: os pedaços deixam de ficar sem dado
+  for (const c of ['019', '019A', '019B']) { assert.equal(de(c).total, 15); assert.equal(de(c).semDado, false); assert.equal(de(c).serie, f.talhoes['019']) }
+  assert.equal(de('019').chuvaDe, null)
+  assert.deepEqual(de('019A').chuvaDe, ['019'])
+  // 020 e 020A na tabela com valores diferentes: todos ficam com o do 020
+  for (const c of ['020', '020A', '020C']) assert.equal(de(c).total, 8)
+  assert.deepEqual(de('020A').chuvaDe, ['020'])
+  // a tabela não tem o 021: a média, dia a dia, dos pedaços que têm dado
+  for (const c of ['021', '021A', '021B']) assert.deepEqual(de(c).serie, [0, 4, 2, 0, 0])
+  assert.deepEqual(de('021A').chuvaDe, ['021A', '021B'])
+  // um pedaço só na tabela: vale para a família
+  for (const c of ['022', '022A']) assert.equal(de(c).total, 7)
+  assert.deepEqual(de('022').chuvaDe, ['022B'])
+  // não são divisão: cada um com a sua chuva
+  assert.deepEqual(['001', '01PIVO', '019PESQ'].map(c => [de(c).total, de(c).chuvaDe]), [[2, null], [9, null], [6, null]])
+  assert.equal(de('077A').semDado, true)
+  assert.equal(L.resumoDaFazenda(linhas).semDado, 1)
+})
+
+test('talhão dividido no ciclo: basta um pedaço da família estar no ciclo', () => {
+  const f = L.prepararFazenda(LINHA_DIVIDIDA)
+  const codigos = ['019', '019B', '020A', '021A', '001']
+  const linhas = L.linhasDosTalhoes(codigos.map(c => ({ codigo: c, nome: c, area: 10 })), f, L.periodo('ciclo:0', f))
+  assert.deepEqual(linhas.map(l => [l.codigo, l.foraDoCiclo]), [['019', false], ['019B', false], ['020A', false], ['021A', true], ['001', true]])
+})
