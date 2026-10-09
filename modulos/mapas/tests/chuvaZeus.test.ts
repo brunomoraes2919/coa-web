@@ -12,8 +12,8 @@ const resposta = (o: Partial<DadosChuvaZeus> = {}): DadosChuvaZeus => ({
   ate: '2026-10-01',
   ultimoDia: '2026-10-01',
   pics: [
-    { id: '4700', nome: 'PIC 27 SM3', lat: -17.382932, lon: -54.745256, chuva: 1, leituras: 96 },
-    { id: '4287', nome: 'PIC 37 SM3 ', lat: -17.354717, lon: -54.740937, chuva: 1.4, leituras: 96 },
+    { id: '9101', nome: 'PIC 27 SM3', lat: -20.123456, lon: -45.654321, chuva: 1, leituras: 96 },
+    { id: '9102', nome: 'PIC 37 SM3 ', lat: -20.111111, lon: -45.222222, chuva: 1.4, leituras: 96 },
   ],
   ...o,
 });
@@ -37,7 +37,7 @@ describe('picsDaIntegracao (resposta do servidor → os PICs que o CSV daria)', 
     const r = picsDaIntegracao(lerDadosChuva(resposta()));
     expect(r.nome).toBe('Integração ZEUS · 01/10/2026');
     expect(r.pics).toHaveLength(2);
-    expect(r.pics[0]).toMatchObject({ id: '4700', nome: 'PIC 27 SM3', lat: -17.382932, lon: -54.745256, chuva: 1, inativo: false, incluir: true });
+    expect(r.pics[0]).toMatchObject({ id: '9101', nome: 'PIC 27 SM3', lat: -20.123456, lon: -45.654321, chuva: 1, inativo: false, incluir: true });
     expect(r.pics[1].nome).toBe('PIC 37 SM3');
     expect(r.inicio).toEqual(new Date(2026, 9, 1));
     expect(r.fim).toEqual(new Date(2026, 9, 1));

@@ -450,6 +450,9 @@
     if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
     if (!jsPdfCarregando) jsPdfCarregando = new Promise(function (ok, falha) {
       var s = document.createElement('script');
+      // versão fixa conferida pelo navegador (SRI): arquivo diferente do esperado não roda
+      s.integrity = 'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk';
+      s.crossOrigin = 'anonymous';
       s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
       s.onload = function () { ok(window.jspdf.jsPDF); };
       s.onerror = function () { jsPdfCarregando = null; falha(new Error('Não foi possível carregar o gerador de PDF. Verifique a conexão.')); };

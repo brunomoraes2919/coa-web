@@ -15,6 +15,18 @@ const URL_SB = 'https://proj.supabase.co';
 const CHAVE = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.assinatura';
 const TOKEN = 'token-agrovex-secreto';
 
+// Quem fez os pedidos destes testes: um ADMINISTRADOR+ inventado. Antes de consultar a fonte, o servidor lê
+// do Supabase se quem pediu pode ver o que pediu (as regras têm teste próprio em permissao-pedidos.test.ts).
+const QUEM = '99999999-9999-4999-8999-999999999999';
+const PERMISSOES: Record<string, unknown[]> = {
+  perfis: [{ id: QUEM, perfil: 'admin', super: true, todas_fazendas: true }],
+  usuario_fazendas: [],
+  usuario_categorias: [],
+  mapas_fazendas: [{ id: 'aaaaaaaa-0000-4000-8000-000000000001', nome: 'SM3', coa_fazenda_id: 1 }, { id: 'aaaaaaaa-0000-4000-8000-000000000002', nome: 'Fazenda Nova', coa_fazenda_id: null }],
+};
+/** tabela do Supabase que a chamada lê */
+const tabelaDe = (url: string) => /\/rest\/v1\/([a-z_]+)/.exec(url)?.[1] ?? '';
+
 describe('servidor: período com hora', () => {
   it('valida as horas: as duas ou nenhuma, no formato hh:mm, e a inicial antes da final', () => {
     expect(validarPeriodoChuva('2026-10-05', '2026-10-06', '06:00', '07:00')).toEqual({ de: '2026-10-05', ate: '2026-10-06', dias: 2, deHora: '06:00', ateHora: '07:00' });
@@ -32,28 +44,28 @@ describe('servidor: período com hora', () => {
   });
 
   it('a consulta com hora filtra as leituras pelo instante do identificador, os dois limites inclusive', () => {
-    const sql = montarSqlChuvaPics(['4700'], '2026-10-05', '2026-10-06', '06:00', '07:00');
+    const sql = montarSqlChuvaPics(['9101'], '2026-10-05', '2026-10-06', '06:00', '07:00');
     expect(sql).toContain("c.data >= DATE '2026-10-05' AND c.data < DATE '2026-10-06' + INTERVAL '1 day'");
     expect(sql).toContain("right(c.idprecipitation, 14) >= '20261005060000'");
     expect(sql).toContain("right(c.idprecipitation, 14) <= '20261006070059'");
   });
 
   it('sem hora a consulta não filtra pelo identificador (dias inteiros, como antes)', () => {
-    expect(montarSqlChuvaPics(['4700'], '2026-10-05', '2026-10-06')).not.toContain('right(c.idprecipitation, 14) >=');
+    expect(montarSqlChuvaPics(['9101'], '2026-10-05', '2026-10-06')).not.toContain('right(c.idprecipitation, 14) >=');
   });
 
   it('a resposta traz a hora da última leitura do período', () => {
-    const pics = [{ id: '4700', nome: 'PIC 27 SM3', lat: -17.38, lon: -54.74 }, { id: '4287', nome: 'PIC 37 SM3', lat: -17.35, lon: -54.74 }];
-    const r = montarChuvaPics(pics, { columns: ['picid', 'mm', 'leituras', 'ultimo', 'leitura'], rows: [['4700', 2, 26, '2026-10-06', '20261006070000'], ['4287', 1, 20, '2026-10-06', '20261006054500']] });
+    const pics = [{ id: '9101', nome: 'PIC 27 SM3', lat: -20.12, lon: -45.65 }, { id: '9102', nome: 'PIC 37 SM3', lat: -20.11, lon: -45.22 }];
+    const r = montarChuvaPics(pics, { columns: ['picid', 'mm', 'leituras', 'ultimo', 'leitura'], rows: [['9101', 2, 26, '2026-10-06', '20261006070000'], ['9102', 1, 20, '2026-10-06', '20261006054500']] });
     expect(r.ultimoDia).toBe('2026-10-06');
     expect(r.ultimaLeitura).toBe('2026-10-06T07:00');
     // identificador fora do padrão: sem a hora
-    expect(montarChuvaPics(pics, { columns: ['picid', 'mm', 'leituras', 'ultimo', 'leitura'], rows: [['4700', 2, 26, '2026-10-06', null]] }).ultimaLeitura).toBeNull();
+    expect(montarChuvaPics(pics, { columns: ['picid', 'mm', 'leituras', 'ultimo', 'leitura'], rows: [['9101', 2, 26, '2026-10-06', null]] }).ultimaLeitura).toBeNull();
   });
 });
 
 interface Chamada { url: string; init?: RequestInit }
-const CADASTRO = { columns: ['picid', 'picname', 'farm', 'lat', 'lon'], rows: [['4700', 'PIC 27 SM3', 'Faz_SM3', '-17.382932', '-54.745256']] };
+const CADASTRO = { columns: ['picid', 'picname', 'farm', 'lat', 'lon'], rows: [['9101', 'PIC 27 SM3', 'Faz_SM3', '-20.123456', '-45.654321']] };
 
 /** Supabase e Agrovex falsos. `semColunas`: o banco ainda não tem de_hora/ate_hora (script 0004 não aplicado). */
 function servidores(pedidos: unknown[], consultas: unknown[], semColunas = false) {
@@ -62,6 +74,8 @@ function servidores(pedidos: unknown[], consultas: unknown[], semColunas = false
   const impl = async (url: string, init?: RequestInit) => {
     chamadas.push({ url, init });
     if (url.startsWith(URL_SB)) {
+      // as leituras de permissão não são o pedido: respondem com o cadastro de quem pediu
+      if ((!init?.method || init.method === 'GET') && tabelaDe(url) in PERMISSOES) return new Response(JSON.stringify(PERMISSOES[tabelaDe(url)]), { status: 200 });
       if (!init?.method || init.method === 'GET') {
         if (semColunas && url.includes('de_hora')) return new Response(JSON.stringify({ code: '42703', message: 'column mapas_chuva_pedidos.de_hora does not exist' }), { status: 400 });
         return new Response(JSON.stringify(pedidos), { status: 200 });
@@ -83,20 +97,20 @@ describe('servidor: pedidos de chuva com hora', () => {
   it('lê as horas do pedido; num banco sem as colunas (0004 não aplicado) volta a ler só as datas', async () => {
     const a = servidores([{ id: 3, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-06', de_hora: '06:00:00', ate_hora: '07:00:00' }], []);
     expect(await pedidosChuvaPendentes({ url: URL_SB, chave: CHAVE, fetch: a.impl })).toEqual([{ id: 3, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-06', de_hora: '06:00:00', ate_hora: '07:00:00' }]);
-    expect(a.chamadas[0].url).toBe(`${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,fazenda,de,ate,de_hora,ate_hora&atendido_em=is.null&order=id.asc&limit=5`);
+    expect(a.chamadas[0].url).toBe(`${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate,de_hora,ate_hora&atendido_em=is.null&order=id.asc&limit=200`);
 
     const b = servidores([{ id: 4, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-05' }], [], true);
     expect(await pedidosChuvaPendentes({ url: URL_SB, chave: CHAVE, fetch: b.impl })).toEqual([{ id: 4, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-05' }]);
     expect(b.chamadas.map((c) => c.url)).toEqual([
-      `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,fazenda,de,ate,de_hora,ate_hora&atendido_em=is.null&order=id.asc&limit=5`,
-      `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,fazenda,de,ate&atendido_em=is.null&order=id.asc&limit=5`,
+      `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate,de_hora,ate_hora&atendido_em=is.null&order=id.asc&limit=200`,
+      `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate&atendido_em=is.null&order=id.asc&limit=200`,
     ]);
   });
 
   it('atende o pedido com hora: filtra as leituras e devolve as horas na resposta', async () => {
     const { impl, chamadas } = servidores(
-      [{ id: 9, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-06', de_hora: '06:00:00', ate_hora: '07:00:00' }],
-      [CADASTRO, { columns: ['picid', 'mm', 'leituras', 'ultimo', 'leitura'], rows: [['4700', 3.2, 26, '2026-10-06', '20261006070000']] }],
+      [{ id: 9, pedido_por: QUEM, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-06', de_hora: '06:00:00', ate_hora: '07:00:00' }],
+      [CADASTRO, { columns: ['picid', 'mm', 'leituras', 'ultimo', 'leitura'], rows: [['9101', 3.2, 26, '2026-10-06', '20261006070000']] }],
     );
     await atenderPedidosChuva({ supabase: { url: URL_SB, chave: CHAVE }, agrovex: { url: 'https://agrovex.test/mcp', token: TOKEN }, fetch: impl, agora: () => new Date('2026-10-06T11:00:00Z') });
     const sql = chamadas.filter((c) => c.url.includes('agrovex') && String(c.init?.body).includes('execute_query')).map((c) => JSON.parse(String(c.init?.body)).params.arguments.sql)[1];
@@ -112,7 +126,7 @@ const resposta = (o: Partial<DadosChuvaZeus> = {}): DadosChuvaZeus => ({
   de: '2026-10-05',
   ate: '2026-10-06',
   ultimoDia: '2026-10-06',
-  pics: [{ id: '4700', nome: 'PIC 27 SM3', lat: -17.382932, lon: -54.745256, chuva: 3.2, leituras: 26 }],
+  pics: [{ id: '9101', nome: 'PIC 27 SM3', lat: -20.123456, lon: -45.654321, chuva: 3.2, leituras: 26 }],
   ...o,
 });
 

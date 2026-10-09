@@ -20,6 +20,39 @@ const FONTES = {
   solos: { nome: 'datalake', source: 'athena', database: 'soils_database_database' },
 };
 
+/** Único host para onde o token do Agrovex pode ser enviado (o endereço vem do plantio.config.json baixado do repositório ou de AGROVEX_URL). */
+export const AGROVEX_HOST = 'mcp.agrovex.com.br';
+
+/**
+ * Confere o endereço do Agrovex ANTES de qualquer chamada: só https, só o host AGROVEX_HOST (porta padrão),
+ * sem usuário nem senha embutidos. Devolve o endereço normalizado; qualquer outra coisa lança erro. A
+ * mensagem mostra no máximo o protocolo e o host recebidos (um endereço errado pode trazer segredo no resto).
+ */
+export function conferirUrlAgrovex(url) {
+  let u = null;
+  try {
+    u = new URL(String(url ?? '').trim());
+  } catch {
+    u = null;
+  }
+  if (u && u.protocol === 'https:' && u.hostname === AGROVEX_HOST && u.port === '' && u.username === '' && u.password === '') return u.href;
+  const recebido = u ? ` (recebido: ${`${u.protocol}//${u.hostname}`.slice(0, 80)})` : '';
+  throw new Error(`Endereço do Agrovex não permitido${recebido}: o token só é enviado para https://${AGROVEX_HOST}. Confira "url" em plantio.config.json e a variável AGROVEX_URL.`);
+}
+
+/**
+ * Erro com o tipo da falha: 'fonte' (o servidor de dados recusou, caiu ou devolveu algo inesperado) ou
+ * 'invalido' (o pedido não pode ser atendido como veio; a mensagem é texto nosso e pode ir para a tela).
+ * Quem grava a resposta de um pedido escolhe o texto pelo tipo (atender-pedidos.mjs): o que vem de fora
+ * (erro do banco, HTML do Cloudflare…) fica só no log do servidor. `detalhe` também é só para o log.
+ */
+function erroDoTipo(tipo, mensagem, detalhe) {
+  const e = new Error(mensagem);
+  e.tipo = tipo;
+  if (detalhe) e.detalhe = detalhe;
+  return e;
+}
+
 // ---------- regras puras ----------
 
 /** Normaliza o código do talhão (mesma regra de src/lib/codigoTalhao.ts; duplicada porque o script roda sem bundler). */
@@ -104,17 +137,17 @@ async function lerResposta(resp, token = '') {
   // 403 com "error code: NNNN" é o Cloudflare do Agrovex barrando este servidor (não é o token)
   const cloudflare = resp.status === 403 ? /error code: (\d+)/i.exec(texto) : null;
   if (cloudflare) {
-    throw new Error(`O servidor de dados do PIMS bloqueou o acesso deste servidor (erro ${cloudflare[1]}); o token não foi recusado.`);
+    throw erroDoTipo('fonte', `O servidor de dados do PIMS bloqueou o acesso deste servidor (erro ${cloudflare[1]}); o token não foi recusado.`);
   }
   if (resp.status === 403 && /cloudflare|<html/i.test(texto)) {
-    throw new Error('O servidor de dados do PIMS barrou este servidor com uma página de verificação (HTTP 403); o token não foi recusado.');
+    throw erroDoTipo('fonte', 'O servidor de dados do PIMS barrou este servidor com uma página de verificação (HTTP 403); o token não foi recusado.');
   }
   if (resp.status === 401 || resp.status === 403) {
     // o corpo do Agrovex é curto ({"error": ...}) e não traz o token; mesmo assim ele é tirado da mensagem
     const corpo = token ? texto.split(token).join('[REDACTED]') : texto;
-    throw new Error(`O servidor de dados do PIMS recusou o acesso (HTTP ${resp.status}): verifique o token de acesso do servidor. Resposta: ${corpo.replace(/s+/g, ' ').slice(0, 150)}`);
+    throw erroDoTipo('fonte', `O servidor de dados do PIMS recusou o acesso (HTTP ${resp.status}): verifique o token de acesso do servidor. Resposta: ${corpo.replace(/\s+/g, ' ').slice(0, 150)}`);
   }
-  if (!resp.ok) throw new Error(`O servidor de dados do PIMS respondeu HTTP ${resp.status}: ${texto.slice(0, 300)}`);
+  if (!resp.ok) throw erroDoTipo('fonte', `O servidor de dados do PIMS respondeu HTTP ${resp.status}: ${texto.slice(0, 300)}`);
   const t = texto.trim();
   if (!t) return null;
   let json;
@@ -126,13 +159,16 @@ async function lerResposta(resp, token = '') {
       json = JSON.parse(dados[dados.length - 1].slice(5).trim());
     }
   } catch {
-    throw new Error(`Resposta ilegível do servidor de dados do PIMS: ${t.slice(0, 300)}`);
+    throw erroDoTipo('fonte', `Resposta ilegível do servidor de dados do PIMS: ${t.slice(0, 300)}`);
   }
-  if (json?.error) throw new Error(`Servidor de dados do PIMS: ${json.error.message ?? JSON.stringify(json.error)}`);
+  if (json?.error) throw erroDoTipo('fonte', `Servidor de dados do PIMS: ${json.error.message ?? JSON.stringify(json.error)}`);
   return json;
 }
 
 async function abrirSessao(url, token, fetchImpl) {
+  // Na rede de verdade o token só sai para o host permitido, venha o endereço de onde vier. Com um fetch
+  // injetado (os testes) nada sai da máquina, e o endereço fica como veio.
+  if (fetchImpl === globalThis.fetch) url = conferirUrlAgrovex(url);
   let sessao = null;
   let protocolo = null;
   let id = 0;
@@ -171,18 +207,18 @@ async function abrirSessao(url, token, fetchImpl) {
       }), token);
       const texto = r?.result?.content?.[0]?.text ?? '';
       const nome = fonte.nome;
-      if (r?.result?.isError) throw new Error(`Consulta ao ${nome} falhou (${rotulo}): ${texto}`);
+      if (r?.result?.isError) throw erroDoTipo('fonte', `Consulta ao ${nome} falhou (${rotulo}): ${texto}`);
       let dados;
       try {
         dados = JSON.parse(texto);
       } catch {
-        throw new Error(`Consulta ao ${nome} falhou (${rotulo}): resposta inesperada: ${String(texto).slice(0, 300)}`);
+        throw erroDoTipo('fonte', `Consulta ao ${nome} falhou (${rotulo}): resposta inesperada: ${String(texto).slice(0, 300)}`);
       }
       if (dados?.status !== 'success') {
         const msg = dados?.message ?? dados?.error ?? dados?.detail ?? JSON.stringify(dados);
-        throw new Error(`Consulta ao ${nome} falhou (${rotulo}): ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`);
+        throw erroDoTipo('fonte', `Consulta ao ${nome} falhou (${rotulo}): ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`);
       }
-      if (dados.truncated) throw new Error(`Consulta ao ${nome} falhou (${rotulo}): resultado truncado (${dados.row_count} linhas).`);
+      if (dados.truncated) throw erroDoTipo('fonte', `Consulta ao ${nome} falhou (${rotulo}): resultado truncado (${dados.row_count} linhas).`);
       return { columns: dados.columns ?? [], rows: dados.rows ?? [] };
     },
     async fechar() {
@@ -207,7 +243,7 @@ const txt = (x) => (x === null || x === undefined ? null : String(x).trim() || n
 function montarUnidades({ columns, rows }, rotulo) {
   const idx = new Map(columns.map((c, i) => [String(c).toLowerCase(), i]));
   for (const c of ['unidade', 'setor', 'codigo', 'area_prevista', 'area_plantada', 'plantio_inicio', 'plantio_fim', 'plantio_encerrado', 'variedade']) {
-    if (!idx.has(c)) throw new Error(`Consulta ao PIMS falhou (${rotulo}): coluna "${c}" ausente no resultado.`);
+    if (!idx.has(c)) throw erroDoTipo('fonte', `Consulta ao PIMS falhou (${rotulo}): coluna "${c}" ausente no resultado.`);
   }
   const v = (r, c) => r[idx.get(c)] ?? null;
   const porUnidade = new Map();
@@ -245,7 +281,7 @@ export async function sincronizar({ url, token, safras, excluirPrefixos = [], fe
     if (safras === 'auto') {
       const lista = await cliente.consultar(SQL_SAFRAS, 'lista de safras do PIMS', 'lista de safras');
       nomes = filtrarSafras(lista.rows.map((r) => r[0]), safrasPadrao(agora), excluirPrefixos);
-      if (!nomes.length) throw new Error(`Nenhuma safra do PIMS termina em ${safrasPadrao(agora).join(' ou ')}.`);
+      if (!nomes.length) throw erroDoTipo('fonte', `Nenhuma safra do PIMS termina em ${safrasPadrao(agora).join(' ou ')}.`);
     } else {
       nomes = [...new Set(safras.map((s) => String(s).trim()).filter(Boolean))];
     }
@@ -425,7 +461,7 @@ export function limparVariedade(v) {
   return t.replace(/^SEMENTE\s+(DE\s+)?(SOJA|MILHO|ALGODAO|SORGO|MILHETO)\s+/i, '').replace(/\s+(SOJA|MILHO|ALGODAO)$/i, '').trim() || null;
 }
 
-/** 'HENRIQUE RAMOS CARDOSO' -> 'Henrique' ("Equipe ..." -> 'Terceiro', como no Power BI). */
+/** 'JOAO DA SILVA SOUZA' -> 'Joao' ("Equipe ..." -> 'Terceiro', como no Power BI). */
 export function primeiroNome(s) {
   const n = txt(s);
   if (!n) return 'Sem equipe';
@@ -728,6 +764,15 @@ export const SAP_EMPRESA_DA_UNIDADE = {
   'PECUARIA LOCKS - GUAPIRAMA': 'SBOPECUARIALOCKS',
 };
 
+/**
+ * Empresa do SAP de uma unidade do PIMS, ou null. Só vale chave própria da tabela: um nome que venha do
+ * banco igual a uma propriedade herdada de todo objeto ('constructor', '__proto__', 'toString'…) não acha nada.
+ */
+function empresaDa(unidade) {
+  const u = txt(unidade) ?? '';
+  return Object.hasOwn(SAP_EMPRESA_DA_UNIDADE, u) ? SAP_EMPRESA_DA_UNIDADE[u] : null;
+}
+
 /** Primeiro dia da safra atual para a validação: 1º de agosto (do ano passado, se ainda não chegou agosto). */
 export function inicioSafraValidacao(agora = new Date()) {
   return `${agora.getFullYear() - (agora.getMonth() >= 7 ? 0 : 1)}-08-01`;
@@ -945,7 +990,8 @@ export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, ta
     const l = linha(r.unidade);
     const c = txt(r.codigo);
     if (!l || !c) continue;
-    const sap = depositosSap[SAP_EMPRESA_DA_UNIDADE[l.unidade]]?.get(c);
+    const empresa = empresaDa(l.unidade);
+    const sap = empresa ? depositosSap[empresa]?.get(c) : undefined;
     const d = { c, n: sap?.nome ?? txt(r.nome) ?? c };
     if (sap?.inativo) d.i = 1;
     l.depositos.push(d);
@@ -1044,8 +1090,6 @@ FROM OITM i LEFT JOIN OITW w ON w."ItemCode" = i."ItemCode" AND w."WhsCode" IN (
 WHERE i."ItemCode" IN (${listaItens})`;
 }
 
-const empresaDa = (unidade) => SAP_EMPRESA_DA_UNIDADE[txt(unidade) ?? ''] ?? null;
-
 /**
  * Monta, por unidade, a lista de boletins com problema de integração:
  *   { o origem, n boletim, d dia, os, eq coordenador, sit 'F' falhou | 'P' ainda não integrado, em (quando entrou na fila
@@ -1076,7 +1120,8 @@ export function linhasBoletins({ falhas = [], pendentes = [], logs = {}, sap = {
     if (!g.itens.has(k)) g.itens.set(k, { c: material ?? '?', nm: txt(r.nome) ?? '', q: 0, u: txt(r.un) ?? '', dp: dep });
     g.itens.get(k).q += Number(r.qtd) || 0;
     if (sit !== 'F') return;
-    const log = logs[empresaDa(unidade)]?.get(String(r.id_item));
+    const empresa = empresaDa(unidade);
+    const log = empresa ? logs[empresa]?.get(String(r.id_item)) : undefined;
     if (!log) return;
     g.b.t = Math.max(g.b.t ?? 0, Number(log.n) || 0);
     if (log.primeira && (!g.b.p1 || log.primeira < g.b.p1)) g.b.p1 = log.primeira;
@@ -1092,7 +1137,7 @@ export function linhasBoletins({ falhas = [], pendentes = [], logs = {}, sap = {
   const porUnidade = new Map();
   for (const g of ordenados) {
     const empresa = empresaDa(g.unidade);
-    const dados = sap[empresa];
+    const dados = empresa ? sap[empresa] : undefined;
     for (const item of g.itens.values()) {
       item.q = arred(item.q, 3);
       const cadastro = dados?.itens.get(item.c);
@@ -1102,7 +1147,7 @@ export function linhasBoletins({ falhas = [], pendentes = [], logs = {}, sap = {
       }
       const problemas = [];
       if (!item.dp) problemas.push('sem-deposito');
-      else if (depositosSap[empresa]?.get(item.dp)?.inativo) problemas.push('deposito-inativo');
+      else if (empresa && depositosSap[empresa]?.get(item.dp)?.inativo) problemas.push('deposito-inativo');
       if (dados) {
         if (!cadastro) problemas.push('item-inexistente');
         else {
@@ -1334,11 +1379,15 @@ export async function lerVinculosValidacao({ url, chave, fetch: fetchImpl = glob
  * de cada coordenador: a origem de cada produto vem das transferências de estoque (montarSqlEstoqueSap).
  */
 export function depositosVinculados(vinculos) {
-  const porEmpresa = {};
+  // objetos sem protótipo: a unidade e o depósito vêm de uma tabela que a tela grava, e nenhum valor dela
+  // ('constructor', '__proto__'…) pode cair numa propriedade herdada
+  const porEmpresa = Object.create(null);
   for (const v of vinculos) {
-    const empresa = SAP_EMPRESA_DA_UNIDADE[txt(v.unidade) ?? ''];
+    const unidade = txt(v?.unidade) ?? '';
+    const empresa = empresaDa(unidade);
     if (!empresa || !ehCodigoSap(v.deposito)) continue;
-    const lista = ((porEmpresa[empresa] ??= {})[v.unidade] ??= []);
+    const porUnidade = (porEmpresa[empresa] ??= Object.create(null));
+    const lista = (porUnidade[unidade] ??= []);
     if (!lista.includes(String(v.deposito))) lista.push(String(v.deposito));
   }
   return porEmpresa;
@@ -1373,16 +1422,17 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
     const depositos = objetosDe(await cliente.consultar(SQL_DEPOSITOS_PIMS, 'depósitos do PIMS com código do SAP (validação)', 'depósitos'));
     const falhas = objetosDe(await cliente.consultar(montarSqlBoletinsFalha(desde), 'itens de boletim recusados pelo SAP na integração (validação)', 'boletins com falha'));
     const pendentes = objetosDe(await cliente.consultar(montarSqlBoletinsPendentes(desde), 'boletins ainda não enviados ao SAP (validação)', 'boletins pendentes'));
-    const logs = {};
-    const sapItens = {};
+    // sem protótipo, como em depositosVinculados: as chaves são empresas, unidades e códigos de depósito
+    const logs = Object.create(null);
+    const sapItens = Object.create(null);
     const apontRecentes = await paginar((pular) => montarSqlApontamentosRecentes(diaAnterior(agora, VALID_DIAS_APONT - 1), pular), 'apontamentos feitos ou lançados nos últimos dias (validação)', 'apontamentos recentes');
     const necessidade = objetosDe(await cliente.consultar(montarSqlNecessidadeValidacao(desde), 'produtos planejados e já consumidos nas ordens abertas (validação)', 'necessidade das ordens'));
     const dose = objetosDe(await cliente.consultar(montarSqlDoseValidacao(diaAnterior(agora, VALID_DIAS_DOSE)), 'aplicações com dose real fora da programada (validação)', 'dose real x programada'));
     const coletor = objetosDe(await cliente.consultar(montarSqlColetorValidacao(desde), 'boletins na tela de validação do PIMS, aguardando a importação (validação)', 'boletins em validação'));
 
     const avisos = [];
-    const depositosSap = {};
-    const estoque = {};
+    const depositosSap = Object.create(null);
+    const estoque = Object.create(null);
     const vinculados = depositosVinculados(vinculos);
     for (const empresa of new Set(Object.values(SAP_EMPRESA_DA_UNIDADE))) {
       const fonte = { nome: 'SAP', source: 'hana', database: empresa, schema: empresa };
@@ -1393,7 +1443,7 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
         }
         depositosSap[empresa] = mapa;
         // boletins desta empresa: o motivo da recusa (log do SAP) e o saldo dos itens nos depósitos de saída
-        const daEmpresa = (r) => SAP_EMPRESA_DA_UNIDADE[txt(r.unidade) ?? ''] === empresa;
+        const daEmpresa = (r) => empresaDa(r.unidade) === empresa;
         const numeros = falhas.filter(daEmpresa).map((r) => String(r.boletim ?? ''));
         if (numeros.some((b) => /^\d{1,18}$/.test(b))) {
           logs[empresa] = new Map(objetosDe(await cliente.consultar(montarSqlLogIntegracaoSap(numeros, desde), 'mensagens do SAP para os boletins recusados (validação)', `log de integração ${empresa}`, fonte))
@@ -1415,7 +1465,7 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
         if (!porUnidade) continue;
         const res = objetosDe(await cliente.consultar(montarSqlEstoqueSap(Object.values(porUnidade).flat()), 'saldo dos depósitos dos coordenadores e origem de cada produto pelas transferências (validação)', `saldo ${empresa}`, fonte));
         for (const [unidade, codigos] of Object.entries(porUnidade)) {
-          const porDeposito = (estoque[unidade] ??= {});
+          const porDeposito = (estoque[unidade] ??= Object.create(null));
           for (const c of codigos) porDeposito[c] = [];
           for (const r of res) {
             const dep = txt(r.deposito);
@@ -1467,8 +1517,12 @@ export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchI
   return 'ok';
 }
 
-/** Etapa da validação dentro da rotina: lê os vínculos, consulta, grava e registra só totais. Devolve null ou a mensagem de erro. */
-export async function rodarValidacao({ agrovex, supabase, fetchImpl = globalThis.fetch }) {
+/**
+ * Etapa da validação dentro da rotina: lê os vínculos, consulta, grava e registra só totais. Devolve null ou a
+ * mensagem de erro (para o log). `aoErro` (opcional) recebe o erro inteiro: quem responde a um pedido escolhe
+ * por ele a mensagem que vai para a tela, sem repassar o texto de fora.
+ */
+export async function rodarValidacao({ agrovex, supabase, fetchImpl = globalThis.fetch, aoErro }) {
   try {
     const vinculos = await lerVinculosValidacao({ ...supabase, fetch: fetchImpl });
     const dados = await sincronizarValidacao({ url: agrovex.url, token: agrovex.token, vinculos, fetchImpl });
@@ -1480,6 +1534,7 @@ export async function rodarValidacao({ agrovex, supabase, fetchImpl = globalThis
   } catch (e) {
     const msg = semChave(semChave(e instanceof Error ? e.message : String(e), supabase.chave), agrovex.token);
     console.error(`Validação: erro (o plantio dos mapas não foi afetado): ${msg}`);
+    if (typeof aoErro === 'function') aoErro(e);
     return msg;
   }
 }
@@ -1502,12 +1557,12 @@ export const MEC_CABECALHO = [
 /** Confere o pedido: unidade do PIMS (ex.: 'T. FLECHAS') e período 'YYYY-MM-DD' de até MEC_MAX_DIAS dias; lança Error legível. */
 export function validarPedidoMec(unidade, de, ate) {
   const u = String(unidade ?? '').trim().toUpperCase();
-  if (!/^[A-Z0-9][A-Z0-9 .]{1,29}$/.test(u)) throw new Error('Unidade inválida.');
+  if (!/^[A-Z0-9][A-Z0-9 .]{1,29}$/.test(u)) throw erroDoTipo('invalido', 'Unidade inválida.');
   const ehData = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
-  if (!ehData(de) || !ehData(ate)) throw new Error('Período inválido: informe as duas datas.');
-  if (de > ate) throw new Error('Período inválido: a data inicial é depois da final.');
+  if (!ehData(de) || !ehData(ate)) throw erroDoTipo('invalido', 'Período inválido: informe as duas datas.');
+  if (de > ate) throw erroDoTipo('invalido', 'Período inválido: a data inicial é depois da final.');
   const dias = Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000) + 1;
-  if (dias > MEC_MAX_DIAS) throw new Error(`Período muito longo (${dias} dias): o máximo é ${MEC_MAX_DIAS} dias.`);
+  if (dias > MEC_MAX_DIAS) throw erroDoTipo('invalido', `Período muito longo (${dias} dias): o máximo é ${MEC_MAX_DIAS} dias.`);
   return { unidade: u, de, ate, dias };
 }
 
@@ -1593,7 +1648,7 @@ export async function boletinsMecanizadas({ url, token, unidade, de, ate, fetchI
       const pagina = objetosDe(res);
       objs.push(...pagina);
       if (pagina.length < MEC_PAGINA) break;
-      if (objs.length >= MEC_MAX_LINHAS) throw new Error(`O período tem mais de ${MEC_MAX_LINHAS} lançamentos: escolha um período menor.`);
+      if (objs.length >= MEC_MAX_LINHAS) throw erroDoTipo('invalido', `O período tem mais de ${MEC_MAX_LINHAS} lançamentos: escolha um período menor.`);
     }
     return { unidade: p.unidade, de: p.de, ate: p.ate, cabecalho: MEC_CABECALHO, linhas: linhasMecanizadas(objs) };
   } finally {
@@ -1618,17 +1673,17 @@ function horaDoPedido(h) {
  */
 export function validarPeriodoChuva(de, ate, deHora = null, ateHora = null) {
   const ehData = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
-  if (!ehData(de) || !ehData(ate)) throw new Error('Período inválido: informe as duas datas.');
-  if (de > ate) throw new Error('Período inválido: a data inicial é depois da final.');
+  if (!ehData(de) || !ehData(ate)) throw erroDoTipo('invalido', 'Período inválido: informe as duas datas.');
+  if (de > ate) throw erroDoTipo('invalido', 'Período inválido: a data inicial é depois da final.');
   const dias = Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000) + 1;
-  if (dias > CHUVA_PICS_MAX_DIAS) throw new Error(`Período muito longo (${dias} dias): o máximo é ${CHUVA_PICS_MAX_DIAS} dias.`);
+  if (dias > CHUVA_PICS_MAX_DIAS) throw erroDoTipo('invalido', `Período muito longo (${dias} dias): o máximo é ${CHUVA_PICS_MAX_DIAS} dias.`);
   const vazia = (h) => h === null || h === undefined || h === '';
   if (vazia(deHora) && vazia(ateHora)) return { de, ate, dias };
-  if (vazia(deHora) || vazia(ateHora)) throw new Error('Período inválido: informe a hora inicial e a final.');
+  if (vazia(deHora) || vazia(ateHora)) throw erroDoTipo('invalido', 'Período inválido: informe a hora inicial e a final.');
   const h1 = horaDoPedido(deHora);
   const h2 = horaDoPedido(ateHora);
-  if (!h1 || !h2) throw new Error('Período inválido: informe as horas no formato hh:mm.');
-  if (de === ate && h1 > h2) throw new Error('Período inválido: a hora inicial é depois da final.');
+  if (!h1 || !h2) throw erroDoTipo('invalido', 'Período inválido: informe as horas no formato hh:mm.');
+  if (de === ate && h1 > h2) throw erroDoTipo('invalido', 'Período inválido: a hora inicial é depois da final.');
   return { de, ate, dias, deHora: h1, ateHora: h2 };
 }
 
@@ -1718,8 +1773,15 @@ export async function chuvaPorPicZeus({ url, token, fazenda, de, ate, deHora = n
     const cadastro = await cliente.consultar(SQL_PICS_ZEUS, 'cadastro dos PICs da ZEUS (mapa de chuva)', 'PICs da ZEUS', FONTES.zeus);
     const pics = picsDaFazendaZeus(cadastro, fazenda);
     if (!pics.length) {
+      // A lista das fazendas da ZEUS fica só no log do servidor (`detalhe`): quem pediu vê o nome que ele
+      // mesmo mandou (só letras, números e pontuação simples) e o que conferir.
       const conhecidas = fazendasDaZeus(cadastro);
-      throw new Error(`A ZEUS não tem PICs para a fazenda "${String(fazenda).slice(0, 60)}"${conhecidas.length ? ` (fazendas na ZEUS: ${conhecidas.join(', ')})` : ''}.`);
+      const nome = String(fazenda ?? '').replace(/\s+/g, ' ').replace(/[^\p{L}\p{N} ._\-/()]/gu, '').trim().slice(0, 60);
+      throw erroDoTipo(
+        'invalido',
+        `A ZEUS não tem PICs para a fazenda "${nome}". Confira se o nome da fazenda no cadastro do mapa é o mesmo usado na ZEUS.`,
+        conhecidas.length ? `fazendas na ZEUS: ${conhecidas.join(', ')}` : '',
+      );
     }
     const chuva = await cliente.consultar(montarSqlChuvaPics(pics.map((p) => p.id), de, ate, periodo.deHora, periodo.ateHora), 'chuva por PIC no período (mapa de chuva)', 'chuva por PIC', FONTES.zeus);
     const horas = periodo.deHora ? { deHora: periodo.deHora, ateHora: periodo.ateHora } : {};
@@ -2215,8 +2277,10 @@ async function main() {
     console.warn(process.env.GITHUB_ACTIONS ? `::warning::${aviso}` : aviso);
     return;
   }
+  // conferido antes de qualquer chamada: o token só sai para o host do Agrovex (o endereço vem de arquivo baixado)
+  const urlAgrovex = conferirUrlAgrovex(process.env.AGROVEX_URL || config.url);
   const dados = await sincronizar({
-    url: process.env.AGROVEX_URL || config.url,
+    url: urlAgrovex,
     token,
     safras: config.safras ?? 'auto',
     excluirPrefixos: config.excluirPrefixos ?? [],
@@ -2234,7 +2298,7 @@ async function main() {
     // Acompanhamento Operacional: depois do plantio dos mapas; um erro nele não desfaz o que já foi gravado
     if (config.acompanhamento !== false) {
       const erro = await rodarAcompanhamento({
-        agrovex: { url: process.env.AGROVEX_URL || config.url, token, safras: config.safras ?? 'auto', excluirPrefixos: config.excluirPrefixos ?? [] },
+        agrovex: { url: urlAgrovex, token, safras: config.safras ?? 'auto', excluirPrefixos: config.excluirPrefixos ?? [] },
         supabase: { url: supabaseUrl, chave: supabaseChave },
       });
       if (erro) process.exitCode = 1;
@@ -2242,7 +2306,7 @@ async function main() {
     // Validação de apontamentos (ordens de serviço e saldo dos depósitos): um erro nela não desfaz o resto
     if (config.validacao !== false) {
       const erro = await rodarValidacao({
-        agrovex: { url: process.env.AGROVEX_URL || config.url, token },
+        agrovex: { url: urlAgrovex, token },
         supabase: { url: supabaseUrl, chave: supabaseChave },
       });
       if (erro) process.exitCode = 1;
@@ -2269,7 +2333,9 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((e) => {
-    console.error(`Erro ao sincronizar o plantio: ${e instanceof Error ? e.message : e}`);
+    // o texto de um erro pode repetir o que o outro lado devolveu: a chave e o token saem antes de ir para o log
+    const msg = semChave(semChave(e instanceof Error ? e.message : String(e), process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()), process.env.AGROVEX_TOKEN?.trim());
+    console.error(`Erro ao sincronizar o plantio: ${msg}`);
     process.exitCode = 1;
   });
 }

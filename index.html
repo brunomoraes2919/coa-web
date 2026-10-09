@@ -9,13 +9,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://pkaxbitsqxjxjlwnhjhd.supabase.co">
 <!-- planilhas, imagem e PDF só são usados em exportar/importar: carregam sem segurar a tela (defer); aguardarBiblioteca() espera se for cedo demais -->
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz" crossorigin="anonymous"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
 <style>
 :root{
   --verde-escuro:#103632;
@@ -264,7 +264,7 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 /* blocos de caixas (fazendas, categorias) e botões do formulário de usuário: mesmo respiro da grade de campos */
 .campo-fazendas{margin-top:0;padding:4px 16px 14px;}
 #nu-form-wrap .card .section-actions, #wc-secao .card .section-actions{padding:2px 16px 16px;margin-top:0 !important;}
-/* contatos do WhatsApp (Usuários, só o ADMINISTRADOR+) */
+/* contatos do WhatsApp (Usuários, administrador que vê todas as fazendas) */
 .wc-aviso{font-size:12.5px;color:var(--texto-suave);background:var(--fundo);border:1px dashed var(--linha);border-radius:8px;padding:9px 12px;margin-bottom:12px;}
 .wc-aviso.wc-bom{border-style:solid;border-color:#9CCBB0;color:#1F6B45;}
 .wc-aviso.wc-ruim{border-style:solid;border-color:#E3B4A8;color:#A8321F;}
@@ -1415,7 +1415,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
           </table>
         </div>
       </div>
-      <!-- contatos que vão receber alertas pelo WhatsApp: só o ADMINISTRADOR+ vê (ver renderContatosWhatsapp) -->
+      <!-- contatos que vão receber alertas pelo WhatsApp: só administrador que vê todas as fazendas (ver renderContatosWhatsapp) -->
       <div class="section" id="wc-secao" style="display:none">
         <div class="section-head">
           <div><h2>Contatos do WhatsApp</h2><div class="desc">Quem vai receber os alertas do Locks SAT no WhatsApp, com ou sem login no COA WEB</div></div>
@@ -1618,7 +1618,7 @@ const state = {
   safras: [],
   talhoes: [],
   usuarios: [],
-  contatosWhatsapp: [],        // só o ADMINISTRADOR+ carrega (tabela whatsapp_contatos)
+  contatosWhatsapp: [],        // só administrador que vê todas as fazendas carrega (tabela whatsapp_contatos)
   whatsappDisponivel: null,    // false = a tabela ainda não existe no banco (script 0003)
   whatsappEstado: null,        // linha de whatsapp_estado: { conectado, desde, batimentoEm, ultimoEnvioEm, ultimoErro }
   whatsappEnvioDisponivel: false // false enquanto o script 0006 (whatsapp_estado e autorização) não foi aplicado
@@ -1666,8 +1666,12 @@ const CATEGORIAS = [
   { chave:'validacao', nome:'Validação PIMS', card:'card-validacao' },
   { chave:'controle', nome:'Controle Técnico', card:'card-controle' },
 ];
-// null = ainda não se sabe, ou a tabela usuario_categorias não existe no banco: vale como "todas"
-let categoriasDoUsuario = null;
+// Lista das categorias liberadas para quem está logado. null só em um caso: a tabela usuario_categorias não
+// existe no banco (antes do script 0001), e aí vale como "todas", como o site era antes dela.
+// Enquanto a lista não chegou, ou se a consulta falhou (rede, sessão), fica [] = nenhuma: a dúvida fecha, não abre.
+let categoriasDoUsuario = [];
+// a última consulta falhou e não havia lista anterior: a tela de categorias avisa em vez de dizer "nenhuma liberada"
+let categoriasFalhou = false;
 function podeCategoria(chave){
   if(!sessao) return false;
   if(sessao.super || categoriasDoUsuario === null) return true;
@@ -1681,8 +1685,10 @@ function podeGerenciarUsuario(u){
   if(sessao.super) return true;
   return u.perfil === 'colaborador';
 }
-function escaparHtmlUsuario(t){
-  return String(t == null ? '' : t).replace(/[&<>"]/g, c=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+/* Escape ÚNICO do site para tudo o que vai para innerHTML (texto ou valor de atributo): nomes, e-mails,
+   códigos de talhão, células de planilha e mensagens vêm do banco ou de arquivo e nunca podem virar HTML. */
+function escHtml(t){
+  return String(t == null ? '' : t).replace(/[&<>"']/g, c=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 }
 function nomeDoPerfil(perfil, ehSuper){
   if(perfil !== 'admin') return 'Colaborador';
@@ -1926,9 +1932,9 @@ function renderRelatorio(){
     const tr = document.createElement('tr');
     const indic = (prod!=null && prodMedia!=null) ? (prod>=prodMedia? 'acima':'abaixo') : '';
     tr.innerHTML = `
-      <td><b>${t.talhao}</b></td>
-      <td>${t.variedade}</td>
-      <td>${t.safra}</td>
+      <td><b>${escHtml(t.talhao)}</b></td>
+      <td>${escHtml(t.variedade)}</td>
+      <td>${escHtml(t.safra)}</td>
       <td><span class="pill ${situacao(t)==='Média final'?'pill-final':'pill-estim'}">${situacao(t)}</span></td>
       <td class="num">${fmt(p,1)}</td>
       <td class="num">${fmt(mh,2)}</td>
@@ -2005,9 +2011,9 @@ function montarDocumentoExport(){
   document.getElementById('doc-tbody').innerHTML = lista.map(t=>{
     const p = t.pesoModulo, mh = modulosHa(t), prod = produtividade(t);
     return `<tr>
-      <td><b>${t.talhao}</b></td>
-      <td>${t.variedade}</td>
-      <td>${t.safra}</td>
+      <td><b>${escHtml(t.talhao)}</b></td>
+      <td>${escHtml(t.variedade)}</td>
+      <td>${escHtml(t.safra)}</td>
       <td>${situacao(t)}</td>
       <td class="num">${fmt(p,1)}</td>
       <td class="num">${fmt(mh,2)}</td>
@@ -2110,16 +2116,16 @@ function renderColheita(){
     const tr = document.createElement('tr');
     const sit = situacao(t);
     tr.innerHTML = `
-      <td><b>${t.talhao}</b></td>
-      <td>${t.variedade}</td>
+      <td><b>${escHtml(t.talhao)}</b></td>
+      <td>${escHtml(t.variedade)}</td>
       <td class="num">${fmtArea(t.areaTotal)}</td>
       <td class="num">${fmtArea(t.areaColhida)}</td>
       <td class="num">${fmt(percentColhido(t),1)}%</td>
       <td class="num">${fmt(t.qtdModulos,0)}</td>
       <td class="num">${fmt(modulosHa(t),2)}</td>
-      <td><span class="pill ${pillBipagem[t.statusBipagem]||'pill-nao'}">${t.statusBipagem}</span></td>
+      <td><span class="pill ${pillBipagem[t.statusBipagem]||'pill-nao'}">${escHtml(t.statusBipagem)}</span></td>
       <td class="num">${fmt(t.pesoModulo,1)}</td>
-      <td class="num">${t.origemPeso || '–'}</td>
+      <td class="num">${escHtml(t.origemPeso || '–')}</td>
       <td><span class="pill ${sit==='Média final'?'pill-final':'pill-estim'}">${sit}</span></td>
       <td class="num">${fmt(produtividade(t),2)}</td>
     `;
@@ -2148,8 +2154,8 @@ function renderAtualizarColheita(){
     tr.dataset.id = t.id;
     if(talhaoTemDadoPreenchido(t)) tr.classList.add('linha-preenchida');
     tr.innerHTML = `
-      <td><b>${t.talhao}</b></td>
-      <td>${t.variedade}</td>
+      <td><b>${escHtml(t.talhao)}</b></td>
+      <td>${escHtml(t.variedade)}</td>
       <td class="num">${fmtArea(t.areaTotal)}</td>
       <td class="td-edit"><input type="number" class="in-areaColhida" value="${t.areaColhida}" min="0"></td>
       <td class="td-edit"><input type="number" class="in-qtdModulos" value="${t.qtdModulos}" min="0"></td>
@@ -2249,12 +2255,12 @@ function renderTalhoes(){
     const tr = document.createElement('tr');
     tr.dataset.id = t.id;
     tr.innerHTML = `
-      <td class="cel-talhao"><b>${t.talhao}</b></td>
-      <td>${fazenda? fazenda.nome : '–'}</td>
-      <td class="cel-variedade">${t.variedade}</td>
-      <td>${t.safra}</td>
+      <td class="cel-talhao"><b>${escHtml(t.talhao)}</b></td>
+      <td>${escHtml(fazenda? fazenda.nome : '–')}</td>
+      <td class="cel-variedade">${escHtml(t.variedade)}</td>
+      <td>${escHtml(t.safra)}</td>
       <td class="num cel-area">${fmtArea(t.areaTotal)}</td>
-      <td class="cel-semeadura">${fmtData(t.dataSemeadura)}</td>
+      <td class="cel-semeadura">${escHtml(fmtData(t.dataSemeadura))}</td>
       <td class="acoes-usuario cel-acoes">
         <button class="editar btn-editar-talhao">editar</button>
         <button class="remover btn-remover-talhao">remover</button>
@@ -2281,10 +2287,10 @@ function renderTalhoes(){
       const celSemeadura = tr.querySelector('.cel-semeadura');
       const celAcoes = tr.querySelector('.cel-acoes');
 
-      celTalhao.innerHTML = `<input type="text" class="edit-talhao-codigo" value="${t.talhao}">`;
-      celVariedade.innerHTML = `<select class="edit-talhao-variedade">${state.variedades.map(v=>`<option ${v.nome===t.variedade?'selected':''}>${v.nome}</option>`).join('')}</select>`;
-      celArea.innerHTML = `<input type="number" class="edit-talhao-area" value="${t.areaTotal}">`;
-      celSemeadura.innerHTML = `<input type="date" class="edit-talhao-semeadura" value="${t.dataSemeadura||''}">`;
+      celTalhao.innerHTML = `<input type="text" class="edit-talhao-codigo" value="${escHtml(t.talhao)}">`;
+      celVariedade.innerHTML = `<select class="edit-talhao-variedade">${state.variedades.map(v=>`<option ${v.nome===t.variedade?'selected':''}>${escHtml(v.nome)}</option>`).join('')}</select>`;
+      celArea.innerHTML = `<input type="number" class="edit-talhao-area" value="${escHtml(t.areaTotal)}">`;
+      celSemeadura.innerHTML = `<input type="date" class="edit-talhao-semeadura" value="${escHtml(t.dataSemeadura||'')}">`;
       celAcoes.innerHTML = `
         <button class="editar btn-salvar-talhao">salvar</button>
         <button class="remover btn-cancelar-talhao">cancelar</button>
@@ -2334,7 +2340,7 @@ document.getElementById('btn-add-talhao').addEventListener('click', async ()=>{
 function criarEditorDeNome(tabela, colunaCascataTalhoes, aoCancelar){
   return (item, div)=>{
     div.innerHTML = `
-      <input type="text" class="edit-nome-input" value="${item.nome}">
+      <input type="text" class="edit-nome-input" value="${escHtml(item.nome)}">
       <div class="acoes-usuario">
         <button class="editar btn-salvar-nome">salvar</button>
         <button class="remover btn-cancelar-nome">cancelar</button>
@@ -2374,7 +2380,7 @@ function renderListaSimples(containerId, itens, onRemover, onEditar, temVinculo)
   itens.forEach(item=>{
     const div = document.createElement('div');
     div.className='item';
-    div.innerHTML = `<b>${item.nome}</b><span></span>`;
+    div.innerHTML = `<b>${escHtml(item.nome)}</b><span></span>`;
     const acoes = document.createElement('div');
     acoes.className = 'acoes-usuario';
     if(onEditar){
@@ -2537,7 +2543,7 @@ function processarArquivo(file){
 function mostrarPreviewImportacao(){
   const el = document.getElementById('import-preview');
   if(!pendentes.length){ el.innerHTML = '<div class="aviso">Nenhuma linha válida encontrada no arquivo.</div>'; return; }
-  let linhas = pendentes.map(l=>`<tr><td>${l.talhao}</td><td>${l.fazenda}</td><td>${l.variedade}</td><td>${l.safra}</td><td class="num">${fmtArea(l.areaTotal)}</td><td>${l.dataSemeadura||'–'}</td></tr>`).join('');
+  let linhas = pendentes.map(l=>`<tr><td>${escHtml(l.talhao)}</td><td>${escHtml(l.fazenda)}</td><td>${escHtml(l.variedade)}</td><td>${escHtml(l.safra)}</td><td class="num">${fmtArea(l.areaTotal)}</td><td>${escHtml(l.dataSemeadura||'–')}</td></tr>`).join('');
   el.innerHTML = `
     <div class="aviso">${pendentes.length} talhão(ões) prontos para importar. Confira antes de confirmar.</div>
     <div class="tabela-wrap card" style="margin-top:10px">
@@ -2592,7 +2598,7 @@ async function confirmarImportacao(){
 
   let msg = `${novosOuAtualizados} talhão(ões) importados/atualizados. Cadastrados automaticamente: ${novasFazendas} fazenda(s), ${novasVariedades} variedade(s), ${novasSafras} safra(s).`;
   if(erros.length){ msg += ` ${erros.length} linha(s) não puderam ser salvas (veja o console para detalhes).`; console.warn('Erros na importação:', erros); }
-  document.getElementById('import-resultado').innerHTML = `<div class="aviso-ok">${msg}</div>`;
+  document.getElementById('import-resultado').innerHTML = `<div class="aviso-ok">${escHtml(msg)}</div>`;
   pendentes=[];
   document.getElementById('import-preview').innerHTML='';
   inputArquivo.value='';
@@ -3173,12 +3179,6 @@ function listarMotivosMecanizadas(mensagens){
   });
   return Array.from(contagem, ([mensagem, quantidade])=>({mensagem, quantidade}));
 }
-function escaparHtmlMec(valor){
-  return String(valor==null?'':valor)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
-}
-
 function renderTabelaMecanizadas(){
   const resEl = document.getElementById('mec-resultado');
   const tabelaEl = document.getElementById('mec-tabela-wrap');
@@ -3215,7 +3215,7 @@ function renderTabelaMecanizadas(){
   const qtdSemErro = dados.filter((_,i)=>!validacao.erros[i] && !validacaoAtencao.atencoes[i]).length;
   let preLimpezaHtml = '';
   if(preLimpeza && preLimpeza.filtroAplicado){
-    preLimpezaHtml = `<div class="aviso-ok"><b>Pré-limpeza aplicada:</b> mantidas ${dados.length} linha(s) da unidade <b>${preLimpeza.unidadeEsperada}</b> e removidas ${preLimpeza.removidas} linha(s) de outras fazendas.</div>`;
+    preLimpezaHtml = `<div class="aviso-ok"><b>Pré-limpeza aplicada:</b> mantidas ${dados.length} linha(s) da unidade <b>${escHtml(preLimpeza.unidadeEsperada)}</b> e removidas ${preLimpeza.removidas} linha(s) de outras fazendas.</div>`;
   } else if(preLimpeza && preLimpeza.motivo==='coluna-ausente'){
     preLimpezaHtml = `<div class="aviso"><b>Pré-limpeza não aplicada:</b> a coluna "Unidade Administrativa" não foi encontrada neste arquivo.</div>`;
   } else if(preLimpeza && preLimpeza.motivo==='fazenda-nao-mapeada'){
@@ -3246,11 +3246,11 @@ function renderTabelaMecanizadas(){
       <div class="mec-filtros-detalhes">
         <select id="mec-filtro-erro-detalhe" class="mec-filtro-detalhe erro ${mecFiltroErroDetalhe?'ativo':''}" aria-label="Filtrar pelo erro apresentado">
           <option value="">Erros apresentados · Todos</option>
-          ${motivosErro.map((item,i)=>`<option value="${i}" ${item.mensagem===mecFiltroErroDetalhe?'selected':''}>${escaparHtmlMec(item.mensagem)} · ${item.quantidade}</option>`).join('')}
+          ${motivosErro.map((item,i)=>`<option value="${i}" ${item.mensagem===mecFiltroErroDetalhe?'selected':''}>${escHtml(item.mensagem)} · ${item.quantidade}</option>`).join('')}
         </select>
         <select id="mec-filtro-atencao-detalhe" class="mec-filtro-detalhe atencao ${mecFiltroAtencaoDetalhe?'ativo':''}" aria-label="Filtrar pelo ponto de atenção apresentado">
           <option value="">Pontos de atenção · Todos</option>
-          ${motivosAtencao.map((item,i)=>`<option value="${i}" ${item.mensagem===mecFiltroAtencaoDetalhe?'selected':''}>${escaparHtmlMec(item.mensagem)} · ${item.quantidade}</option>`).join('')}
+          ${motivosAtencao.map((item,i)=>`<option value="${i}" ${item.mensagem===mecFiltroAtencaoDetalhe?'selected':''}>${escHtml(item.mensagem)} · ${item.quantidade}</option>`).join('')}
         </select>
       </div>
     </div>
@@ -3260,7 +3260,7 @@ function renderTabelaMecanizadas(){
       <div class="mec-arquivo-info">
         <div class="mec-arquivo-info-main">
           <div class="mec-arquivo-icone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></div>
-          <div><b>${nomeArquivo}</b><span>${dados.length} boletins processados com sucesso</span></div>
+          <div><b>${escHtml(nomeArquivo)}</b><span>${dados.length} boletins processados com sucesso</span></div>
         </div>
         <div class="mec-arquivo-acoes">
           <button class="btn ouro" id="btn-exportar-mec" ${qtdErros || qtdAtencoes ? '' : 'disabled title="Sem erros nem pontos de atenção neste arquivo"'}>Exportar relatório</button>
@@ -3339,7 +3339,7 @@ function renderTabelaMecanizadas(){
   const rotulosFiltro = {'todos':'','erro':' com erro','atencao':' com atenção','sem-erro':' sem erro ou atenção'};
   const sufixoFiltro = rotulosFiltro[mecFiltroTipo] || '';
 
-  const theadHtml = '<tr>' + headers.map(h=>`<th>${h || '–'}</th>`).join('')
+  const theadHtml = '<tr>' + headers.map(h=>`<th>${escHtml(h || '–')}</th>`).join('')
     + (mostrarColunaErro ? '<th class="th-edit">Verificação</th>' : '')
     + (mostrarColunaAtencao ? '<th class="th-atencao">Atenção</th>' : '')
     + '</tr>';
@@ -3349,10 +3349,10 @@ function renderTabelaMecanizadas(){
     const atencao = mostrarColunaAtencao ? validacaoAtencao.atencoes[i] : null;
     const celulas = headers.map((h,j)=>{
       const v = row[j];
-      return `<td>${(v!=null && String(v).trim()!=='') ? v : '–'}</td>`;
+      return `<td>${escHtml((v!=null && String(v).trim()!=='') ? v : '–')}</td>`;
     }).join('');
-    const celulaErro = mostrarColunaErro ? `<td class="td-edit">${erro ? erro : '–'}</td>` : '';
-    const celulaAtencao = mostrarColunaAtencao ? `<td class="td-atencao">${atencao ? atencao : '–'}</td>` : '';
+    const celulaErro = mostrarColunaErro ? `<td class="td-edit">${escHtml(erro ? erro : '–')}</td>` : '';
+    const celulaAtencao = mostrarColunaAtencao ? `<td class="td-atencao">${escHtml(atencao ? atencao : '–')}</td>` : '';
     const classeLinha = erro ? 'linha-erro-mec' : (atencao ? 'linha-atencao-mec' : '');
     return `<tr class="${classeLinha}">${celulas}${celulaErro}${celulaAtencao}</tr>`;
   }).join('');
@@ -3381,7 +3381,7 @@ function abrirExportacaoMec(atual, motivosErro, motivosAtencao, qtdSemErro){
     const el = document.getElementById(id);
     el.hidden = !itens.length;
     el.innerHTML = `<div class="dlg-mec-grupo-cab"><b>${titulo}</b><span><button type="button" data-todos="${tipo}">Marcar todos</button><button type="button" data-nenhum="${tipo}">Limpar</button></span></div>`
-      + itens.map(it=>`<label class="dlg-mec-item"><input type="checkbox" data-tipo="${tipo}" value="${escaparHtmlMec(it.mensagem)}" ${marcado(it.mensagem)?'checked':''}> ${escaparHtmlMec(it.mensagem)} <small>${it.quantidade} boletim(ns)</small></label>`).join('');
+      + itens.map(it=>`<label class="dlg-mec-item"><input type="checkbox" data-tipo="${tipo}" value="${escHtml(it.mensagem)}" ${marcado(it.mensagem)?'checked':''}> ${escHtml(it.mensagem)} <small>${it.quantidade} boletim(ns)</small></label>`).join('');
   };
   grupo('dlg-mec-erros', 'Erros', motivosErro, marcadoErro, 'erro');
   grupo('dlg-mec-atencoes', 'Pontos de atenção', motivosAtencao, marcadoAtencao, 'atencao');
@@ -3607,7 +3607,7 @@ function renderUsuarios(){
   const fazJaHavia = !!checksWrap.querySelector('.nu-fazenda-chk');
   const fazMarcadas = new Set([...checksWrap.querySelectorAll('.nu-fazenda-chk:checked')].map(c=>c.value));
   checksWrap.innerHTML = state.fazendas.map(f=>`
-    <label><input type="checkbox" class="nu-fazenda-chk" value="${f.id}"> ${f.nome}</label>
+    <label><input type="checkbox" class="nu-fazenda-chk" value="${escHtml(f.id)}"> ${escHtml(f.nome)}</label>
   `).join('');
   const uEdit = usuarioEditandoId ? state.usuarios.find(x=>x.id===usuarioEditandoId) : null;
   document.querySelectorAll('.nu-fazenda-chk').forEach(c=>{
@@ -3646,7 +3646,7 @@ function renderUsuarios(){
       : (u.fazendasPermitidas.length
           ? u.fazendasPermitidas.map(id=>{
               const f = state.fazendas.find(x=>x.id===id);
-              return f ? `<span class="fazendas-permitidas-tag">${f.nome}</span>` : '';
+              return f ? `<span class="fazendas-permitidas-tag">${escHtml(f.nome)}</span>` : '';
             }).join('')
           : '<span class="fazendas-permitidas-tag">Nenhuma</span>');
     // "Todas": ADMINISTRADOR+, tabela ainda inexistente, quem tem as cinco; antes do script 0002 todo admin vê tudo
@@ -3658,22 +3658,22 @@ function renderUsuarios(){
           || '<span class="fazendas-permitidas-tag">Nenhuma</span>');
     // Coordenador = colaborador com uma Equipe do PIMS vinculada (Controle Técnico)
     const ehCoordenador = u.perfil !== 'admin' && (u.equipes || []).length > 0;
-    const equipesTxt = ehCoordenador ? u.equipes.map(e=>`<span class="fazendas-permitidas-tag">${escaparHtmlUsuario(e.equipe)} · ${escaparHtmlUsuario(e.unidade)}</span>`).join('') : '';
+    const equipesTxt = ehCoordenador ? u.equipes.map(e=>`<span class="fazendas-permitidas-tag">${escHtml(e.equipe)} · ${escHtml(e.unidade)}</span>`).join('') : '';
     const podeEditar = podeGerenciarUsuario(u);
     const podeRemover = podeEditar && !(sessao && sessao.id===u.id) && !u.super;
     // a senha do ADMINISTRADOR+ só ele mesmo troca (a função no banco confere de novo)
     const podeSenha = podeEditar && !(u.super && !(sessao && sessao.id===u.id));
     const ehSuperAqui = !!(state.adminMaisDisponivel && u.super);
     return `<tr>
-      <td><b>${u.nome}</b>${u.senhaProvisoria ? '<br><span class="senha-provisoria-tag" title="Ainda não criou a senha definitiva: vai criar na próxima entrada">senha provisória</span>' : ''}</td>
-      <td>${u.email||'–'}</td>
-      <td><span class="perfil-pill ${ehCoordenador ? 'coordenador' : u.perfil}${ehSuperAqui?' super':''}">${ehCoordenador ? 'Coordenador' : nomeDoPerfil(u.perfil, u.super)}</span></td>
+      <td><b>${escHtml(u.nome)}</b>${u.senhaProvisoria ? '<br><span class="senha-provisoria-tag" title="Ainda não criou a senha definitiva: vai criar na próxima entrada">senha provisória</span>' : ''}</td>
+      <td>${escHtml(u.email||'–')}</td>
+      <td><span class="perfil-pill ${ehCoordenador ? 'coordenador' : escHtml(u.perfil)}${ehSuperAqui?' super':''}">${ehCoordenador ? 'Coordenador' : nomeDoPerfil(u.perfil, u.super)}</span></td>
       <td>${ehCoordenador ? equipesTxt : fazendasTxt}</td>
       <td>${categoriasTxt}</td>
       <td class="acoes-usuario">
-        ${podeEditar ? `<button class="editar" data-id="${u.id}">editar</button>` : ''}
-        ${podeSenha ? `<button class="redefinir-senha" data-id="${u.id}">${state.senhaPadraoDisponivel ? 'voltar à senha padrão' : 'redefinir senha'}</button>` : ''}
-        ${podeRemover ? `<button class="remover" data-id="${u.id}">remover perfil</button>` : ''}
+        ${podeEditar ? `<button class="editar" data-id="${escHtml(u.id)}">editar</button>` : ''}
+        ${podeSenha ? `<button class="redefinir-senha" data-id="${escHtml(u.id)}">${state.senhaPadraoDisponivel ? 'voltar à senha padrão' : 'redefinir senha'}</button>` : ''}
+        ${podeRemover ? `<button class="remover" data-id="${escHtml(u.id)}">remover perfil</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -4065,8 +4065,28 @@ async function criarNovoUsuario(){
   btn.disabled = true;
   btn.textContent = 'Criando…';
 
+  // Trava do cadastro público (tabela cadastros_autorizados + gatilho em auth.users): o administrador autoriza o
+  // e-mail logo antes de criar o login; o banco só aceita login novo com autorização recente. Enquanto o script
+  // da trava não foi rodado (tabela inexistente), segue como antes; qualquer outro erro para aqui.
+  const emailAutorizado = email.trim().toLowerCase();
+  let erroAutorizacao = null;
+  try{
+    ({ error: erroAutorizacao } = await sb.from('cadastros_autorizados')
+      .upsert({ email: emailAutorizado, autorizado_em: new Date().toISOString() }, { onConflict: 'email' }));
+  }catch(e){ erroAutorizacao = e || { message: 'falha na consulta' }; }
+  if(erroAutorizacao && !erroTabelaInexistente(erroAutorizacao)){
+    btn.disabled = false; btn.textContent = 'Criar usuário';
+    alert('Não foi possível autorizar o cadastro deste e-mail: ' + (erroAutorizacao.message || 'erro desconhecido') + '. O login não foi criado.');
+    return;
+  }
+
   const { data, error } = await sbCriarUsuario.auth.signUp({ email, password: senhaDoLogin });
   let novoId = data && data.user && data.user.id;
+  // o login não nasceu: a autorização não fica sobrando (valeria alguns minutos para quem soubesse o e-mail).
+  // Se o banco não deixar apagar, ela vence sozinha.
+  if((error || !novoId) && !erroAutorizacao){
+    try{ await sb.from('cadastros_autorizados').delete().eq('email', emailAutorizado); }catch(e){ /* vence sozinha */ }
+  }
   if(error && /already (been )?registered/i.test(error.message)){
     // O login já existe em Authentication. Se o perfil dele foi removido antes ("remover perfil" apaga só o perfil),
     // o banco deixa reaproveitar: troca a senha pela deste cadastro (ou pela padrão) e devolve o id.
@@ -4079,6 +4099,12 @@ async function criarNovoUsuario(){
       return;
     }
     novoId = r.data;
+  } else if(error && /n[aã]o autorizado|database error saving new user/i.test(error.message || '')){
+    // o gatilho do banco recusou: sem autorização para este e-mail, ou ela venceu (vale 15 minutos)
+    btn.disabled = false; btn.textContent = 'Criar usuário';
+    alert('O banco recusou a criação do login. O mais provável é o cadastro deste e-mail não estar autorizado (ou a autorização ter vencido: ela vale 15 minutos). '
+      + 'Clique em "Criar usuário" de novo; se continuar, confira no Supabase o script da trava de cadastro (cadastros_autorizados). Detalhe: ' + error.message);
+    return;
   } else if(error){
     btn.disabled = false; btn.textContent = 'Criar usuário';
     alert('Não foi possível criar o login: '+error.message);
@@ -4148,11 +4174,12 @@ document.getElementById('btn-add-usuario').addEventListener('click', ()=>{
    CONTATOS DO WHATSAPP — quem vai receber os alertas do Locks SAT
    (tabelas whatsapp_contatos e whatsapp_contato_fazendas, script 0003).
    Por enquanto é só o cadastro: nada aqui envia mensagem.
-   Só o ADMINISTRADOR+ de verdade vê (número de telefone é dado pessoal;
-   o banco recusa os outros). Os nomes vão para a tela por textContent.
+   Só administrador que vê todas as fazendas (o ADMINISTRADOR+ e o ADMINISTRADOR sem restrição)
+   vê: número de telefone é dado pessoal, e o banco recusa os outros (script 0022; antes dele,
+   só o ADMINISTRADOR+). Os nomes vão para a tela por textContent.
 ===================================================================== */
-function ehSuperDeVerdade(){
-  return !!(sessao && state.adminMaisDisponivel && sessao.super);
+function podeContatosWhatsapp(){
+  return !!(sessao && state.adminMaisDisponivel && sessao.perfil === 'admin' && (sessao.super || sessao.todasFazendas));
 }
 /* Só dígitos, com o 55 na frente. Aceita com ou sem +55 e com zero antes do DDD; devolve null se
    não for um número brasileiro com DDD (celular: 9 + 8 dígitos; fixo: 8 dígitos começando de 2 a 5). */
@@ -4220,7 +4247,7 @@ function textoAutorizacaoWpp(c){
 /* manterSeFalhar: na releitura de minuto em minuto, uma consulta que falha (rede fora) não apaga a lista da tela.
    Devolve true se a lista foi atualizada. */
 async function carregarContatosWhatsapp(manterSeFalhar){
-  if(!ehSuperDeVerdade()){
+  if(!podeContatosWhatsapp()){
     state.contatosWhatsapp = []; state.whatsappDisponivel = null;
     state.whatsappEstado = null; state.whatsappEnvioDisponivel = false;
     return false;
@@ -4248,7 +4275,7 @@ async function carregarContatosWhatsapp(manterSeFalhar){
 }
 /* Só a linha de whatsapp_estado, para o aviso não ficar velho; true se atualizou. */
 async function carregarEstadoWhatsapp(){
-  if(!ehSuperDeVerdade() || !state.whatsappEnvioDisponivel) return false;
+  if(!podeContatosWhatsapp() || !state.whatsappEnvioDisponivel) return false;
   const id = sessao.id;
   const { data, error } = await sb.from('whatsapp_estado').select('*').eq('id', 1).maybeSingle();
   if(!sessao || sessao.id !== id || error) return false;
@@ -4279,7 +4306,7 @@ function limparFormContatoWpp(){
 /* A lista da tela pode estar velha: a pessoa pode ter mandado SAIR (ou ATIVAR) depois de ela ser carregada.
    Por isso a edição abre com o que o banco tem AGORA para aquele contato; se a leitura falhar, não abre. */
 async function editarContatoWpp(id, botao){
-  if(!ehSuperDeVerdade()) return;
+  if(!podeContatosWhatsapp()) return;
   const quem = sessao.id;
   if(botao) botao.disabled = true;
   let ct, cf;
@@ -4333,7 +4360,7 @@ function mostrarEstadoWhatsapp(){
 }
 function renderContatosWhatsapp(){
   const secao = document.getElementById('wc-secao');
-  if(!ehSuperDeVerdade()){
+  if(!podeContatosWhatsapp()){
     secao.style.display = 'none';
     document.getElementById('tbl-contatos-wpp').replaceChildren(); // não deixa números na página de outro usuário
     const aviso = document.getElementById('wc-aviso');
@@ -4394,7 +4421,7 @@ function renderContatosWhatsapp(){
 }
 async function removerContatoWpp(id, botao){
   const c = state.contatosWhatsapp.find(x=>x.id===id);
-  if(!c || !ehSuperDeVerdade()) return;
+  if(!c || !podeContatosWhatsapp()) return;
   if(!confirm(`Remover ${c.nome} da lista do WhatsApp?`)) return;
   botao.disabled = true;
   const { error } = await sb.from('whatsapp_contatos').delete().eq('id', id);
@@ -4404,7 +4431,7 @@ async function removerContatoWpp(id, botao){
   renderContatosWhatsapp();
 }
 async function salvarContatoWpp(){
-  if(!ehSuperDeVerdade()) return;
+  if(!podeContatosWhatsapp()) return;
   const nome = document.getElementById('wc-nome').value.trim();
   const telefone = normalizarWhatsapp(document.getElementById('wc-telefone').value);
   if(!nome){ alert('Informe o nome do contato.'); return; }
@@ -4464,7 +4491,7 @@ document.getElementById('wc-todas-fazendas').addEventListener('change', ajustarF
    Situação mudarem sozinhas depois de um ATIVAR ou SAIR. Com uma edição aberta a lista não é mexida (só o estado). */
 let atualizandoEstadoWpp = false;
 async function atualizarWhatsappDoMinuto(){
-  if(document.hidden || !ehSuperDeVerdade() || atualizandoEstadoWpp) return;
+  if(document.hidden || !podeContatosWhatsapp() || atualizandoEstadoWpp) return;
   if(!state.whatsappEnvioDisponivel) return;
   if(!document.querySelector('.page.active[data-page="usuarios"]')) return;
   atualizandoEstadoWpp = true;
@@ -5156,7 +5183,7 @@ function atualizarUsuarioLogado(){
   if(!sessao) return;
   const el = document.getElementById('usuario-logado');
   const badgeClass = sessao.perfil==='admin' ? '' : 'colab';
-  el.innerHTML = `<b>${sessao.nome}</b><span class="perfil-badge ${badgeClass}">${nomeDoPerfil(sessao.perfil, sessao.super)}</span>`;
+  el.innerHTML = `<b>${escHtml(sessao.nome)}</b><span class="perfil-badge ${badgeClass}">${nomeDoPerfil(sessao.perfil, sessao.super)}</span>`;
 }
 
 /* ---- carrega tudo do Supabase (fazendas/variedades/safras/talhões já
@@ -5214,15 +5241,25 @@ async function recarregarTudoDoSupabase(){
   renderTudo();
 }
 
-/* categorias liberadas para quem está logado. Erro na consulta (tabela ainda não criada no banco,
-   rede) = null = todas: o site segue como era antes desta tabela, em vez de travar todo mundo.
-   Se já havia uma lista conhecida, um erro passageiro não a apaga. */
+/* o banco respondeu que a tabela não existe (script ainda não rodado)? Qualquer outro erro NÃO é isso. */
+function erroTabelaInexistente(error){
+  return !!error && (error.code === 'PGRST205' || error.code === '42P01'
+    || /could not find the table|relation .* does not exist/i.test(error.message || ''));
+}
+/* categorias liberadas para quem está logado.
+   - tabela ainda não criada no banco = null = todas: o site segue como era antes desta tabela;
+   - qualquer outro erro (rede, sessão vencida, banco fora): NÃO libera nada. Se já havia uma lista conhecida,
+     um erro passageiro não a apaga; sem lista anterior fica "nenhuma" e a tela avisa para recarregar. */
 async function carregarCategoriasDoUsuario(){
-  if(!sessao){ categoriasDoUsuario = null; return; }
+  if(!sessao){ categoriasDoUsuario = []; categoriasFalhou = false; return; }
   const id = sessao.id;
-  const { data, error } = await sb.from('usuario_categorias').select('categoria').eq('usuario_id', id);
+  let data = null, error = null;
+  try{ ({ data, error } = await sb.from('usuario_categorias').select('categoria').eq('usuario_id', id)); }
+  catch(e){ error = e || { message: 'falha na consulta' }; }
   if(!sessao || sessao.id !== id) return; // saiu (ou trocou de usuário) durante a consulta
-  if(!error) categoriasDoUsuario = (data || []).map(l=>l.categoria);
+  if(!error){ categoriasDoUsuario = (data || []).map(l=>l.categoria); categoriasFalhou = false; }
+  else if(erroTabelaInexistente(error)){ categoriasDoUsuario = null; categoriasFalhou = false; }
+  else if(!Array.isArray(categoriasDoUsuario) || !categoriasDoUsuario.length){ categoriasDoUsuario = []; categoriasFalhou = true; }
 }
 /* depois de recarregar as categorias: fecha o que deixou de ser permitido */
 function aplicarCategoriasDoUsuario(){
@@ -5275,7 +5312,7 @@ async function carregarSessaoEDados(){
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('login-senha').value = '';
 
-  categoriasDoUsuario = null; // sem lista de uma sessão anterior
+  categoriasDoUsuario = []; categoriasFalhou = false; // sem lista de uma sessão anterior; nada liberado até a consulta responder
   await carregarCategoriasDoUsuario();
   await recarregarTudoDoSupabase();
   configurarRealtime();
@@ -5375,8 +5412,13 @@ function mostrarCategoriaScreen(){
     const card = document.getElementById(c.card);
     if(card) card.style.display = podeCategoria(c.chave) ? '' : 'none';
   });
-  const semCategoria = sessao && sessao.perfil !== 'admin' && !CATEGORIAS.some(c=>podeCategoria(c.chave));
-  document.getElementById('categoria-vazia').style.display = semCategoria ? '' : 'none';
+  const nenhumaCategoria = !!sessao && !CATEGORIAS.some(c=>podeCategoria(c.chave));
+  const semCategoria = nenhumaCategoria && (sessao.perfil !== 'admin' || categoriasFalhou);
+  const avisoVazia = document.getElementById('categoria-vazia');
+  avisoVazia.textContent = categoriasFalhou
+    ? 'Não foi possível conferir as categorias liberadas para o seu usuário. Verifique a conexão e recarregue a página.'
+    : 'Nenhuma categoria liberada para o seu usuário. Fale com o administrador.';
+  avisoVazia.style.display = semCategoria ? '' : 'none';
   if(sessao){
     document.getElementById('categoria-usuario-logado').textContent = sessao.nome;
   }
@@ -5493,9 +5535,13 @@ async function sair(){
   descarregarValidacao();
   descarregarControle();
   if(canalRealtime){ sb.removeChannel(canalRealtime); canalRealtime = null; }
-  await sb.auth.signOut();
+  // o SIGNED_OUT (mais abaixo) já recarrega a página; se o servidor não respondeu (sem rede), a sessão guardada
+  // neste navegador é apagada assim mesmo, para o "Sair" valer e a página não voltar logada
+  let saiu = false;
+  try{ const r = await sb.auth.signOut(); saiu = !r.error; }catch(e){ /* sem rede */ }
+  if(!saiu) apagarSessaoLocal();
   sessao = null;
-  categoriasDoUsuario = null;
+  categoriasDoUsuario = []; categoriasFalhou = false;
   // números de telefone não ficam na página (nem no formulário) esperando o próximo login
   limparFormContatoWpp();
   state.contatosWhatsapp = []; state.whatsappEstado = null;
@@ -5503,7 +5549,23 @@ async function sair(){
   document.getElementById('login-usuario').value = '';
   document.getElementById('login-senha').value = '';
   document.getElementById('login-erro').textContent = '';
-  mostrarTelaLogin();
+  // página nova: nada do usuário que saiu (usuários, talhões, boletins importados) fica na memória ou no HTML
+  recarregarAposSair();
+}
+/* Recarrega a página uma única vez depois de sair. Não entra em laço: a página nova nasce sem sessão
+   (sessao = null) e o SIGNED_OUT só recarrega quando havia alguém logado nesta página. */
+let recarregandoAposSair = false;
+function recarregarAposSair(){
+  if(recarregandoAposSair) return;
+  recarregandoAposSair = true;
+  location.reload();
+}
+/* Apaga a sessão do Supabase guardada neste navegador (chave padrão do supabase-js: sb-<projeto>-auth-token). */
+function apagarSessaoLocal(){
+  try{
+    const chave = 'sb-' + new URL(SUPABASE_URL).hostname.split('.')[0] + '-auth-token';
+    [chave, chave + '-code-verifier', chave + '-user'].forEach(k=>localStorage.removeItem(k));
+  }catch(e){ /* sem armazenamento */ }
 }
 document.getElementById('btn-entrar').addEventListener('click', tentarLogin);
 document.getElementById('login-usuario').addEventListener('keydown', e=>{ if(e.key==='Enter') tentarLogin(); });
@@ -5570,7 +5632,10 @@ function renderTudo(){
   else { mostrarTelaLogin(); }
 })();
 sb.auth.onAuthStateChange((event)=>{
-  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = null; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); descarregarChuva(); descarregarValidacao(); descarregarControle(); mostrarTelaLogin(); }
+  // saiu (aqui, em outra aba, ou a sessão foi encerrada no servidor) com alguém logado nesta página: recarrega,
+  // para nenhum dado ficar na memória nem no HTML. Sem ninguém logado (tela de entrada) não recarrega.
+  if(event === 'SIGNED_OUT' && sessao){ recarregarAposSair(); return; }
+  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = []; categoriasFalhou = false; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); descarregarChuva(); descarregarValidacao(); descarregarControle(); mostrarTelaLogin(); }
 });
 
 </script>

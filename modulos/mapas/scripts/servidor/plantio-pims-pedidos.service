@@ -7,4 +7,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=USUARIO
+# Verificação pendurada não segura a trava para sempre: passado o prazo, o systemd encerra a verificação e a
+# seguinte (30 s depois) recomeça. Os pedidos que ficaram sem resposta continuam pendentes e são atendidos nela.
+TimeoutStartSec=20min
 ExecStart=/bin/bash -c '/home/USUARIO/plantio-pims/atender-pedidos.sh >> /home/USUARIO/plantio-pims/rotina.log 2>&1'

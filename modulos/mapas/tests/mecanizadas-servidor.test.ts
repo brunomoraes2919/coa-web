@@ -6,14 +6,26 @@ const URL_SB = 'https://proj.supabase.co';
 const CHAVE = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.assinatura';
 const TOKEN = 'token-agrovex-secreto';
 
+// Quem fez os pedidos destes testes: um ADMINISTRADOR+ inventado. Antes de consultar a fonte, o servidor lê
+// do Supabase se quem pediu pode ver o que pediu (as regras têm teste próprio em permissao-pedidos.test.ts).
+const QUEM = '99999999-9999-4999-8999-999999999999';
+const PERMISSOES: Record<string, unknown[]> = {
+  perfis: [{ id: QUEM, perfil: 'admin', super: true, todas_fazendas: true }],
+  usuario_fazendas: [],
+  usuario_categorias: [],
+  fazendas: [{ id: 1, nome: 'Fazenda Três Flechas' }],
+};
+/** tabela do Supabase que a chamada lê */
+const tabelaDe = (url: string) => /\/rest\/v1\/([a-z_]+)/.exec(url)?.[1] ?? '';
+
 const COLUNAS = [
   'unidade', 'categoria', 'equipe', 'boletim', 'data', 'equipamento', 'modelo', 'implemento', 'implemento_de', 'funcionario', 'funcionario_de',
   'ano_agricola', 'periodo', 'periodo_de', 'ccusto', 'ccusto_de', 'operacao', 'operacao_de', 'ini', 'fim', 'total',
 ];
 const linha = (o: Record<string, unknown>) => ({
-  unidade: 'T. FLECHAS', categoria: 'PULVERIZADOR-H', equipe: 'EQUIPE A', boletim: 516261, data: '2026-09-01', equipamento: '31005011', modelo: 'DN M4040',
-  implemento: null, implemento_de: null, funcionario: 5432, funcionario_de: 'MARCOS', ano_agricola: '22627', periodo: 27052, periodo_de: 'SOJA 26/27',
-  ccusto: '1005052', ccusto_de: 'SOJA', operacao: 19, operacao_de: 'DESLOCAMENTO', ini: 3491.9, fim: 3492.4, total: 0.5, ...o,
+  unidade: 'T. FLECHAS', categoria: 'PULVERIZADOR-H', equipe: 'EQUIPE A', boletim: 100001, data: '2026-09-01', equipamento: '30000011', modelo: 'MODELO A1',
+  implemento: null, implemento_de: null, funcionario: 1001, funcionario_de: 'OPERADOR UM', ano_agricola: '22627', periodo: 20001, periodo_de: 'SOJA 26/27',
+  ccusto: '1000001', ccusto_de: 'SOJA', operacao: 19, operacao_de: 'DESLOCAMENTO', ini: 3491.9, fim: 3492.4, total: 0.5, ...o,
 });
 
 describe('boletins de atividades mecanizadas do PIMS (servidor)', () => {
@@ -46,21 +58,21 @@ describe('boletins de atividades mecanizadas do PIMS (servidor)', () => {
       linha({ operacao: 100, operacao_de: 'APLIC ADUBO', ini: 3493.5, fim: 3494.3, total: 0.8 }),
       linha({}),
       linha({ operacao: 184, operacao_de: 'REGULAGEM', ini: 3492.4, fim: 3493.5, total: 1.1 }),
-      linha({ data: '2026-09-02', boletim: 516262, ini: 3500, fim: 3501, total: 1 }),
-      linha({ categoria: 'CAMINHOES', equipamento: '41005008', implemento: '81005057', implemento_de: 'S-REBOQUE', periodo: null, periodo_de: null, ano_agricola: null, ini: 332014, fim: 332828, total: 814 }),
+      linha({ data: '2026-09-02', boletim: 100002, ini: 3500, fim: 3501, total: 1 }),
+      linha({ categoria: 'CAMINHOES', equipamento: '40000008', implemento: '80000057', implemento_de: 'S-REBOQUE', periodo: null, periodo_de: null, ano_agricola: null, ini: 332014, fim: 332828, total: 814 }),
     ]);
     expect(l.map((r) => [r[1], r[5], r[4], r[18], r[21]])).toEqual([
-      ['CAMINHOES', '41005008', '01/09/2026', '332.014,00', 'Início'],
-      ['PULVERIZADOR-H', '31005011', '01/09/2026', '3.491,90', 'Início'],
-      ['PULVERIZADOR-H', '31005011', '01/09/2026', '3.492,40', 'Correto'],
-      ['PULVERIZADOR-H', '31005011', '01/09/2026', '3.493,50', 'Correto'],
-      ['PULVERIZADOR-H', '31005011', '02/09/2026', '3.500,00', 'Incorreto'],
+      ['CAMINHOES', '40000008', '01/09/2026', '332.014,00', 'Início'],
+      ['PULVERIZADOR-H', '30000011', '01/09/2026', '3.491,90', 'Início'],
+      ['PULVERIZADOR-H', '30000011', '01/09/2026', '3.492,40', 'Correto'],
+      ['PULVERIZADOR-H', '30000011', '01/09/2026', '3.493,50', 'Correto'],
+      ['PULVERIZADOR-H', '30000011', '02/09/2026', '3.500,00', 'Incorreto'],
     ]);
     expect(l[1]).toEqual([
-      'T. FLECHAS', 'PULVERIZADOR-H', 'EQUIPE A', '516261', '01/09/2026', '31005011', 'DN M4040', '', '', '5432', 'MARCOS', '22627', '27052', 'SOJA 26/27',
-      '1005052', 'SOJA', '19', 'DESLOCAMENTO', '3.491,90', '3.492,40', '0,50', 'Início',
+      'T. FLECHAS', 'PULVERIZADOR-H', 'EQUIPE A', '100001', '01/09/2026', '30000011', 'MODELO A1', '', '', '1001', 'OPERADOR UM', '22627', '20001', 'SOJA 26/27',
+      '1000001', 'SOJA', '19', 'DESLOCAMENTO', '3.491,90', '3.492,40', '0,50', 'Início',
     ]);
-    expect(l[0].slice(7, 9)).toEqual(['81005057', 'S-REBOQUE']);
+    expect(l[0].slice(7, 9)).toEqual(['80000057', 'S-REBOQUE']);
     expect(l[0].slice(11, 14)).toEqual(['', '', '']);
   });
 });
@@ -73,6 +85,8 @@ function servidores(pedidos: unknown[], consultas: unknown[], statusPedidos = 20
   const impl = async (url: string, init?: RequestInit) => {
     chamadas.push({ url, init });
     if (url.startsWith(URL_SB)) {
+      // as leituras de permissão não são o pedido: respondem com o cadastro de quem pediu
+      if ((!init?.method || init.method === 'GET') && tabelaDe(url) in PERMISSOES) return new Response(JSON.stringify(PERMISSOES[tabelaDe(url)]), { status: 200 });
       if (!init?.method || init.method === 'GET') {
         return statusPedidos === 200
           ? new Response(JSON.stringify(pedidos), { status: 200 })
@@ -97,7 +111,7 @@ describe('pedidos de boletins (mec_pims_pedidos)', () => {
   it('lê os pendentes; sem a tabela não é erro', async () => {
     const a = servidores([{ id: 3, unidade: 'GLOBO', de: '2026-10-01', ate: '2026-10-05' }], []);
     expect(await pedidosMecPendentes(ctx(a.impl))).toEqual([{ id: 3, unidade: 'GLOBO', de: '2026-10-01', ate: '2026-10-05' }]);
-    expect(a.chamadas[0].url).toBe(`${URL_SB}/rest/v1/mec_pims_pedidos?select=id,unidade,de,ate&atendido_em=is.null&order=id.asc&limit=2`);
+    expect(a.chamadas[0].url).toBe(`${URL_SB}/rest/v1/mec_pims_pedidos?select=id,pedido_por,unidade,de,ate&atendido_em=is.null&order=id.asc&limit=200`);
     expect(await pedidosMecPendentes(ctx(servidores([], [], 404).impl))).toEqual([]);
   });
 
@@ -111,7 +125,7 @@ describe('pedidos de boletins (mec_pims_pedidos)', () => {
   it('atende o pedido: consulta o PIMS e grava o relatório no próprio pedido', async () => {
     const l = linha({});
     const { impl, chamadas } = servidores(
-      [{ id: 9, unidade: 'T. FLECHAS', de: '2026-09-01', ate: '2026-09-01' }],
+      [{ id: 9, pedido_por: QUEM, unidade: 'T. FLECHAS', de: '2026-09-01', ate: '2026-09-01' }],
       [{ columns: COLUNAS, rows: [COLUNAS.map((c) => (l as Record<string, unknown>)[c])] }],
     );
     const n = await atenderPedidosMec({ supabase: { url: URL_SB, chave: CHAVE }, agrovex: { url: 'https://agrovex.test/mcp', token: TOKEN }, fetch: impl });

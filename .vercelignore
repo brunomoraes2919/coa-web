@@ -1,0 +1,38 @@
+# O que a Vercel NÃO publica. O navegador só precisa de: index.html, assets/, api/ e as pastas dos
+# módulos já prontos (acompanhamento/, chuva/, previsao/, validacao/, mapas/, sat/).
+# Isto vale só para a publicação na Vercel: o repositório no GitHub (e o GitHub Pages, se ligado)
+# continua mostrando tudo. As rotinas da VM baixam os scripts do GitHub, não da Vercel.
+
+# código-fonte, testes, scripts do servidor e documentação dos módulos
+/modulos/
+# scripts SQL do banco (rodados à mão no SQL Editor do Supabase)
+/supabase/
+/.github/
+/.superpowers/
+
+# em qualquer pasta
+*.md
+*.sql
+*.sh
+*.test.*
+
+# rede de segurança para publicação pela linha de comando (vercel deploy), que não lê o .gitignore:
+# chaves, bibliotecas e dados da Locks nunca sobem
+.env
+.env.*
+node_modules/
+mapas/dados/
+acompanhamento/_teste*
+*.local.html
+*.zip
+*.csv
+*.xlsx
+*.xls
+*.geojson
+*.kml
+*.kmz
+*.shp
+*.shx
+*.dbf
+*.prj
+*.gpkg

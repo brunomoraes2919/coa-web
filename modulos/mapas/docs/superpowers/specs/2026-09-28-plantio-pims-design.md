@@ -27,7 +27,7 @@ Regra de status (por talhão × safra):
 | `plantando` | 0 < área apontada < 99% da prevista |
 | `a_plantar` | talhão cadastrado na safra sem apontamento |
 
-Exemplos reais (28/09): Siriema 007 = 208/228 ha → plantando; Siriema 001 = 97/97 → plantado.
+Exemplos (valores fictícios): talhão 007 = 40/100 ha → plantando; talhão 001 = 100/100 ha → plantado.
 
 ## Arquitetura
 

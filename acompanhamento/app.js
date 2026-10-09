@@ -879,7 +879,7 @@
       grid: { left: 4 * k, right: 12 * k, top: 22 * k, bottom: 4 * k, containLabel: true },
       tooltip: tt({ trigger: 'axis', formatter: function (ps) {
         var s = '<b>' + cats[ps[0].dataIndex].toLocaleDateString('pt-BR') + '</b>';
-        ps.forEach(function (p) { if (p.value !== null && p.value !== undefined) s += '<br>' + p.marker + p.seriesName + ': <b>' + fmtN(p.value) + ' ha</b>'; });
+        ps.forEach(function (p) { if (p.value !== null && p.value !== undefined) s += '<br>' + p.marker + esc(p.seriesName) + ': <b>' + fmtN(p.value) + ' ha</b>'; });
         return s;
       } }),
       xAxis: Object.assign({}, eixoX, { type: 'category', boundaryGap: false, data: cats.map(function (d) { return fmtData(d, true); }), axisLabel: { color: COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: COR.linha, width: k } } }),
@@ -925,7 +925,7 @@
       grid: { left: 4, right: 8, top: 16, bottom: 4, containLabel: true },
       tooltip: tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.05)' } }, formatter: function (ps) {
         var s = '<b>' + m.serie[ps[0].dataIndex].d.toLocaleDateString('pt-BR') + '</b>', tot = 0;
-        ps.slice().reverse().forEach(function (p) { if (p.value) { tot += p.value; s += '<br>' + p.marker + p.seriesName + ': ' + fmtN(p.value) + ' ha'; } });
+        ps.slice().reverse().forEach(function (p) { if (p.value) { tot += p.value; s += '<br>' + p.marker + esc(p.seriesName) + ': ' + fmtN(p.value) + ' ha'; } });
         return s + '<br><b>Total: ' + fmtN(tot) + ' ha</b>';
       } }),
       xAxis: Object.assign({}, eixoX, { type: 'category', data: m.serie.map(function (x) { return fmtData(x.d, true); }), axisLabel: { color: COR.suave, fontSize: 11, hideOverlap: true } }),
@@ -1145,7 +1145,7 @@
     }
     chart(el).setOption(opt({
       grid: { left: 4, right: 12, top: 22, bottom: 4, containLabel: true },
-      tooltip: tt({ trigger: 'axis', formatter: function (ps) { var s = '<b>' + cats[ps[0].dataIndex] + '</b>'; ps.forEach(function (p) { if (p.value !== null && p.value !== undefined) s += '<br>' + p.marker + p.seriesName + ': <b>' + fmtN(p.value) + ' ha</b>'; }); return s; } }),
+      tooltip: tt({ trigger: 'axis', formatter: function (ps) { var s = '<b>' + cats[ps[0].dataIndex] + '</b>'; ps.forEach(function (p) { if (p.value !== null && p.value !== undefined) s += '<br>' + p.marker + esc(p.seriesName) + ': <b>' + fmtN(p.value) + ' ha</b>'; }); return s; } }),
       xAxis: Object.assign({}, eixoX, { type: 'category', boundaryGap: false, data: cats, axisLabel: { color: COR.suave, fontSize: 11, hideOverlap: true } }),
       yAxis: Object.assign({}, eixoY, { type: 'value', max: function (v) { return Math.max(v.max, m.areaTotal) * 1.04; } }),
       series: [

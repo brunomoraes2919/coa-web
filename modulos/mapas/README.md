@@ -150,11 +150,9 @@ token exposto. Por isso uma rotina fora do site consulta o PIMS e grava o result
 VM do Google Cloud (systemd, 1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) ──▶ upsert em mapas_plantio_pims (Supabase)
 ```
 
-**Por que não no GitHub Actions:** o Cloudflare do Agrovex barra os servidores do GitHub com uma página de
-verificação (HTTP 403); a VM do Google Cloud passa (teste: `curl -s -o /dev/null -w "%{http_code}\n" -X POST
--A "mapa-chuva-coa/1.0" -H "Content-Type: application/json" https://mcp.agrovex.com.br/mcp -d '{}'` → `401`
-= passa; `403` = barrado). O workflow `.github/workflows/plantio-pims.yml` continua no repositório só
-com execução manual; se um dia o Agrovex liberar a rota `/mcp`, basta religar o `schedule` dele.
+**Por que não no GitHub Actions:** a proteção de borda do Agrovex barra os servidores do GitHub (HTTP 403);
+a VM do Google Cloud passa. O workflow `.github/workflows/plantio-pims.yml` continua no repositório só
+com execução manual; se um dia o Agrovex liberar o acesso a partir do GitHub, basta religar o `schedule` dele.
 
 **Como está instalado na VM** (usuário da VM, pasta `~/plantio-pims`; arquivos de referência em
 `scripts/servidor/`):
@@ -162,12 +160,12 @@ com execução manual; se um dia o Agrovex liberar a rota `/mcp`, basta religar 
 1. `~/plantio-pims/atualizar-e-rodar.sh` (= `scripts/servidor/atualizar-e-rodar.sh`): a cada rodada baixa
    do `main` a versão atual de `sincronizar-plantio.mjs` e `plantio.config.json` (então mudanças no
    script chegam sozinhas) e roda com o Node da VM (≥ 18; o script não tem dependências).
-2. `~/.plantio-pims.env` (permissão 600, só o usuário lê): `AGROVEX_TOKEN`, `SUPABASE_URL` e
-   `SUPABASE_SERVICE_ROLE_KEY` (a chave `service_role` do Supabase do COA WEB — ignora o RLS; nunca vai
-   para o código nem para o site). Para trocar uma chave sem mostrá-la na tela:
-   `read -rsp "Cole a chave: " V; echo; V=$(printf %s "$V" | tr -d "[:space:]"); if [ ${#V} -gt 40 ]; then sed -i "/^AGROVEX_TOKEN=/d" ~/.plantio-pims.env; echo "AGROVEX_TOKEN=$V" >> ~/.plantio-pims.env; echo "gravada: ${#V}"; else echo "NAO gravada"; fi; unset V`
-   (troque `AGROVEX_TOKEN` pelo nome da chave; o teste de tamanho evita gravar uma chave vazia se o Enter
-   for apertado sem colar nada — o token do Agrovex tem 64 caracteres, a `service_role` ~219).
+2. As chaves ficam num arquivo de ambiente na VM, com permissão 600 (só o usuário da rotina lê):
+   `AGROVEX_TOKEN`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` (a chave `service_role` do Supabase do
+   COA WEB — ignora o RLS; nunca vai para o código nem para o site). Para trocar uma chave sem mostrá-la
+   na tela (troque `ARQUIVO` pelo caminho do arquivo de ambiente e `AGROVEX_TOKEN` pelo nome da chave):
+   `read -rsp "Cole a chave: " V; echo; V=$(printf %s "$V" | tr -d "[:space:]"); if [ ${#V} -gt 40 ]; then sed -i "/^AGROVEX_TOKEN=/d" ARQUIVO; echo "AGROVEX_TOKEN=$V" >> ARQUIVO; echo "gravada"; else echo "NAO gravada"; fi; unset V`
+   (o teste de tamanho evita gravar uma chave vazia se o Enter for apertado sem colar nada).
 3. `/etc/systemd/system/plantio-pims.service` + `plantio-pims.timer` (= `scripts/servidor/`, trocando
    `USUARIO`): roda a cada hora no minuto 17 e volta sozinho depois de reiniciar a VM
    (`sudo systemctl enable --now plantio-pims.timer`). A imagem mínima do Ubuntu não tem `cron`.

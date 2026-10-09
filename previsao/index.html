@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
 <link rel="stylesheet" href="estilo.css?v=202610060700">
 <script src="config.js?v=202610060300"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
 <script src="logica.js?v=202610060300"></script>
 </head>
 <body>
@@ -61,7 +61,7 @@
   <!-- ============================ MAPA ============================ -->
   <!-- o mapa é o widget do Windy; os limites das fazendas são desenhados por cima, no <svg> -->
   <main class="mapa" id="mapa">
-    <iframe id="windy" title="Mapa de previsão do tempo (Windy)" allow="fullscreen"></iframe>
+    <iframe id="windy" title="Mapa de previsão do tempo (Windy)" allow="fullscreen" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"></iframe>
     <svg id="limites" aria-hidden="true"></svg>
     <p class="aviso" id="aviso" hidden></p>
   </main>

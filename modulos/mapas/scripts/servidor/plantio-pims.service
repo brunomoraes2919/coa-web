@@ -7,4 +7,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=USUARIO
+# Rodada pendurada (rede, servidor de dados) não segura a trava para sempre: passado o prazo, o systemd encerra
+# a rodada e a hora seguinte tenta de novo. A rodada normal leva poucos minutos.
+TimeoutStartSec=30min
 ExecStart=/bin/bash -c '/home/USUARIO/plantio-pims/atualizar-e-rodar.sh >> /home/USUARIO/plantio-pims/rotina.log 2>&1'

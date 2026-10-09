@@ -44,9 +44,9 @@ só para comparar: a chuva dos talhões não sai dali.
 
 **Talhões da ZEUS** (campo Limites): o contorno dos talhões cadastrados na ZEUS vem do datalake
 (`soils_database_database.stg_fields`, WKT). Os nomes são os mesmos da tabela de chuva, então essa opção
-desenha exatamente os talhões que têm valor. Em 08/10/2026 só Guapirama, Siriema e Dourado estavam lá; nas
-outras fazendas a opção não aparece. Nome cadastrado duas vezes fica com o de id maior. Só este módulo usa
-esses contornos; o cadastro do Mapas não muda.
+desenha exatamente os talhões que têm valor. Nem toda fazenda tem os talhões cadastrados lá; nas que não
+têm, a opção não aparece. Nome cadastrado duas vezes fica com o de id maior. Só este módulo usa esses
+contornos; o cadastro do Mapas não muda.
 
 A tabela guarda, por fazenda, a chuva diária de cada talhão desde 1º de setembro de duas safras atrás, os
 dias que a ZEUS tem, os ciclos e a chuva dos pluviômetros; as somas são feitas no navegador. Quem vê: quem

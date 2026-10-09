@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Repositório: `C:\Users\bruno.moraes\Documents\CLAUDE GERAL\coa-web`, branch `modulo-mapas`. Nunca `git push`, nunca mexer em `main`.
+- Repositório: a pasta local do `coa-web`, branch `modulo-mapas`. Nunca `git push`, nunca mexer em `main`.
 - Comandos do módulo rodam em `modulos/mapas`: `npx vitest run`, `npx tsc --noEmit -p .`. Linha de base: 516 testes passando.
 - O repositório é **público**: nada de dados da Locks no git (seed, plantio.json, dados-teste, dados-fonte, zips) e nenhuma chave além da anon do COA WEB (que já é pública no `index.html`). Nunca escreva/imprima `service_role`, `AGROVEX_TOKEN` ou senhas.
 - Supabase do COA WEB: URL `https://pkaxbitsqxjxjlwnhjhd.supabase.co`; a chave anon está em `index.html` (constante `SUPABASE_ANON_KEY`).

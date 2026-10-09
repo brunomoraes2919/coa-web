@@ -31,6 +31,10 @@ export interface LinhaSupabaseScript {
 
 export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
+/** único host para onde o token do Agrovex pode ser enviado */
+export const AGROVEX_HOST: string;
+/** confere o endereço do Agrovex (https, só AGROVEX_HOST) e devolve-o normalizado; qualquer outro lança erro */
+export function conferirUrlAgrovex(url: unknown): string;
 export function normalizarCodigo(s: string | null | undefined): string;
 export function montarSql(nomeSafra: string): string;
 export function classificar(t: {
@@ -319,7 +323,7 @@ export function depositosVinculados(vinculos: { unidade: string; deposito: strin
 export function lerVinculosValidacao(opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<{ unidade: string; deposito: string | null }[]>;
 export function sincronizarValidacao(opcoes: { url: string; token: string; vinculos?: { unidade: string; deposito: string | null }[]; fetchImpl?: FetchLike; agora?: Date }): Promise<{ geradoEm: string; linhas: LinhaValidScript[]; avisos: string[] }>;
 export function gravarValidacaoSupabase(dados: { geradoEm: string; linhas: LinhaValidScript[] }, opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<'ok' | 'vazio' | 'sem-tabela'>;
-export function rodarValidacao(opcoes: { agrovex: { url: string; token: string }; supabase: { url: string; chave: string }; fetchImpl?: FetchLike }): Promise<string | null>;
+export function rodarValidacao(opcoes: { agrovex: { url: string; token: string }; supabase: { url: string; chave: string }; fetchImpl?: FetchLike; /** recebe o erro inteiro (para quem responde a um pedido escolher a mensagem pelo tipo) */ aoErro?: (e: unknown) => void }): Promise<string | null>;
 export function rodarAcompanhamento(opcoes: {
   agrovex: { url: string; token: string; safras: 'auto' | string[]; excluirPrefixos?: string[] };
   supabase: { url: string; chave: string };

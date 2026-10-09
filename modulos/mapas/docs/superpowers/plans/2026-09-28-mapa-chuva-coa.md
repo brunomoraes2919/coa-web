@@ -152,10 +152,10 @@ export function decodeCsvBuffer(buf: ArrayBuffer): string; // UTF-8 (remove BOM)
 export function parseZeusCsv(text: string): ZeusCsvResult;
 ```
 
-Formato real (UTF-8, CRLF, separador vírgula, decimal com vírgula entre aspas, colunas extras vazias no fim):
+Formato do arquivo da ZEUS (UTF-8, CRLF, separador vírgula, decimal com vírgula entre aspas, colunas extras vazias no fim; a linha de exemplo tem valores fictícios):
 ```
 id,nome,lat,lon,início do periodo [GMT-3],final do periodo [GMT-3],Pic Inativa,precipitação [mm],temperatura mínima [ºC],...,,,,
-8659,"PIC 23 (TH96,99) GUAPIRAMA","-13,744738","-57,139586",20/08/2025 00:00,20/08/2025 00:00,Não,0,"19,7",27,...
+9105,"PIC 01 (TH1,2) FAZENDA","-20,123456","-45,654321",20/08/2025 00:00,20/08/2025 00:00,Não,0,"19,7",27,...
 ```
 Regras:
 - Aceitar separador `,` ou `;` (detectar pela linha de cabeçalho).
@@ -167,7 +167,7 @@ Regras:
 - Linhas totalmente vazias são ignoradas silenciosamente.
 - Aviso quando houver PICs inativos: `3 PICs inativos foram desmarcados`; quando houver chuva vazia: `2 PICs sem precipitação foram desmarcados`.
 
-Testes (mínimo): fixture com 5 linhas (1 inativa, 1 sem chuva, nomes com vírgula entre aspas) → 5 pics, valores `-13.744738`, chuva `2.3`, `incluir` corretos, período correto, 2 avisos; separador `;`; BOM; coluna faltando lança `ZeusCsvError` com o nome da coluna; `decodeCsvBuffer` com bytes latin1 (`precipita\xe7\xe3o`) retorna texto com "ç".
+Testes (mínimo): fixture com 5 linhas (1 inativa, 1 sem chuva, nomes com vírgula entre aspas) → 5 pics, valores `-20.123456`, chuva `2.3`, `incluir` corretos, período correto, 2 avisos; separador `;`; BOM; coluna faltando lança `ZeusCsvError` com o nome da coluna; `decodeCsvBuffer` com bytes latin1 (`precipita\xe7\xe3o`) retorna texto com "ç".
 
 - [ ] Escrever os testes, ver falharem, implementar, ver passarem (`npx vitest run tests/zeusCsv.test.ts`).
 

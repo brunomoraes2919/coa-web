@@ -15,3 +15,29 @@ modulos/sat/dist/
 
 # testes locais do Acompanhamento (simulador do Supabase com dados reais)
 acompanhamento/_teste*
+
+# ---- rede de segurança: o repositório é público ----
+# chaves e ambiente: nenhum .env entra, em pasta nenhuma (vercel env pull grava .env.local na raiz)
+.env
+.env.*
+# exceções já versionadas: só a URL e a chave anon do COA WEB (públicas por desenho) e o modelo vazio
+!.env.example
+!.env.coa-web
+.vercel/
+node_modules/
+# páginas de teste locais (ex.: modulos/mapas/teste-icone.local.html)
+*.local.html
+# dados: planilhas, exportações da ZEUS/PIMS e limites de fazenda nunca entram, em pasta nenhuma
+*.csv
+*.xlsx
+*.xls
+*.geojson
+*.kml
+*.kmz
+*.shp
+*.shx
+*.dbf
+*.prj
+*.gpkg
+# exceção: CSV de exemplo dos testes do Mapas, com valores fictícios
+!modulos/mapas/tests/fixtures/zeus-exemplo.csv
