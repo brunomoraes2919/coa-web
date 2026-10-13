@@ -6,7 +6,7 @@
  * (duas mensagens iguais no mesmo dia parecem robô para o WhatsApp).
  */
 import { AJUDA, EFEITO_DA_JANELA } from '../componentes/ajudaTextos'
-import { janelaAindaPorVir, textoJanela } from '../logic/janelaRisco'
+import { DIAS_HISTORICO, janelaAindaPorVir, MINIMO_DIAS, textoJanela, TOLERANCIA_JUNCAO_MIN } from '../logic/janelaRisco'
 import { minutoDoDia, rotuloHora } from '../logic/tempo'
 import type { Janela } from '../tipos'
 import { janelaDoAntes } from './agenda'
@@ -19,6 +19,20 @@ export const TITULOS: Record<TipoEvento, string> = {
 }
 
 const LINHA_SAIR = '_Para parar de receber, responda SAIR._'
+
+/**
+ * O convite que fecha cada aviso: a pessoa responde e o serviço explica (`textoDaEstimativa`,
+ * `textoDoImpacto`). Uma redação por aviso, como o resto (o mesmo parágrafo repetido no dia parece robô).
+ */
+export const CONVITE_DETALHAR: Record<TipoEvento, string> = {
+  'resumo-07': [
+    '💬 *Quer saber mais?* Responda:',
+    '• *DETALHAR ESTIMATIVA*: como esse horário foi calculado',
+    '• *DETALHAR IMPACTO*: o que pode afetar na operação',
+  ].join('\n'),
+  'lembrete-12': '💬 Dúvida? Responda *DETALHAR ESTIMATIVA* para ver como o horário é calculado ou *DETALHAR IMPACTO* para ver o que pode afetar na operação.',
+  antes: '💬 Responda *DETALHAR IMPACTO* (efeito na operação) ou *DETALHAR ESTIMATIVA* (como o horário foi calculado).',
+}
 
 export function fazendasDoContato(contato: ContatoWpp, fazendas: FazendaServidor[]): FazendaServidor[] {
   return fazendas.filter((f) => f.celulaId && (contato.todasFazendas || (f.coaId != null && contato.fazendas.includes(f.coaId))))
@@ -109,11 +123,120 @@ function efeitoNaOperacao(tipo: TipoEvento): string[] {
   return [`📡 ${EFEITO_DA_JANELA.antes.efeito}\n👀 ${EFEITO_DA_JANELA.antes.acao}`]
 }
 
-/** Blocos separados por uma linha em branco: título, saudação, dados, efeito e (só se pedido) a linha do SAIR. */
+/** Blocos separados por uma linha em branco: título, saudação, dados, efeito, o convite para pedir explicação e (só se pedido) a linha do SAIR. */
 export function montarMensagem(tipo: TipoEvento, contato: ContatoWpp, texto: string, agora: number, comSair: boolean): string {
-  const blocos = [TITULOS[tipo], `${saudacao(agora)}, *${primeiroNome(contato)}*!`, texto, ...efeitoNaOperacao(tipo)]
+  const blocos = [TITULOS[tipo], `${saudacao(agora)}, *${primeiroNome(contato)}*!`, texto, ...efeitoNaOperacao(tipo), CONVITE_DETALHAR[tipo]]
   if (comSair) blocos.push(LINHA_SAIR)
   return blocos.join('\n\n')
+}
+
+/** As janelas de hoje que ainda vêm, por fazenda da pessoa: fazendas com os mesmos horários saem juntas. `null` = sem o cálculo de hoje. */
+function janelasDeHojeDoContato(contato: ContatoWpp, fazendas: FazendaServidor[], porCelula: Record<string, Janela[]> | null, agora: number): string | null {
+  if (!porCelula) return null
+  const minuto = minutoDoDia(agora)
+  const grupos = new Map<string, { inicio: number; nomes: string[] }>()
+  for (const f of fazendasDoContato(contato, fazendas)) {
+    const janelas = (porCelula[f.celulaId as string] ?? []).filter((j) => janelaAindaPorVir(j, minuto)).sort((a, b) => a.inicio - b.inicio)
+    if (!janelas.length) continue
+    const horarios = janelas.map(janelaEmNegrito).join(' e ')
+    const grupo = grupos.get(horarios) ?? { inicio: janelas[0].inicio, nomes: [] }
+    if (!grupo.nomes.includes(f.nome)) grupo.nomes.push(f.nome)
+    grupos.set(horarios, grupo)
+  }
+  const titulo = '📍 *Hoje nas suas fazendas*'
+  if (!grupos.size) return `${titulo}\nNão há janela de risco pela frente hoje.`
+  const linhas = [...grupos]
+    .sort(([a, ga], [b, gb]) => ga.inicio - gb.inicio || a.localeCompare(b, 'pt-BR'))
+    .map(([horarios, g]) => `• ${g.nomes.sort((a, b) => a.localeCompare(b, 'pt-BR')).join(', ')}: ${horarios}`)
+  return [titulo, ...linhas].join('\n')
+}
+
+/**
+ * Resposta ao DETALHAR ESTIMATIVA: de onde vem o horário do aviso, a conta (os números são os da regra,
+ * `logic/janelaRisco`), as janelas de hoje das fazendas da pessoa e o aviso de que é estimativa.
+ * `porCelula` = as janelas calculadas hoje (`null` se ainda não há cálculo de hoje: o bloco das fazendas não sai).
+ */
+export function textoDaEstimativa(contato: ContatoWpp, fazendas: FazendaServidor[], porCelula: Record<string, Janela[]> | null, agora: number): string {
+  const blocos = [
+    '🛰️ *LOCKS SAT · COMO A ESTIMATIVA É FEITA*',
+    `📊 *De onde vem*\nA Trimble mede a cintilação de 10 em 10 minutos na região de cada fazenda, mas não faz previsão. O Locks SAT olha os *últimos ${DIAS_HISTORICO} dias* e marca os horários em que ela vem se repetindo.`,
+    [
+      '📐 *A conta*',
+      `• Um horário entra na janela quando teve cintilação média ou forte em *${MINIMO_DIAS} ou mais* dos ${DIAS_HISTORICO} dias.`,
+      `• Horários a menos de ${TOLERANCIA_JUNCAO_MIN} minutos um do outro viram uma janela só.`,
+      `• "(5 de ${DIAS_HISTORICO} dias)" quer dizer que, no trecho que mais se repetiu, cintilou em 5 dos últimos ${DIAS_HISTORICO} dias.`,
+    ].join('\n'),
+  ]
+  const hoje = janelasDeHojeDoContato(contato, fazendas, porCelula, agora)
+  if (hoje) blocos.push(hoje)
+  blocos.push(`⚠️ *É uma estimativa*\nVale pelo que vem acontecendo, não é previsão. Pode cintilar fora da janela e pode não cintilar dentro dela. Quanto mais dias (${DIAS_HISTORICO - 1} ou ${DIAS_HISTORICO} de ${DIAS_HISTORICO}), maior a chance.`)
+  return blocos.join('\n\n')
+}
+
+const CORTE_DE_SECAO = 'o corte de seção liga e desliga no lugar errado, e sobra faixa sem produto ou com dose dobrada.'
+const DRONE = '*Drone*: o voo em RTK perde a posição e pode pausar ou voltar.'
+
+/**
+ * O que está no campo em cada época, em Mato Grosso, para soja na safra e algodão e milho na segunda safra
+ * (plantio da soja de 7 de setembro a 7 de janeiro; segunda safra plantada de janeiro ao começo de março;
+ * colheita do milho e do algodão no meio do ano; soqueira do algodão destruída até o começo de outubro;
+ * preparo de solo em algumas fazendas, da colheita até o plantio da soja). Pulverização e drone entram o
+ * ano todo. Textos aprovados pelo usuário em 12/10/2026 a partir do período de setembro a dezembro.
+ */
+const EPOCAS: { meses: number[]; titulo: string; itens: string[] }[] = [
+  {
+    meses: [9, 10, 11, 12],
+    titulo: 'plantio da soja',
+    itens: [
+      '*Plantio*: linhas fora do paralelo, falha ou sobreposição entre passadas. O erro fica na lavoura até a colheita, porque pulverizador e colhedora seguem essas linhas.',
+      `*Dessecação e pulverizações*: ${CORTE_DE_SECAO}`,
+      '*Preparo de solo e destruição de soqueira* (onde ainda não terminou): passadas desalinhadas e taxa variável aplicada fora do lugar.',
+      DRONE,
+    ],
+  },
+  {
+    meses: [1, 2, 3],
+    titulo: 'colheita da soja e plantio da segunda safra',
+    itens: [
+      '*Plantio do algodão e do milho*: linhas fora do paralelo, falha ou sobreposição entre passadas. No algodão pesa mais, porque a colhedora segue as linhas plantadas.',
+      '*Colheita da soja*: a colhedora sai da linha, deixa faixa sem colher ou passa duas vezes, e o mapa de produtividade sai deslocado.',
+      `*Pulverizações*: ${CORTE_DE_SECAO}`,
+      DRONE,
+    ],
+  },
+  {
+    meses: [4, 5, 6],
+    titulo: 'tratos do algodão e do milho',
+    itens: [
+      `*Pulverizações do algodão e do milho*: muitas são feitas à noite, no horário da cintilação. O pulverizador sai do rastro e amassa a lavoura, e o corte de seção erra o lugar de ligar e desligar.`,
+      '*Adubação de cobertura*: faixa sem adubo ou com dose dobrada, e taxa variável aplicada fora do lugar.',
+      '*Colheita do milho* (onde já começou): a colhedora sai da linha e o mapa de produtividade sai deslocado.',
+      DRONE,
+    ],
+  },
+  {
+    meses: [7, 8],
+    titulo: 'colheita do algodão e do milho e preparo de solo',
+    itens: [
+      '*Colheita do algodão e do milho*: a colhedora sai das linhas, perde produto, e o mapa de produtividade sai deslocado.',
+      `*Desfolha e pulverizações*: ${CORTE_DE_SECAO}`,
+      '*Destruição de soqueira*: passadas desalinhadas deixam faixa de soqueira viva.',
+      '*Preparo de solo* (calagem, gessagem, subsolagem, gradagem): passadas desalinhadas e taxa variável aplicada fora do lugar.',
+      DRONE,
+    ],
+  },
+]
+
+/** Resposta ao DETALHAR IMPACTO: o que a cintilação faz na máquina, o que pesa nas operações da época e o que fazer. */
+export function textoDoImpacto(agora: number): string {
+  const mes = new Date(agora).getMonth() + 1
+  const epoca = EPOCAS.find((e) => e.meses.includes(mes)) ?? EPOCAS[0]
+  return [
+    '🚜 *LOCKS SAT · IMPACTO NA OPERAÇÃO*',
+    '📡 *O que acontece na máquina*\nCom cintilação o RTK cai de fixo para flutuante. O piloto automático perde a linha ou desarma, e o erro sai dos 2 a 3 cm para dezenas de centímetros.',
+    [`🌱 *Nesta época: ${epoca.titulo}*`, ...epoca.itens.map((i) => `• ${i}`)].join('\n'),
+    '✅ *O que fazer*\nPrograme para antes ou depois da janela o que depende de RTK fixo. Se a máquina já estiver no talhão, acompanhe o status da correção e não abra linha AB nova.',
+  ].join('\n\n')
 }
 
 export function textoAtivado(contato: ContatoWpp, nomesFazendas: string[]): string {

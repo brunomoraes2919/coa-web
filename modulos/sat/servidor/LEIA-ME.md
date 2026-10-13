@@ -154,6 +154,16 @@ Repare também se o **digitando…** aparece antes das respostas (como no passo 
 
 Se a Autorização ou a Situação não mudarem em 2 minutos, pare e avise antes de cadastrar mais gente.
 
+### Pedidos de explicação: DETALHAR ESTIMATIVA e DETALHAR IMPACTO
+
+Cada aviso termina com um convite: quem recebe pode responder **DETALHAR ESTIMATIVA** (como o horário foi calculado, com as janelas de hoje das fazendas da pessoa) ou **DETALHAR IMPACTO** (o que a cintilação afeta nas operações da época do ano). Vale a frase ou só a palavra (**ESTIMATIVA**, **IMPACTO**).
+
+- Só responde a quem recebe os alertas: contato cadastrado, ativo, confirmado e com Janela de risco. Quem mandou SAIR não recebe.
+- No máximo duas respostas de cada pedido por pessoa por dia, contadas à parte das respostas do ATIVAR e do SAIR. Todas contam no teto de mensagens do dia.
+- O pedido não grava nada no contato. Pedido de mais de 2 horas atrás (fila de quando o serviço estava parado) fica sem resposta.
+
+Para testar: com o seu contato ativo, mande **DETALHAR IMPACTO** e depois **DETALHAR ESTIMATIVA** para o número do COA e confira as duas respostas.
+
 ### Comece com poucas pessoas
 
 No primeiro dia, cadastre só **2 ou 3** pessoas e acompanhe o que chega para elas. Vá acrescentando aos poucos nos dias seguintes. Um número que começa a mandar mensagem para muita gente de uma vez é o que o WhatsApp mais estranha.

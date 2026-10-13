@@ -1,10 +1,16 @@
-/** ATIVAR e SAIR: as duas únicas mensagens que o serviço entende. */
-export type Comando = 'ativar' | 'sair'
+/**
+ * O que o serviço entende: ATIVAR e SAIR (mudam o contato) e os dois pedidos de explicação do convite que
+ * fecha cada aviso, DETALHAR ESTIMATIVA e DETALHAR IMPACTO (só respondem).
+ */
+export type Comando = 'ativar' | 'sair' | 'estimativa' | 'impacto'
 
 export function lerComando(texto: string): Comando | null {
-  const limpo = texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, ' ').trim()
+  const limpo = texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, ' ').trim().replace(/ +/g, ' ')
   if (limpo === 'ativar') return 'ativar'
   if (limpo === 'sair' || limpo === 'parar') return 'sair'
+  // A frase do convite ou só a palavra; "extimativa" é o erro de digitação mais comum.
+  if (/^(detalhar )?e[sx]timativa$/.test(limpo)) return 'estimativa'
+  if (/^(detalhar )?impacto$/.test(limpo)) return 'impacto'
   return null
 }
 

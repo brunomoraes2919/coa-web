@@ -8,7 +8,7 @@ import type { Janela, PontoIono } from '../tipos'
 import { chaveDoAntes, chaveEvento, eventosFixosNaHora, janelaDoAntes, MINUTOS_DE_CALCULO, precisaCalcular, ultimoMarcoDeCalculo } from './agenda'
 import type { Banco } from './banco'
 import { type Comando, chaveDoNumero, lerComando, mascarar, mesmoNumero } from './comandos'
-import { fazendasDoContato, montarMensagem, textoAtivado, textoDoEvento, textoSaiu } from './mensagens'
+import { fazendasDoContato, montarMensagem, textoAtivado, textoDaEstimativa, textoDoEvento, textoDoImpacto, textoSaiu } from './mensagens'
 import { ContadorDoDia, pausaEntrePessoas, pausaEntreRespostas } from './ritmo'
 import type { ContatoWpp, FazendaServidor, JanelasCalculadas, SituacaoEnvio, TipoEvento } from './tipos'
 import { janelasDeHoje } from './trimble'
@@ -41,6 +41,10 @@ export const PRAZO_DAS_GRAVACOES_MS = 10_000
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 const MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0]
 const MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2
+/** DETALHAR ESTIMATIVA e DETALHAR IMPACTO: cada um responde no máximo isto por pessoa por dia (a segunda cobre quem apagou ou não viu a primeira). */
+const MAX_EXPLICACOES_POR_PESSOA_POR_DIA = 2
+/** Pedido de explicação mais velho que isto (fila de quando o serviço estava parado) já não é sobre o aviso de agora: fica sem resposta. */
+const VALIDADE_DO_PEDIDO_DE_EXPLICACAO_MS = 2 * HORA_MS
 /** O carimbo do ATIVAR vem do WhatsApp e o `atualizadoEm` do relógio de quem gravou, que pode estar adiantado alguns minutos. */
 const MARGEM_DO_RELOGIO_MS = 10 * 60_000
 /** O WhatsApp recusar tantas mensagens seguidas é sinal de conta restrita: insistir piora. */
@@ -69,8 +73,15 @@ class PrazoEstourado extends Error {
 
 interface Reservada { contatoId: string; chave: string; situacao: SituacaoEnvio }
 
-/** A resposta a um ATIVAR/SAIR já gravado, à espera da vez na fila de respostas. */
-interface PedidoDeResposta { contato: ContatoWpp; jid: string; quem: string; texto: string }
+/** Os comandos que mudam o contato, e os que só pedem uma explicação. */
+type ComandoDeContato = Extract<Comando, 'ativar' | 'sair'>
+type PedidoDeExplicacao = Exclude<Comando, ComandoDeContato>
+
+/**
+ * A resposta a um ATIVAR/SAIR já gravado ou a um pedido de explicação, à espera da vez na fila de respostas.
+ * `tipo` escolhe o limite do dia: as explicações não gastam as respostas do ATIVAR/SAIR, nem o contrário.
+ */
+interface PedidoDeResposta { contato: ContatoWpp; jid: string; quem: string; texto: string; tipo: 'comando' | PedidoDeExplicacao }
 
 /** Um cálculo das janelas, que pode levar mais de uma tentativa: o que já respondeu não se consulta de novo. */
 interface Rodada {
@@ -190,9 +201,11 @@ export class Servico {
   }
 
   /**
-   * Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado. O comando entra na fila de
+   * Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado, ou um pedido de explicação
+   * (DETALHAR ESTIMATIVA / DETALHAR IMPACTO) de quem recebe os alertas. O comando entra na fila de
    * gravação (um por vez, na ordem de chegada, sem esperar resposta nenhuma) e a resposta, se couber,
-   * na fila de respostas. Resolve quando a resposta foi tratada.
+   * na fila de respostas. O pedido de explicação passa pela mesma fila, para sair depois de um ATIVAR
+   * ou SAIR que chegou antes dele, mas não grava nada. Resolve quando a resposta foi tratada.
    */
   async recebida(m: MensagemRecebida): Promise<void> {
     // Qualquer outro texto é ignorado sem nem ir ao banco, e nenhum texto recebido vai ao registro.
@@ -206,14 +219,20 @@ export class Servico {
     // O SAIR é marcado de forma síncrona, na chegada e antes de entrar na fila: uma volta que comece
     // agora, ou uma falha ao gravar, não pode deixar quem pediu para parar receber mais um alerta.
     // O ATIVAR não solta a marca aqui: só depois de gravado, e só se nenhum SAIR chegou depois dele.
-    const chegada = ++this.chegadas
     const numero = chaveDoNumero(m.jid)
-    if (numero && comando === 'sair') this.pausados.set(numero, chegada)
+    let tratar: () => Promise<PedidoDeResposta | null>
+    if (comando === 'estimativa' || comando === 'impacto') {
+      tratar = () => this.explicar(m, comando, numero, quem)
+    } else {
+      const chegada = ++this.chegadas
+      if (numero && comando === 'sair') this.pausados.set(numero, chegada)
+      tratar = () => this.gravar(m, comando, numero, quem, chegada)
+    }
     this.gravacoesPendentes += 1
     let daResposta: Promise<void> = Promise.resolve()
     const gravacao = this.filaDeGravacao.then(async () => {
       try {
-        const pedido = await this.gravar(m, comando, numero, quem, chegada)
+        const pedido = await tratar()
         if (pedido) daResposta = this.enfileirarResposta(pedido)
       } finally {
         this.gravacoesPendentes -= 1
@@ -307,7 +326,7 @@ export class Servico {
   }
 
   /** Um comando na fila de gravação: lê o contato e grava. Devolve a resposta a mandar, ou `null`. Nunca lança. */
-  private async gravar(m: MensagemRecebida, comando: Comando, numero: string | null, quem: string, chegada: number): Promise<PedidoDeResposta | null> {
+  private async gravar(m: MensagemRecebida, comando: ComandoDeContato, numero: string | null, quem: string, chegada: number): Promise<PedidoDeResposta | null> {
     try {
       const contato = (await this.d.banco.contatos()).find((c) => mesmoNumero(c.telefone, m.jid))
       if (!contato) {
@@ -341,7 +360,7 @@ export class Servico {
         resposta = textoSaiu(contato)
         this.registrar(`pausado: ${mascarar(contato.telefone)}`)
       }
-      return { contato, jid: m.jid, quem, texto: resposta }
+      return { contato, jid: m.jid, quem, texto: resposta, tipo: 'comando' }
     } catch (e) {
       // se foi SAIR, a marca fica: a próxima volta tenta gravar a pausa de novo
       this.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe(e)}`)
@@ -349,10 +368,49 @@ export class Servico {
     }
   }
 
+  /**
+   * Um pedido de explicação na vez dele na fila: monta a resposta, ou `null` se não cabe responder. Não grava
+   * nada. Só responde a quem recebe os alertas (cadastrado, ativo, confirmado e com Janela de risco) e não
+   * pediu para sair: o convite só chega a essas pessoas, e a quem pediu para sair não se manda mais nada. Nunca lança.
+   */
+  private async explicar(m: MensagemRecebida, pedido: PedidoDeExplicacao, numero: string | null, quem: string): Promise<PedidoDeResposta | null> {
+    try {
+      const agora = this.d.agora()
+      if (m.em !== null && agora - m.em > VALIDADE_DO_PEDIDO_DE_EXPLICACAO_MS) {
+        this.registrar(`${quem}: pedido de explicação antigo, sem resposta`)
+        return null
+      }
+      const contato = (await this.d.banco.contatos()).find((c) => mesmoNumero(c.telefone, m.jid))
+      if (!contato) {
+        this.registrar(`pedido de explicação de número não cadastrado (${quem}) ignorado`)
+        return null
+      }
+      const pediuParaSair = numero !== null && this.pausados.has(numero)
+      if (!contato.ativo || !contato.alertaJanela || !contato.confirmadoEm || pediuParaSair) {
+        this.registrar(`${quem}: pedido de explicação de quem não recebe os alertas, sem resposta`)
+        return null
+      }
+      let texto: string
+      if (pedido === 'impacto') {
+        texto = textoDoImpacto(agora)
+      } else {
+        // Janelas de outro dia não valem (como na volta): a explicação sai sem o bloco das fazendas.
+        const janelas = this.janelas
+        const deHoje = janelas !== null && this.fazendas !== null && chaveData(janelas.calculadoEm) === chaveData(agora)
+        texto = textoDaEstimativa(contato, deHoje ? this.fazendas as FazendaServidor[] : [], deHoje ? janelas.porCelula : null, agora)
+      }
+      this.registrar(`explicação (${pedido}) pedida por ${quem}`)
+      return { contato, jid: m.jid, quem, texto, tipo: pedido }
+    } catch (e) {
+      this.registrar(`falha ao tratar pedido de explicação de ${quem}: ${mensagemDe(e)}`)
+      return null
+    }
+  }
+
   /** Põe a resposta na fila de respostas (uma por vez); a promessa devolvida nunca rejeita. */
   private enfileirarResposta(p: PedidoDeResposta): Promise<void> {
     const vez = this.filaDeRespostas
-      .then(() => this.responder(p.contato, p.jid, p.quem, p.texto))
+      .then(() => this.responder(p))
       .catch((e) => this.registrar(`falha ao responder a ${p.quem}: ${mensagemDe(e)}`))
     this.filaDeRespostas = vez
     return vez
@@ -759,12 +817,17 @@ export class Servico {
     }
   }
 
-  /** Resposta a ATIVAR/SAIR: no máximo 2 por pessoa por dia, respeita o teto do dia e conta nele. */
-  private async responder(contato: ContatoWpp, jid: string, quem: string, texto: string): Promise<void> {
+  /**
+   * Resposta a ATIVAR/SAIR (no máximo 2 por pessoa por dia) ou a um pedido de explicação (no máximo 2 de
+   * cada por pessoa por dia, contadas à parte): respeita o teto do dia e conta nele.
+   */
+  private async responder({ contato, jid, quem, texto, tipo }: PedidoDeResposta): Promise<void> {
     const dia = chaveData(this.d.agora())
-    const anterior = this.respostas.get(contato.id)
+    const chave = tipo === 'comando' ? contato.id : `${contato.id}:${tipo}`
+    const maximo = tipo === 'comando' ? MAX_RESPOSTAS_POR_PESSOA_POR_DIA : MAX_EXPLICACOES_POR_PESSOA_POR_DIA
+    const anterior = this.respostas.get(chave)
     const feitas = anterior && anterior.dia === dia ? anterior.n : 0
-    if (feitas >= MAX_RESPOSTAS_POR_PESSOA_POR_DIA) {
+    if (feitas >= maximo) {
       // o comando já valeu; só a resposta fica de fora (mensagens repetidas ou reentregues esgotariam o teto)
       this.registrar(`${quem}: limite de respostas do dia, não respondi`)
       return
@@ -778,7 +841,7 @@ export class Servico {
       await this.avisarTetoDoDia()
       return
     }
-    this.respostas.set(contato.id, { dia, n: feitas + 1 })
+    this.respostas.set(chave, { dia, n: feitas + 1 })
     // Entre uma resposta e a próxima passa um tempo ao acaso (um lote de ATIVAR chega de uma vez só).
     if (this.ultimaResposta) {
       const passou = this.d.agora() - this.ultimaResposta.em

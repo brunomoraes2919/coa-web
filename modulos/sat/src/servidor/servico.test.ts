@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PontoIono } from '../tipos'
 import type { Banco } from './banco'
 import { mascarar } from './comandos'
-import { textoAtivado, textoSaiu } from './mensagens'
+import { textoAtivado, textoDaEstimativa, textoDoImpacto, textoSaiu } from './mensagens'
 import { ContadorDoDia, TETO_DO_DIA } from './ritmo'
 import { Servico } from './servico'
 import type { ContatoWpp, FazendaServidor, SituacaoEnvio, TipoEvento } from './tipos'
@@ -1003,6 +1003,132 @@ describe('servico: ATIVAR e SAIR', () => {
     await c.volta(7)
     expect(alertasPara(c, '5565999990002')).toHaveLength(1)
     expect(c.banco.reservas.map((r) => r[0])).toEqual(['c-ana', 'c-bruno'])
+  })
+})
+
+describe('servico: DETALHAR ESTIMATIVA e DETALHAR IMPACTO', () => {
+  it('D1. DETALHAR IMPACTO de quem recebe os alertas: responde com o texto da época e não grava nada', async () => {
+    const c = montar({}, em(9))
+    await c.recebida(ANA, 'Detalhar impacto')
+    expect(c.wpp.enviados).toEqual([{ jid: jidDe(ANA.telefone), texto: textoDoImpacto(em(9)) }])
+    expect(c.banco.escritas).toBe(0)
+    expect(c.banco.pausas).toEqual([])
+    semNumerosNoRegistro(c.registro)
+    expect(c.registro.join('\n')).not.toMatch(/detalhar/i)
+  })
+
+  it('D2. DETALHAR ESTIMATIVA depois do cálculo do dia: traz as janelas das fazendas da pessoa', async () => {
+    const c = montar()
+    await c.volta(7)
+    const antes = c.wpp.enviados.length
+    c.relogio.agora = em(9)
+    await c.recebida(ANA, 'ESTIMATIVA')
+    expect(c.wpp.enviados).toHaveLength(antes + 1)
+    const { texto } = c.wpp.enviados[antes]
+    expect(texto).toBe(textoDaEstimativa(ANA, FAZENDAS, { c2: [{ inicio: 19 * 60, fim: 20 * 60, dias: 4 }] }, em(9)))
+    expect(texto).toContain('• Nebraska: *19:00–20:00* (4 de 7 dias)')
+    expect(texto).not.toContain('Globo')
+  })
+
+  it('D3. sem o cálculo de hoje (ou com o de ontem), a explicação sai sem as janelas', async () => {
+    const c = montar({}, em(9))
+    await c.recebida(ANA, 'DETALHAR ESTIMATIVA')
+    expect(c.wpp.enviados[0].texto).toBe(textoDaEstimativa(ANA, [], null, em(9)))
+    const d = montar()
+    await d.volta(7)
+    d.relogio.agora = em(0, 1, 7)
+    await d.recebida(ANA, 'DETALHAR ESTIMATIVA')
+    expect(d.wpp.enviados[d.wpp.enviados.length - 1].texto).not.toContain('📍')
+  })
+
+  it('D4. só responde a quem recebe os alertas: número de fora, inativo, sem confirmar ou sem Janela de risco ficam sem resposta', async () => {
+    const casos = [
+      contato({ ativo: false }),
+      contato({ confirmadoEm: null, confirmadoPor: null }),
+      contato({ alertaJanela: false }),
+    ]
+    for (const quem of casos) {
+      const c = montar({ contatos: [quem] }, em(9))
+      await c.recebida(quem, 'DETALHAR IMPACTO')
+      await c.recebida(quem, 'DETALHAR ESTIMATIVA')
+      expect(c.wpp.enviados).toEqual([])
+      expect(c.banco.escritas).toBe(0)
+    }
+    const c = montar({}, em(9))
+    await c.servico.recebida({ jid: jidDe('5565999990009'), texto: 'DETALHAR IMPACTO', em: null })
+    expect(c.wpp.enviados).toEqual([])
+  })
+
+  it('D5. quem mandou SAIR não recebe explicação, nem com a pausa ainda por gravar', async () => {
+    const c = montar({}, em(9))
+    await c.recebida(ANA, 'SAIR')
+    await c.recebida(ANA, 'DETALHAR IMPACTO')
+    expect(c.wpp.enviados).toEqual([{ jid: jidDe(ANA.telefone), texto: textoSaiu(ANA) }])
+    // a pausa falhou ao gravar: o banco ainda diz "ativo", mas a marca do SAIR vale
+    const d = montar({}, em(9))
+    d.banco.pausarLanca = true
+    await d.recebida(ANA, 'SAIR')
+    await d.recebida(ANA, 'DETALHAR IMPACTO')
+    expect(d.wpp.enviados).toEqual([])
+  })
+
+  it('D6. o pedido de explicação nunca pausa nem confirma ninguém', async () => {
+    const c = montar({}, em(9))
+    for (const t of ['DETALHAR IMPACTO', 'DETALHAR ESTIMATIVA', 'impacto', 'estimativa']) await c.recebida(ANA, t)
+    expect(c.banco.tentativasDePausa).toEqual([])
+    expect(c.banco.confirmacoes).toEqual([])
+    await c.volta(12)
+    expect(alertasPara(c, ANA.telefone).some((e) => e.texto.includes('LEMBRETE'))).toBe(true)
+  })
+
+  it('D7. no máximo 2 de cada por pessoa por dia, sem gastar as respostas do ATIVAR/SAIR; no dia seguinte volta', async () => {
+    const c = montar({}, em(9))
+    for (const _ of vezes(3)) await c.recebida(ANA, 'DETALHAR IMPACTO')
+    expect(c.wpp.enviados).toHaveLength(2)
+    for (const _ of vezes(3)) await c.recebida(ANA, 'DETALHAR ESTIMATIVA')
+    expect(c.wpp.enviados).toHaveLength(4)
+    await c.recebida(ANA, 'ATIVAR')
+    expect(c.wpp.enviados).toHaveLength(5)
+    c.relogio.agora = em(9, 0, 7)
+    await c.recebida(ANA, 'DETALHAR IMPACTO')
+    expect(c.wpp.enviados).toHaveLength(6)
+  })
+
+  it('D8. conta no teto do dia e, com o teto estourado, não responde', async () => {
+    const c = montar({}, em(9))
+    await c.recebida(ANA, 'DETALHAR IMPACTO')
+    expect(c.contador().total).toBe(1)
+    for (const _ of vezes(TETO_DO_DIA)) c.contador().contar(null)
+    await c.recebida(ANA, 'DETALHAR ESTIMATIVA')
+    expect(c.wpp.enviados).toHaveLength(1)
+  })
+
+  it('D9. pedido de mais de 2 horas atrás (fila de quando o serviço estava parado) não é respondido', async () => {
+    const c = montar({}, em(9))
+    await c.recebida(ANA, 'DETALHAR IMPACTO', em(6, 59))
+    expect(c.wpp.enviados).toEqual([])
+    await c.recebida(ANA, 'DETALHAR IMPACTO', em(8, 30))
+    expect(c.wpp.enviados).toHaveLength(1)
+  })
+
+  it('D10. no ensaio, ou com o WhatsApp restringindo os envios, não responde', async () => {
+    const c = montar({ ensaio: true }, em(9))
+    await c.recebida(ANA, 'DETALHAR IMPACTO')
+    expect(c.wpp.enviados).toEqual([])
+    const d = montar({}, em(9))
+    await d.servico.restricao(em(20), 'teste')
+    await d.recebida(ANA, 'DETALHAR IMPACTO')
+    expect(d.wpp.enviados).toEqual([])
+  })
+
+  it('D11. ATIVAR e, logo depois, DETALHAR IMPACTO no mesmo lote: a explicação espera a confirmação e sai depois dela', async () => {
+    const novo = contato({ confirmadoEm: null, confirmadoPor: null, ativo: false, jid: null })
+    const c = montar({ contatos: [novo] }, em(9))
+    await Promise.all([c.recebida(novo, 'ATIVAR'), c.recebida(novo, 'DETALHAR IMPACTO')])
+    expect(c.wpp.enviados.map((e) => e.texto.split('\n')[0])).toEqual([
+      textoAtivado(novo, ['Nebraska']).split('\n')[0],
+      '🚜 *LOCKS SAT · IMPACTO NA OPERAÇÃO*',
+    ])
   })
 })
 

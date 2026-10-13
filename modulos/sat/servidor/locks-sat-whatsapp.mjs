@@ -320,9 +320,11 @@ function criarBanco(opcoes) {
 //#endregion
 //#region src/servidor/comandos.ts
 function lerComando(texto) {
-	const limpo = texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]/g, " ").trim();
+	const limpo = texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z]/g, " ").trim().replace(/ +/g, " ");
 	if (limpo === "ativar") return "ativar";
 	if (limpo === "sair" || limpo === "parar") return "sair";
+	if (/^(detalhar )?e[sx]timativa$/.test(limpo)) return "estimativa";
+	if (/^(detalhar )?impacto$/.test(limpo)) return "impacto";
 	return null;
 }
 /** DDD + 8 últimos dígitos. O WhatsApp guarda alguns números brasileiros sem o nono dígito. */
@@ -448,6 +450,19 @@ var TITULOS = {
 	antes: "🚨 *LOCKS SAT · COMEÇA EM BREVE*"
 };
 var LINHA_SAIR = "_Para parar de receber, responda SAIR._";
+/**
+* O convite que fecha cada aviso: a pessoa responde e o serviço explica (`textoDaEstimativa`,
+* `textoDoImpacto`). Uma redação por aviso, como o resto (o mesmo parágrafo repetido no dia parece robô).
+*/
+var CONVITE_DETALHAR = {
+	"resumo-07": [
+		"💬 *Quer saber mais?* Responda:",
+		"• *DETALHAR ESTIMATIVA*: como esse horário foi calculado",
+		"• *DETALHAR IMPACTO*: o que pode afetar na operação"
+	].join("\n"),
+	"lembrete-12": "💬 Dúvida? Responda *DETALHAR ESTIMATIVA* para ver como o horário é calculado ou *DETALHAR IMPACTO* para ver o que pode afetar na operação.",
+	antes: "💬 Responda *DETALHAR IMPACTO* (efeito na operação) ou *DETALHAR ESTIMATIVA* (como o horário foi calculado)."
+};
 function fazendasDoContato(contato, fazendas) {
 	return fazendas.filter((f) => f.celulaId && (contato.todasFazendas || f.coaId != null && contato.fazendas.includes(f.coaId)));
 }
@@ -519,16 +534,134 @@ function efeitoNaOperacao(tipo) {
 	if (tipo === "lembrete-12") return [`📋 ${EFEITO_DA_JANELA.lembrete}`];
 	return [`📡 ${EFEITO_DA_JANELA.antes.efeito}\n👀 ${EFEITO_DA_JANELA.antes.acao}`];
 }
-/** Blocos separados por uma linha em branco: título, saudação, dados, efeito e (só se pedido) a linha do SAIR. */
+/** Blocos separados por uma linha em branco: título, saudação, dados, efeito, o convite para pedir explicação e (só se pedido) a linha do SAIR. */
 function montarMensagem(tipo, contato, texto, agora, comSair) {
 	const blocos = [
 		TITULOS[tipo],
 		`${saudacao(agora)}, *${primeiroNome(contato)}*!`,
 		texto,
-		...efeitoNaOperacao(tipo)
+		...efeitoNaOperacao(tipo),
+		CONVITE_DETALHAR[tipo]
 	];
 	if (comSair) blocos.push(LINHA_SAIR);
 	return blocos.join("\n\n");
+}
+/** As janelas de hoje que ainda vêm, por fazenda da pessoa: fazendas com os mesmos horários saem juntas. `null` = sem o cálculo de hoje. */
+function janelasDeHojeDoContato(contato, fazendas, porCelula, agora) {
+	if (!porCelula) return null;
+	const minuto = minutoDoDia(agora);
+	const grupos = /* @__PURE__ */ new Map();
+	for (const f of fazendasDoContato(contato, fazendas)) {
+		const janelas = (porCelula[f.celulaId] ?? []).filter((j) => janelaAindaPorVir(j, minuto)).sort((a, b) => a.inicio - b.inicio);
+		if (!janelas.length) continue;
+		const horarios = janelas.map(janelaEmNegrito).join(" e ");
+		const grupo = grupos.get(horarios) ?? {
+			inicio: janelas[0].inicio,
+			nomes: []
+		};
+		if (!grupo.nomes.includes(f.nome)) grupo.nomes.push(f.nome);
+		grupos.set(horarios, grupo);
+	}
+	const titulo = "📍 *Hoje nas suas fazendas*";
+	if (!grupos.size) return `${titulo}\nNão há janela de risco pela frente hoje.`;
+	return [titulo, ...[...grupos].sort(([a, ga], [b, gb]) => ga.inicio - gb.inicio || a.localeCompare(b, "pt-BR")).map(([horarios, g]) => `• ${g.nomes.sort((a, b) => a.localeCompare(b, "pt-BR")).join(", ")}: ${horarios}`)].join("\n");
+}
+/**
+* Resposta ao DETALHAR ESTIMATIVA: de onde vem o horário do aviso, a conta (os números são os da regra,
+* `logic/janelaRisco`), as janelas de hoje das fazendas da pessoa e o aviso de que é estimativa.
+* `porCelula` = as janelas calculadas hoje (`null` se ainda não há cálculo de hoje: o bloco das fazendas não sai).
+*/
+function textoDaEstimativa(contato, fazendas, porCelula, agora) {
+	const blocos = [
+		"🛰️ *LOCKS SAT · COMO A ESTIMATIVA É FEITA*",
+		`📊 *De onde vem*\nA Trimble mede a cintilação de 10 em 10 minutos na região de cada fazenda, mas não faz previsão. O Locks SAT olha os *últimos 7 dias* e marca os horários em que ela vem se repetindo.`,
+		[
+			"📐 *A conta*",
+			`• Um horário entra na janela quando teve cintilação média ou forte em *3 ou mais* dos 7 dias.`,
+			`• Horários a menos de 30 minutos um do outro viram uma janela só.`,
+			`• "(5 de 7 dias)" quer dizer que, no trecho que mais se repetiu, cintilou em 5 dos últimos 7 dias.`
+		].join("\n")
+	];
+	const hoje = janelasDeHojeDoContato(contato, fazendas, porCelula, agora);
+	if (hoje) blocos.push(hoje);
+	blocos.push(`⚠️ *É uma estimativa*\nVale pelo que vem acontecendo, não é previsão. Pode cintilar fora da janela e pode não cintilar dentro dela. Quanto mais dias (6 ou 7 de 7), maior a chance.`);
+	return blocos.join("\n\n");
+}
+var CORTE_DE_SECAO = "o corte de seção liga e desliga no lugar errado, e sobra faixa sem produto ou com dose dobrada.";
+var DRONE = "*Drone*: o voo em RTK perde a posição e pode pausar ou voltar.";
+/**
+* O que está no campo em cada época, em Mato Grosso, para soja na safra e algodão e milho na segunda safra
+* (plantio da soja de 7 de setembro a 7 de janeiro; segunda safra plantada de janeiro ao começo de março;
+* colheita do milho e do algodão no meio do ano; soqueira do algodão destruída até o começo de outubro;
+* preparo de solo em algumas fazendas, da colheita até o plantio da soja). Pulverização e drone entram o
+* ano todo. Textos aprovados pelo usuário em 12/10/2026 a partir do período de setembro a dezembro.
+*/
+var EPOCAS = [
+	{
+		meses: [
+			9,
+			10,
+			11,
+			12
+		],
+		titulo: "plantio da soja",
+		itens: [
+			"*Plantio*: linhas fora do paralelo, falha ou sobreposição entre passadas. O erro fica na lavoura até a colheita, porque pulverizador e colhedora seguem essas linhas.",
+			`*Dessecação e pulverizações*: ${CORTE_DE_SECAO}`,
+			"*Preparo de solo e destruição de soqueira* (onde ainda não terminou): passadas desalinhadas e taxa variável aplicada fora do lugar.",
+			DRONE
+		]
+	},
+	{
+		meses: [
+			1,
+			2,
+			3
+		],
+		titulo: "colheita da soja e plantio da segunda safra",
+		itens: [
+			"*Plantio do algodão e do milho*: linhas fora do paralelo, falha ou sobreposição entre passadas. No algodão pesa mais, porque a colhedora segue as linhas plantadas.",
+			"*Colheita da soja*: a colhedora sai da linha, deixa faixa sem colher ou passa duas vezes, e o mapa de produtividade sai deslocado.",
+			`*Pulverizações*: ${CORTE_DE_SECAO}`,
+			DRONE
+		]
+	},
+	{
+		meses: [
+			4,
+			5,
+			6
+		],
+		titulo: "tratos do algodão e do milho",
+		itens: [
+			`*Pulverizações do algodão e do milho*: muitas são feitas à noite, no horário da cintilação. O pulverizador sai do rastro e amassa a lavoura, e o corte de seção erra o lugar de ligar e desligar.`,
+			"*Adubação de cobertura*: faixa sem adubo ou com dose dobrada, e taxa variável aplicada fora do lugar.",
+			"*Colheita do milho* (onde já começou): a colhedora sai da linha e o mapa de produtividade sai deslocado.",
+			DRONE
+		]
+	},
+	{
+		meses: [7, 8],
+		titulo: "colheita do algodão e do milho e preparo de solo",
+		itens: [
+			"*Colheita do algodão e do milho*: a colhedora sai das linhas, perde produto, e o mapa de produtividade sai deslocado.",
+			`*Desfolha e pulverizações*: ${CORTE_DE_SECAO}`,
+			"*Destruição de soqueira*: passadas desalinhadas deixam faixa de soqueira viva.",
+			"*Preparo de solo* (calagem, gessagem, subsolagem, gradagem): passadas desalinhadas e taxa variável aplicada fora do lugar.",
+			DRONE
+		]
+	}
+];
+/** Resposta ao DETALHAR IMPACTO: o que a cintilação faz na máquina, o que pesa nas operações da época e o que fazer. */
+function textoDoImpacto(agora) {
+	const mes = new Date(agora).getMonth() + 1;
+	const epoca = EPOCAS.find((e) => e.meses.includes(mes)) ?? EPOCAS[0];
+	return [
+		"🚜 *LOCKS SAT · IMPACTO NA OPERAÇÃO*",
+		"📡 *O que acontece na máquina*\nCom cintilação o RTK cai de fixo para flutuante. O piloto automático perde a linha ou desarma, e o erro sai dos 2 a 3 cm para dezenas de centímetros.",
+		[`🌱 *Nesta época: ${epoca.titulo}*`, ...epoca.itens.map((i) => `• ${i}`)].join("\n"),
+		"✅ *O que fazer*\nPrograme para antes ou depois da janela o que depende de RTK fixo. Se a máquina já estiver no talhão, acompanhe o status da correção e não abra linha AB nova."
+	].join("\n\n");
 }
 function textoAtivado(contato, nomesFazendas) {
 	const onde = nomesFazendas.length ? [...nomesFazendas].sort((a, b) => a.localeCompare(b, "pt-BR")).join(", ") : "suas fazendas";
@@ -685,6 +818,10 @@ var PRAZO_DAS_GRAVACOES_MS = 1e4;
 /** 00:05: a primeira volta depois disso, a cada dia, apaga os envios antigos. */
 var MINUTO_DA_LIMPEZA = MINUTOS_DE_CALCULO[0];
 var MAX_RESPOSTAS_POR_PESSOA_POR_DIA = 2;
+/** DETALHAR ESTIMATIVA e DETALHAR IMPACTO: cada um responde no máximo isto por pessoa por dia (a segunda cobre quem apagou ou não viu a primeira). */
+var MAX_EXPLICACOES_POR_PESSOA_POR_DIA = 2;
+/** Pedido de explicação mais velho que isto (fila de quando o serviço estava parado) já não é sobre o aviso de agora: fica sem resposta. */
+var VALIDADE_DO_PEDIDO_DE_EXPLICACAO_MS = 2 * HORA_MS$1;
 /** O carimbo do ATIVAR vem do WhatsApp e o `atualizadoEm` do relógio de quem gravou, que pode estar adiantado alguns minutos. */
 var MARGEM_DO_RELOGIO_MS = 6e5;
 /** O WhatsApp recusar tantas mensagens seguidas é sinal de conta restrita: insistir piora. */
@@ -808,9 +945,11 @@ var Servico = class {
 		}
 	}
 	/**
-	* Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado. O comando entra na fila de
+	* Mensagem recebida de alguém: ATIVAR ou SAIR de contato cadastrado, ou um pedido de explicação
+	* (DETALHAR ESTIMATIVA / DETALHAR IMPACTO) de quem recebe os alertas. O comando entra na fila de
 	* gravação (um por vez, na ordem de chegada, sem esperar resposta nenhuma) e a resposta, se couber,
-	* na fila de respostas. Resolve quando a resposta foi tratada.
+	* na fila de respostas. O pedido de explicação passa pela mesma fila, para sair depois de um ATIVAR
+	* ou SAIR que chegou antes dele, mas não grava nada. Resolve quando a resposta foi tratada.
 	*/
 	async recebida(m) {
 		const comando = lerComando(m.texto);
@@ -820,14 +959,19 @@ var Servico = class {
 			this.registrar(`ensaio: comando de ${quem} ignorado`);
 			return;
 		}
-		const chegada = ++this.chegadas;
 		const numero = chaveDoNumero(m.jid);
-		if (numero && comando === "sair") this.pausados.set(numero, chegada);
+		let tratar;
+		if (comando === "estimativa" || comando === "impacto") tratar = () => this.explicar(m, comando, numero, quem);
+		else {
+			const chegada = ++this.chegadas;
+			if (numero && comando === "sair") this.pausados.set(numero, chegada);
+			tratar = () => this.gravar(m, comando, numero, quem, chegada);
+		}
 		this.gravacoesPendentes += 1;
 		let daResposta = Promise.resolve();
 		const gravacao = this.filaDeGravacao.then(async () => {
 			try {
-				const pedido = await this.gravar(m, comando, numero, quem, chegada);
+				const pedido = await tratar();
 				if (pedido) daResposta = this.enfileirarResposta(pedido);
 			} finally {
 				this.gravacoesPendentes -= 1;
@@ -946,16 +1090,59 @@ var Servico = class {
 				contato,
 				jid: m.jid,
 				quem,
-				texto: resposta
+				texto: resposta,
+				tipo: "comando"
 			};
 		} catch (e) {
 			this.registrar(`falha ao tratar mensagem de ${quem}: ${mensagemDe$1(e)}`);
 			return null;
 		}
 	}
+	/**
+	* Um pedido de explicação na vez dele na fila: monta a resposta, ou `null` se não cabe responder. Não grava
+	* nada. Só responde a quem recebe os alertas (cadastrado, ativo, confirmado e com Janela de risco) e não
+	* pediu para sair: o convite só chega a essas pessoas, e a quem pediu para sair não se manda mais nada. Nunca lança.
+	*/
+	async explicar(m, pedido, numero, quem) {
+		try {
+			const agora = this.d.agora();
+			if (m.em !== null && agora - m.em > VALIDADE_DO_PEDIDO_DE_EXPLICACAO_MS) {
+				this.registrar(`${quem}: pedido de explicação antigo, sem resposta`);
+				return null;
+			}
+			const contato = (await this.d.banco.contatos()).find((c) => mesmoNumero(c.telefone, m.jid));
+			if (!contato) {
+				this.registrar(`pedido de explicação de número não cadastrado (${quem}) ignorado`);
+				return null;
+			}
+			const pediuParaSair = numero !== null && this.pausados.has(numero);
+			if (!contato.ativo || !contato.alertaJanela || !contato.confirmadoEm || pediuParaSair) {
+				this.registrar(`${quem}: pedido de explicação de quem não recebe os alertas, sem resposta`);
+				return null;
+			}
+			let texto;
+			if (pedido === "impacto") texto = textoDoImpacto(agora);
+			else {
+				const janelas = this.janelas;
+				const deHoje = janelas !== null && this.fazendas !== null && chaveData(janelas.calculadoEm) === chaveData(agora);
+				texto = textoDaEstimativa(contato, deHoje ? this.fazendas : [], deHoje ? janelas.porCelula : null, agora);
+			}
+			this.registrar(`explicação (${pedido}) pedida por ${quem}`);
+			return {
+				contato,
+				jid: m.jid,
+				quem,
+				texto,
+				tipo: pedido
+			};
+		} catch (e) {
+			this.registrar(`falha ao tratar pedido de explicação de ${quem}: ${mensagemDe$1(e)}`);
+			return null;
+		}
+	}
 	/** Põe a resposta na fila de respostas (uma por vez); a promessa devolvida nunca rejeita. */
 	enfileirarResposta(p) {
-		const vez = this.filaDeRespostas.then(() => this.responder(p.contato, p.jid, p.quem, p.texto)).catch((e) => this.registrar(`falha ao responder a ${p.quem}: ${mensagemDe$1(e)}`));
+		const vez = this.filaDeRespostas.then(() => this.responder(p)).catch((e) => this.registrar(`falha ao responder a ${p.quem}: ${mensagemDe$1(e)}`));
 		this.filaDeRespostas = vez;
 		return vez;
 	}
@@ -1352,12 +1539,17 @@ var Servico = class {
 		const semVinculo = fazendas.filter((f) => f.celulaId && f.coaId == null).map((f) => f.nome).sort(porNome);
 		if (semVinculo.length) this.registrar(`ensaio: Fazendas sem vínculo com o COA WEB (não entram em contato nenhum que não seja "todas"): ${semVinculo.join(", ")}`);
 	}
-	/** Resposta a ATIVAR/SAIR: no máximo 2 por pessoa por dia, respeita o teto do dia e conta nele. */
-	async responder(contato, jid, quem, texto) {
+	/**
+	* Resposta a ATIVAR/SAIR (no máximo 2 por pessoa por dia) ou a um pedido de explicação (no máximo 2 de
+	* cada por pessoa por dia, contadas à parte): respeita o teto do dia e conta nele.
+	*/
+	async responder({ contato, jid, quem, texto, tipo }) {
 		const dia = chaveData(this.d.agora());
-		const anterior = this.respostas.get(contato.id);
+		const chave = tipo === "comando" ? contato.id : `${contato.id}:${tipo}`;
+		const maximo = tipo === "comando" ? MAX_RESPOSTAS_POR_PESSOA_POR_DIA : MAX_EXPLICACOES_POR_PESSOA_POR_DIA;
+		const anterior = this.respostas.get(chave);
 		const feitas = anterior && anterior.dia === dia ? anterior.n : 0;
-		if (feitas >= MAX_RESPOSTAS_POR_PESSOA_POR_DIA) {
+		if (feitas >= maximo) {
 			this.registrar(`${quem}: limite de respostas do dia, não respondi`);
 			return;
 		}
@@ -1369,7 +1561,7 @@ var Servico = class {
 			await this.avisarTetoDoDia();
 			return;
 		}
-		this.respostas.set(contato.id, {
+		this.respostas.set(chave, {
 			dia,
 			n: feitas + 1
 		});

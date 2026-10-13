@@ -12,6 +12,13 @@ describe('comandos', () => {
   it('qualquer outra coisa não é comando', () => {
     for (const t of ['', 'oi', 'ativar o trator', 'quero sair mais cedo', 'ativar\nsair']) expect(lerComando(t)).toBeNull()
   })
+  it('DETALHAR ESTIMATIVA e DETALHAR IMPACTO: a frase ou só a palavra, com aspas, acento ou o erro "extimativa"', () => {
+    for (const t of ['DETALHAR ESTIMATIVA', 'detalhar  estimativa.', '"Detalhar Estimativa"', 'estimativa', 'DETALHAR EXTIMATIVA', 'Extimativa']) {
+      expect(lerComando(t)).toBe('estimativa')
+    }
+    for (const t of ['DETALHAR IMPACTO', 'detalhar\nimpacto', 'Impacto!', '*DETALHAR IMPACTO*']) expect(lerComando(t)).toBe('impacto')
+    for (const t of ['detalhar', 'detalhar tudo', 'qual o impacto', 'estimativa de produção', 'detalhar estimativa e impacto']) expect(lerComando(t)).toBeNull()
+  })
   it('compara número com e sem o nono dígito, e a partir do jid', () => {
     expect(chaveDoNumero('5565999990001')).toBe('6599990001')
     expect(chaveDoNumero('556599990001@s.whatsapp.net')).toBe('6599990001')
