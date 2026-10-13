@@ -59,9 +59,21 @@ plantio; na colheita, `colheitadeira_milho.webp` (milho), `colhedora_algodao.web
 ## Modo TV
 
 Botão **Modo TV**: tela única, sem rolagem, em tela cheia, que troca de fazenda sozinha (Todas e
-cada fazenda), com relógio, atualização dos dados a cada 5 min e a tela mantida ligada. Tudo é
+cada fazenda), com relógio e a tela mantida ligada. Tudo é
 proporcional ao tamanho da tela (TV HD, Full HD, 4K, ultrawide e TV na vertical) e o arranjo é o que
 desenha o mapa maior naquela tela. Teclas: ← → trocam de fazenda, espaço pausa, Esc sai.
+
+A TV se mantém sozinha, sem ninguém recarregar a página:
+
+- **Dados**: a cada minuto a página faz uma consulta leve ao banco (a hora da última gravação do PIMS
+  e as metas). Se mudou, recarrega os dados e redesenha a tela na hora, mesmo com uma fazenda só ou
+  pausada. O painel aberto fora do Modo TV faz o mesmo. Na virada do dia a tela também é redesenhada.
+- **Sem resposta do banco** por 3 conferências seguidas: o canto da faixa mostra "sem conexão" ao lado
+  da hora do dado do PIMS; some quando o banco volta a responder.
+- **Versão nova do site**: a cada 5 min a TV compara os arquivos versionados do `index.html` publicado
+  com os que carregou; se mudaram e os novos já respondem, recarrega e volta ao Modo TV na mesma tela
+  (uma vez por versão). A tela cheia do botão não sobrevive à recarga (regra do navegador): numa TV
+  fixa, use a tela cheia do **F11**, que continua.
 
 Para deixar uma TV fixa: entre no COA WEB no navegador da TV e abra (dá para favoritar)
 `https://coa-web-teal.vercel.app/acompanhamento/index.html?tv=1`. Opções na URL:

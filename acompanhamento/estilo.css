@@ -505,6 +505,7 @@ button, input, select { font: inherit; color: inherit; }
 .tv-relogio b { font-size: 1.9em; line-height: 1; font-weight: 650; font-variant-numeric: tabular-nums; }
 .tv-relogio span { font-size: .72em; color: #D7E8E2; white-space: nowrap; }
 .tv-relogio span:first-letter { text-transform: uppercase; }
+.tv-relogio span.falha { color: #FFD27A; font-weight: 650; }
 .tv-progresso { position: absolute; left: 1.3em; right: 1.3em; bottom: .45em; height: .32em; border-radius: 99em; background: rgba(255, 255, 255, .16); overflow: hidden; }
 .tv-progresso span { display: block; height: 100%; width: 0; border-radius: 99em; background: linear-gradient(90deg, #F0B24A, #DB8A08); transition: width .8s ease; }
 

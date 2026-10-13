@@ -12,7 +12,9 @@
   var ORDEM = ['TRES FLECHAS', 'GLOBO', 'SM3', 'DOURADO', 'NEBRASKA', 'GUAPIRAMA', 'SIRIEMA'];
   var DIA = 86400000;
   var MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-  var RECARREGAR_MIN = 5;
+  var CONFERIR_SEG = 60;       // de quanto em quanto tempo a página pergunta ao banco se há dado novo (consulta leve)
+  var VERSAO_MIN = 5;          // no Modo TV: de quanto em quanto tempo confere se o site ganhou versão nova
+  var FALHAS_PARA_AVISAR = 3;  // conferências seguidas sem resposta do banco até a tela avisar
 
   var COR = {
     teal: '#0C5A50', tealMedio: '#2F7D6B', escuro: '#103632', dourado: '#DB8A08',
@@ -66,6 +68,13 @@
     return ['Não iniciado', '1 a 50%', '51 a 99%', feito];
   }
   function ls(k, v) { try { if (v === undefined) return localStorage.getItem('acomp.' + k); localStorage.setItem('acomp.' + k, v); } catch (e) { return null; } return null; }
+  /** Como `ls`, mas só desta aba (some ao fechar): o que a TV guarda para se retomar depois de recarregar. */
+  function ss(k, v) { try { if (v === undefined) return sessionStorage.getItem('acomp.' + k); sessionStorage.setItem('acomp.' + k, v); } catch (e) { return null; } return null; }
+  /** Os arquivos da página com versão no endereço ("app.js?v=..."): a lista muda quando o site é publicado de novo. */
+  function arquivosVersionados(doc) {
+    return Array.prototype.map.call(doc.querySelectorAll('script[src*="?v="], link[href*="?v="]'), function (e) { return e.getAttribute('src') || e.getAttribute('href'); }).sort();
+  }
+  var VERSAO = arquivosVersionados(document); // a versão que esta aba carregou
 
   // ===========================================================================
   // Fontes de dados
@@ -92,6 +101,7 @@
       prontoParaUsar: async function () { return true; },
       dados: function () { return api('GET', '/api/dados'); },
       planos: async function () { return (await api('GET', '/api/metas')).planos || []; },
+      assinatura: async function () { var r = await Promise.all([api('GET', '/api/dados'), api('GET', '/api/metas')]); return (r[0].geradoEm || '') + '|' + JSON.stringify(r[1].planos || []); },
       mapas: function () {
         if (window.MAPAS) return Promise.resolve(window.MAPAS);
         return new Promise(function (ok) {
@@ -153,6 +163,16 @@
           (l.apontamentos || []).forEach(function (a) { apontamentos.push(Object.assign({ u: l.unidade, s: l.safra }, a)); });
         });
         return { geradoEm: gerado, safras: Object.keys(safras).sort(), talhoes: talhoes, apontamentos: apontamentos, historico: historico, chuva: chuva };
+      },
+      /** Marca do que está gravado, por uma consulta leve: muda quando a VM grava dado novo do PIMS ou alguém mexe numa meta. */
+      assinatura: async function () {
+        var r = await Promise.all([
+          sb.from('acomp_pims').select('gerado_em').order('gerado_em', { ascending: false }).limit(1),
+          sb.from('acomp_metas').select('unidade,safra,operacao,data_termino,periodos').order('unidade').order('safra').order('operacao')
+        ]);
+        if (r[0].error) throw new Error(erroLegivel(r[0].error));
+        if (r[1].error) throw new Error(erroLegivel(r[1].error));
+        return String(((r[0].data || [])[0] || {}).gerado_em) + '|' + JSON.stringify(r[1].data || []);
       },
       planos: async function () {
         var r = await sb.from('acomp_metas').select('*');
@@ -1314,6 +1334,13 @@
 
   function tvMostrar() { tvDesenhar(); tvAgendar(); }
 
+  /** Canto da faixa: a hora do dado do PIMS e, se o banco não vem respondendo, o aviso (o dado na tela pode estar velho). */
+  function tvSituacao() {
+    var g = DADOS && DADOS.geradoEm ? new Date(DADOS.geradoEm) : null, el = $('tv-atualizado'), falha = conf.falhas >= FALHAS_PARA_AVISAR;
+    el.textContent = (g ? 'PIMS · ' + g.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '') + (falha ? (g ? ' · ' : '') + 'sem conexão' : '');
+    el.classList.toggle('falha', falha);
+  }
+
   function tvDesenhar() {
     if (!tv.ativo || !DADOS) return;
     if (!tv.lista.length) tvMontarLista();
@@ -1326,8 +1353,7 @@
     set('tv-pct', fmtPct(m.pct, 1));
     set('tv-pct-rot', (pl ? 'plantado' : 'colhido') + ' · ' + fmtN(m.exec) + ' de ' + fmtN(m.areaTotal) + ' ha');
     $('tv-barra-pct').style.width = (m.pct * 100).toFixed(1) + '%';
-    var g = DADOS.geradoEm ? new Date(DADOS.geradoEm) : null;
-    set('tv-atualizado', g ? 'PIMS · ' + g.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '');
+    tvSituacao();
     mostrarMaquina($('tv-maquina'), m);
     aplicarFundo(document.querySelector('.tv-barra'), m.s);
     $('tv-kpis').innerHTML = htmlKpis(m);
@@ -2145,10 +2171,60 @@
     try { window.parent.postMessage({ tipo: 'acomp-rota', vista: estado.vista, coaFazenda: id }, location.origin); } catch (e) { /* sem pai */ }
   }
 
+  var marcaCarregada = null; // marca do banco (fonte.assinatura) lida junto com os dados que estão na tela
   async function carregarDados() {
+    // a marca é lida antes dos dados: se o banco mudar no meio da carga, a próxima conferência percebe
+    var marca = await fonte.assinatura().catch(function () { return null; });
     var r = await Promise.all([fonte.dados(), fonte.planos()]);
-    DADOS = r[0]; PLANOS = r[1];
-    if (!DADOS.safras || !DADOS.safras.length) throw new Error('Ainda não há dados do PIMS no banco. A rotina do servidor grava a cada hora; você também pode clicar em Atualizar.');
+    // sem dados (banco vazio ou sessão vencida), o que já está na tela continua lá
+    if (!r[0].safras || !r[0].safras.length) throw new Error('Ainda não há dados do PIMS no banco. A rotina do servidor grava a cada hora; você também pode clicar em Atualizar.');
+    DADOS = r[0]; PLANOS = r[1]; marcaCarregada = marca;
+  }
+
+  var conf = { falhas: 0, ocupado: false, dia: paraIso(hoje()) };
+  /**
+   * A cada CONFERIR_SEG: pergunta ao banco se há dado novo e, se houver, recarrega e redesenha a tela aberta
+   * na hora (o Modo TV fica dias ligado, às vezes numa fazenda só ou pausado, sem ninguém para recarregar).
+   * Também redesenha na virada do dia, porque previsão e prazo contam a partir de hoje.
+   */
+  async function conferirDados() {
+    if (conf.ocupado || !DADOS || (!tv.ativo && (estado.vista !== 'painel' || document.hidden))) return;
+    conf.ocupado = true;
+    try {
+      var marca = await fonte.assinatura(), dia = paraIso(hoje()), mudou = marca !== marcaCarregada;
+      if (mudou) await carregarDados();
+      var avisava = conf.falhas >= FALHAS_PARA_AVISAR;
+      conf.falhas = 0;
+      if (mudou || dia !== conf.dia) { conf.dia = dia; if (tv.ativo) { tvMontarLista(); tvDesenhar(); } else render(); }
+      if (avisava) { if (tv.ativo) tvSituacao(); else mostrarAviso(''); }
+    } catch (e) {
+      conf.falhas++;
+      if (tv.ativo) tvSituacao();
+      else if (conf.falhas === FALHAS_PARA_AVISAR) mostrarAviso(e.message, true);
+    } finally { conf.ocupado = false; }
+  }
+
+  /**
+   * Modo TV, a cada VERSAO_MIN: se o site foi publicado de novo, a TV recarrega sozinha e volta ao Modo TV na
+   * mesma tela. Só recarrega com os arquivos novos já respondendo (publicação pela metade ou internet caindo
+   * não derrubam a TV) e uma vez por versão. A tela cheia do botão não sobrevive à recarga (regra do
+   * navegador); a do F11 sim.
+   */
+  async function conferirVersao() {
+    if (!tv.ativo || !VERSAO.length) return;
+    try {
+      var r = await fetch(location.pathname, { cache: 'no-store' });
+      if (!r.ok) return;
+      var arqs = arquivosVersionados(new DOMParser().parseFromString(await r.text(), 'text/html')), nova = arqs.join('|');
+      if (!arqs.length || nova === VERSAO.join('|') || nova === ss('versao')) return;
+      await Promise.all(arqs.filter(function (a) { return VERSAO.indexOf(a) < 0; }).map(function (a) {
+        return fetch(a, { cache: 'reload' }).then(function (x) { if (!x.ok) throw new Error(a); });
+      }));
+      if (!tv.ativo) return;
+      ss('versao', nova);
+      ss('tv', JSON.stringify({ u: tv.lista[tv.i], s: estado.s, o: estado.o, pausado: tv.pausado, quando: Date.now() }));
+      location.reload();
+    } catch (e) { /* tenta de novo no próximo ciclo */ }
   }
 
   async function carregarMapas() {
@@ -2317,17 +2393,21 @@
     try {
       await fonte.prontoParaUsar();
       await carregarDados();
+      // a TV que se recarregou por causa de uma versão nova volta para onde estava
+      var retomar = null;
+      try { retomar = JSON.parse(ss('tv') || 'null'); } catch (e) { /* guardado inválido */ }
+      ss('tv', '');
+      if (retomar && !(Date.now() - retomar.quando < 120000)) retomar = null;
+      if (retomar) { estado.vista = 'painel'; estado.u = retomar.u || TODAS; if (DADOS.safras.indexOf(retomar.s) >= 0) estado.s = retomar.s; estado.o = retomar.o === 'COLHEITA' ? 'COLHEITA' : 'PLANTIO'; }
       if (!estado.s) estado.s = DADOS.safras.indexOf('SOJA 26/27') >= 0 ? 'SOJA 26/27' : DADOS.safras[0];
       $('carregando').classList.add('fora');
       render();
       aplicarFazendaCoa();
       carregarMapas();
-      setInterval(function () {
-        if (tv.ativo) { carregarDados().then(function () { tvMontarLista(); }).catch(function () { /* tenta de novo no próximo ciclo */ }); return; }
-        if (estado.vista !== 'painel' || document.hidden) return;
-        carregarDados().then(render).catch(function (e) { mostrarAviso(e.message, true); });
-      }, RECARREGAR_MIN * 60000);
-      if (PARAMS.get('tv') === '1') entrarTv();
+      setInterval(conferirDados, CONFERIR_SEG * 1000);
+      setInterval(conferirVersao, VERSAO_MIN * 60000);
+      if (PARAMS.get('tv') === '1' || retomar) entrarTv();
+      if (retomar && retomar.pausado && tv.ativo) { tv.pausado = true; tvAgendar(); }
     } catch (e) {
       $('carregando').classList.add('erro');
       set('carregando-texto', erroLegivel(e));
