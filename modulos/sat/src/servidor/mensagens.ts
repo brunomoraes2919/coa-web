@@ -1,11 +1,11 @@
 /**
  * O que cada pessoa lê. Os dados do resumo e do "começa em breve" (horários, fazendas, pior horário)
  * são os mesmos da tela: saem das funções de `logic/alertas` e `logic/janelaRisco`, só que em linhas
- * com emoji em vez de uma frase. O lembrete do meio-dia tem outras palavras de propósito
+ * com emoji em vez de uma frase. A lista de fazendas é a única diferença: aqui vão todos os nomes
+ * (`listarTodasAsFazendas`). O lembrete do meio-dia tem outras palavras de propósito
  * (duas mensagens iguais no mesmo dia parecem robô para o WhatsApp).
  */
 import { AJUDA, EFEITO_DA_JANELA } from '../componentes/ajudaTextos'
-import { listarFazendas } from '../logic/alertas'
 import { janelaAindaPorVir, textoJanela } from '../logic/janelaRisco'
 import { minutoDoDia, rotuloHora } from '../logic/tempo'
 import type { Janela } from '../tipos'
@@ -22,6 +22,15 @@ const LINHA_SAIR = '_Para parar de receber, responda SAIR._'
 
 export function fazendasDoContato(contato: ContatoWpp, fazendas: FazendaServidor[]): FazendaServidor[] {
   return fazendas.filter((f) => f.celulaId && (contato.todasFazendas || (f.coaId != null && contato.fazendas.includes(f.coaId))))
+}
+
+/**
+ * As fazendas do aviso, todas pelo nome. A tela corta em três ("e mais 2", `listarFazendas`) porque o
+ * aviso dela é curto; no WhatsApp quem recebe precisa saber quais são (pedido de 12/10/2026).
+ */
+export function listarTodasAsFazendas(nomes: string[]): string {
+  const n = [...nomes].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+  return n.length === 1 ? n[0] : `${n.length} fazendas: ${n.join(', ')}`
 }
 
 /** O horário da janela como na tela (`textoJanela`), com o intervalo em negrito. */
@@ -52,7 +61,7 @@ export function textoDoEvento(
     return [
       '⚠️ *Janela de risco de cintilação*',
       `🕗 ${janelaEmNegrito(primeira)}`,
-      `📍 ${listarFazendas(nomes)}`,
+      `📍 ${listarTodasAsFazendas(nomes)}`,
     ].join('\n')
   }
 
@@ -63,7 +72,7 @@ export function textoDoEvento(
 
   if (tipo === 'lembrete-12') {
     const inicio = Math.min(...ocorrencias.map((o) => o.janela.inicio))
-    return [`⏰ A janela de risco de hoje começa às *${rotuloHora(inicio)}*`, `📍 ${listarFazendas(nomes)}`].join('\n')
+    return [`⏰ A janela de risco de hoje começa às *${rotuloHora(inicio)}*`, `📍 ${listarTodasAsFazendas(nomes)}`].join('\n')
   }
 
   const inicio = Math.min(...ocorrencias.map((o) => o.janela.inicio))
@@ -73,7 +82,7 @@ export function textoDoEvento(
   return [
     '⚠️ *Hoje tem risco de cintilação*',
     `🕗 Das *${rotuloHora(inicio)}* às *${rotuloHora(fim)}*`,
-    `📍 ${listarFazendas(nomes)}`,
+    `📍 ${listarTodasAsFazendas(nomes)}`,
     `🔴 Pior horário: ${janelaEmNegrito(pior)}`,
   ].join('\n')
 }

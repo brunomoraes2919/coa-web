@@ -3,7 +3,7 @@ process.env.TZ = 'America/Cuiaba'
 import { describe, expect, it } from 'vitest'
 import { listarFazendas, montarAlertas, type Ocorrencia } from '../logic/alertas'
 import type { Janela } from '../tipos'
-import { fazendasDoContato, montarMensagem, textoAtivado, textoDoEvento, textoSaiu } from './mensagens'
+import { fazendasDoContato, listarTodasAsFazendas, montarMensagem, textoAtivado, textoDoEvento, textoSaiu } from './mensagens'
 import type { ContatoWpp, FazendaServidor, TipoEvento } from './tipos'
 
 const em = (h: number, m = 0) => new Date(2026, 9, 6, h, m).getTime()
@@ -200,12 +200,21 @@ describe('mensagens', () => {
     it('empate: o pior é o primeiro na ordem das fazendas, como na tela', () => {
       expect(textoDoEvento('resumo-07', TODAS, FAZENDAS, EMPATE, em(7))).toContain('Pior horário: *22:00–23:00* (4 de 7 dias)')
     })
-    it('mais de três fazendas: a mesma lista curta da tela', () => {
+    it('mais de três fazendas: todos os nomes (a tela corta em três; quem recebe no WhatsApp precisa saber quais são)', () => {
       const muitas = [...FAZENDAS.slice(0, 3), fazenda('e', 5, 'Fazenda E', 'c2'), fazenda('f', 6, 'Fazenda F', 'c1')]
       const todas = contato({ todasFazendas: true, fazendas: [] })
       const texto = textoDoEvento('resumo-07', todas, muitas, DUAS_JANELAS, em(7)) as string
-      expect(texto).toContain(`📍 ${listarFazendas(['Fazenda A', 'Fazenda B', 'Fazenda C', 'Fazenda E', 'Fazenda F'])}\n`)
-      expect(texto).toContain('📍 5 fazendas: Fazenda A, Fazenda B, Fazenda C e mais 2\n')
+      expect(texto).toContain('📍 5 fazendas: Fazenda A, Fazenda B, Fazenda C, Fazenda E, Fazenda F\n')
+      expect(texto).not.toContain('e mais')
+      // o lembrete e o "começa em breve" também
+      expect(textoDoEvento('lembrete-12', todas, muitas, DUAS_JANELAS, em(12))).toContain('📍 5 fazendas: Fazenda A, Fazenda B, Fazenda C, Fazenda E, Fazenda F')
+      expect(textoDoEvento('antes', todas, muitas, MESMA_JANELA, em(19, 30))).toContain('📍 5 fazendas: Fazenda A, Fazenda B, Fazenda C, Fazenda E, Fazenda F')
+    })
+    it('listarTodasAsFazendas: em ordem alfabética; até três, igual à lista da tela', () => {
+      expect(listarTodasAsFazendas(['Fazenda B'])).toBe('Fazenda B')
+      expect(listarTodasAsFazendas(['Siriema', 'Dourado'])).toBe(listarFazendas(['Siriema', 'Dourado']))
+      expect(listarTodasAsFazendas(['C', 'A', 'B'])).toBe(listarFazendas(['C', 'A', 'B']))
+      expect(listarTodasAsFazendas(['G', 'F', 'E', 'D', 'C', 'B', 'A'])).toBe('7 fazendas: A, B, C, D, E, F, G')
     })
   })
 

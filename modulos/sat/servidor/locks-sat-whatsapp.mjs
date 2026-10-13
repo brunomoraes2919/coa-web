@@ -97,14 +97,6 @@ function janelaAindaPorVir(j, minutoAgora) {
 	return j.fim > minutoAgora;
 }
 //#endregion
-//#region src/logic/alertas.ts
-function listarFazendas(nomes) {
-	const n = [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
-	if (n.length === 1) return n[0];
-	const resto = n.length > 3 ? ` e mais ${n.length - 3}` : "";
-	return `${n.length} fazendas: ${n.slice(0, 3).join(", ")}${resto}`;
-}
-//#endregion
 //#region src/fazendasGnss.ts
 function celulaDe(lat, lon) {
 	const la = Math.round(lat * 2) / 2;
@@ -446,7 +438,8 @@ var EFEITO_DA_JANELA = {
 /**
 * O que cada pessoa lê. Os dados do resumo e do "começa em breve" (horários, fazendas, pior horário)
 * são os mesmos da tela: saem das funções de `logic/alertas` e `logic/janelaRisco`, só que em linhas
-* com emoji em vez de uma frase. O lembrete do meio-dia tem outras palavras de propósito
+* com emoji em vez de uma frase. A lista de fazendas é a única diferença: aqui vão todos os nomes
+* (`listarTodasAsFazendas`). O lembrete do meio-dia tem outras palavras de propósito
 * (duas mensagens iguais no mesmo dia parecem robô para o WhatsApp).
 */
 var TITULOS = {
@@ -457,6 +450,14 @@ var TITULOS = {
 var LINHA_SAIR = "_Para parar de receber, responda SAIR._";
 function fazendasDoContato(contato, fazendas) {
 	return fazendas.filter((f) => f.celulaId && (contato.todasFazendas || f.coaId != null && contato.fazendas.includes(f.coaId)));
+}
+/**
+* As fazendas do aviso, todas pelo nome. A tela corta em três ("e mais 2", `listarFazendas`) porque o
+* aviso dela é curto; no WhatsApp quem recebe precisa saber quais são (pedido de 12/10/2026).
+*/
+function listarTodasAsFazendas(nomes) {
+	const n = [...nomes].sort((a, b) => a.localeCompare(b, "pt-BR"));
+	return n.length === 1 ? n[0] : `${n.length} fazendas: ${n.join(", ")}`;
 }
 /** O horário da janela como na tela (`textoJanela`), com o intervalo em negrito. */
 function janelaEmNegrito(j) {
@@ -478,7 +479,7 @@ function textoDoEvento(tipo, contato, fazendas, porCelula, agora) {
 		return [
 			"⚠️ *Janela de risco de cintilação*",
 			`🕗 ${janelaEmNegrito(primeira)}`,
-			`📍 ${listarFazendas(nomes)}`
+			`📍 ${listarTodasAsFazendas(nomes)}`
 		].join("\n");
 	}
 	const ocorrencias = celulas.flatMap((c) => (porCelula[c] ?? []).filter((j) => janelaAindaPorVir(j, minuto)).map((j) => ({
@@ -487,14 +488,14 @@ function textoDoEvento(tipo, contato, fazendas, porCelula, agora) {
 	})));
 	if (!ocorrencias.length) return null;
 	const nomes = nomesDe([...new Set(ocorrencias.map((o) => o.celulaId))]);
-	if (tipo === "lembrete-12") return [`⏰ A janela de risco de hoje começa às *${rotuloHora(Math.min(...ocorrencias.map((o) => o.janela.inicio)))}*`, `📍 ${listarFazendas(nomes)}`].join("\n");
+	if (tipo === "lembrete-12") return [`⏰ A janela de risco de hoje começa às *${rotuloHora(Math.min(...ocorrencias.map((o) => o.janela.inicio)))}*`, `📍 ${listarTodasAsFazendas(nomes)}`].join("\n");
 	const inicio = Math.min(...ocorrencias.map((o) => o.janela.inicio));
 	const fim = Math.max(...ocorrencias.map((o) => o.janela.fim));
 	const pior = ocorrencias.reduce((a, b) => b.janela.dias > a.janela.dias ? b : a).janela;
 	return [
 		"⚠️ *Hoje tem risco de cintilação*",
 		`🕗 Das *${rotuloHora(inicio)}* às *${rotuloHora(fim)}*`,
-		`📍 ${listarFazendas(nomes)}`,
+		`📍 ${listarTodasAsFazendas(nomes)}`,
 		`🔴 Pior horário: ${janelaEmNegrito(pior)}`
 	].join("\n");
 }
