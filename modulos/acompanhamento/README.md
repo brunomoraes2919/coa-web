@@ -113,7 +113,9 @@ para ele. Toda alteração de meta fica em `acomp_metas_historico` (só o admin 
   plantio (DT_PLANT_ENC) só aparece como aviso no mapa: não completa a área do talhão.
 - Ritmo = média dos dias com operação nos últimos 7 dias corridos até o último apontamento
   (sem operação no período, a média geral). Previsão de término = hoje − 1 + ⌈restante ÷ ritmo⌉.
-- Necessário p/ meta = restante ÷ dias até a data estimada de término.
+- Último dia = hectares do último dia com apontamento, comparados com a meta daquele dia (se o
+  último dia é hoje, o cartão diz "dia em andamento" e não compara). O "necessário para cumprir o
+  prazo" (restante ÷ dias até a data de término) ficou só na leitura em frases do Relatório.
 - Layout do mapa (regra do Mapa de Chuva): altura/largura da fazenda > 1,25 → mapa em coluna
   (retrato); senão em faixa (paisagem). Grupos distantes (até 3) viram quadros separados quando
   aproveitam ao menos 1,5× melhor a área.

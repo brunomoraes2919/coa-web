@@ -66,7 +66,7 @@
       rel.concluida ? 'em ' + dataCurta(m.ult) : rel.difPrevisao !== null ? (rel.difPrevisao < 0 ? Math.abs(rel.difPrevisao) + ' dias antes do planejado (' + dataCurta(m.termino) + ')' : rel.difPrevisao === 0 ? 'na data planejada' : rel.difPrevisao + ' dias depois do planejado (' + dataCurta(m.termino) + ')') : m.previsao ? 'pelo ritmo dos últimos 7 dias' : 'sem ritmo para projetar',
       rel.concluida ? 'bom' : rel.difPrevisao === null ? null : rel.difPrevisao <= 0 ? 'bom' : rel.difPrevisao <= 3 ? 'atencao' : 'ruim']);
     if (ant) k.push(['× ' + N.nomeSafra(ant.nome) + ' na data', ant.difAtual === null ? '—' : ant.difAtual >= 1 ? N.fmtN(ant.difAtual + 1, 1) + '×' : (ant.difAtual >= 0 ? '+' : '') + N.fmtPct(ant.difAtual), '', N.fmtN(ant.ateData) + ' ha há ' + ant.anos + (ant.anos === 1 ? ' ano' : ' anos'), ant.difAtual === null ? null : ant.difAtual >= 0 ? 'bom' : 'ruim']);
-    else k.push(['Necessário p/ meta', m.necessario ? N.fmtN(m.necessario) : '—', m.necessario ? 'ha/dia' : '', m.termino ? 'até ' + dataCurta(m.termino) : 'cadastre a data de término', null]);
+    else k.push(['Último dia' + (m.ultDia ? ' · ' + dataCurta(m.ultDia.d) : ''), m.ultDia ? N.fmtN(m.ultDia.a) : '—', m.ultDia ? 'ha' : '', m.ultDia && m.ultDia.meta ? 'meta do dia ' + N.fmtN(m.ultDia.meta) + ' ha' : m.ultDia ? 'sem meta cadastrada' : 'sem apontamentos', null]);
     if (rel.temChuva) k.push(['Chuva no período', N.fmtN(c.mm), 'mm', c.diasChuva + ' dias com chuva · ' + c.parados + ' ' + (c.parados === 1 ? 'parado' : 'parados'), null]);
     else k.push(['Talhões ' + feito(rel.o) + 's', m.porClasse[3].n + ' / ' + m.talhoes.length, '', (m.porClasse[1].n + m.porClasse[2].n) + ' em andamento · ' + m.porClasse[0].n + ' não iniciados', null]);
     return k;
