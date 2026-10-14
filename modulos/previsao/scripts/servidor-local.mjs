@@ -1,11 +1,46 @@
 // COA WEB no computador, para testar a Previsão do Tempo sem login: serve a raiz do repositório,
 // troca previsao/config.js por { modo: 'local' } e responde /api/previsao-teste com fazendas
-// FICTÍCIAS (nenhum limite real entra no repositório).
+// FICTÍCIAS (nenhum limite real entra no repositório) e /api/previsao-benchmark-teste com o benchmark da aba
+// "Benchmark" (fictício, ou o arquivo apontado por PREVISAO_BENCHMARK_DADOS, que fica fora do repositório).
 // Uso (na raiz): node modulos/previsao/scripts/servidor-local.mjs  → http://localhost:8791/previsao/
-import { createReadStream, realpathSync, statSync } from 'node:fs';
+import { createReadStream, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { paresDoBenchmark, metricasDoBenchmark, somarDias, diaMT } from '../../mapas/scripts/sincronizar-plantio.mjs';
+
+// Dados reais da conferência (Tarefa 5, --json): só nesta máquina, nunca no repositório. Sem a variável, fictícios.
+const BENCHMARK_DADOS = process.env.PREVISAO_BENCHMARK_DADOS || '';
+
+/** Benchmark FICTÍCIO: 30 dias de fotos e de chuva medida para as fazendas de teste, com as métricas calculadas pelas contas reais. */
+function benchmarkTeste() {
+  const hoje = diaMT(new Date());
+  const unidades = ['TESTE NORTE', 'TESTE CENTRO', 'TESTE SUL'];
+  let semente = 7;
+  const sorteio = () => { semente = (semente * 16807) % 2147483647; return semente / 2147483647; };
+  const chuva = () => (sorteio() < 0.45 ? Math.round(sorteio() * 300) / 10 : 0);
+  const observado = [];
+  const real = new Map();
+  for (let i = -31; i < 15; i++) for (const u of unidades) real.set(`${u}|${somarDias(hoje, i)}`, chuva());
+  for (let i = -31; i < 0; i++) for (const u of unidades) observado.push({ unidade: u, dia: somarDias(hoje, i), mm: real.get(`${u}|${somarDias(hoje, i)}`), pluviometros: 5 });
+  const erro = { zeus: 3, visualcrossing: 5, metno: 7 };
+  const alcance = { zeus: 13, visualcrossing: 14, metno: 9 };
+  const previsoes = [];
+  for (let e = -30; e <= 0; e++) {
+    const emitida = somarDias(hoje, e);
+    for (const u of unidades) for (const fonte of ['zeus', 'visualcrossing', 'metno']) {
+      const dias = [];
+      for (let k = fonte === 'metno' ? 1 : 0; k <= alcance[fonte]; k++) {
+        const d = somarDias(emitida, k);
+        const base = real.get(`${u}|${d}`) ?? 0;
+        dias.push({ d, mm: Math.max(0, Math.round((base + (sorteio() - 0.5) * erro[fonte] * (1 + k / 5)) * 10) / 10), p: fonte === 'metno' ? null : Math.round(sorteio() * 100) });
+      }
+      previsoes.push({ fonte, unidade: u, emitida_em: emitida, capturada_em: `${emitida}T10:20:00Z`, dias });
+    }
+  }
+  const metricas = metricasDoBenchmark(paresDoBenchmark(previsoes, observado), hoje);
+  return JSON.stringify({ previsoes, observado, metricas });
+}
 
 const RAIZ = resolve(fileURLToPath(new URL('../../..', import.meta.url)));
 const RAIZ_REAL = realpathSync.native(RAIZ);
@@ -28,7 +63,7 @@ const TIPOS = {
 };
 
 /** Fazenda de mentira: uma grade de talhões retangulares a partir do canto noroeste. */
-function fazendaTeste(id, nome, coaId, norte, oeste, colunas, linhas) {
+function fazendaTeste(id, nome, coaId, unidade, norte, oeste, colunas, linhas) {
   const lado = 0.022; // ~2,4 km
   const talhoes = [];
   for (let l = 0; l < linhas; l++) {
@@ -42,12 +77,12 @@ function fazendaTeste(id, nome, coaId, norte, oeste, colunas, linhas) {
       });
     }
   }
-  return { fazenda: { id, nome, coa_fazenda_id: coaId }, talhoes };
+  return { fazenda: { id, nome, coa_fazenda_id: coaId, unidade_pims: unidade }, talhoes };
 }
 const TESTE = [
-  fazendaTeste('teste-1', 'Fazenda Teste Norte', 1, -12.9, -56.3, 5, 4),
-  fazendaTeste('teste-2', 'Fazenda Teste Centro', 2, -13.6, -55.7, 6, 3),
-  fazendaTeste('teste-3', 'Fazenda Teste Sul', 3, -14.6, -56.9, 4, 5),
+  fazendaTeste('teste-1', 'Fazenda Teste Norte', 1, 'TESTE NORTE', -12.9, -56.3, 5, 4),
+  fazendaTeste('teste-2', 'Fazenda Teste Centro', 2, 'TESTE CENTRO', -13.6, -55.7, 6, 3),
+  fazendaTeste('teste-3', 'Fazenda Teste Sul', 3, 'TESTE SUL', -14.6, -56.9, 4, 5),
 ];
 const CADASTRO_TESTE = JSON.stringify({
   fazendas: TESTE.map((t) => t.fazenda),
@@ -92,6 +127,10 @@ createServer((req, res) => {
   }
   if (caminho === '/api/previsao-teste') {
     responder(res, 200, TIPOS['.json'], CADASTRO_TESTE);
+    return;
+  }
+  if (caminho === '/api/previsao-benchmark-teste') {
+    responder(res, 200, TIPOS['.json'], BENCHMARK_DADOS ? readFileSync(BENCHMARK_DADOS, 'utf8') : benchmarkTeste());
     return;
   }
   if (caminho === '/previsao/config.js') {

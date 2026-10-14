@@ -6,7 +6,9 @@
    O aviso só chega quando o Windy termina de redesenhar: depois de arrastar ou dar zoom, os limites
    levam alguns segundos para se ajustar.
    - COA → módulo: { tipo:'coa-fazenda', id, nome }
+   - COA → módulo: { tipo:'previsao-vista', vista:'mapa'|'benchmark' }
    - módulo → COA: { tipo:'previsao-fazenda', coaFazenda }
+   - módulo → COA: { tipo:'previsao-rota', vista }
 ===================================================================== */
 (function () {
   'use strict';
@@ -37,7 +39,17 @@
   const $ = (id) => document.getElementById(id);
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  const estado = { fazenda: TODAS, camada: 'rain', modelo: 'ecmwf', ponto: false };
+  /* aba aberta: #benchmark no endereço ou ?vista=benchmark (a casca abre assim); senão o mapa. O Modo TV (?tv=1)
+     é só do mapa. Lê a URL direto: a constante PARAMS só é criada mais abaixo no arquivo. */
+  function vistaInicial() {
+    const q = new URLSearchParams(location.search);
+    if (q.get('tv') === '1') return 'mapa';
+    const pedida = (location.hash || '').slice(1) || q.get('vista') || '';
+    return pedida === 'benchmark' ? 'benchmark' : 'mapa';
+  }
+  let fonte = null;        // fonte dos dados (Supabase ou servidor local), definida ao iniciar
+  let windyFazenda = null; // fazenda para a qual o Windy foi carregado por último (null = ainda não carregou)
+  const estado = { fazenda: TODAS, camada: 'rain', modelo: 'ecmwf', ponto: false, vista: vistaInicial() };
   let fazendas = [];       // [{ id, nome, coaId, geometrias, caixa }] — só as que têm limite
   let vista = null;        // onde o mapa do Windy está: a vista pedida ao carregar, depois o último aviso dele
   let comSinal = true;     // falso quando o Windy não avisa a posição: os limites somem (estariam no lugar errado)
@@ -66,11 +78,21 @@
       // a segurança do banco já entrega só as fazendas liberadas para o usuário
       cadastro: async function () {
         const r = await Promise.all([
-          tudo(() => sb.from('mapas_fazendas').select('id,nome,coa_fazenda_id').order('nome'), 1000),
+          tudo(() => sb.from('mapas_fazendas').select('id,nome,coa_fazenda_id,unidade_pims').order('nome'), 1000),
           // páginas pequenas: cada linha traz um polígono inteiro
           tudo(() => sb.from('mapas_talhoes').select('fazenda_id,geom').order('id'), 250),
         ]);
         return { fazendas: r[0], talhoes: r[1] };
+      },
+      // aba Benchmark: as fotos dos últimos 40 dias (bloco 1 e previsto × medido), a chuva medida e as métricas
+      benchmark: async function (hoje) {
+        const B = window.PrevisaoBenchmark;
+        const r = await Promise.all([
+          tudo(() => sb.from('prev_previsoes').select('fonte,unidade,emitida_em,capturada_em,dias').gte('emitida_em', B.somarDias(hoje, -40)).order('emitida_em').order('fonte').order('unidade'), 1000),
+          tudo(() => sb.from('prev_observado').select('unidade,dia,mm,pluviometros').gte('dia', B.somarDias(hoje, -31)).order('dia').order('unidade'), 1000),
+          tudo(() => sb.from('prev_metricas').select('unidade,periodo,fonte,antecedencia,n,erro_medio,vies,acerto,calculado_em').order('unidade').order('periodo').order('fonte').order('antecedencia'), 1000),
+        ]);
+        return { previsoes: r[0], observado: r[1], metricas: r[2] };
       },
     };
   }
@@ -81,6 +103,11 @@
       cadastro: async function () {
         const r = await fetch('/api/previsao-teste');
         if (!r.ok) throw new Error('servidor local sem dados de teste');
+        return r.json();
+      },
+      benchmark: async function () {
+        const r = await fetch('/api/previsao-benchmark-teste');
+        if (!r.ok) throw new Error('servidor local sem dados de teste do benchmark');
         return r.json();
       },
     };
@@ -137,6 +164,7 @@
   /* (Re)carrega o widget na vista dada. Trocar de camada ou de modelo também passa por aqui: o widget
      não aceita essa troca por mensagem. */
   function carregarWindy(v) {
+    windyFazenda = estado.fazenda;
     vista = { lat: v.lat, lon: v.lon, zoom: v.zoom };
     primeiroAviso = false;
     comSinal = true;
@@ -214,13 +242,40 @@
   function escolherFazenda(id) {
     estado.fazenda = id;
     preencherFazendas();
-    carregarWindy(vistaDaEscolha());
+    if (estado.vista === 'benchmark') window.PrevisaoBenchmarkTela.atualizar();
+    else carregarWindy(vistaDaEscolha());
   }
   function aplicarFazendaCoa() {
     if (coaFazenda === undefined || coaFazenda === null) return;
     const f = fazendas.find((x) => x.coaId === coaFazenda);
     if (f && f.id !== estado.fazenda) escolherFazenda(f.id);
   }
+
+  /* ------------------------------ abas ------------------------------ */
+  function contextoBenchmark() {
+    return {
+      carregar: (hoje) => fonte.benchmark(hoje),
+      unidade: () => { const f = fazendaEscolhida(); return f ? f.unidade : window.PrevisaoBenchmark.TODAS; },
+      nomeFazenda: () => { const f = fazendaEscolhida(); return f ? f.nome : 'Todas as fazendas'; },
+    };
+  }
+  /* Mapa do Windy ou Benchmark: a barra esconde camada, modelo e ações no benchmark; a casca acompanha a aba. */
+  function mostrarVista(v) {
+    estado.vista = v === 'benchmark' ? 'benchmark' : 'mapa';
+    const bench = estado.vista === 'benchmark';
+    $('mapa').hidden = bench;
+    $('benchmark').hidden = !bench;
+    ['campo-camada', 'campo-modelo', 'acoes-mapa'].forEach((id) => { $(id).hidden = bench; });
+    $('marca-sub').textContent = bench ? 'Previsão de chuva das fontes lado a lado e quem acerta mais' : 'Mapa do Windy com os limites das fazendas';
+    history.replaceState(null, '', location.pathname + location.search + '#' + estado.vista);
+    if (EMBED) window.parent.postMessage({ tipo: 'previsao-rota', vista: estado.vista }, location.origin);
+    if (!fonte) return; // ainda carregando: o início aplica
+    if (bench) window.PrevisaoBenchmarkTela.abrir(contextoBenchmark());
+    else if (windyFazenda !== estado.fazenda) carregarWindy(vistaDaEscolha()); // nunca carregou, ou a fazenda mudou no benchmark
+    else desenhar();
+  }
+  // #mapa / #benchmark digitado no endereço (mostrarVista usa replaceState, que não dispara este evento)
+  window.addEventListener('hashchange', () => { const v = location.hash.slice(1) === 'benchmark' ? 'benchmark' : 'mapa'; if (v !== estado.vista) mostrarVista(v); });
 
   $('sel-fazenda').addEventListener('change', (ev) => {
     escolherFazenda(ev.target.value);
@@ -240,7 +295,9 @@
     }
     if (ev.origin !== location.origin || ev.source !== window.parent) return;
     const d = ev.data;
-    if (!d || typeof d !== 'object' || d.tipo !== 'coa-fazenda') return;
+    if (!d || typeof d !== 'object') return;
+    if (d.tipo === 'previsao-vista') { mostrarVista(d.vista); return; }
+    if (d.tipo !== 'coa-fazenda') return;
     coaFazenda = typeof d.id === 'number' ? d.id : null;
     aplicarFazendaCoa();
   });
@@ -352,7 +409,7 @@
   preencherFazendas();
 
   (async function iniciar() {
-    const fonte = CFG.modo === 'local' ? fonteLocal() : fonteSupabase();
+    fonte = CFG.modo === 'local' ? fonteLocal() : fonteSupabase();
     try {
       await fonte.pronto();
     } catch (e) {
@@ -366,6 +423,7 @@
       const limites = L.limitesPorFazenda(c.talhoes);
       fazendas = (c.fazendas || []).filter((f) => limites[f.id]).map((f) => ({
         id: String(f.id), nome: String(f.nome || '').replace(/^Fazenda\s+/i, ''), coaId: typeof f.coa_fazenda_id === 'number' ? f.coa_fazenda_id : null,
+        unidade: f.unidade_pims ? String(f.unidade_pims).trim().toUpperCase() : null,
         geometrias: limites[f.id].geometrias, caixa: limites[f.id].caixa,
       }));
     } catch (e) {
@@ -378,7 +436,7 @@
     preencherFazendas();
     if (falhou) avisoCadastro = 'Não foi possível ler os limites das fazendas. O mapa abre sem eles.';
     else if (!fazendas.length) avisoCadastro = 'Nenhuma fazenda com limites cadastrados no Mapas para o seu usuário.';
-    carregarWindy(vistaDaEscolha());
+    mostrarVista(estado.vista);
     // aberto já como painel de TV (?tv=1): entra direto; a tela cheia depende de um clique
     if (PARAMS.get('tv') === '1') entrarTv();
   })();
