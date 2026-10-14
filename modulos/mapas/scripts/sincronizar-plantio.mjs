@@ -2624,6 +2624,72 @@ export function assinaturaDaPrevisao(porFazenda) {
   return createHash('sha1').update(JSON.stringify(ordenado)).digest('hex');
 }
 
+/**
+ * Pares previsto × medido por fonte, fazenda, dia e antecedência k (dia previsto − dia da foto, de 1 em diante).
+ * Comparação justa: um (fazenda, dia, k) só entra se todas as fontes que já alcançaram k em alguma foto têm
+ * previsão para ele, e se houve chuva medida (pelo menos um pluviômetro lido) na fazenda naquele dia.
+ */
+export function paresDoBenchmark(previsoes, observado) {
+  const medido = new Map(observado.filter((o) => Number(o.pluviometros) > 0).map((o) => [`${o.unidade}|${o.dia}`, Number(o.mm)]));
+  const previsto = new Map();
+  const alcance = new Map();
+  for (const f of previsoes) {
+    for (const x of Array.isArray(f.dias) ? f.dias : []) {
+      const k = diasEntre(f.emitida_em, x.d);
+      const mm = Number(x.mm);
+      if (k < 1 || !Number.isFinite(mm)) continue;
+      alcance.set(f.fonte, Math.max(alcance.get(f.fonte) ?? 0, k));
+      const chave = `${f.unidade}|${x.d}|${k}`;
+      if (!previsto.has(chave)) previsto.set(chave, new Map());
+      previsto.get(chave).set(f.fonte, mm);
+    }
+  }
+  const pares = [];
+  for (const [chave, porFonte] of previsto) {
+    const [unidade, dia, kTexto] = chave.split('|');
+    const k = Number(kTexto);
+    const real = medido.get(`${unidade}|${dia}`);
+    if (real === undefined) continue;
+    const elegiveis = [...alcance].filter(([, maximo]) => maximo >= k).map(([fonte]) => fonte);
+    if (!elegiveis.every((fonte) => porFonte.has(fonte))) continue;
+    for (const [fonte, mm] of porFonte) pares.push({ fonte, unidade, dia, k, previsto: mm, medido: real });
+  }
+  return pares;
+}
+
+/**
+ * Métricas por período (30, 60, 90 dias até ontem e a safra), fazenda (e 'TODAS'), fonte e antecedência
+ * (0 = todos os pares de 1 a 7). Só sai linha com pelo menos um par; a tela decide o mínimo para mostrar.
+ */
+export function metricasDoBenchmark(pares, hoje) {
+  const ontem = somarDias(hoje, -1);
+  const periodos = [['30d', somarDias(ontem, -29)], ['60d', somarDias(ontem, -59)], ['90d', somarDias(ontem, -89)], ['safra', inicioSafraMT(hoje)]];
+  const unidades = [...new Set(pares.map((p) => p.unidade))].sort();
+  const fontes = PREV_FONTES.filter((f) => pares.some((p) => p.fonte === f));
+  const linhas = [];
+  for (const [periodo, de] of periodos) {
+    const doPeriodo = pares.filter((p) => p.dia >= de && p.dia <= ontem);
+    for (const unidade of [...unidades, 'TODAS']) {
+      const daUnidade = unidade === 'TODAS' ? doPeriodo : doPeriodo.filter((p) => p.unidade === unidade);
+      for (const fonte of fontes) {
+        const daFonte = daUnidade.filter((p) => p.fonte === fonte);
+        for (const antecedencia of PREV_ANTECEDENCIAS) {
+          const sel = daFonte.filter((p) => (antecedencia === 0 ? p.k >= 1 && p.k <= 7 : p.k === antecedencia));
+          if (!sel.length) continue;
+          const n = sel.length;
+          linhas.push({
+            unidade, periodo, fonte, antecedencia, n,
+            erro_medio: arred1(sel.reduce((s, p) => s + Math.abs(p.previsto - p.medido), 0) / n),
+            vies: arred1(sel.reduce((s, p) => s + (p.previsto - p.medido), 0) / n),
+            acerto: Math.round((100 * sel.filter((p) => (p.previsto >= 1) === (p.medido >= 1)).length) / n),
+          });
+        }
+      }
+    }
+  }
+  return linhas;
+}
+
 // ---------- execução pela linha de comando ----------
 
 /**

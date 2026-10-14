@@ -382,3 +382,8 @@ export function previsaoMetNo(json: unknown): PrevDia[];
 export function montarSqlObservadoZeus(de: string, ate: string): string;
 export function observadoPorFazenda(res: { columns: string[]; rows: unknown[][] }, fazendaDoPic: Map<string, string>): PrevObservado[];
 export function assinaturaDaPrevisao(porFazenda: Map<string, PrevDia[]>): string;
+export interface PrevFoto { fonte: string; unidade: string; emitida_em: string; dias: PrevDia[] }
+export interface PrevPar { fonte: string; unidade: string; dia: string; k: number; previsto: number; medido: number }
+export interface PrevMetrica { unidade: string; periodo: string; fonte: string; antecedencia: number; n: number; erro_medio: number; vies: number; acerto: number }
+export function paresDoBenchmark(previsoes: PrevFoto[], observado: PrevObservado[]): PrevPar[];
+export function metricasDoBenchmark(pares: PrevPar[], hoje: string): PrevMetrica[];

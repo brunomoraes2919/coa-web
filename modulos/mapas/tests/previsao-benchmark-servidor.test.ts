@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   diaMT, horaMT, somarDias, diasEntre, inicioSafraMT, pontosDasFazendas, previsaoZeusPorFazenda, previsaoVisualCrossing,
   previsaoMetNo, observadoPorFazenda, montarSqlPrevisaoZeus, montarSqlObservadoZeus, urlVisualCrossing, urlMetNo, assinaturaDaPrevisao,
+  paresDoBenchmark, metricasDoBenchmark,
 } from '../scripts/sincronizar-plantio.mjs';
 
 // Todos os dados daqui são FICTÍCIOS.
@@ -111,5 +112,64 @@ describe('benchmark de previsão: conversão de cada fonte', () => {
     expect(assinaturaDaPrevisao(a)).toBe(assinaturaDaPrevisao(b));
     expect(assinaturaDaPrevisao(a)).not.toBe(assinaturaDaPrevisao(c));
     expect(assinaturaDaPrevisao(a)).toMatch(/^[0-9a-f]{40}$/);
+  });
+});
+
+describe('benchmark de previsão: pares e métricas', () => {
+  const foto = (fonte: string, unidade: string, emitida_em: string, dias: [string, number][]) =>
+    ({ fonte, unidade, emitida_em, dias: dias.map(([d, mm]) => ({ d, mm, p: null })) });
+  const medido = (unidade: string, dia: string, mm: number) => ({ unidade, dia, mm, pluviometros: 3 });
+
+  it('comparação justa: dia em que uma fonte faltou sai para todas; D0 nunca entra', () => {
+    const previsoes = [
+      foto('zeus', 'GLOBO', '2026-10-01', [['2026-10-01', 9], ['2026-10-02', 5], ['2026-10-03', 1]]),
+      foto('metno', 'GLOBO', '2026-10-01', [['2026-10-02', 4]]), // o MET não tem o dia 3 nesta foto...
+      foto('metno', 'GLOBO', '2026-10-02', [['2026-10-04', 1]]), // ...mas alcança k = 2 em outra: o dia 3 (k = 2) sai para a ZEUS também
+    ];
+    const pares = paresDoBenchmark(previsoes, [medido('GLOBO', '2026-10-01', 9), medido('GLOBO', '2026-10-02', 2), medido('GLOBO', '2026-10-03', 0)]);
+    expect(pares.map((p) => `${p.fonte} ${p.dia} k${p.k}`).sort()).toEqual(['metno 2026-10-02 k1', 'zeus 2026-10-02 k1']);
+  });
+
+  it('antecedência que uma fonte nunca alcança não tira as outras', () => {
+    const previsoes = [
+      foto('zeus', 'GLOBO', '2026-10-01', [['2026-10-10', 2], ['2026-10-14', 3]]), // k = 9 e k = 13
+      foto('metno', 'GLOBO', '2026-10-01', [['2026-10-10', 1]]), // o MET chega só a k = 9
+    ];
+    const pares = paresDoBenchmark(previsoes, [medido('GLOBO', '2026-10-14', 2), medido('GLOBO', '2026-10-10', 1)]);
+    // k = 9: as duas fontes; k = 13: só a ZEUS alcança, e o par dela fica
+    expect(pares.map((p) => `${p.fonte} k${p.k}`).sort()).toEqual(['metno k9', 'zeus k13', 'zeus k9']);
+  });
+
+  it('dia sem chuva medida (sem pluviômetro lido) não entra', () => {
+    const pares = paresDoBenchmark([foto('zeus', 'GLOBO', '2026-10-01', [['2026-10-02', 5]])], [{ unidade: 'GLOBO', dia: '2026-10-02', mm: 0, pluviometros: 0 }]);
+    expect(pares).toEqual([]);
+  });
+
+  it('erro médio, viés e acerto conferidos à mão; TODAS junta as fazendas', () => {
+    const pares = [
+      { fonte: 'zeus', unidade: 'GLOBO', dia: '2026-10-10', k: 1, previsto: 0, medido: 0 },
+      { fonte: 'zeus', unidade: 'GLOBO', dia: '2026-10-11', k: 1, previsto: 5, medido: 2 },
+      { fonte: 'zeus', unidade: 'GLOBO', dia: '2026-10-12', k: 1, previsto: 12, medido: 20 },
+      { fonte: 'zeus', unidade: 'DOURADO', dia: '2026-10-12', k: 1, previsto: 0, medido: 4 },
+    ];
+    const m = metricasDoBenchmark(pares, '2026-10-14');
+    const de = (unidade: string, periodo: string, antecedencia: number) => m.find((x) => x.unidade === unidade && x.periodo === periodo && x.fonte === 'zeus' && x.antecedencia === antecedencia);
+    // GLOBO: |0−0|, |5−2|, |12−20| → 11/3 = 3,7; (0 + 3 − 8)/3 = −1,7; os três acertam chuva/sem chuva
+    expect(de('GLOBO', '30d', 1)).toEqual({ unidade: 'GLOBO', periodo: '30d', fonte: 'zeus', antecedencia: 1, n: 3, erro_medio: 3.7, vies: -1.7, acerto: 100 });
+    // a média de 1 a 7 junta os mesmos pares
+    expect(de('GLOBO', '30d', 0)?.n).toBe(3);
+    // TODAS: os 4 pares; DOURADO errou (0 previsto, 4 medido) → acerto 75
+    expect(de('TODAS', 'safra', 1)).toMatchObject({ n: 4, erro_medio: 3.8, acerto: 75 });
+    // sem par na antecedência 3: não há linha
+    expect(de('GLOBO', '30d', 3)).toBeUndefined();
+  });
+
+  it('janelas de período contam até ontem', () => {
+    const p = (dia: string) => ({ fonte: 'zeus', unidade: 'GLOBO', dia, k: 1, previsto: 1, medido: 1 });
+    const m = metricasDoBenchmark([p('2026-09-13'), p('2026-09-14'), p('2026-10-13'), p('2026-10-14')], '2026-10-14');
+    const n = (periodo: string) => m.find((x) => x.unidade === 'GLOBO' && x.periodo === periodo && x.antecedencia === 1)?.n;
+    expect(n('30d')).toBe(2); // 14/09 a 13/10, 30 dias (o dia de hoje não conta)
+    expect(n('60d')).toBe(3); // 15/08 a 13/10
+    expect(n('safra')).toBe(3); // desde 01/09
   });
 });
