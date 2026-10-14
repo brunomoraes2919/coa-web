@@ -3,7 +3,8 @@
    Consolidado da operação até a data, numa página: leitura automática, indicadores, safra atual ×
    anteriores na mesma data do ano, hectares por dia × meta × chuva, acumulado, talhões (ou a tabela
    por fazenda, em "Todas"), equipes e variedades. Exporta em PNG (uma imagem) ou PDF (A4 em pé).
-   Lógica sem DOM em relatorio-logica.js (RelatorioLogica); núcleo do app.js em window.AcompNucleo.
+   Lógica sem DOM em relatorio-logica.js (RelatorioLogica); o núcleo do app.js (NUCLEO) chega como
+   argumento de AcompRelatorio.render().
 ===================================================================== */
 (function () {
   'use strict';
@@ -20,6 +21,8 @@
   function feito(o) { return o === 'PLANTIO' ? 'plantado' : 'colhido'; }
   function dataCurta(d) { return d ? String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') : '—'; }
   function dataLonga(d) { return d ? d.toLocaleDateString('pt-BR') : '—'; }
+  /** "1 dia", "7 dias". */
+  function nDias(n) { return n + (n === 1 ? ' dia' : ' dias'); }
   function halo(k) { return { textBorderColor: '#FFFFFF', textBorderWidth: 4.5 * k }; }
 
   // ------------------------------------------------------------------
@@ -63,11 +66,11 @@
       rel.difMeta !== null ? 'meta ' + N.fmtN(m.metaHoje) + ' · ' + (rel.difMeta >= 0 ? '+' : '') + N.fmtPct(rel.difMeta) : rel.metaParcial ? 'meta em ' + m.planos.length + ' de ' + m.unidades.length + ' fazendas' : (m.media ? 'média geral ' + N.fmtN(m.media) + ' ha/dia' : 'sem apontamentos'),
       rel.difMeta === null ? null : rel.difMeta >= 0 ? 'bom' : rel.difMeta > -0.1 ? 'atencao' : 'ruim']);
     k.push(['Previsão de término', rel.concluida ? 'Concluído' : m.previsao ? dataCurta(m.previsao) : '—', '',
-      rel.concluida ? 'em ' + dataCurta(m.ult) : rel.difPrevisao !== null ? (rel.difPrevisao < 0 ? Math.abs(rel.difPrevisao) + ' dias antes do planejado (' + dataCurta(m.termino) + ')' : rel.difPrevisao === 0 ? 'na data planejada' : rel.difPrevisao + ' dias depois do planejado (' + dataCurta(m.termino) + ')') : m.previsao ? 'pelo ritmo dos últimos 7 dias' : 'sem ritmo para projetar',
+      rel.concluida ? 'em ' + dataCurta(m.ult) : rel.difPrevisao !== null ? (rel.difPrevisao < 0 ? nDias(Math.abs(rel.difPrevisao)) + ' antes do planejado (' + dataCurta(m.termino) + ')' : rel.difPrevisao === 0 ? 'na data planejada' : nDias(rel.difPrevisao) + ' depois do planejado (' + dataCurta(m.termino) + ')') : m.previsao ? 'pelo ritmo dos últimos 7 dias' : 'sem ritmo para projetar',
       rel.concluida ? 'bom' : rel.difPrevisao === null ? null : rel.difPrevisao <= 0 ? 'bom' : rel.difPrevisao <= 3 ? 'atencao' : 'ruim']);
     if (ant) k.push(['× ' + N.nomeSafra(ant.nome) + ' na data', ant.difAtual === null ? '—' : ant.difAtual >= 1 ? N.fmtN(ant.difAtual + 1, 1) + '×' : (ant.difAtual >= 0 ? '+' : '') + N.fmtPct(ant.difAtual), '', N.fmtN(ant.ateData) + ' ha há ' + ant.anos + (ant.anos === 1 ? ' ano' : ' anos'), ant.difAtual === null ? null : ant.difAtual >= 0 ? 'bom' : 'ruim']);
     else k.push(['Último dia' + (m.ultDia ? ' · ' + dataCurta(m.ultDia.d) : ''), m.ultDia ? N.fmtN(m.ultDia.a) : '—', m.ultDia ? 'ha' : '', m.ultDia && m.ultDia.meta ? 'meta do dia ' + N.fmtN(m.ultDia.meta) + ' ha' : m.ultDia ? 'sem meta cadastrada' : 'sem apontamentos', null]);
-    if (rel.temChuva) k.push(['Chuva no período', N.fmtN(c.mm), 'mm', c.diasChuva + ' dias com chuva · ' + c.parados + ' ' + (c.parados === 1 ? 'parado' : 'parados'), null]);
+    if (rel.temChuva) k.push(['Chuva no período', N.fmtN(c.mm), 'mm', nDias(c.diasChuva) + ' com chuva · ' + c.parados + ' ' + (c.parados === 1 ? 'parado' : 'parados'), null]);
     else k.push(['Talhões ' + feito(rel.o) + 's', m.porClasse[3].n + ' / ' + m.talhoes.length, '', (m.porClasse[1].n + m.porClasse[2].n) + ' em andamento · ' + m.porClasse[0].n + ' não iniciados', null]);
     return k;
   }
@@ -77,7 +80,7 @@
     var cab = ['Safra', feito(rel.o).replace(/^./, function (c) { return c.toUpperCase(); }) + ' até ' + dataCurta(rel.m.ult), '% da área', 'Início', 'Fim', 'Duração', 'Área total', 'Média'];
     if (temChuva) cab.push('Chuva');
     var linhas = rel.comparativo.map(function (x, i) {
-      var cel = [N.fmtN(x.ateData) + ' ha', N.fmtPct(x.pctNaData), dataCurta(x.ini), x.emAndamento ? 'em andamento' : dataCurta(x.fim), x.duracao === null ? '—' : x.duracao + ' dias' + (x.emAndamento ? '*' : ''), N.fmtN(x.total) + ' ha', x.media ? N.fmtN(x.media) + ' ha/dia' : '—'];
+      var cel = [N.fmtN(x.ateData) + ' ha', N.fmtPct(x.pctNaData), dataCurta(x.ini), x.emAndamento ? 'em andamento' : dataCurta(x.fim), x.duracao === null ? '—' : nDias(x.duracao) + (x.emAndamento ? '*' : ''), N.fmtN(x.total) + ' ha', x.media ? N.fmtN(x.media) + ' ha/dia' : '—'];
       if (temChuva) cel.push(x.chuva.tem ? N.fmtN(x.chuva.mm) + ' mm · ' + x.chuva.dias + ' d' : '—');
       return { cor: COR_SAFRA[Math.min(x.anos, 3)], nome: N.nomeSafra(x.nome), atual: x.atual, selo: x.atual ? 'atual' : x.anos + (x.anos === 1 ? ' ano antes' : ' anos antes'), celulas: cel, dif: x.difAtual };
     });

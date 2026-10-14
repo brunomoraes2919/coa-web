@@ -3,7 +3,7 @@
    Relatório de uma fazenda: hectares por dia da safra atual e das 3 anteriores
    (mesma cultura), com a chuva do dia (mancha azul, eixo da direita) e o comparativo acumulado pela
    data do ano. Exporta o relatório inteiro em PNG ou PDF.
-   Usa o núcleo do app.js (window.AcompNucleo), que chama AcompSafras.render().
+   O núcleo do app.js (NUCLEO) chega como argumento de AcompSafras.render().
 ===================================================================== */
 (function () {
   'use strict';
@@ -121,11 +121,11 @@
     return [
       ['Início', dataLonga(x.ini)],
       [x.fim ? 'Fim' : 'Último dia', dataLonga(x.fim || x.ult) + (x.fim ? '' : ' (em andamento)')],
-      ['Duração', N.fmtN(x.duracao) + ' dias'],
+      ['Duração', N.fmtN(x.duracao) + (x.duracao === 1 ? ' dia' : ' dias')],
       ['Área', N.fmtN(x.total) + ' ha'],
       ['Média', N.fmtN(x.media) + ' ha/dia'],
       ['Pico', N.fmtN(x.pico.a) + ' ha em ' + dataCurta(x.pico.d)],
-      ['Chuva', N.fmtN(x.chuva) + ' mm' + (x.diasChuva ? ' em ' + x.diasChuva + ' dias' : '')]
+      ['Chuva', N.fmtN(x.chuva) + ' mm' + (x.diasChuva ? ' em ' + x.diasChuva + (x.diasChuva === 1 ? ' dia' : ' dias') : '')]
     ];
   }
 
@@ -229,9 +229,6 @@
     });
   }
 
-  /** Cor do texto de uma safra (o dourado fica mais escuro para ler sobre o branco). */
-  function corTexto(cor) { return cor; }
-
   /**
    * Comparativo acumulado pela data do ano: uma linha por safra, com um ponto e o valor em cada dia com
    * plantio (texto na cor da safra, com contorno branco). Rótulos que se cruzam são empilhados.
@@ -256,11 +253,11 @@
       return { name: N.nomeSafra(x.nome), type: 'line', data: dados, smooth: false, z: atual ? 5 : 3, showSymbol: true,
         lineStyle: { color: x.cor, width: (atual ? 3.2 : 2.2) * k }, itemStyle: { color: x.cor, borderColor: '#fff', borderWidth: 1.2 * k },
         areaStyle: atual ? { color: 'rgba(12,90,80,.07)' } : undefined,
-        label: { position: 'top', rotate: 90, align: 'left', verticalAlign: 'middle', distance: 5 * k, fontSize: (espaco < 9 ? 8.5 : 9.5) * k, fontWeight: 700, color: corTexto(x.cor),
+        label: { position: 'top', rotate: 90, align: 'left', verticalAlign: 'middle', distance: 5 * k, fontSize: (espaco < 9 ? 8.5 : 9.5) * k, fontWeight: 700, color: x.cor,
           textBorderColor: '#FFFFFF', textBorderWidth: 4.5 * k, formatter: function (p) { return fmt(p.value); } },
         labelLayout: { moveOverlap: 'shiftY' },
         atual: atual,
-        endLabel: { show: false, color: corTexto(x.cor), fontSize: 11.5 * k, fontWeight: 700, distance: 8 * k, textBorderColor: '#fff', textBorderWidth: 5 * k,
+        endLabel: { show: false, color: x.cor, fontSize: 11.5 * k, fontWeight: 700, distance: 8 * k, textBorderColor: '#fff', textBorderWidth: 5 * k,
           formatter: function (p) { return N.nomeSafra(x.nome) + '  ' + fmt(p.value); } },
         emphasis: { focus: 'series' } };
     });

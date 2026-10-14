@@ -237,7 +237,7 @@
             return true;
           }
         }
-        throw new Error('O servidor do PIMS não respondeu em 2 minutos. Os dados são atualizados sozinhos a cada hora.');
+        throw new Error('O servidor do PIMS não respondeu em 2 minutos e meio. Os dados são atualizados sozinhos a cada hora.');
       },
       unidadeDaFazendaCoa: function (id) { return id === null || id === undefined ? null : (fazendasCoa[id] || null); },
       /** Unidade do PIMS → id da fazenda no COA WEB (para o menu lateral acompanhar a aba escolhida aqui). */
@@ -692,21 +692,31 @@
     return '<div class="kpi"><span class="kpi-rotulo">' + rotulo + '</span><span class="kpi-valor">' + valor + (un ? '<small>' + un + '</small>' : '') + '</span><span class="kpi-sub">' + (sub || '&nbsp;') + '</span>' + (extra || '') + '</div>';
   }
   function chip(tipo, texto) { return '<span class="chip ' + tipo + '">' + esc(texto) + '</span>'; }
+  /** "1 dia", "7 dias". */
+  function nDias(n) { return fmtN(n) + (n === 1 ? ' dia' : ' dias'); }
+  /**
+   * Em "Todas", com meta cadastrada só em parte das fazendas: "2 de 5 fazendas" (a meta e o término somados
+   * são só dessas, e não se comparam com o ritmo do conjunto: a mesma regra da aba Relatórios); senão, null.
+   */
+  function fazendasComMeta(m) { return RelatorioLogica.metaParcial(m) ? m.planos.length + ' de ' + m.unidades.length + ' fazendas' : null; }
 
   function renderKpis(m) { $('kpis').innerHTML = htmlKpis(m); }
 
   function htmlKpis(m) {
     var pl = m.o === 'PLANTIO', feito = pl ? 'plantada' : 'colhida';
     var rot = rotulosClasse(m.o), total = m.talhoes.length || 1;
-    var ritmoSub = m.metaHoje !== null && m.media7
+    var parcial = fazendasComMeta(m); // meta parcial: sem comparação colorida, só "meta em N de M fazendas"
+    var ritmoSub = parcial && m.media7 ? 'meta em ' + parcial
+      : m.metaHoje !== null && m.media7
       ? (function () { var r = m.media7 / m.metaHoje - 1; return chip(r >= 0 ? 'bom' : r > -0.1 ? 'atencao' : 'ruim', (r >= 0 ? '+' : '') + fmtPct(r) + ' da meta') + ' meta ' + fmtN(m.metaHoje) + ' ha/dia'; })()
       : (m.media ? 'média geral ' + fmtN(m.media) + ' ha/dia' : 'sem apontamentos');
     // o feito no último dia apontado contra a meta daquele dia; hoje ainda está em aberto, então não ganha cor
     var ud = m.ultDia, udSub = !ud ? 'sem apontamentos'
+      : parcial ? (ud.hoje ? chip('neutro', 'dia em andamento') + ' ' : '') + 'meta em ' + parcial
       : ud.meta ? (ud.hoje ? chip('neutro', 'dia em andamento') : (function () { var r = ud.a / ud.meta - 1; return chip(r >= 0 ? 'bom' : r > -0.1 ? 'atencao' : 'ruim', (r >= 0 ? '+' : '') + fmtPct(r) + ' da meta'); })()) + ' meta ' + fmtN(ud.meta) + ' ha/dia'
       : ud.hoje ? 'dia em andamento' : 'sem meta cadastrada';
     var prevSub = m.previsao
-      ? (m.termino && m.restante > 0 ? (function () { var d = dif(m.termino, m.previsao); return d <= 0 ? chip('bom', d === 0 ? 'no prazo' : Math.abs(d) + ' dias antes') : chip(d <= 3 ? 'atencao' : 'ruim', d + ' dias após o planejado'); })() + ' ' : '') + (m.restante > 0 ? 'em ' + fmtN(m.diasPrev + 1) + ' dias' : 'concluído')
+      ? (m.termino && m.restante > 0 && !parcial ? (function () { var d = dif(m.termino, m.previsao); return d <= 0 ? chip('bom', d === 0 ? 'no prazo' : nDias(Math.abs(d)) + ' antes') : chip(d <= 3 ? 'atencao' : 'ruim', nDias(d) + ' após o planejado'); })() + ' ' : '') + (m.restante > 0 ? 'em ' + nDias(m.diasPrev + 1) : 'concluído')
       : 'sem ritmo para projetar';
     var barra = '<span class="barra-empilhada">' + [3, 2, 1, 0].map(function (k) { var c = m.porClasse[k]; return c.n ? '<span style="width:' + (c.n / total * 100) + '%;background:' + COR.s[k] + '" title="' + rot[k] + ': ' + c.n + '"></span>' : ''; }).join('') + '</span>';
     return [
@@ -790,15 +800,18 @@
     chart(el).setOption(opcoesMeta(m, 1, null, el.clientWidth), true);
   }
 
-  /** A linha tracejada na legenda, com o valor: "Meta diária (800 ha)"; se a meta muda nos dias mostrados, "(600 a 800 ha)". */
-  function nomeDaMeta(serie) {
+  /**
+   * A linha tracejada na legenda, com o valor: "Meta diária (800 ha)"; se a meta muda nos dias mostrados, "(600 a 800 ha)".
+   * Em "Todas" com meta só em parte das fazendas, a linha soma só essas e a legenda avisa: "Meta diária de 2 de 5 fazendas (800 ha)".
+   */
+  function nomeDaMeta(serie, m) {
     var v = serie.map(function (x) { return x.meta; }).filter(function (x) { return x !== null; });
     if (!v.length) return null;
-    var de = fmtN(Math.min.apply(null, v)), ate = fmtN(Math.max.apply(null, v));
-    return 'Meta diária (' + (de === ate ? ate : de + ' a ' + ate) + ' ha)';
+    var de = fmtN(Math.min.apply(null, v)), ate = fmtN(Math.max.apply(null, v)), parcial = fazendasComMeta(m);
+    return 'Meta diária' + (parcial ? ' de ' + parcial : '') + ' (' + (de === ate ? ate : de + ' a ' + ate) + ' ha)';
   }
   function itensLegendaMeta(m, ultimosDias) {
-    var meta = nomeDaMeta(ultimosDias ? m.serie.slice(-ultimosDias) : m.serie);
+    var meta = nomeDaMeta(ultimosDias ? m.serie.slice(-ultimosDias) : m.serie, m);
     return [{ nome: 'Realizado', cor: COR.teal }].concat(meta ? [{ nome: meta, cor: COR.dourado, tipo: 'tracejada' }] : [])
       .concat((m.comparativos || []).map(function (c, i) { return { nome: nomeSafra(c.nome), cor: COR_COMPARATIVO[i] || COR_COMPARATIVO[1], tipo: 'linha' }; }));
   }
@@ -809,7 +822,7 @@
    */
   function opcoesMeta(m, k, ultimosDias, largura) {
     var serie = ultimosDias ? m.serie.slice(-ultimosDias) : m.serie;
-    var temMeta = serie.some(function (x) { return x.meta !== null; });
+    var temMeta = serie.some(function (x) { return x.meta !== null; }), parcial = fazendasComMeta(m);
     var vaga = largura ? (largura - 56 * k) / Math.max(1, serie.length) : null; // largura de uma coluna com a folga dela
     var fonte = vaga ? Math.max(8 * k, Math.min(10.5 * k, vaga / 1.15)) : 10.5 * k;
     var maior = fmtN(Math.max.apply(null, serie.map(function (x) { return x.a; }).concat(0)));
@@ -835,7 +848,7 @@
       grid: { left: 4 * k, right: 8 * k, top: 10 * k + maior.length * fonte * 0.6, bottom: 4 * k, containLabel: true },
       tooltip: tt({ trigger: 'axis', axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(12,90,80,.05)' } }, formatter: function (ps) {
         var x = serie[ps[0].dataIndex];
-        return '<b>' + x.d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) + '</b><br>Realizado: <b>' + fmtN(x.a) + ' ha</b>' + (x.meta !== null ? '<br>Meta: ' + fmtN(x.meta) + ' ha' : '') +
+        return '<b>' + x.d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' }) + '</b><br>Realizado: <b>' + fmtN(x.a) + ' ha</b>' + (x.meta !== null ? '<br>Meta' + (parcial ? ' de ' + parcial : '') + ': ' + fmtN(x.meta) + ' ha' : '') +
           (m.comparativos || []).map(function (c, i) { return '<br><span style="color:#8A988F">' + esc(nomeSafra(c.nome)) + ': ' + fmtN(x.comp[i]) + ' ha</span>'; }).join('');
       } }),
       xAxis: Object.assign({}, eixoX, { type: 'category', data: serie.map(function (x) { return x.d.getDate() === 1 || x === serie[0] ? fmtData(x.d, true) : String(x.d.getDate()); }), axisLabel: { color: COR.suave, fontSize: 11 * k, hideOverlap: true }, axisLine: { lineStyle: { color: COR.linha, width: k } } }),
@@ -875,7 +888,8 @@
   }
 
   function itensLegendaAcum(m) {
-    return [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Planejado pelas metas', cor: COR.dourado, tipo: 'tracejada' }, { nome: 'Projeção pelo ritmo', cor: '#9AA79F', tipo: 'tracejada' }]
+    var parcial = fazendasComMeta(m); // em "Todas" com meta parcial, o planejado soma só as fazendas com meta
+    return [{ nome: 'Realizado', cor: COR.teal }, { nome: 'Planejado pelas metas' + (parcial ? ' de ' + parcial : ''), cor: COR.dourado, tipo: 'tracejada' }, { nome: 'Projeção pelo ritmo', cor: '#9AA79F', tipo: 'tracejada' }]
       .concat((m.comparativos || []).map(function (c, i) { return { nome: nomeSafra(c.nome), cor: COR_COMPARATIVO[i] || COR_COMPARATIVO[1], tipo: 'linha' }; }));
   }
   function renderAcumulado(m) {
@@ -897,10 +911,13 @@
     if (dif(m.ini, fim) > 150) fim = new Date(+m.ini + 150 * DIA);
     var cats = [], real = [], plan = [], proj = [], ar = 0, ap = 0, h = hoje();
     var temMeta = m.planos.length > 0;
+    // o realizado segue o critério do executado (o apontado conta até completar a área do talhão): a linha
+    // termina no número do cartão "Área plantada/colhida", que é de onde a projeção parte
+    var feitoDia = RelatorioLogica.execucaoPorDia(m.talhoes, m.ops);
     for (var t = +m.ini; t <= +fim; t += DIA) {
       var d = new Date(t); d = new Date(d.getFullYear(), d.getMonth(), d.getDate());
       var dia = paraIso(d);
-      ar += m.porDia[dia] || 0;
+      ar += feitoDia[dia] || 0;
       ap += m.metaDia(d) || 0;
       cats.push(d);
       real.push(d <= m.ult ? Math.round(Math.min(ar, m.areaTotal)) : null);
@@ -909,9 +926,8 @@
     }
     // projeção: do último apontamento até a previsão, no ritmo dos últimos 7 dias
     if (m.ritmo && m.restante > 0) {
-      var i0 = dif(m.ini, m.ult), base = Math.min(ar, m.exec);
+      var i0 = dif(m.ini, m.ult);
       for (var j = i0; j < cats.length; j++) proj[j] = Math.round(Math.min(m.areaTotal, m.exec + (j - i0) * m.ritmo));
-      proj[i0] = Math.round(m.exec);
     }
     // safras anteriores: o acumulado delas até o mesmo dia do ano (linhas claras, só para comparar)
     var comps = (m.comparativos || []).map(function (c, i) {
@@ -1103,7 +1119,7 @@
     var p = planoDe(u, s, o);
     form.periodos = p ? p.periodos.map(function (x) { return { inicio: x.inicio, fim: x.fim, meta: x.meta }; }) : [];
     form.periodos.sort(function (a, b) { return a.inicio < b.inicio ? -1 : a.inicio > b.inicio ? 1 : 0; });
-    // início do 1º período = 1º boletim de plantio apontado no PIMS (travado); sem boletim ainda, fica editável
+    // início do 1º período = 1º boletim da operação (plantio ou colheita) apontado no PIMS (travado); sem boletim ainda, fica editável
     var mIni = calcula([u], s, o).ini;
     form.iniTravado = mIni ? paraIso(mIni) : null;
     if (!form.periodos.length) {
@@ -1121,12 +1137,18 @@
     listarPlanos();
   }
 
-  var DICA_INICIO = 'A data de início do 1º período é a do primeiro boletim de plantio apontado no PIMS para esta fazenda e safra. Ela é preenchida e atualizada automaticamente e não pode ser alterada aqui.';
-  var DICA_INICIO_SEM = 'Ainda não há boletim de plantio apontado no PIMS para esta fazenda e safra. Informe o início previsto; quando o primeiro boletim for apontado, esta data passa a ser a dele automaticamente e fica travada.';
+  /** A dica do início do 1º período, com a operação do formulário (boletim de plantio ou de colheita). */
+  function dicaInicio(o, travado) {
+    var boletim = 'boletim de ' + (o === 'PLANTIO' ? 'plantio' : 'colheita');
+    return travado
+      ? 'A data de início do 1º período é a do primeiro ' + boletim + ' apontado no PIMS para esta fazenda e safra. Ela é preenchida e atualizada automaticamente e não pode ser alterada aqui.'
+      : 'Ainda não há ' + boletim + ' apontado no PIMS para esta fazenda e safra. Informe o início previsto; quando o primeiro boletim for apontado, esta data passa a ser a dele automaticamente e fica travada.';
+  }
   function desenharPeriodos() {
     if (form.iniTravado && form.periodos.length) form.periodos[0].inicio = form.iniTravado;
+    var dica = dicaInicio($('m-op').value, !!form.iniTravado);
     $('m-periodos').innerHTML = form.periodos.map(function (p, i) {
-      var trava = i === 0 && !!form.iniTravado, dica = form.iniTravado ? DICA_INICIO : DICA_INICIO_SEM;
+      var trava = i === 0 && !!form.iniTravado;
       var campo = '<input type="date" data-k="inicio" value="' + esc(p.inicio) + '" aria-label="Início do período ' + (i + 1) + '"' + (trava ? ' readonly class="travado" tabindex="-1"' : '') + '>';
       return '<tr data-i="' + i + '"><td>' + (i === 0
           ? '<div class="campo-ajuda">' + campo + '<button type="button" class="ajuda" aria-label="' + esc(dica) + '" data-dica="' + esc(dica) + '">?</button></div>'

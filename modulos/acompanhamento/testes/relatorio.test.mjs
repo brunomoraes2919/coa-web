@@ -1,5 +1,5 @@
 // Testes da lógica da aba "Relatórios" do Acompanhamento Operacional (acompanhamento/relatorio-logica.js).
-// Rodar na raiz do repositório: node --test modulos/acompanhamento/testes/
+// Rodar na raiz do repositório: node --test modulos/acompanhamento/testes/*.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
@@ -196,4 +196,53 @@ test('execucaoDoTalhao: a área feita é só a apontada nos boletins, limitada �
   assert.deepEqual(L.execucaoDoTalhao(200, 230), { perc: 1, efetivo: 200 }) // apontado a mais não passa da área
   assert.deepEqual(L.execucaoDoTalhao(200, 0), { perc: 0, efetivo: 0 })
   assert.deepEqual(L.execucaoDoTalhao(0, 12), { perc: 1, efetivo: 0 }) // talhão todo em dano
+})
+
+// ------------------------------------------------------------- realizado por dia (gráfico acumulado)
+test('execucaoPorDia: o feito de cada dia para de contar quando o talhão completa a área, e a soma dá o executado dos cartões', () => {
+  const talhoes = [{ u: 'GLOBO', t: '001', base: 100 }, { u: 'GLOBO', t: '002', base: 200 }]
+  // fora de ordem de propósito; o talhão 001 recebe 106 ha de boletim para 100 ha de área
+  const ops = [
+    { u: 'GLOBO', t: '001', d: '2026-09-08', a: 46 },
+    { u: 'GLOBO', t: '002', d: '2026-09-08', a: 50 },
+    { u: 'GLOBO', t: '001', d: '2026-09-07', a: 60 },
+    { u: 'GLOBO', t: '002', d: '2026-09-10', a: 40 }
+  ]
+  const pd = L.execucaoPorDia(talhoes, ops)
+  assert.deepEqual(pd, { '2026-09-07': 60, '2026-09-08': 90, '2026-09-10': 40 }) // dia 08: 40 (o que faltava no 001) + 50
+  const exec = L.execucaoDoTalhao(100, 106).efetivo + L.execucaoDoTalhao(200, 90).efetivo
+  assert.equal(Object.values(pd).reduce((s, v) => s + v, 0), exec) // 190, e não os 196 apontados
+})
+
+test('execucaoPorDia: boletim de talhão fora do cadastro ou todo em dano não entra, e talhão de mesmo código em outra fazenda não se mistura', () => {
+  const talhoes = [{ u: 'GLOBO', t: '001', base: 100 }, { u: 'GLOBO', t: '009', base: 0 }, { u: 'SM3', t: '001', base: 50 }]
+  const ops = [
+    { u: 'GLOBO', t: '001', d: '2026-09-07', a: 30 },
+    { u: 'GLOBO', t: '777', d: '2026-09-07', a: 25 }, // talhão que não está na safra
+    { u: 'GLOBO', t: '009', d: '2026-09-07', a: 12 }, // área toda em dano: executado zero
+    { u: 'SM3', t: '001', d: '2026-09-07', a: 80 }    // passa da área do talhão da outra fazenda
+  ]
+  assert.deepEqual(L.execucaoPorDia(talhoes, ops), { '2026-09-07': 80 }) // 30 + 0 + 0 + 50
+  assert.deepEqual(L.execucaoPorDia(talhoes, []), {})
+})
+
+// ------------------------------------------------------------- meta parcial (Painel, Modo TV e Relatórios)
+test('metaParcial: só quando parte das fazendas tem meta cadastrada', () => {
+  assert.equal(L.metaParcial(indicadores({ unidades: ['GLOBO', 'SM3', 'DOURADO'], planos: [{}] })), true)
+  assert.equal(L.metaParcial(indicadores({ unidades: ['GLOBO', 'SM3'], planos: [{}, {}] })), false) // todas têm
+  assert.equal(L.metaParcial(indicadores({ unidades: ['GLOBO', 'SM3'], planos: [] })), false)        // nenhuma tem: "sem meta", não parcial
+  assert.equal(L.metaParcial(indicadores()), false)                                                  // uma fazenda só, com meta
+  assert.equal(L.metaParcial(indicadores({ planos: [] })), false)                                    // uma fazenda só, sem meta
+})
+
+// ------------------------------------------------------------- singular e plural de "dia"
+test('frases: um dia só fica no singular ("em 1 dia", "levou 1 dia")', () => {
+  const curta = { nome: 'SOJA 25/26', anos: 1, porDia: { '2025-09-05': 500 }, acumAte() { return 500 } }
+  const m = indicadores({ ini: d('2026-09-12'), ult: d('2026-09-12'), diasDec: 1, porDia: { '2026-09-12': 450 }, comparativos: [curta] })
+  const t = L.frases(L.consolidar(m, {}, HOJE, { fazenda: 'Globo' })).join(' ')
+  assert.match(t, /em 1 dia desde 12\/09/)
+  assert.match(t, /levou 1 dia para 500 ha/)
+  assert.doesNotMatch(t, /\b1 dias\b/)
+  const feita = indicadores({ ini: d('2026-09-12'), ult: d('2026-09-12'), diasDec: 1, exec: 1000, restante: 0, pct: 1, apontado: 1000, comparativos: [] })
+  assert.match(L.frases(L.consolidar(feita, {}, HOJE, { fazenda: 'Globo' })).join(' '), /1\.000 ha em 1 dia, de 12\/09 a 12\/09/)
 })

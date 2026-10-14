@@ -3,7 +3,7 @@
    Cruza os indicadores do Painel (`calcula()` do app.js) com a chuva da fazenda e as safras anteriores:
    correlação chuva × operação, comparativo na mesma data do ano, linhas por fazenda e as frases da
    "leitura da operação". Usado pelo relatorio.js no navegador e pelos testes em
-   modulos/acompanhamento/testes/ (node --test).
+   modulos/acompanhamento/testes/ (node --test modulos/acompanhamento/testes/*.mjs).
 ===================================================================== */
 (function (raiz, fabrica) {
   if (typeof module === 'object' && module.exports) module.exports = fabrica();
@@ -111,6 +111,37 @@
     return { perc: perc, efetivo: base * perc };
   }
 
+  /**
+   * A área feita em cada dia pelo mesmo critério do executado (`execucaoDoTalhao`): o apontado conta até
+   * completar a área do talhão. A soma dos dias dá o `exec` de `calcula()`: é a série do realizado no gráfico
+   * "Evolução acumulada", para a linha terminar no número dos cartões (e a projeção partir dali).
+   * @param talhoes  talhões de `calcula()`: [{ u, t, base }]
+   * @param ops      apontamentos sem replantio: [{ u, t, d, a }]
+   * @returns        { 'AAAA-MM-DD': hectares }
+   */
+  function execucaoPorDia(talhoes, ops) {
+    var bases = {}, ap = {}, porDia = {};
+    (talhoes || []).forEach(function (t) { var k = t.u + '|' + t.t; (bases[k] = bases[k] || []).push(t.base); });
+    function efetivo(k) { var s = 0; bases[k].forEach(function (b) { s += execucaoDoTalhao(b, ap[k] || 0).efetivo; }); return s; }
+    (ops || []).slice().sort(function (a, b) { return a.d < b.d ? -1 : a.d > b.d ? 1 : 0; }).forEach(function (a) {
+      var k = a.u + '|' + a.t;
+      if (!bases[k]) return; // boletim de talhão fora do cadastro da safra: não entra no executado
+      var antes = efetivo(k);
+      ap[k] = (ap[k] || 0) + a.a;
+      porDia[a.d] = (porDia[a.d] || 0) + efetivo(k) - antes;
+    });
+    return porDia;
+  }
+
+  /**
+   * No geral ("Todas as fazendas"), a meta e o término somados só valem se todas as fazendas têm meta
+   * cadastrada. Aqui: só parte delas tem (com uma fazenda só, nunca é parcial).
+   */
+  function metaParcial(m) {
+    var n = (m.planos || []).length;
+    return n > 0 && n < (m.unidades || []).length;
+  }
+
   function linhaFazenda(u, m, chuvaU, hoje) {
     var comp = comparativoSafras(m, chuvaU, hoje), ant = comp[1] || null, corr = correlacaoChuva(m, chuvaU);
     return { u: u, nome: titulo(u), pct: m.pct, exec: m.exec, areaTotal: m.areaTotal, restante: m.restante,
@@ -142,7 +173,7 @@
       comparativo: comparativoSafras(m, chuvaU, hoje)
     };
     // no geral, a meta e o término somados só valem se todas as fazendas têm meta cadastrada
-    r.metaParcial = r.todas && (m.planos || []).length > 0 && (m.planos || []).length < m.unidades.length;
+    r.metaParcial = r.todas && metaParcial(m);
     r.difMeta = r.temMeta && !r.metaParcial && m.media7 && m.metaHoje ? m.media7 / m.metaHoje - 1 : null;
     r.difPrevisao = m.previsao && m.termino && !concluida && !r.metaParcial ? dif(m.termino, m.previsao) : null;
     r.anterior = r.comparativo[1] || null;
@@ -159,11 +190,11 @@
 
     // 1. situação
     if (r.concluida) {
-      f.push('O ' + o + ' ' + quem + ' está **concluído**: ' + fmtN(m.exec) + ' ha em ' + m.diasDec + ' dias, de ' + dataCurta(m.ini) + ' a ' + dataCurta(m.ult) +
+      f.push('O ' + o + ' ' + quem + ' está **concluído**: ' + fmtN(m.exec) + ' ha em ' + m.diasDec + ' ' + plural(m.diasDec, 'dia', 'dias') + ', de ' + dataCurta(m.ini) + ' a ' + dataCurta(m.ult) +
         ' (média de ' + fmtN(m.media) + ' ha/dia).');
     } else {
       f.push('O ' + o + ' ' + quem + ' está **' + fmtPct(m.pct) + ' concluído**: ' + fmtN(m.exec) + ' ha dos ' + fmtN(m.areaTotal) + ' ha, em ' + m.diasDec +
-        ' dias desde ' + dataCurta(m.ini) + '. Último apontamento em ' + dataCurta(m.ult) + '; faltam ' + fmtN(m.restante) + ' ha.');
+        ' ' + plural(m.diasDec, 'dia', 'dias') + ' desde ' + dataCurta(m.ini) + '. Último apontamento em ' + dataCurta(m.ult) + '; faltam ' + fmtN(m.restante) + ' ha.');
     }
 
     // 2. ritmo, meta e previsão
@@ -197,7 +228,7 @@
         return 'a **' + nomeSafra(a.nome) + '** tinha ' + fmtN(a.ateData) + ' ha ' + feito(r.o) + 's' + dif;
       });
       var s3 = 'Na mesma data do ano, ' + partes.join(' e ') + '.';
-      s3 += ' ' + ants.map(function (a, i) { return (i ? 'a ' : 'A ') + nomeSafra(a.nome) + ' levou ' + a.duracao + ' dias para ' + fmtN(a.total) + ' ha (' + dataCurta(a.ini) + ' a ' + dataCurta(a.fim) + ')'; }).join('; ') + '.';
+      s3 += ' ' + ants.map(function (a, i) { return (i ? 'a ' : 'A ') + nomeSafra(a.nome) + ' levou ' + a.duracao + ' ' + plural(a.duracao, 'dia', 'dias') + ' para ' + fmtN(a.total) + ' ha (' + dataCurta(a.ini) + ' a ' + dataCurta(a.fim) + ')'; }).join('; ') + '.';
       f.push(s3);
     }
 
@@ -249,5 +280,5 @@
     return saida;
   }
 
-  return { CHUVA_MIN: CHUVA_MIN, CHUVA_FORTE: CHUVA_FORTE, execucaoDoTalhao: execucaoDoTalhao, correlacaoChuva: correlacaoChuva, comparativoSafras: comparativoSafras, linhaFazenda: linhaFazenda, consolidar: consolidar, frases: frases, trechos: trechos, chuvaNoPeriodo: chuvaNoPeriodo };
+  return { CHUVA_MIN: CHUVA_MIN, CHUVA_FORTE: CHUVA_FORTE, execucaoDoTalhao: execucaoDoTalhao, execucaoPorDia: execucaoPorDia, metaParcial: metaParcial, correlacaoChuva: correlacaoChuva, comparativoSafras: comparativoSafras, linhaFazenda: linhaFazenda, consolidar: consolidar, frases: frases, trechos: trechos, chuvaNoPeriodo: chuvaNoPeriodo };
 });

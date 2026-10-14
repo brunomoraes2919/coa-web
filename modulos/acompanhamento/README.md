@@ -3,22 +3,33 @@
 Painel de acompanhamento do plantio e da colheita por fazenda e safra, com os dados do PIMS, e
 cadastro das metas diárias por período e da data estimada de término.
 
-No COA WEB: categoria **Operacional** → **Painel** e **Metas**. O módulo roda num iframe da mesma
-origem (`acompanhamento/index.html?embed=1`) e usa a sessão do COA WEB.
+No COA WEB: categoria **Operacional**, com quatro abas: **Painel**, **Metas**, **Safras** e
+**Relatórios**. O módulo roda num iframe da mesma origem (`acompanhamento/index.html?embed=1`) e usa
+a sessão do COA WEB.
 
 ## Safras (comparativo por fazenda)
 
 Aba **Safras** (COA WEB → Operacional → Safras): relatório de uma fazenda (sem "Todas") com a safra
-atual e as 3 anteriores da mesma cultura. Cartões de resumo (início, fim, duração, área, média,
-pico, chuva), um gráfico de hectares por dia por safra com uma **gota** acima de cada dia com chuva
-(≥ 1 mm, com os milímetros) e o resuminho no título, todos no mesmo trecho do calendário (as safras
-anteriores são deslocadas para o ano da atual), e o comparativo acumulado pela data do ano (ha ou %
-da área). **Exportar** gera um PNG único ou um PDF A4 deitado (jsPDF do cdnjs, carregado só ao
-exportar). Código em `acompanhamento/safras.js`.
+atual e até 3 anteriores da mesma cultura. Cartões de resumo (início, fim, duração, área, média,
+pico, chuva), um gráfico de hectares por dia por safra com a chuva do dia como uma **área azul**
+translúcida no eixo da direita (mm) e o resuminho no título, todos no mesmo trecho do calendário (as
+safras anteriores são deslocadas para o ano da atual), e o comparativo acumulado pela data do ano
+(ha ou % da área). **Exportar** gera um PNG único ou um PDF A4 deitado (jsPDF do cdnjs, carregado só
+ao exportar). Código em `acompanhamento/safras.js`.
 
 Chuva: a rotina da VM lê a ZEUS (`stg_climatemonitoring2` + `stg_zeus_picarea`), soma o dia de cada
 pluviômetro e tira a média entre os pluviômetros da fazenda, desde agosto de 3 anos-safra antes; grava
 em `acomp_pims` com safra `CHUVA` (uma linha por unidade). Se a ZEUS falhar, o resto segue sem chuva.
+
+## Relatórios (consolidado da operação)
+
+Aba **Relatórios** (COA WEB → Operacional → Relatórios): a operação numa página, de uma fazenda ou
+de "Todas". Leitura automática em frases, seis indicadores, a tabela "Esta safra × anteriores" na
+mesma data do ano, hectares por dia com a meta e a chuva, evolução acumulada, percentual por talhão
+(em "Todas", a tabela por fazenda), situação dos talhões, equipes e variedades. **Exportar** gera um
+PNG único ou um PDF A4 em pé. Tela e exportação em `acompanhamento/relatorio.js`; a lógica sem tela
+(chuva × operação, comparativo, frases, executado por talhão e por dia, meta parcial) fica em
+`acompanhamento/relatorio-logica.js`, coberta pelos testes.
 
 ## Exportar imagem (WhatsApp)
 
@@ -28,8 +39,9 @@ término e observação), indicadores (área, executada/à executar, dias decorr
 planejados e previstos, medidor de evolução, talhões, ritmo, % replantio), dano/replantio, rosca do
 percentual realizado, área por equipe (últimos 7 dias e total), variedades, meta × realizado por dia,
 mapa de evolução com rosa dos ventos e as barras de % por talhão. Formatos:
-**Relatório** (a página 1920×1080 do Power BI, gravada em 2400×1350; no WhatsApp, envie em HD) e
-**Celular** (os mesmos blocos empilhados, 1350 de largura, para rolar no celular). Fazenda alta ganha
+**Relatório** (a página 1920×1080 do Power BI, gravada em 4800×2700; no WhatsApp, envie em HD) e
+**Celular** (os mesmos blocos empilhados, 2700 de largura, para rolar no celular; no iPhone e no
+iPad a imagem sai menor quando passa do limite de tamanho do aparelho). Fazenda alta ganha
 o mapa em duas faixas, como a página de Guapirama do Power BI. Em "Todas", o mapa vira a lista das
 fazendas e as barras mostram o % de cada fazenda. No celular, **Compartilhar** manda a imagem direto
 para o WhatsApp.
@@ -73,7 +85,9 @@ A TV se mantém sozinha, sem ninguém recarregar a página:
 - **Versão nova do site**: a cada 5 min a TV compara os arquivos versionados do `index.html` publicado
   com os que carregou; se mudaram e os novos já respondem, recarrega e volta ao Modo TV na mesma tela
   (uma vez por versão). A tela cheia do botão não sobrevive à recarga (regra do navegador): numa TV
-  fixa, use a tela cheia do **F11**, que continua.
+  fixa, use a tela cheia do **F11**, que continua. Por isso, todo arquivo alterado em
+  `acompanhamento/` precisa ter o `?v=` trocado no `acompanhamento/index.html` (padrão
+  `AAAAMMDDHHMM`); sem isso, os navegadores e as TVs abertas seguem com o código antigo.
 
 Para deixar uma TV fixa: entre no COA WEB no navegador da TV e abra (dá para favoritar)
 `https://coa-web-teal.vercel.app/acompanhamento/index.html?tv=1`. Opções na URL:
@@ -85,6 +99,9 @@ final `#painel/TODAS/SOJA%2026%2F27/PLANTIO` escolhe safra e operação.
 | Parte | Arquivo |
 |---|---|
 | Página (JS puro, sem build) | `acompanhamento/` na raiz do repositório (`index.html`, `app.js`, `estilo.css`, `config.js`) |
+| Aba Safras | `acompanhamento/safras.js` |
+| Aba Relatórios (tela, exportação e lógica) | `acompanhamento/relatorio.js` e `acompanhamento/relatorio-logica.js` |
+| Testes da lógica | `modulos/acompanhamento/testes/relatorio.test.mjs` |
 | Banco (tabelas `acomp_*` e regras de acesso) | `modulos/acompanhamento/supabase/0001_acompanhamento.sql` |
 | Leitura do PIMS | etapa "Acompanhamento" de `modulos/mapas/scripts/sincronizar-plantio.mjs` |
 | Integração no COA WEB | `index.html` da raiz, seção "ACOMPANHAMENTO OPERACIONAL" |
@@ -97,7 +114,8 @@ final `#painel/TODAS/SOJA%2026%2F27/PLANTIO` escolhe safra e operação.
    agrícolas do ano-safra e grava em `acomp_pims` (uma linha por safra × unidade).
    Desligar: `"acompanhamento": false` em `modulos/mapas/scripts/plantio.config.json`.
 2. O botão **Atualizar** do painel usa o mesmo pedido do "Atualizar plantio" dos mapas
-   (`mapas_plantio_pedidos`); a VM atende em até ~45 s e atualiza os dois módulos.
+   (`mapas_plantio_pedidos`); a VM atende em até ~45 s e atualiza os dois módulos. A página espera
+   a resposta por até 2 minutos e meio.
 3. A página calcula os indicadores no navegador (mesmas regras do relatório Power BI).
 4. Os limites dos talhões vêm das tabelas do módulo MAPAS (`mapas_areas_cultura` da safra e
    `mapas_talhoes`); a página usa o conjunto que cobre mais talhões da safra escolhida.
@@ -128,9 +146,27 @@ para ele. Toda alteração de meta fica em `acomp_metas_historico` (só o admin 
 - Último dia = hectares do último dia com apontamento, comparados com a meta daquele dia (se o
   último dia é hoje, o cartão diz "dia em andamento" e não compara). O "necessário para cumprir o
   prazo" (restante ÷ dias até a data de término) ficou só na leitura em frases do Relatório.
+- Em "Todas", a meta e o término somados só valem se todas as fazendas têm meta cadastrada. Com meta
+  só em parte delas, os cartões do Painel e do Modo TV e a aba Relatórios não comparam (mostram
+  "meta em N de M fazendas") e a legenda dos gráficos avisa de quantas fazendas é a meta desenhada.
+- Evolução acumulada: o realizado segue o critério do executado (o apontado conta até completar a
+  área do talhão), para a linha terminar no número do cartão "Área plantada/colhida"; a projeção
+  parte desse ponto.
 - Layout do mapa (regra do Mapa de Chuva): altura/largura da fazenda > 1,25 → mapa em coluna
   (retrato); senão em faixa (paisagem). Grupos distantes (até 3) viram quadros separados quando
   aproveitam ao menos 1,5× melhor a área.
+
+## Testes
+
+Executor nativo do Node, sem dependências. Na raiz do repositório:
+
+```
+node --test modulos/acompanhamento/testes/*.mjs
+```
+
+(Com a pasta no lugar dos arquivos, `node --test modulos/acompanhamento/testes/`, o Node 24 falha.)
+Cobrem a lógica de `acompanhamento/relatorio-logica.js`; as contas do `app.js` (`calcula`) não têm
+teste, porque dependem da tela.
 
 ## Testar localmente
 
