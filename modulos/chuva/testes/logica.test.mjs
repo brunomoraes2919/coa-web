@@ -311,3 +311,47 @@ test('talhão dividido no ciclo: basta um pedaço da família estar no ciclo', (
   const linhas = L.linhasDosTalhoes(codigos.map(c => ({ codigo: c, nome: c, area: 10 })), f, L.periodo('ciclo:0', f))
   assert.deepEqual(linhas.map(l => [l.codigo, l.foraDoCiclo]), [['019', false], ['019B', false], ['020A', false], ['021A', true], ['001', true]])
 })
+
+/**
+ * O mesmo talhão escrito com outra quantidade de zeros (cada cadastro escreve de um jeito): 019, 19A e 0019B.
+ * Janela de 3 dias, todos com dado.
+ */
+const LINHA_ZEROS = {
+  unidade: 'TESTE', inicio: '2026-09-01', dias: 3, lidos: '0-2',
+  talhoes: {
+    '019': { de: 0, ate: 2, d: '0:12' }, // o talhão inteiro, com zero
+    '007A': { de: 0, ate: 2, d: '1:5' }, // só um pedaço, com zeros
+    '30A': { de: 0, ate: 2, d: '1:4' }, '030B': { de: 0, ate: 2, d: '1:8' }, // sem o inteiro: a média dos pedaços
+    '001': { de: 0, ate: 2, d: '0:3' }, '01PIVO': { de: 0, ate: 2, d: '0:9' }, '019PESQ': { de: 0, ate: 2, d: '2:6' },
+  },
+  ciclos: [{ s: 'SAFRA 2026/2027', p: 'SOJA 26/27', de: '2026-09-01', ate: '2027-08-31', t: ['19A', '7'] }],
+  pics: [], vinculos: {},
+}
+const CODIGOS_ZEROS = ['019', '19A', '0019B', '7', '007A', '07B', '030', '30B', '001', '01PIVO', '1PIVA', '019PESQ']
+
+test('talhão dividido: o número vale sem os zeros à esquerda (019, 19A e 0019B são o mesmo talhão)', () => {
+  const f = L.prepararFazenda(LINHA_ZEROS)
+  const linhas = L.linhasDosTalhoes(CODIGOS_ZEROS.map(c => ({ codigo: c, nome: c, area: 10 })), f, L.periodo('livre', f, '2026-09-01', '2026-09-03'))
+  assert.deepEqual(linhas.map(l => [l.codigo, l.total, l.chuvaDe]), [
+    // 019 + 19A: o pedaço escrito sem o zero mostra a chuva do talhão inteiro (o dono continua sendo o sem letra)
+    ['019', 12, null], ['19A', 12, ['019']], ['0019B', 12, ['019']],
+    // 7 + 007A: só o pedaço está na tabela, e vale para o talhão escrito sem os zeros
+    ['7', 5, ['007A']], ['007A', 5, null], ['07B', 5, ['007A']],
+    // sem o inteiro, a média dos pedaços, cada um escrito de um jeito
+    ['030', 6, ['030B', '30A']], ['30B', 6, ['030B', '30A']],
+    // o talhão 001 continua não sendo o pivô 01, e o 019PESQ continua outro talhão
+    ['001', 3, null], ['01PIVO', 9, null], ['1PIVA', 9, ['01PIVO']], ['019PESQ', 6, null],
+  ])
+  // o código aparece na tela como está no limite
+  assert.deepEqual(linhas.map(l => l.nome), CODIGOS_ZEROS)
+  assert.equal(linhas.filter(l => l.semDado).length, 0)
+  // talhaoBase continua devolvendo o código sem a letra, do jeito que foi escrito
+  assert.deepEqual(['019', '19A', '0019B', '007A'].map(L.talhaoBase), ['019', '19', '0019', '007'])
+})
+
+test('talhão dividido no ciclo: o pedaço do ciclo vale para a família mesmo escrito com outros zeros', () => {
+  const f = L.prepararFazenda(LINHA_ZEROS)
+  const linhas = L.linhasDosTalhoes(CODIGOS_ZEROS.map(c => ({ codigo: c, nome: c, area: 10 })), f, L.periodo('ciclo:0', f))
+  // no ciclo estão o 19A e o 7: entram as famílias do 019 e do 007A; o 001 e o pivô 01 ficam de fora
+  assert.deepEqual(linhas.filter(l => !l.foraDoCiclo).map(l => l.codigo), ['019', '19A', '0019B', '7', '007A', '07B'])
+})

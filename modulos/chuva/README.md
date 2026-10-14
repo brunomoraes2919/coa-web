@@ -33,8 +33,10 @@ próprio para um pedaço (aí o número deixa de bater com o do relatório para 
 talhão sem letra, vale a média, dia a dia, dos pedaços que ela tem. No período por ciclo, o pedaço entra se
 algum da família estiver no ciclo. Com os **pivôs** é igual: `01PIVO` é o pivô inteiro e `1PIVA`, `1PIVB` ou
 `001PIVA` são pedaços dele (o número vale sem os zeros à esquerda); todos mostram a chuva do `01PIVO`. O talhão
-`001` não é o pivô 01. Outros finais (`019PESQ`, `032PQ`) são outro talhão. A regra fica
-na tela (`talhaoBase` e `chuvaDasFamilias` em `chuva/logica.js`); o que o servidor grava não muda.
+`001` não é o pivô 01. Outros finais (`019PESQ`, `032PQ`) são outro talhão. No talhão comum o número também
+vale sem os zeros à esquerda (`019`, `19A` e `0019B` são o mesmo talhão), e o código aparece na tela como foi
+escrito. A regra fica na tela (`talhaoBase`, `chaveDaFamilia` e `chuvaDasFamilias` em `chuva/logica.js`); o que
+o servidor grava não muda.
 
 A aba **Pluviômetros** e os pontos no mapa mostram a chuva medida em cada estação (telemetria da ZEUS),
 só para comparar: a chuva dos talhões não sai dali.

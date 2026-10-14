@@ -1,11 +1,15 @@
 /* =====================================================================
    Validação PIMS — módulo do COA WEB
    Lê o retrato do PIMS/SAP que o servidor grava em valid_pims (ordens de serviço abertas e fechadas com
-   diferença de área, coordenadores, depósitos e o saldo dos depósitos vinculados) e os vínculos
-   coordenador ↔ depósito (valid_vinculos), que os administradores cadastram aqui.
+   diferença de área, coordenadores, depósitos e o saldo dos depósitos vinculados, os boletins com falha de
+   integração e os extras: apontamentos recentes, necessidade de produto, doses e boletins em validação) e os
+   vínculos coordenador ↔ depósito (valid_vinculos), que os administradores cadastram aqui.
+   Com ?modo=controle é o Controle Técnico: a mesma tela, só com a equipe do coordenador (sem os vínculos).
    - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'validacao-vista', vista }
    - módulo → COA: { tipo:'validacao-rota', vista, coaFazenda }
-   O endereço guarda a tela aberta (#abertas, #fechadas, #depositos).
+   No Controle Técnico as mensagens são 'controle-vista' e 'controle-rota', e a fazenda do menu não vale.
+   O endereço guarda a tela aberta, uma das nove: #pendencias (a inicial), #abertas, #fechadas, #apontamentos,
+   #boletins, #estoque, #doses, #coletor e #depositos (esta só na Validação PIMS).
 ===================================================================== */
 (function () {
   'use strict';
@@ -296,7 +300,7 @@
       g.atraso ? '<span class="selo atraso">' + g.atraso + ' em alerta' + '</span>' : '',
       g.atencao ? '<span class="selo atencao">' + g.atencao + ' em atenção</span>' : '',
       g.ok ? '<span class="selo ok">' + g.ok + ' no prazo</span>' : '',
-      g.excedidas ? '<span class="selo alerta">' + g.excedidas + (g.excedidas === 1 ? ' com área excedida' : ' com área excedida') + '</span>' : '',
+      g.excedidas ? '<span class="selo alerta">' + g.excedidas + ' com área excedida</span>' : '',
     ].join('');
     return '<section class="cartao coordenador ' + (g.atraso ? 'atraso' : g.atencao ? 'atencao' : 'ok') + '">' +
       '<header class="cartao-cab"><div><h2>' + esc(L.titulo(g.eq)) + '</h2><p>' + esc(L.titulo(g.unidade)) + ' · ' + (g.ordens.length === 1 ? '1 ordem aberta' : g.ordens.length + ' ordens abertas') +
@@ -671,7 +675,7 @@
     avisar('Pedindo ao servidor…', '');
     try {
       const id = await fonte.pedirAtualizacao();
-      avisar('Buscando as ordens no PIMS e o saldo no SAP… (até 1 minuto)', '');
+      avisar('Buscando as ordens no PIMS e o saldo no SAP… (até 2 minutos e meio)', '');
       let fim = null;
       for (let esperado = 0; esperado < LIMITE_MS && !fim; esperado += INTERVALO_MS) {
         await new Promise((r) => setTimeout(r, INTERVALO_MS));

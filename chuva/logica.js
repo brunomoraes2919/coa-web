@@ -67,6 +67,7 @@
    * são outros talhões e ficam como estão.
    * Pivô: '01PIVO' é o pivô inteiro e '1PIVA', '1PIVB' ou '001PIVA' são pedaços dele (cada cadastro escreve o
    * número com uma quantidade de zeros): todos viram '1PIVO'. O talhão '001' não é o pivô 01.
+   * No talhão comum os zeros ficam como foram escritos ('19A' → '19'); quem compara sem eles é chaveDaFamilia.
    */
   function talhaoBase(codigo) {
     var c = String(codigo === null || codigo === undefined ? '' : codigo).trim().toUpperCase();
@@ -77,15 +78,25 @@
   }
   /** O código é o do talhão (ou pivô) inteiro, e não o de um pedaço dele? */
   function talhaoInteiro(codigo) { return /^\d+(PIVO)?$/.test(String(codigo).trim().toUpperCase()); }
+  /**
+   * Chave para comparar as famílias: a base com o número sem os zeros à esquerda, porque cada cadastro escreve
+   * o talhão com uma quantidade de zeros ('019', '19A' e '0019B' → '19'). O pivô já sai assim de talhaoBase
+   * ('1PIVO') e não se mistura com o talhão '1'; os outros finais ('019PESQ') ficam como estão. É só para
+   * comparar: o código que aparece na tela não muda.
+   */
+  function chaveDaFamilia(codigo) {
+    var b = talhaoBase(codigo);
+    return /^\d+$/.test(b) ? b.replace(/^0+(?=\d)/, '') : b;
+  }
 
   /**
-   * A chuva de cada família de talhões ({ base: { serie, de: [códigos] } }): todos os pedaços mostram a do
+   * A chuva de cada família de talhões ({ chave: { serie, de: [códigos] } }): todos os pedaços mostram a do
    * talhão inteiro (o sem letra; no pivô, o PIVO). Se a tabela da ZEUS não tem o inteiro, vale a média, dia a
    * dia, dos pedaços que ela tem (dia sem dado em todos continua sem dado).
    */
   function chuvaDasFamilias(talhoes, dias) {
     var grupos = {};
-    Object.keys(talhoes).forEach(function (codigo) { var b = talhaoBase(codigo); (grupos[b] = grupos[b] || []).push(codigo); });
+    Object.keys(talhoes).forEach(function (codigo) { var b = chaveDaFamilia(codigo); (grupos[b] = grupos[b] || []).push(codigo); });
     var familias = {};
     Object.keys(grupos).forEach(function (b) {
       var codigos = grupos[b].sort();
@@ -115,8 +126,8 @@
   /**
    * Linha de chuva_talhao pronta para a conta:
    *   talhoes { código: série } — um valor por dia da janela (null = dia sem dado na tabela da ZEUS);
-   *   familias { código sem a letra da divisão: { serie, de } } — a chuva que vale para o talhão e os pedaços
-   *     dele (019, 019A e 019B mostram a mesma; ver chuvaDasFamilias);
+   *   familias { chave da família (chaveDaFamilia): { serie, de } } — a chuva que vale para o talhão e os
+   *     pedaços dele (019, 019A e 19B mostram a mesma; ver chuvaDasFamilias);
    *   fim / hoje — o último dia com chuva por talhão: os períodos terminam nele (a tabela chega com atraso);
    *   ciclos [{ i, safra, periodo, de, ate, talhoes }] — do PIMS, já cortados na safra deles (como no Power BI)
    *     e só os que têm algum dia dentro do que a tabela já tem;
@@ -275,7 +286,7 @@
   ];
   var COR_SEM_CHUVA = '#FFFFFF';
   var COR_SEM_DADO = '#E4E7E3';
-  /* Chuva somada de vários dias: os mesmos azuis, em sete degraus (o primeiro é "menos de 1 mm"). */
+  /* Chuva somada de vários dias: os mesmos azuis, em oito degraus (o primeiro é "menos de 1 mm"). */
   var CORES_PERIODO = [COR_SEM_CHUVA, '#C9E8FF', '#A8D4F5', '#7EBFEE', '#54A8E5', '#2E8FD8', '#0F62AF', '#052D6E'];
   /* Dias sem chuva: mais dias = mais escuro (a seca é o que chama atenção). */
   var CORES_SECA = ['#F1F5EF', '#FAEBCB', '#F1D08C', '#E2AD4E', '#C6831F', '#96590B', '#673A04'];
@@ -283,9 +294,9 @@
   var PASSOS = [1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000];
 
   /**
-   * Limites das classes da chuva somada (mm), tirados dos próprios valores: a primeira classe é sempre
-   * "menos de 1 mm" e as outras seis sobem em passos redondos do menor ao maior valor. Assim a diferença
-   * entre os talhões aparece tanto numa semana quanto numa safra inteira.
+   * Limites das classes da chuva somada (mm), tirados dos próprios valores: são sete limites, que dão oito
+   * classes. A primeira é sempre "menos de 1 mm" e as outras sete sobem em passos redondos do menor ao maior
+   * valor. Assim a diferença entre os talhões aparece tanto numa semana quanto numa safra inteira.
    */
   function limitesChuva(valores) {
     var v = (valores || []).filter(function (x) { return x !== null && x !== undefined && isFinite(x) && x >= CHUVA_MIN; });
@@ -320,8 +331,8 @@
     return FAIXAS_DIA[FAIXAS_DIA.length - 1].cor;
   }
   /**
-   * Régua de cores do mapa para o período: um dia só usa as faixas do Power BI; vários dias, sete degraus
-   * tirados dos valores. Devolve { titulo, cores, rotulos, cor(valor) }.
+   * Régua de cores do mapa para o período: um dia só usa as faixas do Power BI; vários dias, oito degraus
+   * (sete limites) tirados dos valores. Devolve { titulo, cores, rotulos, cor(valor) }.
    */
   function escalaDoPeriodo(nDias, valores) {
     if (nDias <= 1) {
@@ -443,16 +454,16 @@
    * Linhas da tabela por talhão. `talhoes` = [{ codigo, nome, area, centro }] (os limites do mapa); devolve, na
    * mesma ordem, { codigo, nome, area, serie, semDado (o talhão não está na tabela da ZEUS), foraDoCiclo (o
    * período é um ciclo e o talhão não faz parte dele), total, diasChuva, maior, ultima, diasSem, semLeitura }.
-   * Talhão dividido (019, 019A, 019B) é um talhão só: os pedaços mostram a mesma chuva e entram no ciclo se
+   * Talhão dividido (019, 019A, 19B) é um talhão só: os pedaços mostram a mesma chuva e entram no ciclo se
    * algum deles estiver nele. `chuvaDe` = os códigos da tabela de onde veio a chuva, quando não é o do próprio
    * talhão (null = é a dele).
    */
   function linhasDosTalhoes(talhoes, faz, per) {
     var doCiclo = null;
-    if (per.talhoes) { doCiclo = {}; per.talhoes.forEach(function (c) { doCiclo[talhaoBase(c)] = true; }); }
+    if (per.talhoes) { doCiclo = {}; per.talhoes.forEach(function (c) { doCiclo[chaveDaFamilia(c)] = true; }); }
     var familias = faz.familias || chuvaDasFamilias(faz.talhoes, faz.dias);
     return talhoes.map(function (t) {
-      var base = talhaoBase(t.codigo);
+      var base = chaveDaFamilia(t.codigo);
       var familia = familias[base] || null;
       var serie = familia ? familia.serie : null;
       var r = resumoDaSerie(serie, per.i0, per.i1, faz.ultimoDia);
