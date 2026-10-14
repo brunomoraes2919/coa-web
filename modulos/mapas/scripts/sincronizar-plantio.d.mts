@@ -355,3 +355,30 @@ export function rodarAcompanhamento(opcoes: {
   /** recebe o erro inteiro (para quem responde a um pedido escolher a mensagem pelo tipo) */
   aoErro?: (e: unknown) => void;
 }): Promise<string | null>;
+
+// benchmark de previsão (aba "Benchmark" da Previsão do Tempo)
+export interface PrevDia { d: string; mm: number; p: number | null }
+export interface PrevObservado { unidade: string; dia: string; mm: number; pluviometros: number }
+export const PREV_FONTES: string[];
+export const PREV_HORA_FOTO: number;
+export const PREV_ANTECEDENCIAS: number[];
+export const PREV_MINIMO_PARES: number;
+export const PREV_USER_AGENT: string;
+export function diaMT(instante: string | number | Date): string;
+export function horaMT(instante: string | number | Date): number;
+export function somarDias(dia: string, n: number): string;
+export function diasEntre(a: string, b: string): number;
+export function inicioSafraMT(hoje: string): string;
+export function pontosDasFazendas(res: { columns: string[]; rows: unknown[][] }, unidades: string[]): {
+  pontos: Map<string, { lat: number; lon: number }>;
+  fazendaDoPic: Map<string, string>;
+};
+export function montarSqlPrevisaoZeus(desde: string, pular?: number | null, tamanho?: number): string;
+export function previsaoZeusPorFazenda(res: { columns: string[]; rows: unknown[][] }, fazendaDoPic: Map<string, string>): Map<string, PrevDia[]>;
+export function urlVisualCrossing(ponto: { lat: number; lon: number }, chave: string): string;
+export function previsaoVisualCrossing(json: unknown): PrevDia[];
+export function urlMetNo(ponto: { lat: number; lon: number }): string;
+export function previsaoMetNo(json: unknown): PrevDia[];
+export function montarSqlObservadoZeus(de: string, ate: string): string;
+export function observadoPorFazenda(res: { columns: string[]; rows: unknown[][] }, fazendaDoPic: Map<string, string>): PrevObservado[];
+export function assinaturaDaPrevisao(porFazenda: Map<string, PrevDia[]>): string;

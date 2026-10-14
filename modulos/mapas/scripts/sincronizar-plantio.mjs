@@ -9,6 +9,7 @@
 // Sem dependências: só o Node (18 ou superior, pelo fetch nativo e pelo AbortSignal.timeout; o package.json do
 // módulo pede 20.19 por causa das ferramentas de build). O token e a chave de serviço nunca são gravados nem
 // impressos; gravando no Supabase o log só traz totais, sem nomes de fazenda (linhasDeLog).
+import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -2420,6 +2421,207 @@ export async function sincronizarLimitesZeus({ url, token, fetchImpl = fetch, ag
   } finally {
     await cliente.fechar();
   }
+}
+
+// ---------- benchmark de previsão (aba "Benchmark" da Previsão do Tempo) ----------
+// Foto diária da previsão de chuva de cada fonte por fazenda, chuva medida pelos pluviômetros da ZEUS e as métricas
+// de acerto (especificação: modulos/previsao/docs/2026-10-14-benchmark-previsao-design.md). Tabelas: supabase/0024.
+
+/** Fontes do benchmark, na ordem em que aparecem na tela. */
+export const PREV_FONTES = ['zeus', 'visualcrossing', 'metno'];
+/** Hora de MT a partir da qual sai a foto do dia. */
+export const PREV_HORA_FOTO = 6;
+/** Antecedências do ranking (0 = todos os pares de 1 a 7 dias). A ZEUS chega a D+13. */
+export const PREV_ANTECEDENCIAS = [0, 1, 3, 7, 13];
+/** Abaixo disso a tela mostra "histórico insuficiente". */
+export const PREV_MINIMO_PARES = 10;
+/** Identificação exigida pelo MET Norway (nome do serviço e onde nos achar). */
+export const PREV_USER_AGENT = 'coa-web-locks/1.0 (https://coa-web-teal.vercel.app)';
+const PREV_PRAZO_MS = 30_000;
+/** Mato Grosso: UTC−4 o ano inteiro (sem horário de verão). */
+const MT_DESLOCAMENTO_MS = -4 * 3_600_000;
+const arred1 = (x) => Math.round(x * 10) / 10;
+
+/** Dia (AAAA-MM-DD) em Mato Grosso de um instante. */
+export function diaMT(instante) {
+  return new Date(new Date(instante).getTime() + MT_DESLOCAMENTO_MS).toISOString().slice(0, 10);
+}
+/** Hora (0 a 23) em Mato Grosso de um instante. */
+export function horaMT(instante) {
+  return new Date(new Date(instante).getTime() + MT_DESLOCAMENTO_MS).getUTCHours();
+}
+/** Dia AAAA-MM-DD mais `n` dias. */
+export function somarDias(dia, n) {
+  const d = new Date(`${dia}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+/** Quantos dias de `a` até `b` (AAAA-MM-DD). */
+export function diasEntre(a, b) {
+  return Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
+}
+/** 1º de setembro do ano-safra de `hoje`. */
+export function inicioSafraMT(hoje) {
+  const [ano, mes] = String(hoje).split('-').map(Number);
+  return `${mes >= 9 ? ano : ano - 1}-09-01`;
+}
+
+/**
+ * Fazendas do benchmark a partir dos pluviômetros da ZEUS (SQL_PICS_ZEUS): só as que estão no cadastro do Mapas
+ * (`unidades`, nomes de unidade do PIMS). `pontos`: média das coordenadas dos pluviômetros, com 4 casas (onde as
+ * fontes de fora são consultadas). `fazendaDoPic`: todo pluviômetro da fazenda, com ou sem coordenada.
+ */
+export function pontosDasFazendas(res, unidades) {
+  const conhecidas = new Set(unidades.map((u) => String(u).trim().toUpperCase()));
+  const fazendaDoPic = new Map();
+  const soma = new Map();
+  for (const r of objetosDe(res)) {
+    const unidade = unidadeDaFazendaZeus(r.farm);
+    if (!conhecidas.has(unidade) || r.picid === null) continue;
+    fazendaDoPic.set(String(r.picid), unidade);
+    const lat = Number(r.lat), lon = Number(r.lon);
+    if (r.lat === null || r.lon === null || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180 || (lat === 0 && lon === 0)) continue;
+    const s = soma.get(unidade) ?? { lat: 0, lon: 0, n: 0 };
+    s.lat += lat; s.lon += lon; s.n += 1;
+    soma.set(unidade, s);
+  }
+  const quatro = (x) => Math.round(x * 1e4) / 1e4;
+  const pontos = new Map([...soma].sort(([a], [b]) => a.localeCompare(b)).map(([u, s]) => [u, { lat: quatro(s.lat / s.n), lon: quatro(s.lon / s.n) }]));
+  return { pontos, fazendaDoPic };
+}
+
+/**
+ * Previsão diária da ZEUS por pluviômetro (stg_short_forecast guarda só a mais recente), de `desde` em diante.
+ * Paginável: a ordem (pluviômetro, dia) não empata.
+ */
+export function montarSqlPrevisaoZeus(desde, pular = null, tamanho = PAGINA_CONSULTA) {
+  const d = String(desde).replace(/[^0-9-]/g, '');
+  return `SELECT picid::text AS picid, to_char(day::date, 'YYYY-MM-DD') AS dia, forecast AS mm, rainprobability AS prob
+FROM "DATABASE".stg_short_forecast
+WHERE day::date >= DATE '${d}' AND forecast IS NOT NULL${fimDaConsulta(pular, tamanho, '1, 2', '1, 2', paginaSqlZeus)}`;
+}
+
+/** Média dos valores de um dia que não são nulos (ou null). */
+function mediaDe(lista) {
+  const ok = lista.filter((v) => v !== null && Number.isFinite(v));
+  return ok.length ? ok.reduce((s, v) => s + v, 0) / ok.length : null;
+}
+
+/** Previsão da ZEUS por fazenda: média, por dia, dos pluviômetros da fazenda. → Map<unidade, [{ d, mm, p }]> */
+export function previsaoZeusPorFazenda(res, fazendaDoPic) {
+  const porFazenda = new Map();
+  for (const r of objetosDe(res)) {
+    const unidade = fazendaDoPic.get(String(r.picid));
+    const d = txt(r.dia);
+    const mm = Number(r.mm);
+    if (!unidade || !d || r.mm === null || !Number.isFinite(mm)) continue;
+    const dias = porFazenda.get(unidade) ?? new Map();
+    porFazenda.set(unidade, dias);
+    const x = dias.get(d) ?? { mm: [], p: [] };
+    dias.set(d, x);
+    x.mm.push(mm);
+    x.p.push(r.prob === null ? null : Number(r.prob));
+  }
+  return new Map([...porFazenda].sort(([a], [b]) => a.localeCompare(b)).map(([u, dias]) => [u, [...dias]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([d, x]) => { const p = mediaDe(x.p); return { d, mm: arred1(mediaDe(x.mm)), p: p === null ? null : Math.round(p) }; })]));
+}
+
+/** Endereço do Visual Crossing (15 dias, só o resumo diário, unidades métricas). A chave vai no endereço: nunca logar. */
+export function urlVisualCrossing({ lat, lon }, chave) {
+  return `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${lat},${lon}?unitGroup=metric&include=days&contentType=json&key=${encodeURIComponent(chave)}`;
+}
+
+/** Resposta do Visual Crossing → [{ d, mm, p }] (os dias já vêm no fuso do ponto, que em MT é UTC−4). */
+export function previsaoVisualCrossing(json) {
+  const dias = Array.isArray(json?.days) ? json.days : [];
+  const saida = [];
+  for (const x of dias) {
+    const d = txt(x?.datetime);
+    const mm = typeof x?.precip === 'number' ? x.precip : Number.NaN;
+    if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || !Number.isFinite(mm) || mm < 0) continue;
+    const p = typeof x?.precipprob === 'number' && Number.isFinite(x.precipprob) ? Math.round(x.precipprob) : null;
+    saida.push({ d, mm: arred1(mm), p });
+  }
+  return saida;
+}
+
+/** Endereço do MET Norway (Locationforecast 2.0, compacto). */
+export function urlMetNo({ lat, lon }) {
+  return `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`;
+}
+
+/**
+ * Resposta do MET Norway → [{ d, mm, p: null }] por dia de MT. Usa o bloco de 1 h enquanto o próximo horário vem
+ * 1 h depois e o de 6 h quando o passo abre (o último horário de hora em hora já é seguido por um de 6 h depois),
+ * sem somar blocos que se sobrepõem; cada bloco é repartido pelas horas de cada dia local que ele cobre.
+ * Só ficam os dias com as 24 horas cobertas (o de hoje, a partir da hora da consulta, e o último, cortado, saem).
+ */
+export function previsaoMetNo(json) {
+  const serie = Array.isArray(json?.properties?.timeseries) ? json.properties.timeseries : [];
+  const numero = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const mm = new Map();
+  const horas = new Map();
+  let cobertoAte = -Infinity;
+  for (let i = 0; i < serie.length; i++) {
+    const item = serie[i];
+    const inicio = Date.parse(item?.time);
+    if (!Number.isFinite(inicio) || inicio < cobertoAte) continue;
+    const proximo = i + 1 < serie.length ? Date.parse(serie[i + 1]?.time) : Number.NaN;
+    const passoDeUmaHora = Number.isFinite(proximo) && proximo - inicio <= 3_600_000;
+    const um = numero(item?.data?.next_1_hours?.details?.precipitation_amount);
+    const seis = numero(item?.data?.next_6_hours?.details?.precipitation_amount);
+    let duracao, total;
+    if (um !== null && (passoDeUmaHora || seis === null)) { duracao = 1; total = um; }
+    else if (seis !== null) { duracao = 6; total = seis; }
+    else continue;
+    for (let h = 0; h < duracao; h++) {
+      const dia = diaMT(inicio + h * 3_600_000);
+      mm.set(dia, (mm.get(dia) ?? 0) + total / duracao);
+      horas.set(dia, (horas.get(dia) ?? 0) + 1);
+    }
+    cobertoAte = inicio + duracao * 3_600_000;
+  }
+  return [...mm].filter(([d]) => horas.get(d) >= 24).sort(([a], [b]) => a.localeCompare(b)).map(([d, v]) => ({ d, mm: arred1(v), p: null }));
+}
+
+/**
+ * Chuva medida por pluviômetro e dia (`data` da telemetria vem só com o dia), de `de` a `ate`, sem leitura repetida
+ * (mesmo idprecipitation). ~150 pluviômetros × 2 dias: cabe numa consulta.
+ */
+export function montarSqlObservadoZeus(de, ate) {
+  const a = String(de).replace(/[^0-9-]/g, '');
+  const b = String(ate).replace(/[^0-9-]/g, '');
+  return `WITH leituras AS (
+  SELECT DISTINCT idprecipitation, picid, data, pluviometria FROM "DATABASE".stg_climatemonitoring2
+  WHERE data >= DATE '${a}' AND data < DATE '${b}' + 1 AND pluviometria IS NOT NULL)
+SELECT picid::text AS picid, to_char(data::date, 'YYYY-MM-DD') AS dia, round(sum(pluviometria)::numeric, 1) AS mm
+FROM leituras
+GROUP BY 1, 2
+ORDER BY 1, 2`;
+}
+
+/** Chuva medida por fazenda: média dos pluviômetros que leram no dia (quem não leu não entra como zero). */
+export function observadoPorFazenda(res, fazendaDoPic) {
+  const acc = new Map();
+  for (const r of objetosDe(res)) {
+    const unidade = fazendaDoPic.get(String(r.picid));
+    const dia = txt(r.dia);
+    const mm = Number(r.mm);
+    if (!unidade || !dia || r.mm === null || !Number.isFinite(mm)) continue;
+    const chave = `${unidade}|${dia}`;
+    const x = acc.get(chave) ?? { unidade, dia, soma: 0, n: 0 };
+    x.soma += mm; x.n += 1;
+    acc.set(chave, x);
+  }
+  return [...acc.values()].sort((a, b) => a.unidade.localeCompare(b.unidade) || a.dia.localeCompare(b.dia))
+    .map((x) => ({ unidade: x.unidade, dia: x.dia, mm: arred1(x.soma / x.n), pluviometros: x.n }));
+}
+
+/** Impressão digital da previsão da ZEUS por fazenda (muda quando qualquer valor muda; não depende da ordem). */
+export function assinaturaDaPrevisao(porFazenda) {
+  const ordenado = [...porFazenda].sort(([a], [b]) => a.localeCompare(b));
+  return createHash('sha1').update(JSON.stringify(ordenado)).digest('hex');
 }
 
 // ---------- execução pela linha de comando ----------
