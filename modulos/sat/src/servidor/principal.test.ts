@@ -394,7 +394,7 @@ describe('ligarServico (tudo falso)', () => {
   })))
 
   /** O serviço ligado (por padrão às 06:59:30) de um dia com janela: a primeira volta (07:00:30) manda o resumo a Ana e depois a Bia. */
-  async function ligar(opcoes: { pareado?: boolean; segurarEnvios?: boolean; segurarPausa?: boolean; inicio?: Date } = {}) {
+  async function ligar(opcoes: { pareado?: boolean; segurarEnvios?: boolean; segurarPausa?: boolean; segurarEncerrar?: boolean; inicio?: Date } = {}) {
     vi.useFakeTimers({ now: opcoes.inicio ?? new Date(2026, 9, 6, 6, 59, 30) })
     const ordem: string[] = []
     const linhas: string[] = []
@@ -402,9 +402,16 @@ describe('ligarServico (tudo falso)', () => {
     const envios = new Map<string, SituacaoEnvio>()
     const soltar: (() => void)[] = []
     const soltarPausas: (() => void)[] = []
-    const estado = { pareado: opcoes.pareado ?? true, consultasTrimble: 0 }
+    const soltarEncerrar: (() => void)[] = []
+    /** `pausasQueFalham`: quantas das próximas gravações de pausa o banco recusa. */
+    const estado = { pareado: opcoes.pareado ?? true, consultasTrimble: 0, leiturasDeContatos: 0, pausasQueFalham: 0 }
+    /** Quem o banco já mostra pausado: como no banco de verdade, a pausa gravada aparece na leitura seguinte. */
+    const pausadosNoBanco = new Set<string>()
     const banco: Banco = {
-      contatos: async () => [ANA, BIA].map((c) => ({ ...c })),
+      contatos: async () => {
+        estado.leiturasDeContatos += 1
+        return [ANA, BIA].map((c) => ({ ...c, ativo: !pausadosNoBanco.has(c.id) }))
+      },
       fazendas: async () => [FAZENDA],
       reservarEnvio: async (contatoId, chave) => {
         const k = `${contatoId}|${chave}`
@@ -420,8 +427,14 @@ describe('ligarServico (tudo falso)', () => {
         .filter((r) => r.chave.startsWith(`${dia}:`)),
       confirmar: async () => {},
       guardarJid: async () => {},
-      pausar: async () => {
+      pausar: async (contatoId) => {
+        if (estado.pausasQueFalham > 0) {
+          estado.pausasQueFalham -= 1
+          ordem.push('pausar falhou')
+          throw new Error('Supabase fora do ar')
+        }
         if (opcoes.segurarPausa) await new Promise<void>((r) => { soltarPausas.push(r) })
+        pausadosNoBanco.add(contatoId)
         ordem.push('pausar')
       },
       gravarEstado: async (e) => {
@@ -444,7 +457,10 @@ describe('ligarServico (tudo falso)', () => {
         })
       },
       resolverJid: async () => null,
-      encerrar: async () => { ordem.push('encerrar') },
+      encerrar: async () => {
+        ordem.push('encerrar')
+        if (opcoes.segurarEncerrar) await new Promise<void>((r) => { soltarEncerrar.push(r) })
+      },
     }
     let opcoesDaConexao: OpcoesWhatsapp | undefined
     const conectar = vi.fn(async (o: OpcoesWhatsapp) => { opcoesDaConexao = o; return whatsapp })
@@ -460,7 +476,7 @@ describe('ligarServico (tudo falso)', () => {
       sair,
       processo,
     })
-    return { ordem, linhas, estados, soltar, soltarPausas, estado, conectar, sair, processo, whatsapp, opcoesDaConexao: () => opcoesDaConexao }
+    return { ordem, linhas, estados, soltar, soltarPausas, soltarEncerrar, estado, conectar, sair, processo, whatsapp, opcoesDaConexao: () => opcoesDaConexao }
   }
   const passar = (ms: number) => vi.advanceTimersByTimeAsync(ms)
 
@@ -582,6 +598,72 @@ describe('ligarServico (tudo falso)', () => {
     expect(s.ordem).toContain('encerrar')
     expect(s.ordem).not.toContain('pausar')
     expect(s.ordem.at(-1)).toBe('sair 0')
+  })
+
+  it('SIGTERM com um SAIR cuja gravação falhou (a marca só existe na memória): tenta gravar a pausa de novo antes de sair', async () => {
+    const s = await ligar()
+    s.estado.pausasQueFalham = 1
+    void s.opcoesDaConexao()?.aoReceber({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
+    await passar(0)
+    expect(s.ordem).toEqual(['pausar falhou'])
+
+    s.processo.emit('SIGTERM')
+    await passar(0)
+    // depois de fechar a conexão (nada novo chega) e antes de gravar "serviço parado"; nada é enviado
+    expect(s.ordem).toEqual(['pausar falhou', 'encerrar', 'pausar', 'estado serviço parado', 'sair 0'])
+    expect(s.sair).toHaveBeenCalledTimes(1)
+  })
+
+  it('SIGTERM com o banco ainda recusando a pausa: registra (sem número inteiro) e sai assim mesmo', async () => {
+    const s = await ligar()
+    s.estado.pausasQueFalham = 2
+    void s.opcoesDaConexao()?.aoReceber({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
+    await passar(0)
+    s.processo.emit('SIGTERM')
+    await passar(0)
+    expect(s.ordem).toEqual(['pausar falhou', 'encerrar', 'pausar falhou', 'estado serviço parado', 'sair 0'])
+    expect(s.linhas.filter((l) => l.includes('não gravei a pausa'))).toHaveLength(1)
+    expect(s.linhas.join('\n')).not.toMatch(/55\d{8,}/)
+  })
+
+  it('SIGTERM com a última tentativa de gravar a pausa pendurada: não passa do teto da parada (15 s)', async () => {
+    const s = await ligar({ segurarPausa: true })
+    s.estado.pausasQueFalham = 1
+    void s.opcoesDaConexao()?.aoReceber({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
+    await passar(0)
+    s.processo.emit('SIGTERM')
+    await passar(14_000)
+    expect(s.ordem).toEqual(['pausar falhou', 'encerrar'])
+    expect(s.sair).not.toHaveBeenCalled()
+    await passar(1_500)
+    expect(s.sair).toHaveBeenCalledWith(0)
+  })
+
+  it('SIGTERM e um SAIR entregue enquanto a conexão fecha: é gravado antes de sair', async () => {
+    const s = await ligar({ segurarEncerrar: true, segurarPausa: true })
+    s.processo.emit('SIGTERM')
+    await passar(0)
+    expect(s.ordem).toEqual(['encerrar'])
+    // a mensagem já tinha chegado (esperava o mapa de endereços) e é entregue com a conexão fechando
+    void s.opcoesDaConexao()?.aoReceber({ jid: jidDe('5565999990001'), texto: 'SAIR', em: null })
+    await passar(0)
+    s.soltarEncerrar[0]()
+    await passar(5_000)
+    expect(s.sair).not.toHaveBeenCalled()
+    expect(s.ordem).not.toContain('estado serviço parado')
+    s.soltarPausas[0]()
+    await passar(0)
+    expect(s.ordem.indexOf('pausar')).toBeGreaterThan(s.ordem.indexOf('encerrar'))
+    expect(s.ordem.indexOf('pausar')).toBeLessThan(s.ordem.indexOf('estado serviço parado'))
+    expect(s.ordem.at(-1)).toBe('sair 0')
+  })
+
+  it('sem SAIR pendente, a parada não lê nem grava nada além do estado', async () => {
+    const s = await ligar()
+    s.processo.emit('SIGTERM')
+    await passar(0)
+    expect(s.ordem).toEqual(['encerrar', 'estado serviço parado', 'sair 0'])
+    expect(s.estado.leiturasDeContatos).toBe(0)
   })
 
   it('promessa rejeitada sem tratamento: registra só o nome do erro e segue vivo', async () => {

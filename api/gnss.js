@@ -1,12 +1,15 @@
 // Ponte do Locks SAT com o Trimble GNSS Planning: o serviço não aceita pedido direto do navegador.
-// Só atende usuário logado no COA WEB (X-Coa-Token = token da sessão do Supabase) e só os dois
-// endereços que o módulo usa. É uma função Node comum (req/res do http); a Vercel publica api/*.js.
+// Só atende usuário logado no COA WEB (X-Coa-Token = token da sessão do Supabase) que tenha a categoria
+// Locks SAT, e só os dois endereços que o módulo usa. É uma função Node comum (req/res do http); a Vercel
+// publica api/*.js.
 'use strict';
 
 const SUPABASE_URL = 'https://pkaxbitsqxjxjlwnhjhd.supabase.co';
 // chave anon: pública por desenho (a mesma do index.html)
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrYXhiaXRzcXhqeGpsd25oamhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODUyNTM2MzQsImV4cCI6MjEwMDgyOTYzNH0.XAxLopSqYef5vfW5sY6Pbv-EOoFdqwSeJpXwnqi9m8Q';
 const TRIMBLE = 'https://www.gnssplanning.com/api/';
+// chave da categoria do módulo em usuario_categorias (a mesma do index.html: CATEGORIAS)
+const CATEGORIA = 'sat';
 
 const SERIE = /^ionoindex\/(-?\d{1,3}(?:\.\d{1,2})?)\/(-?\d{1,2}(?:\.\d{1,2})?)\/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\/(\d{1,3})\/(\d{3,4})$/;
 const IMAGEM = /^overlay\/(sci|tec)\/(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})$/;
@@ -19,6 +22,7 @@ const PASSO_IMAGEM_MS = 600000;
 const JANELA_PASSADO_MS = 32 * DIA_MS;
 const JANELA_FUTURO_MS = DIA_MS;
 // os dois prazos somam menos que o limite de 10 s de uma função da Vercel
+// (o do Supabase vale para as duas perguntas juntas, sessão e categoria: elas saem ao mesmo tempo)
 const PRAZO_SUPABASE_MS = 3000;
 const PRAZO_TRIMBLE_MS = 6000;
 const VALIDADE_TOKEN_MS = 5 * 60000;
@@ -133,34 +137,78 @@ function responder(res, status, tipo, corpo, cache) {
 }
 
 function criarHandler(deps) {
-  /** token → até quando vale sem perguntar de novo ao Supabase */
+  /** token → até quando vale sem perguntar de novo ao Supabase (sessão aceita E categoria liberada) */
   const conferidos = new Map();
 
-  /** 'valida' | 'recusada' (o Supabase disse não) | 'indisponivel' (erro, queda ou demora) */
-  async function conferirSessao(token) {
-    const agora = deps.agora();
-    const ate = conferidos.get(token);
-    if (ate && ate > agora) return 'valida';
-    const controle = new AbortController();
-    const relogio = setTimeout(() => controle.abort(), PRAZO_SUPABASE_MS);
+  /** A sessão: 'valida' | 'recusada' (o Supabase disse não) | 'indisponivel' (erro, queda ou demora). Nunca lança. */
+  async function perguntarSessao(token, sinal) {
     try {
       const r = await deps.fetch(SUPABASE_URL + '/auth/v1/user', {
-        signal: controle.signal,
+        signal: sinal,
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + token },
       });
       await descartar(r);
-      if (r.status === 200) {
-        if (conferidos.size > 500) conferidos.clear();
-        conferidos.set(token, agora + VALIDADE_TOKEN_MS);
-        return 'valida';
-      }
-      conferidos.delete(token);
+      if (r.status === 200) return 'valida';
       return r.status === 401 || r.status === 403 ? 'recusada' : 'indisponivel';
     } catch {
       return 'indisponivel';
+    }
+  }
+
+  /**
+   * A categoria: quem responde é a função tem_categoria do banco (supabase/0002), chamada com o token do
+   * usuário; para ela o ADMINISTRADOR+ tem todas, e os outros só as marcadas em Usuários.
+   * 'tem' | 'nao-tem' | 'recusada' (o banco não aceitou o token) | 'indisponivel' (erro, queda, demora ou
+   * resposta que não é sim nem não: na dúvida, não libera e não diz "sem acesso"). Nunca lança.
+   */
+  async function perguntarCategoria(token, sinal) {
+    try {
+      const r = await deps.fetch(SUPABASE_URL + '/rest/v1/rpc/tem_categoria', {
+        method: 'POST',
+        signal: sinal,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_categoria: CATEGORIA }),
+      });
+      if (r.status !== 200) {
+        await descartar(r);
+        return r.status === 401 ? 'recusada' : 'indisponivel';
+      }
+      const corpo = await lerCorpo(r);
+      const texto = corpo ? corpo.toString('utf8').trim() : '';
+      if (texto === 'true') return 'tem';
+      return texto === 'false' ? 'nao-tem' : 'indisponivel';
+    } catch {
+      return 'indisponivel';
+    }
+  }
+
+  /**
+   * Sessão e categoria, perguntadas ao Supabase ao mesmo tempo e dentro do mesmo prazo (conferir a categoria
+   * não gasta mais tempo da função). Só o "sim" das duas fica guardado, por 5 min; o "não" é perguntado de novo.
+   * 'liberado' | 'recusada' | 'sem-categoria' | 'sessao-indisponivel' | 'categoria-indisponivel'
+   */
+  async function conferirAcesso(token) {
+    const agora = deps.agora();
+    const ate = conferidos.get(token);
+    if (ate && ate > agora) return 'liberado';
+    const controle = new AbortController();
+    const relogio = setTimeout(() => controle.abort(), PRAZO_SUPABASE_MS);
+    let sessao;
+    let categoria;
+    try {
+      [sessao, categoria] = await Promise.all([perguntarSessao(token, controle.signal), perguntarCategoria(token, controle.signal)]);
     } finally {
       clearTimeout(relogio);
     }
+    if (sessao === 'valida' && categoria === 'tem') {
+      if (conferidos.size > 500) conferidos.clear();
+      conferidos.set(token, agora + VALIDADE_TOKEN_MS);
+      return 'liberado';
+    }
+    conferidos.delete(token);
+    if (sessao === 'recusada' || categoria === 'recusada') return 'recusada';
+    if (sessao !== 'valida') return 'sessao-indisponivel';
+    return categoria === 'nao-tem' ? 'sem-categoria' : 'categoria-indisponivel';
   }
 
   return async function handler(req, res) {
@@ -186,9 +234,12 @@ function criarHandler(deps) {
     }
     const token = req.headers['x-coa-token'];
     if (!formatoDeSessao(token, agora)) return responder(res, 401, TEXTO, 'Entre no COA WEB.');
-    const sessao = await conferirSessao(token);
-    if (sessao === 'indisponivel') return responder(res, 503, TEXTO, 'Não foi possível conferir a sessão.');
-    if (sessao !== 'valida') return responder(res, 401, TEXTO, 'Entre no COA WEB.');
+    const acesso = await conferirAcesso(token);
+    if (acesso === 'recusada') return responder(res, 401, TEXTO, 'Entre no COA WEB.');
+    if (acesso === 'sessao-indisponivel') return responder(res, 503, TEXTO, 'Não foi possível conferir a sessão.');
+    if (acesso === 'categoria-indisponivel') return responder(res, 503, TEXTO, 'Não foi possível conferir a categoria.');
+    // qualquer outra coisa que não seja o "liberado": logado, mas sem a categoria Locks SAT
+    if (acesso !== 'liberado') return responder(res, 403, TEXTO, 'Sem acesso ao Locks SAT.');
 
     const controle = new AbortController();
     const relogio = setTimeout(() => controle.abort(), PRAZO_TRIMBLE_MS);

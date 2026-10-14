@@ -11,7 +11,11 @@ Monitoramento de cintilação ionosférica para as operações com GNSS/RTK das 
 - O código fica em `modulos/sat/` (React + Vite + TypeScript) e o build publicado em `sat/`, na raiz do repositório.
 - O `index.html` do COA WEB abre o módulo num iframe (`sat/index.html?embed=1`) logo depois do login, escondido. O vigia roda ali o tempo todo e avisa o site, que mostra o aviso em qualquer categoria.
 - Fazendas e limites vêm do cadastro do módulo Mapas (`mapas_fazendas`, `mapas_talhoes`), com a sessão do usuário: cada um vê só as fazendas liberadas para ele.
-- Os dados da ionosfera passam pela função `api/gnss.js` (na raiz), que só atende usuário logado no COA WEB.
+- Os dados da ionosfera passam pela função `api/gnss.js` (na raiz), que só atende usuário logado no COA WEB e com a categoria Locks SAT.
+
+## Alertas pelo WhatsApp
+
+Além da tela, o módulo tem um serviço que avisa da janela de risco pelo WhatsApp, pelo número do COA, quem está cadastrado em Contatos do WhatsApp e autorizou. Ele roda numa VM, fora do site: o código fica em `src/servidor/`, e o `npm run publicar` gera o programa `servidor/locks-sat-whatsapp.mjs`, que a VM baixa do `main` sozinha. Como instalar, parear o número, operar e o que fazer se algo der errado está em [`servidor/LEIA-ME.md`](servidor/LEIA-ME.md).
 
 ## Publicar
 

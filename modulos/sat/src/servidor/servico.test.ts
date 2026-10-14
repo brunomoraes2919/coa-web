@@ -52,6 +52,8 @@ function serieComJanela(inicioMin: number, fimMin: number, dias = 4): PontoIono[
 
 class BancoFalso implements Banco {
   envios = new Map<string, SituacaoEnvio>()
+  /** Quando cada envio foi reservado (ISO), pela mesma chave de `envios`; sem entrada, o banco falso não informa. */
+  criadoEm = new Map<string, string>()
   reservas: [string, string, TipoEvento][] = []
   fechamentos: { contatoId: string; chave: string; situacao: string; erro?: string }[] = []
   estados: Parameters<Banco['gravarEstado']>[0][] = []
@@ -116,7 +118,7 @@ class BancoFalso implements Banco {
     if (this.chavesEscondidas) return []
     return [...this.envios.entries()].map(([k, situacao]) => {
       const [contatoId, chave] = k.split('|')
-      return { contatoId, chave, situacao }
+      return { contatoId, chave, situacao, criadoEm: this.criadoEm.get(k) }
     }).filter((r) => r.chave.startsWith(`${dia}:`))
   }
   async confirmar(contatoId: string, jid: string) {
@@ -737,6 +739,78 @@ describe('servico: ritmo, estado e prazo', () => {
     expect(c.banco.estados.some((e) => e.ultimoErro === 'teto diário de mensagens atingido')).toBe(true)
   })
 
+  describe('7b. depois de um reinício, o limite por pessoa conta o "começa em breve" da madrugada (chave de ontem)', () => {
+    const ONTEM = '2026-10-05'
+    const iso = (ms: number) => new Date(ms).toISOString()
+    /** O banco de um dia em que a Ana já recebeu o resumo e o lembrete de hoje, e um "antes" com a chave de ontem. */
+    function bancoDoDia(antesReservadoEm: number | null) {
+      const a = montar({ contatos: [ANA, BRUNO] })
+      a.banco.envios.set(`c-ana|${ONTEM}:antes`, 'enviado')
+      if (antesReservadoEm !== null) a.banco.criadoEm.set(`c-ana|${ONTEM}:antes`, iso(antesReservadoEm))
+      for (const tipo of ['resumo-07', 'lembrete-12']) {
+        a.banco.envios.set(`c-ana|${HOJE}:${tipo}`, 'enviado')
+        a.banco.criadoEm.set(`c-ana|${HOJE}:${tipo}`, iso(em(tipo === 'resumo-07' ? 7 : 12)))
+      }
+      return a.banco
+    }
+
+    it('reservado hoje às 00:30: são 3 no dia, e o "antes" da noite não sai para ela (sai para quem não chegou ao limite)', async () => {
+      const b = montar({ banco: bancoDoDia(em(0, 30)) }, em(18, 30))
+      await b.volta(18, 30)
+      expect(b.banco.reservas).toEqual([['c-bruno', `${HOJE}:antes`, 'antes']])
+      expect(alertasPara(b, '5565999990001')).toEqual([])
+      expect(alertasPara(b, '5565999990002')).toHaveLength(1)
+      // o teto do dia também conta os 3 dela (e o do Bruno, enviado agora)
+      expect(b.contador().total).toBe(4)
+    })
+
+    it('reservado ontem às 18:30 (a mesma chave): não é de hoje, não conta, e o "antes" desta noite sai para ela', async () => {
+      const b = montar({ banco: bancoDoDia(em(18, 30, 5)) }, em(18, 30))
+      await b.volta(18, 30)
+      expect(b.banco.reservas.map((r) => r[0])).toEqual(['c-ana', 'c-bruno'])
+      expect(alertasPara(b, '5565999990001')).toHaveLength(1)
+      expect(b.contador().total).toBe(4)
+    })
+
+    it('reservado ontem às 23:59:59 não conta; hoje à 00:00:00, conta', async () => {
+      const ontem = montar({ banco: bancoDoDia(em(0) - 1_000) }, em(18, 30))
+      await ontem.volta(18, 30)
+      expect(alertasPara(ontem, '5565999990001')).toHaveLength(1)
+      const hoje = montar({ banco: bancoDoDia(em(0)) }, em(18, 30))
+      await hoje.volta(18, 30)
+      expect(alertasPara(hoje, '5565999990001')).toEqual([])
+    })
+
+    it('sem a hora da reserva (ou com hora ilegível), na dúvida conta: o "antes" da noite não sai para ela', async () => {
+      const semHora = montar({ banco: bancoDoDia(null) }, em(18, 30))
+      await semHora.volta(18, 30)
+      expect(alertasPara(semHora, '5565999990001')).toEqual([])
+      const banco = bancoDoDia(null)
+      banco.criadoEm.set(`c-ana|${ONTEM}:antes`, 'não é data')
+      const ilegivel = montar({ banco }, em(18, 30))
+      await ilegivel.volta(18, 30)
+      expect(alertasPara(ilegivel, '5565999990001')).toEqual([])
+    })
+
+    it('o resumo e o lembrete de ontem nunca contam hoje, nem sem a hora da reserva', async () => {
+      const a = montar({ contatos: [ANA] })
+      for (const tipo of ['resumo-07', 'lembrete-12']) a.banco.envios.set(`c-ana|${ONTEM}:${tipo}`, 'enviado')
+      a.banco.envios.set(`c-ana|${ONTEM}:antes`, 'enviado')
+      a.banco.criadoEm.set(`c-ana|${ONTEM}:antes`, iso(em(18, 30, 5)))
+      const b = montar({ banco: a.banco })
+      await b.volta(7)
+      expect(b.banco.reservas).toEqual([['c-ana', `${HOJE}:resumo-07`, 'resumo-07']])
+      expect(b.contador().total).toBe(1)
+    })
+
+    it('a recontagem é uma vez só por processo: a segunda volta não soma de novo', async () => {
+      const b = montar({ banco: bancoDoDia(em(0, 30)) }, em(18, 30))
+      await b.volta(18, 30)
+      await b.volta(18, 31)
+      expect(b.contador().total).toBe(4)
+    })
+  })
+
   it('9. a linha do SAIR depende do que foi enviado: se o primeiro do dia falhou, a seguinte leva a linha', async () => {
     const c = montar()
     c.wpp.falhaEnvio.set(jidDe('5565999990001'), new Error('socket caiu'))
@@ -1121,6 +1195,44 @@ describe('servico: DETALHAR ESTIMATIVA e DETALHAR IMPACTO', () => {
     expect(d.wpp.enviados).toEqual([])
   })
 
+  it('D12. SAIR que chega com a explicação já na fila de respostas: a explicação não sai, só a resposta do SAIR', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] }, em(9))
+    await c.recebida(BRUNO, 'DETALHAR IMPACTO') // a primeira resposta deixa aberta a pausa entre respostas
+    const t = trava()
+    c.gancho.aoDormir = (ms) => (ms >= 3_000 && ms < 8_000 ? t.espera : Promise.resolve())
+    const pedido = c.recebida(ANA, 'DETALHAR IMPACTO') // passa na conferência e fica esperando a pausa
+    await umInstante()
+    const sair = c.recebida(ANA, 'SAIR')
+    await umInstante()
+    t.soltar()
+    await Promise.all([pedido, sair])
+    expect(c.wpp.enviados.filter((e) => e.jid === jidDe(ANA.telefone))).toEqual([{ jid: jidDe(ANA.telefone), texto: textoSaiu(ANA) }])
+  })
+
+  it('D13. SAIR com a explicação na fila, e a pausa já gravada e conferida por uma volta: a explicação continua sem sair', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] }, em(9))
+    await c.recebida(BRUNO, 'DETALHAR IMPACTO')
+    const t = trava()
+    c.gancho.aoDormir = (ms) => (ms >= 3_000 && ms < 8_000 ? t.espera : Promise.resolve())
+    const pedido = c.recebida(ANA, 'DETALHAR ESTIMATIVA')
+    await umInstante()
+    const sair = c.recebida(ANA, 'SAIR')
+    await umInstante()
+    await c.volta(9) // o banco já mostra a Ana inativa: a volta solta a marca de "pausa por gravar"
+    t.soltar()
+    await Promise.all([pedido, sair])
+    expect(c.wpp.enviados.filter((e) => e.jid === jidDe(ANA.telefone)).map((e) => e.texto)).toEqual([textoSaiu(ANA)])
+  })
+
+  it('D14. quem saiu e voltou (SAIR e depois ATIVAR) volta a receber explicação', async () => {
+    const c = montar({}, em(9))
+    await c.recebida(ANA, 'SAIR')
+    await c.recebida(ANA, 'ATIVAR')
+    c.wpp.enviados.length = 0
+    await c.recebida(ANA, 'DETALHAR IMPACTO')
+    expect(c.wpp.enviados.map((e) => e.texto.split('\n')[0])).toEqual(['🚜 *LOCKS SAT · IMPACTO NA OPERAÇÃO*'])
+  })
+
   it('D11. ATIVAR e, logo depois, DETALHAR IMPACTO no mesmo lote: a explicação espera a confirmação e sai depois dela', async () => {
     const novo = contato({ confirmadoEm: null, confirmadoPor: null, ativo: false, jid: null })
     const c = montar({ contatos: [novo] }, em(9))
@@ -1240,6 +1352,95 @@ describe('servico: gravação na chegada e respostas espaçadas (duas filas)', (
     expect(c.wpp.enviados).toHaveLength(1)
     t.soltar()
     await lote
+  })
+
+  it('A1. aguardarGravacoes diz se a fila esvaziou: sim com ela vazia ou terminada a tempo, não quando o prazo vence antes', async () => {
+    const vazia = montar()
+    expect(await vazia.servico.aguardarGravacoes(10_000)).toBe(true)
+
+    const aTempo = montar({ contatos: [ANA, BRUNO] })
+    const gravacao = trava()
+    aTempo.banco.antesDePausar = () => gravacao.espera
+    aTempo.gancho.aoDormir = (ms) => (ms === 10_000 ? new Promise<void>(() => {}) : Promise.resolve())
+    void aTempo.recebida(BRUNO, 'SAIR')
+    const espera = aTempo.servico.aguardarGravacoes(10_000)
+    await umInstante()
+    gravacao.soltar()
+    expect(await espera).toBe(true)
+
+    const pendurada = montar({ contatos: [ANA, BRUNO] })
+    pendurada.banco.antesDePausar = () => new Promise<void>(() => {}) // o banco nunca responde
+    void pendurada.recebida(BRUNO, 'SAIR')
+    expect(await pendurada.servico.aguardarGravacoes(10_000)).toBe(false)
+  })
+})
+
+describe('servico: SAIR que ficou só na memória, na parada (gravarPausasPendentes)', () => {
+  /** Um SAIR do Bruno cuja gravação falhou: o banco ainda o mostra ativo e a marca só existe na memória. */
+  async function comSairSemGravar() {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    c.banco.pausarLanca = true
+    await c.recebida(BRUNO, 'SAIR')
+    expect(c.banco.pausas).toEqual([])
+    expect(c.banco.tentativasDePausa).toEqual(['c-bruno'])
+    return c
+  }
+
+  it('com o banco de volta, grava a pausa de quem pediu SAIR, sem enviar nem reservar nada', async () => {
+    const c = await comSairSemGravar()
+    c.banco.pausarLanca = false
+    await c.servico.gravarPausasPendentes()
+    expect(c.banco.pausas).toEqual(['c-bruno'])
+    expect(c.banco.contatosLista[1].ativo).toBe(false)
+    expect(c.wpp.enviados).toEqual([])
+    expect(c.wpp.resolvidos).toEqual([])
+    expect(c.banco.reservas).toEqual([])
+    semNumerosNoRegistro(c.registro)
+  })
+
+  it('só mexe em quem pediu SAIR: os outros contatos ficam como estão', async () => {
+    const c = await comSairSemGravar()
+    c.banco.pausarLanca = false
+    await c.servico.gravarPausasPendentes()
+    expect(c.banco.tentativasDePausa).toEqual(['c-bruno', 'c-bruno'])
+    expect(c.banco.contatosLista[0].ativo).toBe(true)
+    expect(c.banco.confirmacoes).toEqual([])
+  })
+
+  it('sem SAIR pendente não lê nem grava nada', async () => {
+    const c = montar({ contatos: [ANA, BRUNO] })
+    await c.servico.gravarPausasPendentes()
+    expect(c.banco.chamadas).toEqual([])
+    // e o SAIR que foi gravado na hora não é gravado de novo: o banco já mostra a pausa, a marca sai
+    await c.recebida(BRUNO, 'SAIR')
+    expect(c.banco.pausas).toEqual(['c-bruno'])
+    await c.servico.gravarPausasPendentes()
+    expect(c.banco.tentativasDePausa).toEqual(['c-bruno'])
+    const leituras = c.banco.chamadas.length
+    await c.servico.gravarPausasPendentes()
+    expect(c.banco.chamadas).toHaveLength(leituras)
+  })
+
+  it('com o banco ainda fora do ar não lança: registra, e a marca continua segurando os alertas', async () => {
+    const c = await comSairSemGravar()
+    await expect(c.servico.gravarPausasPendentes()).resolves.toBeUndefined()
+    expect(c.banco.pausas).toEqual([])
+    expect(c.registro.some((l) => l.includes('não gravei a pausa'))).toBe(true)
+    c.banco.erroDeContatos = new Error('Supabase fora do ar')
+    await expect(c.servico.gravarPausasPendentes()).resolves.toBeUndefined()
+    expect(c.registro.some((l) => l.includes('não gravei as pausas pendentes'))).toBe(true)
+    await c.volta(7)
+    expect(alertasPara(c, '5565999990002')).toEqual([])
+    expect(alertasPara(c, '5565999990001')).toHaveLength(1)
+    semNumerosNoRegistro(c.registro)
+  })
+
+  it('no ensaio não lê nem grava nada', async () => {
+    const c = montar({ contatos: [ANA, BRUNO], ensaio: true })
+    await c.recebida(BRUNO, 'SAIR')
+    await c.servico.gravarPausasPendentes()
+    expect(c.banco.chamadas).toEqual([])
+    expect(c.banco.escritas).toBe(0)
   })
 })
 

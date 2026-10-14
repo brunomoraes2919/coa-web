@@ -79,13 +79,17 @@ describe('banco', () => {
     expect(r.chamadas).toHaveLength(5)
     for (const c of r.chamadas) expect(c.signal).toBeInstanceOf(AbortSignal)
   })
-  it('chaves do dia: pede só as do dia, em ordem estável, e converte', async () => {
-    const r = rede({ whatsapp_envios: { corpo: [{ contato_id: 'a', chave: '2026-10-06:antes', situacao: 'falhou' }] } })
-    expect(await banco(r).chavesDoDia('2026-10-06')).toEqual([{ contatoId: 'a', chave: '2026-10-06:antes', situacao: 'falhou' }])
+  it('chaves do dia: pede só as do dia, em ordem estável, e converte (com a hora da reserva)', async () => {
+    const r = rede({ whatsapp_envios: { corpo: [{ contato_id: 'a', chave: '2026-10-06:antes', situacao: 'falhou', criado_em: '2026-10-06T22:30:00+00:00' }] } })
+    expect(await banco(r).chavesDoDia('2026-10-06')).toEqual([{ contatoId: 'a', chave: '2026-10-06:antes', situacao: 'falhou', criadoEm: '2026-10-06T22:30:00+00:00' }])
     expect(r.chamadas[0].method).toBe('GET')
     expect(r.chamadas[0].url).toContain('chave=like.2026-10-06:*')
     expect(r.chamadas[0].url).toContain('order=contato_id,chave')
-    expect(r.chamadas[0].url).toContain('select=contato_id,chave,situacao')
+    expect(r.chamadas[0].url).toContain('select=contato_id,chave,situacao,criado_em&')
+  })
+  it('chaves do dia: linha sem a hora da reserva vem com `criadoEm` nulo', async () => {
+    const r = rede({ whatsapp_envios: { corpo: [{ contato_id: 'a', chave: '2026-10-06:antes', situacao: 'enviado' }] } })
+    expect(await banco(r).chavesDoDia('2026-10-06')).toEqual([{ contatoId: 'a', chave: '2026-10-06:antes', situacao: 'enviado', criadoEm: null }])
   })
   it('guardar jid e pausar mexem só no contato indicado', async () => {
     const r = rede({ whatsapp_contatos: { status: 204 } })

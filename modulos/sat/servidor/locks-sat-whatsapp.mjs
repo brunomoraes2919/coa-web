@@ -270,10 +270,11 @@ function criarBanco(opcoes) {
 			});
 		},
 		async chavesDoDia(dia) {
-			return (await lerTudo("ler os envios do dia", "whatsapp_envios", `select=contato_id,chave,situacao&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)).map((l) => ({
+			return (await lerTudo("ler os envios do dia", "whatsapp_envios", `select=contato_id,chave,situacao,criado_em&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)).map((l) => ({
 				contatoId: l.contato_id,
 				chave: l.chave,
-				situacao: l.situacao
+				situacao: l.situacao,
+				criadoEm: l.criado_em ?? null
 			}));
 		},
 		confirmar(contatoId, jid) {
@@ -852,6 +853,11 @@ var PrazoEstourado = class extends Error {
 var mensagemDe$1 = (e) => e instanceof Error ? e.message : String(e);
 /** Os dígitos do número que vem num endereço do WhatsApp (sem servidor nem aparelho). */
 var numeroDoJid = (jid) => jid.split("@")[0].split(":")[0];
+/** A reserva foi feita no dia (local) de `agora`? Sem a hora da reserva, ou com hora ilegível, vale como sim: na dúvida, conta (e não envia). */
+function reservadaNoDia(criadoEm, agora) {
+	const quando = criadoEm ? Date.parse(criadoEm) : NaN;
+	return Number.isNaN(quando) || chaveData(quando) === chaveData(agora);
+}
 /** Troca todo número de telefone inteiro (55 + DDD + número, 12 ou 13 dígitos) pelos 4 últimos dígitos. */
 function semNumeros(texto) {
 	return texto.replace(/(?<!\d)55\d{10,11}(?!\d)/g, (n) => `…${n.slice(-4)}`);
@@ -877,6 +883,11 @@ var Servico = class {
 	* traz `ativo === false` ou quando um ATIVAR que chegou DEPOIS do SAIR foi gravado.
 	*/
 	pausados = /* @__PURE__ */ new Map();
+	/**
+	* Quem mandou SAIR nesta execução (número → ordem de chegada). Ao contrário de `pausados`, não sai quando a
+	* pausa é gravada: só um ATIVAR posterior solta. Segura a explicação que já esperava na fila de respostas.
+	*/
+	sairam = /* @__PURE__ */ new Map();
 	/** Contador da ordem de chegada dos comandos (ATIVAR/SAIR). */
 	chegadas = 0;
 	/** Só no ensaio: o que já foi registrado, para não repetir a cada minuto. */
@@ -964,7 +975,10 @@ var Servico = class {
 		if (comando === "estimativa" || comando === "impacto") tratar = () => this.explicar(m, comando, numero, quem);
 		else {
 			const chegada = ++this.chegadas;
-			if (numero && comando === "sair") this.pausados.set(numero, chegada);
+			if (numero && comando === "sair") {
+				this.pausados.set(numero, chegada);
+				this.sairam.set(numero, chegada);
+			}
 			tratar = () => this.gravar(m, comando, numero, quem, chegada);
 		}
 		this.gravacoesPendentes += 1;
@@ -984,14 +998,30 @@ var Servico = class {
 	/**
 	* Espera a fila de gravação esvaziar, no máximo `prazoMs` (o relógio é o `dormir` injetado). Não espera
 	* as respostas: o comando já está gravado, e uma resposta que se perder não desfaz nada.
+	* Devolve se a fila esvaziou (`false` = o prazo venceu com gravação ainda pendente).
 	*/
 	async aguardarGravacoes(prazoMs) {
-		if (this.gravacoesPendentes === 0) return;
+		if (this.gravacoesPendentes === 0) return true;
 		let venceu = false;
 		const prazo = this.d.dormir(prazoMs).then(() => {
 			venceu = true;
 		});
 		while (this.gravacoesPendentes > 0 && !venceu) await Promise.race([this.filaDeGravacao, prazo]);
+		return this.gravacoesPendentes === 0;
+	}
+	/**
+	* Na parada: última tentativa de gravar a pausa de quem mandou SAIR e o banco ainda mostra ativo (a
+	* gravação falhou). A marca desse SAIR só existe na memória: se o processo sair sem gravar a pausa, a
+	* pessoa volta a receber os alertas quando o serviço religar. Só lê e grava no banco, não envia nada.
+	* Sem marca nenhuma não toca no banco. Nunca lança.
+	*/
+	async gravarPausasPendentes() {
+		if (this.d.ensaio || this.pausados.size === 0) return;
+		try {
+			await this.reconciliarPausados(await this.d.banco.contatos());
+		} catch (e) {
+			this.registrar(`não gravei as pausas pendentes: ${mensagemDe$1(e)}`);
+		}
 	}
 	/** O WhatsApp restringiu os envios da conta até `ate` (ms; `Infinity` = sem prazo), ou retirou a restrição (`null`). */
 	async restricao(ate, motivo) {
@@ -1072,6 +1102,8 @@ var Servico = class {
 				await this.d.banco.confirmar(contato.id, m.jid);
 				const marca = numero ? this.pausados.get(numero) : void 0;
 				if (numero && marca !== void 0 && marca < chegada) this.pausados.delete(numero);
+				const saiu = numero ? this.sairam.get(numero) : void 0;
+				if (numero && saiu !== void 0 && saiu < chegada) this.sairam.delete(numero);
 				let nomes = [];
 				try {
 					const fazendas = this.fazendas ?? await this.d.banco.fazendas();
@@ -1296,6 +1328,8 @@ var Servico = class {
 		]);
 		if (!this.semeado) {
 			for (const r of deHoje) this.contador.contar(r.contatoId);
+			const antesDeOntem = chaveEvento(agora - DIA_MS, "antes");
+			for (const r of deOntem) if (r.chave === antesDeOntem && reservadaNoDia(r.criadoEm, agora)) this.contador.contar(r.contatoId);
 			this.semeado = true;
 		}
 		const jaReservadas = [...deOntem, ...deHoje];
@@ -1544,6 +1578,15 @@ var Servico = class {
 	* cada por pessoa por dia, contadas à parte): respeita o teto do dia e conta nele.
 	*/
 	async responder({ contato, jid, quem, texto, tipo }) {
+		const saiuDepois = () => {
+			if (tipo === "comando") return false;
+			const numero = chaveDoNumero(contato.telefone);
+			return this.estaPausado(contato) || numero !== null && this.sairam.has(numero);
+		};
+		if (saiuDepois()) {
+			this.registrar(`${quem}: pediu para sair, a explicação não foi enviada`);
+			return;
+		}
 		const dia = chaveData(this.d.agora());
 		const chave = tipo === "comando" ? contato.id : `${contato.id}:${tipo}`;
 		const maximo = tipo === "comando" ? MAX_RESPOSTAS_POR_PESSOA_POR_DIA : MAX_EXPLICACOES_POR_PESSOA_POR_DIA;
@@ -1570,6 +1613,10 @@ var Servico = class {
 			if (passou >= 0 && passou < this.ultimaResposta.pausa) {
 				await this.d.dormir(this.ultimaResposta.pausa - passou);
 				if (this.bloqueio() !== null) return;
+				if (saiuDepois()) {
+					this.registrar(`${quem}: pediu para sair, a explicação não foi enviada`);
+					return;
+				}
 			}
 		}
 		try {
@@ -2134,8 +2181,9 @@ async function ligarServico(p) {
 			if (voltaEmCurso) await Promise.race([voltaEmCurso, dormir(LIMITE_DA_VOLTA_MS)]);
 			const teto = setTimeout(() => p.sair(0), LIMITE_PARA_ENCERRAR_MS);
 			teto.unref();
+			let esvaziou = false;
 			try {
-				await s.aguardarGravacoes(PRAZO_DAS_GRAVACOES_MS);
+				esvaziou = await s.aguardarGravacoes(PRAZO_DAS_GRAVACOES_MS);
 			} catch (e) {
 				p.registrar(`falha ao esperar as gravações: ${mensagemDe(e)}`);
 			}
@@ -2143,6 +2191,11 @@ async function ligarServico(p) {
 				await whatsapp?.encerrar();
 			} catch (e) {
 				p.registrar(`falha ao encerrar a conexão: ${mensagemDe(e)}`);
+			}
+			if (esvaziou) try {
+				if (await s.aguardarGravacoes(1e4)) await s.gravarPausasPendentes();
+			} catch (e) {
+				p.registrar(`falha ao gravar as pausas pendentes: ${mensagemDe(e)}`);
 			}
 			try {
 				await s.conexao(false, "serviço parado");

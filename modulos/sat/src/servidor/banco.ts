@@ -13,8 +13,11 @@ export interface Banco {
   /** Reserva o envio ANTES de mandar. `false` = já existia (não manda de novo). */
   reservarEnvio(contatoId: string, chave: string, tipo: TipoEvento): Promise<boolean>
   fecharEnvio(contatoId: string, chave: string, situacao: 'enviado' | 'falhou' | 'pulado', erro?: string): Promise<void>
-  /** Chaves de evento já reservadas no dia, de todos os contatos (para a linha do SAIR e para não repetir). */
-  chavesDoDia(dia: string): Promise<{ contatoId: string; chave: string; situacao: SituacaoEnvio }[]>
+  /**
+   * Chaves de evento já reservadas no dia, de todos os contatos (para a linha do SAIR e para não repetir).
+   * `criadoEm` é quando a reserva foi feita (ISO): o "antes" da madrugada tem a chave do dia anterior.
+   */
+  chavesDoDia(dia: string): Promise<{ contatoId: string; chave: string; situacao: SituacaoEnvio; criadoEm?: string | null }[]>
   confirmar(contatoId: string, jid: string): Promise<void>
   guardarJid(contatoId: string, jid: string): Promise<void>
   pausar(contatoId: string): Promise<void>
@@ -141,8 +144,8 @@ export function criarBanco(opcoes: { url: string; chave: string; fetch?: typeof 
     },
 
     async chavesDoDia(dia) {
-      const linhas = await lerTudo<{ contato_id: string; chave: string; situacao: SituacaoEnvio }>('ler os envios do dia', 'whatsapp_envios', `select=contato_id,chave,situacao&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)
-      return linhas.map((l) => ({ contatoId: l.contato_id, chave: l.chave, situacao: l.situacao }))
+      const linhas = await lerTudo<{ contato_id: string; chave: string; situacao: SituacaoEnvio; criado_em?: string | null }>('ler os envios do dia', 'whatsapp_envios', `select=contato_id,chave,situacao,criado_em&chave=like.${encodeURIComponent(dia)}:*&order=contato_id,chave`)
+      return linhas.map((l) => ({ contatoId: l.contato_id, chave: l.chave, situacao: l.situacao, criadoEm: l.criado_em ?? null }))
     },
 
     confirmar(contatoId, jid) {

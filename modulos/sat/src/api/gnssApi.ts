@@ -2,8 +2,8 @@
  * Única ponte com a Trimble GNSS Planning (gnssplanning.com).
  *
  * O serviço não aceita pedido direto do navegador, então tudo passa pela função
- * `/api/gnss` do COA WEB (api/gnss.js), que só atende quem está logado. Trocar a
- * fonte é mexer só aqui e lá.
+ * `/api/gnss` do COA WEB (api/gnss.js), que só atende quem está logado e tem a
+ * categoria Locks SAT. Trocar a fonte é mexer só aqui e lá.
  *
  *  - `ionoindex` devolve lon/lat em RADIANOS e `timeOfEstimation` em UTC;
  *  - `scintiValue` vem `null` nos passos previstos (não há previsão de cintilação).

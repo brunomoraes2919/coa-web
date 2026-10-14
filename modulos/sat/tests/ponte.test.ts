@@ -13,6 +13,8 @@ const ponte = createRequire(import.meta.url)('../../../api/gnss.js') as {
 const AGORA = Date.parse('2026-10-05T15:00:00Z')
 const DIA = 86_400_000
 const SUPABASE_USER = 'https://pkaxbitsqxjxjlwnhjhd.supabase.co/auth/v1/user'
+/** A função do banco que diz se quem está logado tem a categoria (o mesmo projeto, pela API REST). */
+const SUPABASE_CATEGORIA = SUPABASE_USER.replace('/auth/v1/user', '/rest/v1/rpc/tem_categoria')
 const JSON_UTF8 = 'application/json; charset=utf-8'
 const LIMITE_CORPO = 2 * 1024 * 1024
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52])
@@ -48,11 +50,20 @@ function req(p: string | null, token: string | string[] | null = TOKEN, method =
 
 type Pedido = [url: string | URL | Request, opcoes?: RequestInit]
 
-/** fetch falso: Supabase aceita o TOKEN; a Trimble devolve `trimble`. */
-function fetchFalso(trimble: () => Response, supabase: () => Response = () => new Response('{}', { status: 200 })) {
+/** O que o banco responde à pergunta "tem a categoria?": `true` ou `false`, em JSON. */
+const respostaCategoria = (corpo = 'true', status = 200) =>
+  () => new Response(corpo, { status, headers: { 'content-type': 'application/json; charset=utf-8' } })
+
+/** fetch falso: Supabase aceita o TOKEN e diz que ele tem a categoria; a Trimble devolve `trimble`. */
+function fetchFalso(
+  trimble: () => Response,
+  supabase: () => Response = () => new Response('{}', { status: 200 }),
+  categoria: () => Response = respostaCategoria(),
+) {
   return vi.fn(async (url: string | URL | Request, _opcoes?: RequestInit) => {
     const u = String(url)
     if (u.includes('/auth/v1/user')) return supabase()
+    if (u.includes('/rest/v1/rpc/tem_categoria')) return categoria()
     if (u.startsWith('https://www.gnssplanning.com/api/')) return trimble()
     throw new Error(`pedido inesperado: ${u}`)
   })
@@ -194,7 +205,9 @@ describe('função', () => {
   it('confere a sessão no Supabase com a chave anon, o token e prazo (AbortSignal)', async () => {
     const fetch = fetchFalso(respostaJson())
     await chamar(fetch, req(SERIE_HOJE))
-    const idas = chamadasA(fetch, 'https://pkaxbitsqxjxjlwnhjhd.supabase.co/')
+    // duas idas ao Supabase: a da sessão (esta) e a da categoria (conferida mais abaixo, em "categoria")
+    expect(chamadasA(fetch, 'https://pkaxbitsqxjxjlwnhjhd.supabase.co/')).toHaveLength(2)
+    const idas = chamadasA(fetch, SUPABASE_USER)
     expect(idas).toHaveLength(1)
     expect(String(idas[0][0])).toBe(SUPABASE_USER)
     const opcoes = idas[0][1]
@@ -310,6 +323,7 @@ describe('função', () => {
     it('a Trimble não responde (rede, redirecionamento recusado): 504 sem cache', async () => {
       const fetch = vi.fn(async (url: string | URL | Request, _opcoes?: RequestInit) => {
         if (String(url).includes('/auth/v1/user')) return new Response('{}', { status: 200 })
+        if (String(url).includes('/rest/v1/rpc/tem_categoria')) return respostaCategoria()()
         throw new TypeError('fetch failed')
       })
       const res = await chamar(fetch, req(SERIE_HOJE, jwt({ sub: 'u4' })))
@@ -444,7 +458,9 @@ describe('função', () => {
       const b = await chamar(caiu, req(SERIE_HOJE))
       expect(b.statusCode).toBe(503)
       expect(String(b.corpo)).toBe('Não foi possível conferir a sessão.')
-      expect(caiu).toHaveBeenCalledTimes(1)
+      // a sessão e a categoria são perguntadas juntas: duas idas ao Supabase, nenhuma à Trimble
+      expect(caiu).toHaveBeenCalledTimes(2)
+      expect(chamadasA(caiu, 'https://www.gnssplanning.com/')).toHaveLength(0)
     })
 
     it('só o 200 do Supabase vale: 204 e 3xx não passam', async () => {
@@ -490,6 +506,184 @@ describe('função', () => {
     })
   })
 
+  describe('categoria', () => {
+    const semCategoria = respostaCategoria('false')
+
+    it('pergunta ao banco se quem está logado tem a categoria sat: RPC com a chave anon, o token do usuário e prazo (AbortSignal)', async () => {
+      const fetch = fetchFalso(respostaJson())
+      const res = await chamar(fetch, req(SERIE_HOJE))
+      expect(res.statusCode).toBe(200)
+      const idas = chamadasA(fetch, SUPABASE_CATEGORIA)
+      expect(idas).toHaveLength(1)
+      expect(String(idas[0][0])).toBe(SUPABASE_CATEGORIA)
+      const opcoes = idas[0][1]
+      expect(opcoes?.method).toBe('POST')
+      expect(JSON.parse(String(opcoes?.body))).toEqual({ p_categoria: 'sat' })
+      const cabecalhos = opcoes?.headers as Record<string, string>
+      expect(cabecalhos.apikey).toMatch(/^eyJ[\w-]+\.[\w-]+\.[\w-]+$/)
+      expect(cabecalhos.Authorization).toBe(`Bearer ${TOKEN}`)
+      expect(cabecalhos['Content-Type']).toBe('application/json')
+      expect(opcoes?.signal).toBeInstanceOf(AbortSignal)
+    })
+
+    it('sem a categoria Locks SAT: 403 sem cache, com os cabeçalhos de segurança, e a Trimble não é chamada', async () => {
+      const fetch = fetchFalso(respostaJson(), undefined, semCategoria)
+      const res = await chamar(fetch, req(SERIE_HOJE, jwt({ sub: 'c1' })))
+      expect(res.statusCode).toBe(403)
+      expect(res.cabecalhos['cache-control']).toBe('no-store')
+      expect(res.cabecalhos['content-type']).toBe('text/plain; charset=utf-8')
+      expect(res.cabecalhos['x-content-type-options']).toBe('nosniff')
+      expect(res.cabecalhos['cross-origin-resource-policy']).toBe('same-origin')
+      expect(String(res.corpo)).toBe('Sem acesso ao Locks SAT.')
+      expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(0)
+    })
+
+    it('a resposta do banco pode vir com espaço ou quebra de linha em volta', async () => {
+      const com = await chamar(fetchFalso(respostaJson(), undefined, respostaCategoria(' true\r\n')), req(SERIE_HOJE, jwt({ sub: 'c2' })))
+      expect(com.statusCode).toBe(200)
+      const sem = await chamar(fetchFalso(respostaJson(), undefined, respostaCategoria('false\n')), req(SERIE_HOJE, jwt({ sub: 'c3' })))
+      expect(sem.statusCode).toBe(403)
+    })
+
+    it('o "não" não fica guardado: liberada a categoria, o pedido seguinte já passa', async () => {
+      let tem = false
+      const fetch = fetchFalso(respostaJson(), undefined, () => respostaCategoria(String(tem))())
+      const handler = ponte.criarHandler({ fetch: fetch as never, agora: () => AGORA })
+      const token = jwt({ sub: 'c4' })
+      const antes = resFalso()
+      await handler(req(SERIE_HOJE, token), antes)
+      expect(antes.statusCode).toBe(403)
+      tem = true
+      const depois = resFalso()
+      await handler(req(SERIE_HOJE, token), depois)
+      expect(depois.statusCode).toBe(200)
+      expect(chamadasA(fetch, SUPABASE_CATEGORIA)).toHaveLength(2)
+    })
+
+    it('quem tem a categoria vale 5 min (o mesmo cache da sessão): depois o banco é perguntado de novo, e quem a perdeu recebe 403', async () => {
+      let tem = true
+      const fetch = fetchFalso(respostaJson(), undefined, () => respostaCategoria(String(tem))())
+      let agora = AGORA
+      const handler = ponte.criarHandler({ fetch: fetch as never, agora: () => agora })
+      const token = jwt({ sub: 'c5' })
+      const idas = () => chamadasA(fetch, SUPABASE_CATEGORIA).length
+      await handler(req(SERIE_HOJE, token), resFalso())
+      tem = false
+      agora += 5 * 60_000 - 1
+      const dentro = resFalso()
+      await handler(req(SERIE_HOJE, token), dentro)
+      expect(dentro.statusCode).toBe(200)
+      expect(idas()).toBe(1)
+      agora += 2
+      const fora = resFalso()
+      await handler(req(SERIE_HOJE, token), fora)
+      expect(fora.statusCode).toBe(403)
+      expect(idas()).toBe(2)
+      // e o 403 não renova o cache: o pedido seguinte pergunta outra vez (sessão e categoria)
+      await handler(req(SERIE_HOJE, token), resFalso())
+      expect(idas()).toBe(3)
+      expect(chamadasA(fetch, SUPABASE_USER)).toHaveLength(3)
+      expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(2)
+    })
+
+    it('o cache é por token: a categoria de um usuário não vale para outro', async () => {
+      const comCategoria = jwt({ sub: 'c6' })
+      const semEla = jwt({ sub: 'c7' })
+      const fetch = vi.fn(async (url: string | URL | Request, opcoes?: RequestInit) => {
+        const u = String(url)
+        if (u.includes('/auth/v1/user')) return new Response('{}', { status: 200 })
+        if (u.includes('/rest/v1/rpc/tem_categoria')) {
+          const autorizacao = (opcoes?.headers as Record<string, string>).Authorization
+          return respostaCategoria(String(autorizacao === `Bearer ${comCategoria}`))()
+        }
+        return respostaJson()()
+      })
+      const handler = ponte.criarHandler({ fetch: fetch as never, agora: () => AGORA })
+      const a = resFalso()
+      await handler(req(SERIE_HOJE, comCategoria), a)
+      const b = resFalso()
+      await handler(req(SERIE_HOJE, semEla), b)
+      expect([a.statusCode, b.statusCode]).toEqual([200, 403])
+    })
+
+    it.each([
+      ['erro 500', respostaCategoria('{"message":"erro"}', 500)],
+      ['função que o banco não acha (404)', respostaCategoria('{"code":"PGRST202"}', 404)],
+      ['sem permissão para chamar a função (403)', respostaCategoria('{"code":"42501"}', 403)],
+      ['204 sem corpo', () => new Response(null, { status: 204 })],
+      ['corpo vazio', respostaCategoria('')],
+      ['null', respostaCategoria('null')],
+      ['um objeto', respostaCategoria('{"tem_categoria":true}')],
+      ['uma lista', respostaCategoria('[true]')],
+      ['texto "true" entre aspas', respostaCategoria('"true"')],
+      ['um número', respostaCategoria('1')],
+    ])('banco que não responde sim nem não à pergunta da categoria (%s): 503, nunca 200 nem 403', async (_nome, categoria) => {
+      const fetch = fetchFalso(respostaJson(), undefined, categoria)
+      const res = await chamar(fetch, req(SERIE_HOJE, jwt({ sub: 'c8' })))
+      expect(res.statusCode).toBe(503)
+      expect(res.cabecalhos['cache-control']).toBe('no-store')
+      expect(String(res.corpo)).toBe('Não foi possível conferir a categoria.')
+      expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(0)
+    })
+
+    it('queda de rede só na pergunta da categoria: 503, a Trimble não é chamada e nada fica no cache', async () => {
+      let caiu = true
+      const fetch = vi.fn(async (url: string | URL | Request, _opcoes?: RequestInit) => {
+        const u = String(url)
+        if (u.includes('/auth/v1/user')) return new Response('{}', { status: 200 })
+        if (u.includes('/rest/v1/rpc/tem_categoria')) {
+          if (caiu) throw new TypeError('fetch failed')
+          return respostaCategoria()()
+        }
+        return respostaJson()()
+      })
+      const handler = ponte.criarHandler({ fetch: fetch as never, agora: () => AGORA })
+      const token = jwt({ sub: 'c9' })
+      const a = resFalso()
+      await handler(req(SERIE_HOJE, token), a)
+      expect(a.statusCode).toBe(503)
+      expect(String(a.corpo)).toBe('Não foi possível conferir a categoria.')
+      expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(0)
+      caiu = false
+      const b = resFalso()
+      await handler(req(SERIE_HOJE, token), b)
+      expect(b.statusCode).toBe(200)
+      expect(chamadasA(fetch, SUPABASE_USER)).toHaveLength(2)
+    })
+
+    it('o banco recusa o token na pergunta da categoria (401): é sessão que não vale, 401 nosso', async () => {
+      const fetch = fetchFalso(respostaJson(), undefined, respostaCategoria('{"code":"PGRST301"}', 401))
+      const res = await chamar(fetch, req(SERIE_HOJE, jwt({ sub: 'c10' })))
+      expect(res.statusCode).toBe(401)
+      expect(res.cabecalhos['cache-control']).toBe('no-store')
+      expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(0)
+    })
+
+    it('sessão recusada continua 401, com ou sem a categoria', async () => {
+      for (const categoria of [respostaCategoria(), semCategoria, respostaCategoria('erro', 500)]) {
+        const fetch = fetchFalso(respostaJson(), () => new Response('{}', { status: 401 }), categoria)
+        const res = await chamar(fetch, req(SERIE_HOJE, jwt({ sub: 'c11' })))
+        expect(res.statusCode).toBe(401)
+        expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(0)
+      }
+    })
+
+    it('sessão que não pôde ser conferida continua 503, mesmo que o banco diga que não há a categoria', async () => {
+      const fetch = fetchFalso(respostaJson(), () => new Response('erro', { status: 500 }), semCategoria)
+      const res = await chamar(fetch, req(SERIE_HOJE, jwt({ sub: 'c12' })))
+      expect(res.statusCode).toBe(503)
+      expect(String(res.corpo)).toBe('Não foi possível conferir a sessão.')
+      expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(0)
+    })
+
+    it('token fora do formato nem chega a perguntar a categoria', async () => {
+      const fetch = vi.fn()
+      const res = await chamar(fetch, req(SERIE_HOJE, jwt({ exp: AGORA / 1000 - 1 })))
+      expect(res.statusCode).toBe(401)
+      expect(fetch).not.toHaveBeenCalled()
+    })
+  })
+
   describe('prazos', () => {
     /** fetch que nunca responde sozinho: só quando o AbortSignal dispara */
     const pendurado = (_url: string | URL | Request, opcoes?: RequestInit) =>
@@ -513,8 +707,11 @@ describe('função', () => {
 
     it('Trimble sem responder em 6 s: 504', async () => {
       vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-      const fetch = vi.fn((url: string | URL | Request, opcoes?: RequestInit) =>
-        String(url).includes('/auth/v1/user') ? Promise.resolve(new Response('{}', { status: 200 })) : pendurado(url, opcoes))
+      const fetch = vi.fn((url: string | URL | Request, opcoes?: RequestInit) => {
+        if (String(url).includes('/auth/v1/user')) return Promise.resolve(new Response('{}', { status: 200 }))
+        if (String(url).includes('/rest/v1/rpc/tem_categoria')) return Promise.resolve(respostaCategoria()())
+        return pendurado(url, opcoes)
+      })
       const res = resFalso()
       const fim = ponte.criarHandler({ fetch: fetch as never, agora: () => AGORA })(req(SERIE_HOJE), res)
       await vi.advanceTimersByTimeAsync(5999)
@@ -523,6 +720,61 @@ describe('função', () => {
       await fim
       expect(res.statusCode).toBe(504)
       expect(res.cabecalhos['cache-control']).toBe('no-store')
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('pergunta da categoria sem resposta em 3 s, com a sessão já aceita: 503 e a Trimble não é chamada', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const fetch = vi.fn((url: string | URL | Request, opcoes?: RequestInit) =>
+        String(url).includes('/auth/v1/user') ? Promise.resolve(new Response('{}', { status: 200 })) : pendurado(url, opcoes))
+      const res = resFalso()
+      const fim = ponte.criarHandler({ fetch: fetch as never, agora: () => AGORA })(req(SERIE_HOJE), res)
+      await vi.advanceTimersByTimeAsync(2999)
+      expect(res.statusCode).toBe(0)
+      await vi.advanceTimersByTimeAsync(1)
+      await fim
+      expect(res.statusCode).toBe(503)
+      expect(res.cabecalhos['cache-control']).toBe('no-store')
+      expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(0)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('sessão e categoria são perguntadas ao mesmo tempo, no mesmo prazo de 3 s: as duas demorando 2,9 s não somam', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const depoisDe = (ms: number, resposta: () => Response) => new Promise<Response>((resolver) => { setTimeout(() => resolver(resposta()), ms) })
+      const fetch = vi.fn((url: string | URL | Request, _opcoes?: RequestInit) => {
+        if (String(url).includes('/auth/v1/user')) return depoisDe(2900, () => new Response('{}', { status: 200 }))
+        if (String(url).includes('/rest/v1/rpc/tem_categoria')) return depoisDe(2900, respostaCategoria())
+        return Promise.resolve(respostaJson()())
+      })
+      const res = resFalso()
+      const fim = ponte.criarHandler({ fetch: fetch as never, agora: () => AGORA })(req(SERIE_HOJE), res)
+      await vi.advanceTimersByTimeAsync(0)
+      // as duas perguntas já saíram, e a Trimble ainda não
+      expect(chamadasA(fetch, SUPABASE_USER)).toHaveLength(1)
+      expect(chamadasA(fetch, SUPABASE_CATEGORIA)).toHaveLength(1)
+      expect(chamadasA(fetch, 'https://www.gnssplanning.com/')).toHaveLength(0)
+      await vi.advanceTimersByTimeAsync(2900)
+      await fim
+      expect(res.statusCode).toBe(200)
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('no pior caso (Supabase no limite dos 3 s e Trimble sem responder) a resposta sai em 9 s, antes dos 10 s da função', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+      const depoisDe = (ms: number, resposta: () => Response) => new Promise<Response>((resolver) => { setTimeout(() => resolver(resposta()), ms) })
+      const fetch = vi.fn((url: string | URL | Request, opcoes?: RequestInit) => {
+        if (String(url).includes('/auth/v1/user')) return depoisDe(2999, () => new Response('{}', { status: 200 }))
+        if (String(url).includes('/rest/v1/rpc/tem_categoria')) return depoisDe(2999, respostaCategoria())
+        return pendurado(url, opcoes)
+      })
+      const res = resFalso()
+      const fim = ponte.criarHandler({ fetch: fetch as never, agora: () => AGORA })(req(SERIE_HOJE), res)
+      await vi.advanceTimersByTimeAsync(2999 + 5999)
+      expect(res.statusCode).toBe(0)
+      await vi.advanceTimersByTimeAsync(1)
+      await fim
+      expect(res.statusCode).toBe(504)
       expect(vi.getTimerCount()).toBe(0)
     })
 

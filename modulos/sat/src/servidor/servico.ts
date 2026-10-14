@@ -98,6 +98,12 @@ const mensagemDe = (e: unknown) => (e instanceof Error ? e.message : String(e))
 /** Os dígitos do número que vem num endereço do WhatsApp (sem servidor nem aparelho). */
 const numeroDoJid = (jid: string) => jid.split('@')[0].split(':')[0]
 
+/** A reserva foi feita no dia (local) de `agora`? Sem a hora da reserva, ou com hora ilegível, vale como sim: na dúvida, conta (e não envia). */
+function reservadaNoDia(criadoEm: string | null | undefined, agora: number): boolean {
+  const quando = criadoEm ? Date.parse(criadoEm) : NaN
+  return Number.isNaN(quando) || chaveData(quando) === chaveData(agora)
+}
+
 /** Troca todo número de telefone inteiro (55 + DDD + número, 12 ou 13 dígitos) pelos 4 últimos dígitos. */
 export function semNumeros(texto: string): string {
   return texto.replace(/(?<!\d)55\d{10,11}(?!\d)/g, (n) => `…${n.slice(-4)}`)
@@ -124,6 +130,11 @@ export class Servico {
    * traz `ativo === false` ou quando um ATIVAR que chegou DEPOIS do SAIR foi gravado.
    */
   private readonly pausados = new Map<string, number>()
+  /**
+   * Quem mandou SAIR nesta execução (número → ordem de chegada). Ao contrário de `pausados`, não sai quando a
+   * pausa é gravada: só um ATIVAR posterior solta. Segura a explicação que já esperava na fila de respostas.
+   */
+  private readonly sairam = new Map<string, number>()
   /** Contador da ordem de chegada dos comandos (ATIVAR/SAIR). */
   private chegadas = 0
   /** Só no ensaio: o que já foi registrado, para não repetir a cada minuto. */
@@ -225,7 +236,10 @@ export class Servico {
       tratar = () => this.explicar(m, comando, numero, quem)
     } else {
       const chegada = ++this.chegadas
-      if (numero && comando === 'sair') this.pausados.set(numero, chegada)
+      if (numero && comando === 'sair') {
+        this.pausados.set(numero, chegada)
+        this.sairam.set(numero, chegada)
+      }
       tratar = () => this.gravar(m, comando, numero, quem, chegada)
     }
     this.gravacoesPendentes += 1
@@ -247,12 +261,29 @@ export class Servico {
   /**
    * Espera a fila de gravação esvaziar, no máximo `prazoMs` (o relógio é o `dormir` injetado). Não espera
    * as respostas: o comando já está gravado, e uma resposta que se perder não desfaz nada.
+   * Devolve se a fila esvaziou (`false` = o prazo venceu com gravação ainda pendente).
    */
-  async aguardarGravacoes(prazoMs: number): Promise<void> {
-    if (this.gravacoesPendentes === 0) return
+  async aguardarGravacoes(prazoMs: number): Promise<boolean> {
+    if (this.gravacoesPendentes === 0) return true
     let venceu = false
     const prazo = this.d.dormir(prazoMs).then(() => { venceu = true })
     while (this.gravacoesPendentes > 0 && !venceu) await Promise.race([this.filaDeGravacao, prazo])
+    return this.gravacoesPendentes === 0
+  }
+
+  /**
+   * Na parada: última tentativa de gravar a pausa de quem mandou SAIR e o banco ainda mostra ativo (a
+   * gravação falhou). A marca desse SAIR só existe na memória: se o processo sair sem gravar a pausa, a
+   * pessoa volta a receber os alertas quando o serviço religar. Só lê e grava no banco, não envia nada.
+   * Sem marca nenhuma não toca no banco. Nunca lança.
+   */
+  async gravarPausasPendentes(): Promise<void> {
+    if (this.d.ensaio || this.pausados.size === 0) return
+    try {
+      await this.reconciliarPausados(await this.d.banco.contatos())
+    } catch (e) {
+      this.registrar(`não gravei as pausas pendentes: ${mensagemDe(e)}`)
+    }
   }
 
   /** O WhatsApp restringiu os envios da conta até `ate` (ms; `Infinity` = sem prazo), ou retirou a restrição (`null`). */
@@ -345,6 +376,8 @@ export class Servico {
         await this.d.banco.confirmar(contato.id, m.jid)
         const marca = numero ? this.pausados.get(numero) : undefined
         if (numero && marca !== undefined && marca < chegada) this.pausados.delete(numero)
+        const saiu = numero ? this.sairam.get(numero) : undefined
+        if (numero && saiu !== undefined && saiu < chegada) this.sairam.delete(numero)
         let nomes: string[] = []
         try {
           const fazendas = this.fazendas ?? await this.d.banco.fazendas()
@@ -564,6 +597,10 @@ export class Servico {
     if (!this.semeado) {
       // depois de um reinício o teto do dia não pode zerar: conta o que já foi reservado hoje
       for (const r of deHoje) this.contador.contar(r.contatoId)
+      // O "antes" da madrugada saiu hoje com a chave de ontem: conta também, senão a pessoa receberia
+      // um aviso além do limite do dia. O de ontem à noite tem a mesma chave e não conta.
+      const antesDeOntem = chaveEvento(agora - DIA_MS, 'antes')
+      for (const r of deOntem) if (r.chave === antesDeOntem && reservadaNoDia(r.criadoEm, agora)) this.contador.contar(r.contatoId)
       this.semeado = true
     }
     const jaReservadas: Reservada[] = [...deOntem, ...deHoje]
@@ -822,6 +859,16 @@ export class Servico {
    * cada por pessoa por dia, contadas à parte): respeita o teto do dia e conta nele.
    */
   private async responder({ contato, jid, quem, texto, tipo }: PedidoDeResposta): Promise<void> {
+    // Um SAIR pode chegar com a explicação já na fila (ela espera a pausa entre respostas): não sai mais.
+    const saiuDepois = (): boolean => {
+      if (tipo === 'comando') return false
+      const numero = chaveDoNumero(contato.telefone)
+      return this.estaPausado(contato) || (numero !== null && this.sairam.has(numero))
+    }
+    if (saiuDepois()) {
+      this.registrar(`${quem}: pediu para sair, a explicação não foi enviada`)
+      return
+    }
     const dia = chaveData(this.d.agora())
     const chave = tipo === 'comando' ? contato.id : `${contato.id}:${tipo}`
     const maximo = tipo === 'comando' ? MAX_RESPOSTAS_POR_PESSOA_POR_DIA : MAX_EXPLICACOES_POR_PESSOA_POR_DIA
@@ -847,8 +894,12 @@ export class Servico {
       const passou = this.d.agora() - this.ultimaResposta.em
       if (passou >= 0 && passou < this.ultimaResposta.pausa) {
         await this.d.dormir(this.ultimaResposta.pausa - passou)
-        // passou tempo: a restrição pode ter chegado
+        // passou tempo: a restrição pode ter chegado, e a pessoa pode ter pedido para sair
         if (this.bloqueio() !== null) return
+        if (saiuDepois()) {
+          this.registrar(`${quem}: pediu para sair, a explicação não foi enviada`)
+          return
+        }
       }
     }
     try {

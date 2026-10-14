@@ -256,9 +256,21 @@ export async function ligarServico(p: PecasDoServico): Promise<void> {
       const teto = setTimeout(() => p.sair(0), LIMITE_PARA_ENCERRAR_MS)
       teto.unref()
       // um SAIR que o WhatsApp já deu como entregue tem de chegar ao banco; as respostas pendentes não se esperam
-      try { await s.aguardarGravacoes(PRAZO_DAS_GRAVACOES_MS) } catch (e) { p.registrar(`falha ao esperar as gravações: ${mensagemDe(e)}`) }
+      let esvaziou = false
+      try { esvaziou = await s.aguardarGravacoes(PRAZO_DAS_GRAVACOES_MS) } catch (e) { p.registrar(`falha ao esperar as gravações: ${mensagemDe(e)}`) }
       // encerra a conexão antes de gravar: nada mais pode regravar "conectado" depois
       try { await whatsapp?.encerrar() } catch (e) { p.registrar(`falha ao encerrar a conexão: ${mensagemDe(e)}`) }
+      // Com a conexão fechada nada novo chega: o comando entregue enquanto ela fechava ainda é gravado, e o SAIR
+      // cuja gravação falhou (a marca dele só existe na memória e morreria com o processo) ganha uma última tentativa.
+      // Só gravações no banco, dentro do teto acima. Se a primeira espera já estourou o prazo, o banco não está
+      // respondendo: não se espera de novo.
+      if (esvaziou) {
+        try {
+          if (await s.aguardarGravacoes(PRAZO_DAS_GRAVACOES_MS)) await s.gravarPausasPendentes()
+        } catch (e) {
+          p.registrar(`falha ao gravar as pausas pendentes: ${mensagemDe(e)}`)
+        }
+      }
       try { await s.conexao(false, 'serviço parado') } catch (e) { p.registrar(`não gravei o estado: ${mensagemDe(e)}`) }
       clearTimeout(teto)
       p.sair(0)
