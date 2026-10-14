@@ -1092,7 +1092,8 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <div id="nav-previsao" style="display:none">
       <div class="nav-eyebrow">Previsão do Tempo</div>
       <nav>
-        <button class="nav-btn" data-page="previsao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.6a3.5 3.5 0 0 1 .5 6.9"/><path d="M8.5 19.5l1-2M12 21l1-2M15.5 19.5l1-2"/></svg>Mapa de previsão</button>
+        <button class="nav-btn" data-page="previsao" data-previsao="mapa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 16.5a4 4 0 0 1-.6-7.95A5.5 5.5 0 0 1 17 9.6a3.5 3.5 0 0 1 .5 6.9"/><path d="M8.5 19.5l1-2M12 21l1-2M15.5 19.5l1-2"/></svg>Mapa de previsão</button>
+        <button class="nav-btn" data-page="previsao" data-previsao="benchmark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Benchmark</button>
       </nav>
     </div>
     <div id="nav-chuva" style="display:none">
@@ -1854,7 +1855,7 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
     if(btn.dataset.rota) irParaMapas(btn.dataset.rota);
     else if(btn.dataset.acomp) irParaAcomp(btn.dataset.acomp);
     else if(btn.dataset.sat) irParaSat(btn.dataset.sat);
-    else if(btn.dataset.page === 'previsao') irParaPrevisao();
+    else if(btn.dataset.previsao) irParaPrevisao(btn.dataset.previsao);
     else if(btn.dataset.chuva) irParaChuva(btn.dataset.chuva);
     else if(btn.dataset.valid) irParaValidacao(btn.dataset.valid);
     else if(btn.dataset.ctrl) irParaControle(btn.dataset.ctrl);
@@ -4880,19 +4881,34 @@ window.addEventListener('message', ev=>{
    PREVISÃO DO TEMPO — módulo num iframe da mesma origem
    (previsao/index.html?embed=1; a sessão do Supabase é a mesma do COA WEB)
    - COA → módulo: { tipo:'coa-fazenda', id, nome }
+   - COA → módulo: { tipo:'previsao-vista', vista }   (aba Mapa ou Benchmark pedida pelo menu)
    - módulo → COA: { tipo:'previsao-fazenda', coaFazenda }
+   - módulo → COA: { tipo:'previsao-rota', vista }    (aba aberta no módulo; o menu acompanha)
    ===================================================================== */
 let previsaoFrame = null;      // iframe #previsao-frame (criado na primeira entrada; removido ao sair)
 let previsaoCarregado = false;
+const PREVISAO_VISTAS = ['mapa','benchmark'];
+let previsaoVista = 'mapa';
+function destacarBotaoPrevisao(){
+  document.querySelectorAll('#nav-previsao .nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.previsao===previsaoVista));
+}
 function enviarFazendaPrevisao(){
   if(!previsaoFrame || !previsaoCarregado || !previsaoFrame.contentWindow) return;
   const f = state.fazendas.find(x=>x.id===fazendaSelecionadaId()) || { id:null, nome:null };
   try{ previsaoFrame.contentWindow.postMessage({ tipo:'coa-fazenda', id:f.id, nome:f.nome }, location.origin); }
   catch(e){ console.warn('PREVISÃO: não foi possível avisar o módulo', e); }
 }
-function irParaPrevisao(){
+function irParaPrevisao(vista){
+  if(vista && PREVISAO_VISTAS.includes(vista)) previsaoVista = vista;
   irPara('previsao');
-  if(previsaoFrame) return;
+  if(previsaoFrame){
+    if(vista && previsaoCarregado && previsaoFrame.contentWindow){
+      try{ previsaoFrame.contentWindow.postMessage({ tipo:'previsao-vista', vista:previsaoVista }, location.origin); }
+      catch(e){ console.warn('PREVISÃO: não foi possível trocar a aba', e); }
+    }
+    destacarBotaoPrevisao();
+    return;
+  }
   const frame = document.createElement('iframe');
   frame.id = 'previsao-frame';
   frame.allow = 'fullscreen; screen-wake-lock'; // Modo TV
@@ -4902,12 +4918,16 @@ function irParaPrevisao(){
     coaLoader.esconder();
     previsaoCarregado = true;
     enviarFazendaPrevisao();
+    // um clique no outro botão enquanto o quadro carregava: a aba pedida por último vale
+    try{ frame.contentWindow.postMessage({ tipo:'previsao-vista', vista:previsaoVista }, location.origin); }
+    catch(e){ console.warn('PREVISÃO: não foi possível trocar a aba', e); }
   });
   coaLoader.mostrar('Abrindo a Previsão do Tempo', true);
-  frame.src = 'previsao/index.html?embed=1';
+  frame.src = 'previsao/index.html?embed=1&vista=' + previsaoVista;
   previsaoFrame = frame;
   previsaoCarregado = false;
   document.querySelector('.page[data-page="previsao"]').appendChild(frame);
+  destacarBotaoPrevisao();
 }
 function entrarPrevisao(){
   if(!podeCategoria('previsao')){ mostrarCategoriaScreen(); return; }
@@ -4940,7 +4960,12 @@ window.addEventListener('message', ev=>{
   if(ev.origin !== location.origin) return;
   if(!previsaoFrame || ev.source !== previsaoFrame.contentWindow) return;
   const d = ev.data;
-  if(!d || typeof d !== 'object' || d.tipo !== 'previsao-fazenda') return;
+  if(!d || typeof d !== 'object') return;
+  if(d.tipo === 'previsao-rota'){
+    if(PREVISAO_VISTAS.includes(d.vista)){ previsaoVista = d.vista; destacarBotaoPrevisao(); }
+    return;
+  }
+  if(d.tipo !== 'previsao-fazenda') return;
   // fazenda escolhida no módulo → seletor do menu lateral (e o resto do COA WEB, como numa troca manual)
   if(typeof d.coaFazenda === 'number'){
     const el = document.getElementById('sb-fazenda');
