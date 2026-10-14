@@ -95,6 +95,19 @@
         ]);
         return { previsoes: r[0], observado: r[1], metricas: r[2] };
       },
+      // relatório em PDF: as fotos dos últimos 3 dias (a mais recente de cada fonte e fazenda)
+      relatorio: async function (hoje) {
+        return tudo(() => sb.from('prev_previsoes').select('fonte,unidade,emitida_em,capturada_em,dias')
+          .gte('emitida_em', window.PrevisaoRelatorioLogica.somarDias(hoje, -2)).order('emitida_em').order('fonte').order('unidade'), 1000);
+      },
+      // quem gerou o relatório (capa): o nome do perfil, sem cair para o e-mail
+      usuario: async function () {
+        const u = await sb.auth.getUser();
+        const id = u && u.data && u.data.user ? u.data.user.id : null;
+        if (!id) return '';
+        const r = await sb.from('perfis').select('nome').eq('id', id).maybeSingle();
+        return r.data && r.data.nome ? String(r.data.nome) : '';
+      },
     };
   }
   /* servidor local de testes (modulos/previsao/scripts/servidor-local.mjs): fazendas fictícias */
@@ -111,6 +124,12 @@
         if (!r.ok) throw new Error('servidor local sem dados de teste do benchmark');
         return r.json();
       },
+      relatorio: async function () {
+        const r = await fetch('/api/previsao-benchmark-teste');
+        if (!r.ok) throw new Error('servidor local sem dados de teste do benchmark');
+        return (await r.json()).previsoes;
+      },
+      usuario: async function () { return 'Usuário de teste'; },
     };
   }
 
@@ -286,6 +305,32 @@
   });
   $('sel-camada').addEventListener('change', (ev) => { estado.camada = ev.target.value; preencherCamadas(); carregarWindy(vista || vistaDaEscolha()); });
   $('sel-modelo').addEventListener('change', (ev) => { estado.modelo = ev.target.value; preencherModelos(); carregarWindy(vista || vistaDaEscolha()); });
+
+  /* ------------------------------ relatório em PDF ------------------------------ */
+  $('btn-relatorio').addEventListener('click', async () => {
+    const b = $('btn-relatorio');
+    if (!iniciado || b.disabled) return;
+    const rotulo = b.querySelector('span');
+    const antes = rotulo.textContent;
+    b.disabled = true;
+    rotulo.textContent = 'Gerando…';
+    $('relatorio-erro').hidden = true;
+    try {
+      await window.PrevisaoRelatorio.gerar({
+        hoje: () => window.PrevisaoBenchmark.hojeMT(),
+        carregar: (hoje) => fonte.relatorio(hoje),
+        usuario: () => fonte.usuario(),
+        fazendas: () => fazendas.map((f) => ({ nome: f.nome, unidade: f.unidade })),
+      });
+    } catch (e) {
+      console.warn('PREVISÃO: relatório não gerado', e);
+      $('relatorio-erro').textContent = 'Não foi possível gerar o relatório: ' + (e && e.message ? e.message : e);
+      $('relatorio-erro').hidden = false;
+    } finally {
+      b.disabled = false;
+      rotulo.textContent = antes;
+    }
+  });
   $('btn-centralizar').addEventListener('click', () => carregarWindy(vistaDaEscolha()));
   $('btn-ponto').addEventListener('click', () => { estado.ponto = !estado.ponto; marcarPonto(); aplicarPonto(); });
 

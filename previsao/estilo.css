@@ -164,3 +164,7 @@ button, select { font: inherit; color: inherit; }
 .bm-rodape { font-size: 11.5px; color: var(--texto-suave); margin: 8px 0 0; }
 .bm-aviso { margin: 0; padding: 10px 14px; border-radius: 8px; background: #fbefd9; color: #7a5200; font-size: 13px; }
 @media (max-width: 600px) { .benchmark { padding: 12px; } .bm-cartao { padding: 12px; } .bm-grafico { height: 240px; } }
+
+/* ------------------------------ relatório em PDF ------------------------------ */
+.relatorio-erro { color: #9b2c1f; font-size: 12px; max-width: 280px; line-height: 1.3; }
+#btn-relatorio:disabled { opacity: .6; cursor: progress; }

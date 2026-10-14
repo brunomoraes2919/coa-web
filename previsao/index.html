@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610142100">
+<link rel="stylesheet" href="estilo.css?v=202610142300">
 <script src="config.js?v=202610060300"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
 <script src="logica.js?v=202610060300"></script>
@@ -38,6 +38,12 @@
       <button class="botao-acao" id="btn-centralizar" title="Volta o mapa para a fazenda escolhida">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg><span>Centralizar</span>
       </button>
+    </div>
+    <div class="barra-acoes">
+      <button class="botao-acao" id="btn-relatorio" title="PDF com a previsão dos próximos dias de cada fazenda: chuva da ZEUS e temperatura máxima e mínima">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></svg><span>Relatório (PDF)</span>
+      </button>
+      <span class="relatorio-erro" id="relatorio-erro" role="alert" hidden></span>
     </div>
   </header>
 
@@ -76,6 +82,8 @@
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" integrity="sha384-Mx5lkUEQPM1pOJCwFtUICyX45KNojXbkWdYhkKUKsbv391mavbfoAmONbzkgYPzR" crossorigin="anonymous"></script>
 <script src="benchmark-logica.js?v=202610142100"></script>
 <script src="benchmark.js?v=202610142100"></script>
-<script src="app.js?v=202610142100"></script>
+<script src="relatorio-logica.js?v=202610142300"></script>
+<script src="relatorio.js?v=202610142300"></script>
+<script src="app.js?v=202610142300"></script>
 </body>
 </html>

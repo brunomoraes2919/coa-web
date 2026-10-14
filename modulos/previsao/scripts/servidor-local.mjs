@@ -35,7 +35,8 @@ function benchmarkTeste() {
       for (let k = fonte === 'metno' ? 1 : 0; k <= alcance[fonte]; k++) {
         const d = somarDias(emitida, k);
         const base = real.get(`${u}|${d}`) ?? 0;
-        dias.push({ d, mm: Math.max(0, Math.round((base + (sorteio() - 0.5) * erro[fonte] * (1 + k / 5)) * 10) / 10), p: fonte === 'metno' ? null : Math.round(sorteio() * 100) });
+        const temp = fonte === 'zeus' ? {} : { tx: 30 + ((k + unidades.indexOf(u)) % 5), tn: 19 + ((2 * k + unidades.indexOf(u)) % 4) };
+        dias.push({ d, mm: Math.max(0, Math.round((base + (sorteio() - 0.5) * erro[fonte] * (1 + k / 5)) * 10) / 10), p: fonte === 'metno' ? null : Math.round(sorteio() * 100), ...temp });
       }
       previsoes.push({ fonte, unidade: u, emitida_em: emitida, capturada_em: `${emitida}T10:20:00Z`, dias });
     }
