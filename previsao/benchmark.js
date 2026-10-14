@@ -11,6 +11,8 @@
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const PERIODOS = [['30d', 'Últimos 30 dias'], ['60d', 'Últimos 60 dias'], ['90d', 'Últimos 90 dias'], ['safra', 'Safra']];
   const fmtMm = (v) => (v === null || v === undefined ? '—' : Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 }));
+  // eixo dos gráficos: até 2 casas (com 1 casa, uma escala de 0 a 0,1 repetiria o rótulo 0)
+  const fmtEixo = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
   const fmtDia = (d) => d.slice(8, 10) + '/' + d.slice(5, 7);
   const fmtSemana = (d) => new Date(d + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'UTC' }).replace('.', '');
   const fmtHora = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -105,7 +107,7 @@
       legend: { top: 0 },
       grid: moldura('bm-g-proximos').grid,
       xAxis: { type: 'category', data: r.dias.map((d, i) => (i === 0 ? 'Hoje' : fmtSemana(d) + ' ' + fmtDia(d))) },
-      yAxis: { type: 'value', name: moldura('bm-g-proximos').yAxis.name },
+      yAxis: { type: 'value', name: moldura('bm-g-proximos').yAxis.name, axisLabel: { formatter: fmtEixo } },
       series: r.series.map((s) => ({
         name: s.nome, type: 'bar', data: s.mm, itemStyle: { color: s.cor, borderRadius: [3, 3, 0, 0] },
         markArea: s === r.series[0] && r.divergentes.length ? { silent: true, itemStyle: { color: 'rgba(219,138,8,0.12)' }, data: r.divergentes.map((i) => [{ xAxis: i }, { xAxis: i }]) } : undefined,
@@ -153,7 +155,7 @@
       legend: { top: 0 },
       grid: moldura('bm-g-historico').grid,
       xAxis: { type: 'category', data: r.dias.map(fmtDia) },
-      yAxis: { type: 'value', name: moldura('bm-g-historico').yAxis.name },
+      yAxis: { type: 'value', name: moldura('bm-g-historico').yAxis.name, axisLabel: { formatter: fmtEixo } },
       series: [{ name: 'Chuva medida', type: 'bar', data: r.medido, itemStyle: { color: '#9aa7a0' } }].concat(r.series.map((s) => ({
         name: s.nome, type: 'line', data: s.mm, connectNulls: false, symbolSize: 5, lineStyle: { width: 2, color: s.cor }, itemStyle: { color: s.cor },
       }))),
