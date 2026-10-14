@@ -7,6 +7,8 @@ export const MAX_PENDENTES_POR_USUARIO: number;
 export type TipoDeErro = 'fonte' | 'tempo' | 'invalido' | 'interno';
 /** texto que vai para a tela em cada tipo de falha */
 export const MENSAGENS_DE_ERRO: Readonly<Record<TipoDeErro, string>>;
+/** começo do texto do pedido de "Atualizar" quando só a etapa do Acompanhamento Operacional falhou (o plantio dos mapas foi gravado) */
+export const ETAPA_ACOMPANHAMENTO_FALHOU: string;
 /** `resultado` dos pedidos que o servidor recusa sem consultar nenhuma fonte */
 export const RESULTADOS: Readonly<{ semPermissaoUnidade: string; semPermissaoFazenda: string; permissaoIndisponivel: string; muitosPedidos: string }>;
 export function tipoDoErro(e: unknown): TipoDeErro;

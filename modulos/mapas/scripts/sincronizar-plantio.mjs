@@ -1,10 +1,14 @@
-// Sincroniza o status de plantio do PIMS (via Agrovex MCP). Com SUPABASE_URL e
-// SUPABASE_SERVICE_ROLE_KEY no ambiente, grava em mapas_plantio_pims (upsert + limpeza das linhas
-// que sumiram do PIMS); sem elas, grava public/dados/plantio.json como antes (uso local).
-// Uso: AGROVEX_TOKEN=... node scripts/sincronizar-plantio.mjs   (ou npm run plantio)
+// Sincroniza o status de plantio do PIMS (via Agrovex MCP) e, depois dele, o Acompanhamento Operacional e a
+// Validação PIMS. É o programa da rotina de hora em hora do servidor (VM) e a biblioteca de atender-pedidos.mjs.
+// No servidor: AGROVEX_TOKEN, SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no ambiente; grava em mapas_plantio_pims
+// (upsert + limpeza das linhas que sumiram do PIMS). Faltando qualquer uma das três, termina com erro (código 1).
+// No computador de quem desenvolve: AGROVEX_TOKEN=... node scripts/sincronizar-plantio.mjs --local   (ou
+// npm run plantio) grava public/dados/plantio.json e não toca no Supabase. O modo local só vale quando pedido
+// (--local ou PLANTIO_LOCAL=1): no servidor, uma variável apagada por engano não pode virar "modo local" em silêncio.
 // Configuração: scripts/plantio.config.json  { "safras": "auto" | ["SOJA 26/27", ...], "url": "..." }
-// Sem dependências (Node >= 20, fetch nativo). O token e a chave de serviço nunca são gravados nem impressos;
-// no Supabase ou no GitHub Actions (logs públicos) o log só traz totais, sem nomes de fazenda (linhasDeLog).
+// Sem dependências: só o Node (18 ou superior, pelo fetch nativo e pelo AbortSignal.timeout; o package.json do
+// módulo pede 20.19 por causa das ferramentas de build). O token e a chave de serviço nunca são gravados nem
+// impressos; gravando no Supabase o log só traz totais, sem nomes de fazenda (linhasDeLog).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -12,6 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const USER_AGENT = 'mapa-chuva-coa/1.0'; // o Cloudflare do Agrovex bloqueia user-agents genéricos (erro 1010)
 const PROTOCOLO = '2025-06-18';
 const TEMPO_LIMITE_MS = 120_000;
+/** Lista de safras do PIMS (PERIODOSAFRA): cadastro, só cresce quando se cadastra safra nova; lida numa consulta só. */
 const SQL_SAFRAS = 'SELECT DE_PER_SAFRA FROM PIMSMCPRD.dbo.PERIODOSAFRA';
 /** Bases do Agrovex usadas aqui: PIMS (SQL Server), ZEUS (clima, PostgreSQL) e os talhões da ZEUS (datalake, Athena). */
 const FONTES = {
@@ -73,8 +78,73 @@ function semZeros(d) {
   return d.replace(/^0+(?=\d)/, '');
 }
 
-/** SQL validada no Agrovex (28/09/2026); o status é calculado em JS por classificar(). Sem comentários '--' (o validador recusa). */
-export function montarSql(nomeSafra) {
+// ---------- paginação ----------
+// O Agrovex corta toda consulta em 5.000 linhas, e a rotina trata o corte como falha (resultado truncado).
+// Por isso a consulta cujo resultado pode crescer é lida em páginas: o SQL ganha um ORDER BY sem empates (a
+// chave da linha; numa consulta agrupada, as colunas do GROUP BY) e, no fim, a cláusula da página. Sem ordem
+// total a paginação repete ou pula linhas, porque cada página é uma consulta nova.
+// As funções montarSql… recebem `pular` e `tamanho`. SEM `pular` devolvem a consulta inteira, com o texto
+// exato de antes da paginação (quem chama sem paginar recebe tudo ou o erro de truncado, nunca um pedaço em
+// silêncio); é também a consulta de reserva de consultarPaginas.
+
+/** linhas por página (menos que o corte de 5.000 do Agrovex) */
+export const PAGINA_CONSULTA = 4000;
+/** teto de páginas de uma consulta (100.000 linhas): passar disso é fonte que não termina, não é dado */
+export const PAGINAS_MAX = 25;
+
+/** Cláusula da página no SQL Server (PIMS): só vale depois de um ORDER BY. */
+const paginaSql = (pular, tamanho) => `OFFSET ${Math.max(0, Math.floor(pular))} ROWS FETCH NEXT ${Math.max(1, Math.floor(tamanho))} ROWS ONLY`;
+/** Cláusula da página no PostgreSQL (ZEUS): a mesma forma que o Athena já usa em montarSqlLimitesZeus. */
+const paginaSqlZeus = (pular, tamanho) => `OFFSET ${Math.max(0, Math.floor(pular))} LIMIT ${Math.max(1, Math.floor(tamanho))}`;
+/** Cláusula da página no HANA (SAP): LIMIT antes de OFFSET. */
+const paginaSqlSap = (pular, tamanho) => `LIMIT ${Math.max(1, Math.floor(tamanho))} OFFSET ${Math.max(0, Math.floor(pular))}`;
+
+/**
+ * Fim de uma consulta que pode ser paginada. Sem `pular`: só o ORDER BY que a consulta sempre teve
+ * (`ordemDeSempre`; vazio = nunca teve), e o SQL fica idêntico ao de antes. Com `pular`: o ORDER BY sem
+ * empates (`ordemTotal`, que começa pela ordem de sempre) e a cláusula da página.
+ */
+function fimDaConsulta(pular, tamanho, ordemDeSempre, ordemTotal, clausula = paginaSql) {
+  if (pular === null || pular === undefined) return ordemDeSempre ? `\nORDER BY ${ordemDeSempre}` : '';
+  return `\nORDER BY ${ordemTotal}\n${clausula(pular, tamanho)}`;
+}
+
+/**
+ * Lê uma consulta inteira, página por página: `montar(pular, tamanho)` devolve o SQL da página que começa na
+ * linha `pular`. Para na primeira página que vier com menos de `tamanho` linhas e devolve { columns, rows }
+ * como se fosse uma consulta só. Passando de PAGINAS_MAX páginas, lança erro (a rotina não fica presa).
+ * `reserva` (as consultas que passaram a ser paginadas em 10/2026): se a fonte RECUSAR a primeira página (erro
+ * da consulta, não queda de rede nem prazo), avisa no log e roda a consulta inteira de sempre, `montar(null)`.
+ * O ORDER BY novo e a cláusula da página não puderam ser conferidos em cada fonte antes de publicar: com a
+ * reserva, uma recusa deixa a rotina como era (inteira, ou erro de truncado acima de 5.000 linhas) em vez de
+ * parar a etapa. Aviso "em páginas foi recusada" no log = corrigir a consulta; sem aviso por algumas semanas,
+ * a reserva pode sair.
+ */
+async function consultarPaginas(cliente, montar, pergunta, rotulo, { fonte = FONTES.pims, tamanho = PAGINA_CONSULTA, reserva = false } = {}) {
+  let columns = [];
+  const rows = [];
+  for (let pagina = 0; pagina < PAGINAS_MAX; pagina++) {
+    let r;
+    try {
+      r = await cliente.consultar(montar(pagina * tamanho, tamanho), pergunta, rotulo, fonte);
+    } catch (e) {
+      if (!reserva || pagina !== 0 || !(e instanceof Error) || e.recusada !== true) throw e;
+      console.warn(`Consulta ao ${fonte.nome} em páginas foi recusada (${rotulo}); usando a consulta inteira, sem paginação. Motivo: ${cliente.semToken(e.message).slice(0, 300)}`);
+      return cliente.consultar(montar(null, tamanho), pergunta, rotulo, fonte);
+    }
+    if (pagina === 0) columns = r.columns;
+    for (const linha of r.rows) rows.push(linha);
+    if (r.rows.length < tamanho) return { columns, rows };
+  }
+  throw erroDoTipo('fonte', `Consulta ao ${fonte.nome} falhou (${rotulo}): mais de ${PAGINAS_MAX} páginas de ${tamanho} linhas (teto de segurança da paginação).`);
+}
+
+/**
+ * SQL validada no Agrovex (28/09/2026); o status é calculado em JS por classificar(). Sem comentários '--' (o
+ * validador recusa). Uma linha por talhão (UPNIVEL3): a ordem de sempre (unidade, código) e, para não haver
+ * empate entre páginas, a chave do talhão.
+ */
+export function montarSql(nomeSafra, pular = null, tamanho = PAGINA_CONSULTA) {
   const safra = `'${String(nomeSafra).replace(/'/g, "''")}'`;
   return `SELECT u.DE_UNI_ADM AS unidade, u2.DE_UPNIVEL2 AS setor, up.CD_UPNIVEL3 AS codigo, ps.DE_PER_SAFRA AS safra,
   up.QT_AREA_PROD AS area_prevista, ISNULL(a.area_plantada,0) AS area_plantada,
@@ -89,8 +159,7 @@ LEFT JOIN PIMSMCPRD.dbo.VARIEDADE v ON v.ID_VARIEDADE = up.ID_VARIEDADE
 LEFT JOIN (SELECT ID_UPNIVEL3, ID_PERIODOSAFRA, SUM(QT_AREA) AS area_plantada, MIN(DT_OPERACAO) AS primeira, MAX(DT_OPERACAO) AS ultima
            FROM PIMSMCPRD.dbo.APPLANTIO GROUP BY ID_UPNIVEL3, ID_PERIODOSAFRA) a
   ON a.ID_UPNIVEL3 = up.ID_UPNIVEL3 AND a.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
-WHERE ps.DE_PER_SAFRA = ${safra}
-ORDER BY unidade, codigo`;
+WHERE ps.DE_PER_SAFRA = ${safra}${fimDaConsulta(pular, tamanho, 'unidade, codigo', 'unidade, codigo, up.ID_UPNIVEL3, up.ID_PERIODOSAFRA')}`;
 }
 
 /** plantado = plantio encerrado ou apontado >= 99% da área prevista; plantando = 0 < apontado < 99%; a_plantar = sem apontamento. */
@@ -207,7 +276,9 @@ async function abrirSessao(url, token, fetchImpl) {
       }), token);
       const texto = r?.result?.content?.[0]?.text ?? '';
       const nome = fonte.nome;
-      if (r?.result?.isError) throw erroDoTipo('fonte', `Consulta ao ${nome} falhou (${rotulo}): ${texto}`);
+      // `recusada`: a fonte respondeu que a consulta falhou (não é rede, prazo nem corte); consultarPaginas usa isso
+      const recusada = (mensagem) => Object.assign(erroDoTipo('fonte', mensagem), { recusada: true });
+      if (r?.result?.isError) throw recusada(`Consulta ao ${nome} falhou (${rotulo}): ${texto}`);
       let dados;
       try {
         dados = JSON.parse(texto);
@@ -216,10 +287,14 @@ async function abrirSessao(url, token, fetchImpl) {
       }
       if (dados?.status !== 'success') {
         const msg = dados?.message ?? dados?.error ?? dados?.detail ?? JSON.stringify(dados);
-        throw erroDoTipo('fonte', `Consulta ao ${nome} falhou (${rotulo}): ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`);
+        throw recusada(`Consulta ao ${nome} falhou (${rotulo}): ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`);
       }
       if (dados.truncated) throw erroDoTipo('fonte', `Consulta ao ${nome} falhou (${rotulo}): resultado truncado (${dados.row_count} linhas).`);
       return { columns: dados.columns ?? [], rows: dados.rows ?? [] };
+    },
+    /** Tira o token de um texto que vai para o log (o que a fonte devolve pode repetir o que recebeu). */
+    semToken(texto) {
+      return token ? String(texto).split(token).join('[REDACTED]') : String(texto);
     },
     async fechar() {
       if (!sessao) return;
@@ -287,7 +362,7 @@ export async function sincronizar({ url, token, safras, excluirPrefixos = [], fe
     }
     const resultado = [];
     for (const nome of nomes) {
-      const r = await cliente.consultar(montarSql(nome), `status de plantio por talhão ${nome}`, nome);
+      const r = await consultarPaginas(cliente, (pular, tamanho) => montarSql(nome, pular, tamanho), `status de plantio por talhão ${nome}`, nome, { reserva: true });
       resultado.push({ nome, unidades: montarUnidades(r, nome) });
     }
     resultado.sort((a, b) => comparar(a.nome, b.nome));
@@ -333,6 +408,28 @@ export function semChave(texto, chave) {
   return chave ? texto.split(chave).join('[REDACTED]') : texto;
 }
 
+/** prazo de uma leitura (GET) no Supabase */
+export const SUPABASE_LEITURA_MS = 60_000;
+/** prazo de uma gravação (POST, PATCH, DELETE) no Supabase: folgado, porque algumas linhas passam de 300 KB */
+export const SUPABASE_GRAVACAO_MS = 120_000;
+
+/**
+ * Toda chamada ao Supabase passa por aqui: é o fetch de sempre, com prazo. Sem ele, uma chamada pendurada só
+ * era encerrada pelo systemd (20 ou 30 minutos depois), segurando a trava das duas rotinas. Prazo estourado
+ * vira um erro com o que estava sendo feito (`acao`); a mensagem é texto nosso, sem a chave (que só vai nos
+ * cabeçalhos). Qualquer outro erro passa como veio.
+ */
+export async function chamarSupabase(fetchImpl, url, init = {}, acao = 'a chamada') {
+  const prazo = !init.method || init.method === 'GET' ? SUPABASE_LEITURA_MS : SUPABASE_GRAVACAO_MS;
+  try {
+    return await fetchImpl(url, { ...init, signal: AbortSignal.timeout(prazo) });
+  } catch (e) {
+    const nome = e !== null && typeof e === 'object' ? e.name : undefined;
+    if (nome !== 'TimeoutError' && nome !== 'AbortError') throw e;
+    throw new Error(`O Supabase não respondeu em ${prazo / 1000} s (${acao}): a chamada foi interrompida.`, { cause: e });
+  }
+}
+
 /**
  * Erro do PostgREST sem dados: só o código e a mensagem (o campo "details" pode trazer a linha recusada,
  * com nomes de fazenda e talhões, e o log do GitHub Actions é público). Corpo que não é JSON → só o status.
@@ -362,7 +459,7 @@ export async function gravarSupabase(arquivo, { url, chave, fetch: fetchImpl = g
     console.warn('PIMS não retornou nenhum talhão; o Supabase não foi alterado.');
     return;
   }
-  const respUpsert = await fetchImpl(`${url}/rest/v1/mapas_plantio_pims?on_conflict=safra,unidade`, {
+  const respUpsert = await chamarSupabase(fetchImpl, `${url}/rest/v1/mapas_plantio_pims?on_conflict=safra,unidade`, {
     method: 'POST',
     headers: {
       ...cabecalhosSupabase(chave),
@@ -370,12 +467,14 @@ export async function gravarSupabase(arquivo, { url, chave, fetch: fetchImpl = g
       Prefer: 'resolution=merge-duplicates,return=minimal',
     },
     body: JSON.stringify(linhas),
-  });
+  }, 'o upsert em mapas_plantio_pims');
   if (!respUpsert.ok) await erroSupabase(respUpsert, chave, 'o upsert em mapas_plantio_pims');
 
-  const respLimpeza = await fetchImpl(
+  const respLimpeza = await chamarSupabase(
+    fetchImpl,
     `${url}/rest/v1/mapas_plantio_pims?gerado_em=lt.${encodeURIComponent(arquivo.geradoEm)}`,
     { method: 'DELETE', headers: cabecalhosSupabase(chave) },
+    'a limpeza de mapas_plantio_pims',
   );
   if (!respLimpeza.ok) await erroSupabase(respLimpeza, chave, 'a limpeza de mapas_plantio_pims');
 }
@@ -397,6 +496,7 @@ export function resumo(dados) {
  * O que imprimir da rodada. O repositório é público e os logs do GitHub Actions também: gravando no
  * Supabase ou rodando no Actions, só totais agregados (sem nome de fazenda nem contagem por fazenda).
  * O detalhe por safra/unidade (resumo) fica para o modo local (plantio.json na própria máquina).
+ * A rotina hoje roda na VM, não no Actions: `githubActions` ficou só nesta função (o programa não o passa mais).
  */
 export function linhasDeLog(dados, { supabase = false, githubActions = false } = {}) {
   if (!supabase && !githubActions) return resumo(dados);
@@ -414,9 +514,16 @@ export function linhasDeLog(dados, { supabase = false, githubActions = false } =
 const PIMS = 'PIMSMCPRD.dbo.';
 const listaSql = (nomes) => nomes.map((n) => `'${String(n).replace(/'/g, "''")}'`).join(',');
 
-/** SELECTs do acompanhamento (validadas no Agrovex em 28/09/2026). ID_UPNIVEL3 vai como texto: o bigint perde precisão no JSON. */
-export function montarSqlAcompanhamento(safras) {
+/**
+ * SELECTs do acompanhamento (validadas no Agrovex em 28/09/2026). ID_UPNIVEL3 vai como texto: o bigint perde precisão no JSON.
+ * Com `pular`, as três saem paginadas (os apontamentos crescem ao longo da safra). A ordem de cada uma não tem
+ * empate: talhões pela chave do talhão; plantio pela chave do boletim (APPLANTIO); colheita por tudo o que
+ * define a linha devolvida (ordem de serviço, unidade, boletim, talhão, instante, área e último lançamento):
+ * duas linhas da APATIVPROD iguais em tudo isso são a mesma linha no resultado, e trocar uma pela outra não muda nada.
+ */
+export function montarSqlAcompanhamento(safras, pular = null, tamanho = PAGINA_CONSULTA) {
   const em = listaSql(safras);
+  const fim = (ordemTotal) => fimDaConsulta(pular, tamanho, '', ordemTotal);
   return {
     talhoes: `SELECT u.DE_UNI_ADM AS unidade, u2.DE_UPNIVEL2 AS setor, ps.DE_PER_SAFRA AS safra,
   CONVERT(varchar(30), up.ID_UPNIVEL3) AS id, up.CD_UPNIVEL3 AS codigo,
@@ -428,7 +535,7 @@ JOIN ${PIMS}UPNIVEL2 u2 ON up.ID_UPNIVEL2 = u2.ID_UPNIVEL2
 JOIN ${PIMS}UPNIVEL1 u1 ON u2.ID_UPNIVEL1 = u1.ID_UPNIVEL1
 JOIN ${PIMS}UNIDADEADM u ON u1.ID_UNIDADEADM = u.ID_UNIDADEADM
 LEFT JOIN ${PIMS}VARIEDADE v ON v.ID_VARIEDADE = up.ID_VARIEDADE
-WHERE ps.DE_PER_SAFRA IN (${em}) AND up.QT_AREA_PROD > 0.1`,
+WHERE ps.DE_PER_SAFRA IN (${em}) AND up.QT_AREA_PROD > 0.1${fim('up.ID_UPNIVEL3, up.ID_PERIODOSAFRA')}`,
     plantio: `SELECT u.DE_UNI_ADM AS unidade, ps.DE_PER_SAFRA AS safra, CONVERT(varchar(30), up.ID_UPNIVEL3) AS id,
   up.CD_UPNIVEL3 AS codigo, CONVERT(varchar(10), a.DT_OPERACAO, 120) AS data, a.QT_AREA AS area,
   e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS cd_operacao, a.FG_REPLANTIO AS replantio
@@ -439,7 +546,7 @@ JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 LEFT JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
 LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
-WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN (${em})`,
+WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN (${em})${fim('a.ID_APPLANTIO, a.ID_UNIDADEADM')}`,
     colheita: `SELECT u.DE_UNI_ADM AS unidade, ps.DE_PER_SAFRA AS safra, CONVERT(varchar(30), up.ID_UPNIVEL3) AS id,
   up.CD_UPNIVEL3 AS codigo, CONVERT(varchar(10), a.DT_OPERACAO, 120) AS data, a.QT_AREA_EXEC AS area,
   e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS cd_operacao
@@ -450,7 +557,7 @@ JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
 LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
-WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em})`,
+WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em})${fim('a.ID_APORDSERVICO, a.ID_UNIDADEADM, a.NO_BOLETIM, a.ID_UPNIVEL3, a.DT_OPERACAO, a.QT_AREA_EXEC, a.LAST_UPDATE')}`,
   };
 }
 
@@ -545,8 +652,12 @@ export function safrasAnteriores(atuais, todas, anos = 3) {
   return [...saida].sort(comparar);
 }
 
-/** Hectares por dia × unidade × safra × operação das safras anteriores (só o total do dia, sem talhão). */
-export function montarSqlHistorico(safras) {
+/**
+ * Hectares por dia × unidade × safra × operação das safras anteriores (só o total do dia, sem talhão).
+ * Com `pular`, paginada. A ordem (unidade, safra, operação, dia) não tem empate: são as colunas dos dois
+ * GROUP BY mais a operação, que distingue as duas metades do UNION.
+ */
+export function montarSqlHistorico(safras, pular = null, tamanho = PAGINA_CONSULTA) {
   const em = listaSql(safras);
   return `SELECT u.DE_UNI_ADM AS unidade, ps.DE_PER_SAFRA AS safra, 'PLANTIO' AS op,
   CONVERT(varchar(10), a.DT_OPERACAO, 120) AS data, SUM(a.QT_AREA) AS area
@@ -568,7 +679,7 @@ JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
 WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em}) AND a.DT_OPERACAO IS NOT NULL
-GROUP BY u.DE_UNI_ADM, ps.DE_PER_SAFRA, CONVERT(varchar(10), a.DT_OPERACAO, 120)`;
+GROUP BY u.DE_UNI_ADM, ps.DE_PER_SAFRA, CONVERT(varchar(10), a.DT_OPERACAO, 120)${fimDaConsulta(pular, tamanho, '', '1, 2, 3, 4')}`;
 }
 
 /**
@@ -609,8 +720,10 @@ export function inicioChuva(agora = new Date(), anos = 3) {
 /**
  * Chuva diária (mm) por fazenda na ZEUS: soma o dia de cada pluviômetro e tira a média entre os
  * pluviômetros da fazenda (a média direta das leituras pesa quem lê mais vezes). Só dias com chuva.
+ * Com `pular`, paginada (uma linha por fazenda × dia com chuva, numa janela de mais de três anos: cresce com
+ * o tempo e com o número de fazendas). A ordem de sempre (fazenda, dia) não tem empate: são as colunas do GROUP BY.
  */
-export function montarSqlChuva(desde) {
+export function montarSqlChuva(desde, pular = null, tamanho = PAGINA_CONSULTA) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   return `WITH pa AS (SELECT DISTINCT ON (picid) picid, farm FROM "DATABASE".stg_zeus_picarea ORDER BY picid, farm),
 por_pic AS (
@@ -621,8 +734,7 @@ por_pic AS (
 SELECT pa.farm AS fazenda, to_char(p.dia, 'YYYY-MM-DD') AS data, round(avg(p.mm)::numeric, 1) AS mm
 FROM por_pic p JOIN pa ON pa.picid = p.picid
 GROUP BY pa.farm, p.dia
-HAVING avg(p.mm) >= 0.2
-ORDER BY 1, 2`;
+HAVING avg(p.mm) >= 0.2${fimDaConsulta(pular, tamanho, '1, 2', '1, 2', paginaSqlZeus)}`;
 }
 
 /** Linhas de acomp_pims da chuva: safra 'CHUVA', uma por unidade conhecida, um apontamento por dia. */
@@ -652,14 +764,15 @@ export async function sincronizarAcompanhamento({ url, token, safras, excluirPre
       : [...new Set(safras.map((s) => String(s).trim()).filter(Boolean))];
     const geradoEm = agora.toISOString();
     if (!nomes.length) return { geradoEm, safras: [], linhas: [] };
-    const sql = montarSqlAcompanhamento(nomes);
-    const talhoes = await cliente.consultar(sql.talhoes, 'talhões do acompanhamento operacional', 'talhões do acompanhamento');
-    const plantio = await cliente.consultar(sql.plantio, 'apontamentos de plantio do acompanhamento operacional', 'plantio do acompanhamento');
-    const colheita = await cliente.consultar(sql.colheita, 'apontamentos de colheita do acompanhamento operacional', 'colheita do acompanhamento');
+    // as quatro consultas do PIMS são lidas em páginas: os apontamentos crescem ao longo da safra
+    const sql = (qual) => (pular, tamanho) => montarSqlAcompanhamento(nomes, pular, tamanho)[qual];
+    const talhoes = await consultarPaginas(cliente, sql('talhoes'), 'talhões do acompanhamento operacional', 'talhões do acompanhamento', { reserva: true });
+    const plantio = await consultarPaginas(cliente, sql('plantio'), 'apontamentos de plantio do acompanhamento operacional', 'plantio do acompanhamento', { reserva: true });
+    const colheita = await consultarPaginas(cliente, sql('colheita'), 'apontamentos de colheita do acompanhamento operacional', 'colheita do acompanhamento', { reserva: true });
     const linhas = linhasAcompanhamento({ talhoes, plantio, colheita }, geradoEm);
     const anteriores = safrasAnteriores(nomes, todas).filter((s) => !nomes.includes(s));
     if (anteriores.length && linhas.length) {
-      const hist = await cliente.consultar(montarSqlHistorico(anteriores), 'hectares por dia das safras anteriores (comparativo)', 'safras anteriores');
+      const hist = await consultarPaginas(cliente, (pular, tamanho) => montarSqlHistorico(anteriores, pular, tamanho), 'hectares por dia das safras anteriores (comparativo)', 'safras anteriores', { reserva: true });
       linhas.push(...linhasHistorico(hist, geradoEm, nomes));
     }
     // chuva por fazenda (ZEUS): se falhar, o acompanhamento segue sem as gotas
@@ -667,7 +780,7 @@ export async function sincronizarAcompanhamento({ url, token, safras, excluirPre
     const unidades = [...new Set(linhas.filter((l) => l.talhoes.length).map((l) => l.unidade))];
     if (unidades.length) {
       try {
-        const res = await cliente.consultar(montarSqlChuva(inicioChuva(agora)), 'chuva diária por fazenda (acompanhamento operacional)', 'chuva', FONTES.zeus);
+        const res = await consultarPaginas(cliente, (pular, tamanho) => montarSqlChuva(inicioChuva(agora), pular, tamanho), 'chuva diária por fazenda (acompanhamento operacional)', 'chuva', { fonte: FONTES.zeus, reserva: true });
         const lc = linhasChuva(res, geradoEm, unidades);
         chuva = lc.length;
         linhas.push(...lc);
@@ -691,11 +804,11 @@ export async function gravarAcompanhamentoSupabase(dados, { url, chave, fetch: f
     console.warn('Acompanhamento: o PIMS não retornou nenhum talhão; acomp_pims não foi alterada.');
     return 'vazio';
   }
-  const resp = await fetchImpl(`${url}/rest/v1/acomp_pims?on_conflict=safra,unidade`, {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/acomp_pims?on_conflict=safra,unidade`, {
     method: 'POST',
     headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(dados.linhas),
-  });
+  }, 'o upsert em acomp_pims');
   if (!resp.ok) {
     const texto = await resp.clone().text().catch(() => '');
     if (resp.status === 404 || /PGRST205|42P01/.test(texto)) {
@@ -704,10 +817,10 @@ export async function gravarAcompanhamentoSupabase(dados, { url, chave, fetch: f
     }
     await erroSupabase(resp, chave, 'o upsert em acomp_pims');
   }
-  const limpeza = await fetchImpl(`${url}/rest/v1/acomp_pims?gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, {
+  const limpeza = await chamarSupabase(fetchImpl, `${url}/rest/v1/acomp_pims?gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, {
     method: 'DELETE',
     headers: cabecalhosSupabase(chave),
-  });
+  }, 'a limpeza de acomp_pims');
   if (!limpeza.ok) await erroSupabase(limpeza, chave, 'a limpeza de acomp_pims');
   return 'ok';
 }
@@ -725,9 +838,11 @@ export function logAcompanhamento(dados, situacao) {
 
 /**
  * Etapa do acompanhamento dentro da rotina: consulta, grava e registra. Erro aqui não interrompe o
- * plantio dos mapas (já gravado); é devolvido para quem chamou decidir o código de saída.
+ * plantio dos mapas (já gravado); é devolvido para quem chamou decidir o código de saída. `aoErro`
+ * (opcional) recebe o erro inteiro: quem responde a um pedido escolhe por ele a mensagem que vai para a
+ * tela, sem repassar o texto de fora (como em rodarValidacao).
  */
-export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globalThis.fetch }) {
+export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globalThis.fetch, aoErro }) {
   try {
     const dados = await sincronizarAcompanhamento({ ...agrovex, fetchImpl });
     const situacao = await gravarAcompanhamentoSupabase(dados, { ...supabase, fetch: fetchImpl });
@@ -736,6 +851,7 @@ export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globa
   } catch (e) {
     const msg = semChave(semChave(e instanceof Error ? e.message : String(e), supabase.chave), agrovex.token);
     console.error(`Acompanhamento: erro (o plantio dos mapas não foi afetado): ${msg}`);
+    if (typeof aoErro === 'function') aoErro(e);
     return msg;
   }
 }
@@ -746,7 +862,7 @@ export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globa
 
 /** Diferença de área (ha) acima da qual uma ordem FECHADA entra na lista "faltando / sobrando área". */
 export const VALID_TOLERANCIA_HA = 1;
-const VALID_PAGINA = 4000;
+const VALID_PAGINA = PAGINA_CONSULTA;
 
 /** Empresa do SAP B1 (base SBO*) em que ficam os depósitos de cada unidade do PIMS (DE_UNI_ADM). */
 export const SAP_EMPRESA_DA_UNIDADE = {
@@ -805,8 +921,6 @@ ORDER BY os.ID_APORDSERVICO
 ${paginaSql(pular, tamanho)}`;
 }
 
-const paginaSql = (pular, tamanho) => `OFFSET ${Math.max(0, Math.floor(pular))} ROWS FETCH NEXT ${Math.max(1, Math.floor(tamanho))} ROWS ONLY`;
-
 /** As ordens da validação (as mesmas de montarSqlOrdensValidacao), em pedaços para as consultas que detalham cada uma. */
 function alvoValidacao(desde) {
   const d = String(desde).replace(/[^0-9-]/g, '');
@@ -862,16 +976,26 @@ ORDER BY os.ID_APORDSERVICO, ap.DT_OPERACAO, ap.NO_BOLETIM, ap.ID_UPNIVEL3
 ${paginaSql(pular, tamanho)}`;
 }
 
-/** Evolução das ordens ABERTAS: hectares apontados por dia em cada ordem. */
-export const SQL_EVOLUCAO_VALIDACAO = `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, CONVERT(varchar(10), x.dia, 23) AS dia, SUM(x.ha) AS ha
+/**
+ * Evolução das ordens ABERTAS: hectares apontados por dia em cada ordem. Com `pular`, paginada (ordens abertas
+ * × dias com apontamento). A ordem de sempre (unidade, ordem, dia) não tem empate: são as colunas do GROUP BY.
+ */
+export function montarSqlEvolucaoValidacao(pular = null, tamanho = VALID_PAGINA) {
+  return `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, CONVERT(varchar(10), x.dia, 23) AS dia, SUM(x.ha) AS ha
 FROM ${PIMS}APORDSERVICO os
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 JOIN (${SQL_EXEC_VALIDACAO}) x ON x.ID_APORDSERVICO = os.ID_APORDSERVICO
 WHERE os.FG_SITUACAO = 'A'
-GROUP BY u.DE_UNI_ADM, os.NO_BOLETIM, CONVERT(varchar(10), x.dia, 23)
-ORDER BY 1, 2, 3`;
+GROUP BY u.DE_UNI_ADM, os.NO_BOLETIM, CONVERT(varchar(10), x.dia, 23)${fimDaConsulta(pular, tamanho, '1, 2, 3', '1, 2, 3')}`;
+}
 
-/** Coordenadores: as Equipes que tiveram ordem aberta ou fechada desde `desde` (ou têm ordem em aberto). */
+/** A evolução inteira, sem paginar (a rotina usa montarSqlEvolucaoValidacao, em páginas). */
+export const SQL_EVOLUCAO_VALIDACAO = montarSqlEvolucaoValidacao();
+
+/**
+ * Coordenadores: as Equipes que tiveram ordem aberta ou fechada desde `desde` (ou têm ordem em aberto).
+ * Uma linha por unidade × equipe: é cadastro (as equipes de cada unidade), lido numa consulta só.
+ */
 export function montarSqlCoordenadoresValidacao(desde) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   return `SELECT u.DE_UNI_ADM AS unidade, e.DE_EQUIPE AS equipe,
@@ -884,7 +1008,7 @@ GROUP BY u.DE_UNI_ADM, e.DE_EQUIPE
 ORDER BY 1, 2`;
 }
 
-/** Depósitos de cada unidade no PIMS que têm código no SAP (CD_INT_ERP = WhsCode). */
+/** Depósitos de cada unidade no PIMS que têm código no SAP (CD_INT_ERP = WhsCode). Cadastro: lido numa consulta só. */
 export const SQL_DEPOSITOS_PIMS = `SELECT DISTINCT u.DE_UNI_ADM AS unidade, d.CD_INT_ERP AS codigo, d.DE_DEPOSITO AS nome
 FROM ${PIMS}DEPOSITO d
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = d.ID_UNIDADEADM
@@ -900,8 +1024,10 @@ const ehCodigoSap = (c) => /^[A-Za-z0-9_.-]{1,20}$/.test(String(c ?? ''));
  * Saldo (≠ 0) de cada item nos depósitos pedidos, numa empresa do SAP, com a ORIGEM de cada item: o
  * depósito de onde ele veio na última transferência de estoque para aquele depósito (OWTR/WTR1, sem as
  * canceladas) e o saldo do item nessa origem. Item que nunca chegou por transferência vem sem origem.
+ * Com `pular`, paginada (cresce a cada depósito vinculado na tela): depois da ordem de sempre (depósito, nome)
+ * vem o código do item, e depósito + item é a chave do saldo (OITW), sem empate.
  */
-export function montarSqlEstoqueSap(codigos) {
+export function montarSqlEstoqueSap(codigos, pular = null, tamanho = PAGINA_CONSULTA) {
   const lista = [...new Set(codigos.map((c) => String(c)).filter(ehCodigoSap))].map((c) => `'${c}'`).join(', ');
   if (!lista) throw new Error('Nenhum depósito válido para consultar o saldo.');
   return `SELECT t."WhsCode" AS deposito, t."ItemCode" AS item, i."ItemName" AS nome, t."OnHand" AS saldo, i."InvntryUom" AS unidade,
@@ -914,8 +1040,7 @@ LEFT JOIN (SELECT l."WhsCode", l."ItemCode", l."FromWhsCod", h."DocDate",
   ON u."WhsCode" = t."WhsCode" AND u."ItemCode" = t."ItemCode" AND u.rn = 1
 LEFT JOIN OWHS w ON w."WhsCode" = u."FromWhsCod"
 LEFT JOIN OITW o ON o."WhsCode" = u."FromWhsCod" AND o."ItemCode" = t."ItemCode"
-WHERE t."WhsCode" IN (${lista}) AND t."OnHand" <> 0
-ORDER BY 1, 3`;
+WHERE t."WhsCode" IN (${lista}) AND t."OnHand" <> 0${fimDaConsulta(pular, tamanho, '1, 3', '1, 3, 2', paginaSqlSap)}`;
 }
 
 /** Item do saldo como a tela lê: { c, n, q, u } e, quando há transferência, { o origem, on nome, oq saldo lá, od data }. */
@@ -1020,8 +1145,12 @@ export function linhasValidacao({ ordens, evolucao, coordenadores, depositos, ta
    falhar (saldo, cadastro do item no depósito, item ou depósito inativo). */
 const ORIGEM_BOLETIM = ['I', 'P', 'T', 'C', 'L']; // insumo, plantio, tratamento de sementes, abastecimento, lubrificação
 
-/** Itens que o SAP recusou (documento -1 na fila), com a unidade, a ordem e o coordenador de cada boletim. */
-export function montarSqlBoletinsFalha(desde) {
+/**
+ * Itens que o SAP recusou (documento -1 na fila), com a unidade, a ordem e o coordenador de cada boletim.
+ * Com `pular`, paginada. A fila não tem chave conhecida aqui: depois da ordem de sempre (unidade, boletim,
+ * item) vêm as outras colunas devolvidas, então só empatam linhas idênticas (trocar uma pela outra não muda nada).
+ */
+export function montarSqlBoletinsFalha(desde, pular = null, tamanho = VALID_PAGINA) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   return `SELECT COALESCE(ui.DE_UNI_ADM, up.DE_UNI_ADM, ut.DE_UNI_ADM, uc.DE_UNI_ADM, ul.DE_UNI_ADM) AS unidade, e.FG_ORIGEM AS origem, e.NO_BOLETIM AS boletim,
   CONVERT(varchar(10), e.DT_CONSUMO, 23) AS dia, CONVERT(varchar(30), e.ID_BOLETIM_DE) AS id_item, e.CD_MATERIAL_ERP AS material, e.QT_CONSUMO AS qtd, e.CD_UNI_MEDIDA AS un,
@@ -1041,12 +1170,15 @@ LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = COALESCE(ai.ID_APORDSER
 LEFT JOIN ${PIMS}EQUIPE eqo ON eqo.ID_EQUIPE = os.ID_EQUIPE
 LEFT JOIN ${PIMS}EQUIPE eqi ON eqi.ID_EQUIPE = ai.ID_EQUIPE
 LEFT JOIN ${PIMS}EQUIPE eqp ON eqp.ID_EQUIPE = ap.ID_EQUIPE
-WHERE e.DT_CONSUMO >= '${d}' AND LTRIM(RTRIM(e.NO_DOC_ERP)) = '-1' AND e.FG_STATUS <> '12'
-ORDER BY 1, 3, 5`;
+WHERE e.DT_CONSUMO >= '${d}' AND LTRIM(RTRIM(e.NO_DOC_ERP)) = '-1' AND e.FG_STATUS <> '12'${fimDaConsulta(pular, tamanho, '1, 3, 5', '1, 3, 5, 2, 4, 6, 7, 8, 9, 10, 11, 12')}`;
 }
 
-/** Boletins ainda não enviados ao SAP (FG_STATUS_EAI = '0'), um por item; boletim sem item vem com o item nulo. */
-export function montarSqlBoletinsPendentes(desde) {
+/**
+ * Boletins ainda não enviados ao SAP (FG_STATUS_EAI = '0'), um por item; boletim sem item vem com o item nulo.
+ * Com `pular`, paginada. Depois da ordem de sempre (unidade, dia, boletim) vêm a origem e a chave do item (colunas
+ * 2 e 5), que já não empatam, e as demais colunas devolvidas (para os boletins sem item).
+ */
+export function montarSqlBoletinsPendentes(desde, pular = null, tamanho = VALID_PAGINA) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   const parte = (origem, cab, id, itens, idItem, qtd, equipe) => `SELECT u.DE_UNI_ADM AS unidade, '${origem}' AS origem, a.NO_BOLETIM AS boletim, CONVERT(varchar(10), a.DT_OPERACAO, 23) AS dia,
   CONVERT(varchar(30), l.${idItem}) AS id_item, i.CD_INT_ERP AS material, i.DE_INSUMO AS nome, l.${qtd} AS qtd, dp.CD_INT_ERP AS deposito, os.NO_BOLETIM AS os,
@@ -1063,31 +1195,36 @@ WHERE a.DT_OPERACAO >= '${d}' AND a.FG_STATUS_EAI = '0' AND a.FG_INTEGRAR = 'S'`
 UNION ALL
 ${parte('P', 'APPLANTIO', 'ID_APPLANTIO', 'APPLANTIO_IN', 'ID_APPLANTIO_IN', 'QT_TOTAL', true)}
 UNION ALL
-${parte('T', 'APTRATSEMENT', 'ID_APTRATSEMENT', 'APTRATSEMENT_IN', 'ID_APTRATSEMENT_IN', 'QT_TOTAL', false)}
-ORDER BY 1, 4, 3`;
+${parte('T', 'APTRATSEMENT', 'ID_APTRATSEMENT', 'APTRATSEMENT_IN', 'ID_APTRATSEMENT_IN', 'QT_TOTAL', false)}${fimDaConsulta(pular, tamanho, '1, 4, 3', '1, 4, 3, 2, 5, 6, 7, 8, 9, 10, 11, 12')}`;
 }
 
 const listaSap = (valores, teste) => [...new Set(valores.map((v) => String(v ?? '')).filter(teste))].map((v) => `'${v}'`).join(', ');
 
-/** Última mensagem do SAP para cada item dos boletins pedidos, com quantas tentativas houve e de quando a quando. */
-export function montarSqlLogIntegracaoSap(boletins, desde) {
+/**
+ * Última mensagem do SAP para cada item dos boletins pedidos, com quantas tentativas houve e de quando a quando.
+ * Com `pular`, paginada pelo item do boletim (coluna 1): a consulta devolve uma linha por item, sem empate.
+ */
+export function montarSqlLogIntegracaoSap(boletins, desde, pular = null, tamanho = PAGINA_CONSULTA) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   const lista = listaSap(boletins, (b) => /^\d{1,18}$/.test(b));
   if (!lista) throw new Error('Nenhum boletim válido para consultar o log de integração.');
   return `SELECT l."U_ID_BOLETIM_DE" AS id_item, l."U_Message" AS msg, t.n AS tentativas, t.primeira, t.ultima
 FROM "@GA_PIMS_LOG" l
 JOIN (SELECT MAX("Code") AS codigo, COUNT(*) AS n, TO_VARCHAR(MIN("U_Date"), 'YYYY-MM-DD') AS primeira, TO_VARCHAR(MAX("U_Date"), 'YYYY-MM-DD') AS ultima
-  FROM "@GA_PIMS_LOG" WHERE "U_NO_BOLETIM" IN (${lista}) AND "U_Date" >= '${d}' GROUP BY "U_ID_BOLETIM_DE") t ON t.codigo = l."Code"`;
+  FROM "@GA_PIMS_LOG" WHERE "U_NO_BOLETIM" IN (${lista}) AND "U_Date" >= '${d}' GROUP BY "U_ID_BOLETIM_DE") t ON t.codigo = l."Code"${fimDaConsulta(pular, tamanho, '', '1', paginaSqlSap)}`;
 }
 
-/** Cadastro e saldo, no SAP, dos itens dos boletins nos depósitos de onde eles vão sair. */
-export function montarSqlSaldoItensSap(itens, depositos) {
+/**
+ * Cadastro e saldo, no SAP, dos itens dos boletins nos depósitos de onde eles vão sair. Com `pular`, paginada
+ * (itens × depósitos dos boletins) por item e depósito (colunas 1 e 5): é a chave do saldo (OITW), sem empate.
+ */
+export function montarSqlSaldoItensSap(itens, depositos, pular = null, tamanho = PAGINA_CONSULTA) {
   const listaItens = listaSap(itens, ehCodigoSap);
   if (!listaItens) throw new Error('Nenhum item válido para consultar o saldo.');
   const listaDeps = listaSap(depositos, ehCodigoSap) || "''";
   return `SELECT i."ItemCode" AS item, i."ItemName" AS nome, i."InvntryUom" AS unidade, i."frozenFor" AS congelado, w."WhsCode" AS deposito, w."OnHand" AS saldo
 FROM OITM i LEFT JOIN OITW w ON w."ItemCode" = i."ItemCode" AND w."WhsCode" IN (${listaDeps})
-WHERE i."ItemCode" IN (${listaItens})`;
+WHERE i."ItemCode" IN (${listaItens})${fimDaConsulta(pular, tamanho, '', '1, 5', paginaSqlSap)}`;
 }
 
 /**
@@ -1227,8 +1364,10 @@ ${paginaSql(pular, tamanho)}`;
 /**
  * Receita das ordens ABERTAS desde `desde`: para cada produto da ordem, o total planejado e o que os
  * boletins (aplicação de insumo e plantio) já consumiram. O que falta consumir é a necessidade.
+ * Com `pular`, paginada. A receita (APORDSERVICO_CO) não tem chave conhecida aqui: depois da ordem de sempre
+ * (unidade, ordem, produto) vêm as outras colunas devolvidas, então só empatam linhas idênticas.
  */
-export function montarSqlNecessidadeValidacao(desde) {
+export function montarSqlNecessidadeValidacao(desde, pular = null, tamanho = VALID_PAGINA) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   return `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, e.DE_EQUIPE AS equipe, CONVERT(varchar(10), os.DT_ABERTURA, 23) AS abertura, op.DE_OPERACAO AS operacao_de,
   i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, co.CONSUMO_TOTAL AS planejado, ISNULL(ci.q, 0) + ISNULL(cp.q, 0) AS consumido
@@ -1242,15 +1381,15 @@ LEFT JOIN (SELECT a.ID_APORDSERVICO, l.ID_INSUMO, SUM(l.QT_CONS_TOTAL) AS q FROM
   WHERE a.ID_APORDSERVICO IS NOT NULL GROUP BY a.ID_APORDSERVICO, l.ID_INSUMO) ci ON ci.ID_APORDSERVICO = os.ID_APORDSERVICO AND ci.ID_INSUMO = co.ID_INSUMO
 LEFT JOIN (SELECT a.ID_APORDSERVICO, l.ID_INSUMO, SUM(l.QT_TOTAL) AS q FROM ${PIMS}APPLANTIO a JOIN ${PIMS}APPLANTIO_IN l ON l.ID_APPLANTIO = a.ID_APPLANTIO
   WHERE a.ID_APORDSERVICO IS NOT NULL GROUP BY a.ID_APORDSERVICO, l.ID_INSUMO) cp ON cp.ID_APORDSERVICO = os.ID_APORDSERVICO AND cp.ID_INSUMO = co.ID_INSUMO
-WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '${d}'
-ORDER BY 1, 2, 7`;
+WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '${d}'${fimDaConsulta(pular, tamanho, '1, 2, 7', '1, 2, 7, 3, 4, 5, 6, 8, 9')}`;
 }
 
 /**
  * Aplicações desde `desdeDia` em que a dose real fugiu da programada além da tolerância, com a Observação do boletim
  * (APAPLINSUMO.DE_OBSERVACAO): é nela que o coordenador justifica, no PIMS, a variação que aconteceu de verdade.
+ * Com `pular`, paginada: depois da ordem de sempre vem a chave do item do boletim (APAPLINS_INSLC), que não empata.
  */
-export function montarSqlDoseValidacao(desdeDia) {
+export function montarSqlDoseValidacao(desdeDia, pular = null, tamanho = VALID_PAGINA) {
   const d = String(desdeDia).replace(/[^0-9-]/g, '');
   return `SELECT u.DE_UNI_ADM AS unidade, a.NO_BOLETIM AS boletim, CONVERT(varchar(10), a.DT_OPERACAO, 23) AS dia, os.NO_BOLETIM AS os, COALESCE(eo.DE_EQUIPE, ea.DE_EQUIPE) AS equipe,
   up.CD_UPNIVEL3 AS talhao, i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, l.QT_DOSE_PROG AS prog, l.QT_DOSE_REAL AS dose_real, l.QT_AREA_EXEC AS ha, l.QT_CONS_TOTAL AS total, a.DE_OBSERVACAO AS obs
@@ -1262,16 +1401,18 @@ LEFT JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = l.ID_UPNIVEL3
 LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO
 LEFT JOIN ${PIMS}EQUIPE eo ON eo.ID_EQUIPE = os.ID_EQUIPE
 LEFT JOIN ${PIMS}EQUIPE ea ON ea.ID_EQUIPE = a.ID_EQUIPE
-WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG > ${VALID_DOSE_TOLERANCIA}
-ORDER BY 1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8`;
+WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG > ${VALID_DOSE_TOLERANCIA}${fimDaConsulta(pular, tamanho, '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8', '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8, l.ID_APAPLINS_INSLC')}`;
 }
 
 /**
  * Boletins que já estão no PIMS, na tela de validação, aguardando a importação (tabelas *_TMP), com a mensagem que o
  * PIMS registrou e o que a conferência precisa para prever o erro da importação: a ordem (se existe, se está aberta,
  * as datas), o planejado e o já apontado no talhão, e se o número do boletim já existe entre os apontamentos.
+ * Com `pular`, paginada. As tabelas *_TMP não têm chave conhecida aqui: depois da ordem de sempre (unidade, dia,
+ * boletim) vêm as outras colunas devolvidas, menos a 9 (a mensagem do PIMS, texto livre): só empatam linhas
+ * iguais em tudo o mais.
  */
-export function montarSqlColetorValidacao(desde) {
+export function montarSqlColetorValidacao(desde, pular = null, tamanho = VALID_PAGINA) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   // `final` = tabela onde o boletim cai depois de importado; `area` = a coluna de hectares do boletim e da tabela final
   const parte = (tipo, tabela, final, area) => {
@@ -1299,8 +1440,7 @@ ${parte('P', 'APPLANTIO_TMP', 'APPLANTIO', 'QT_AREA')}
 UNION ALL
 ${parte('A', 'APATIVPROD_TMP', 'APATIVPROD', 'QT_AREA_EXEC')}
 UNION ALL
-${parte('M', 'APATIVMEC_TMP', 'APATIVMEC', null)}
-ORDER BY 1, 4 DESC, 3`;
+${parte('M', 'APATIVMEC_TMP', 'APATIVMEC', null)}${fimDaConsulta(pular, tamanho, '1, 4 DESC, 3', '1, 4 DESC, 3, 2, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19')}`;
 }
 
 const numOuNulo = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
@@ -1364,7 +1504,7 @@ export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], c
 
 /** Vínculos coordenador ↔ depósito cadastrados na tela (valid_vinculos); sem a tabela → []. */
 export async function lerVinculosValidacao({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
-  const resp = await fetchImpl(`${url}/rest/v1/valid_vinculos?select=unidade,deposito`, { headers: cabecalhosSupabase(chave) });
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/valid_vinculos?select=unidade,deposito`, { headers: cabecalhosSupabase(chave) }, 'a leitura de valid_vinculos');
   if (!resp.ok) {
     const texto = await resp.clone().text().catch(() => '');
     if (resp.status === 404 || /PGRST205|42P01/.test(texto)) return [];
@@ -1401,34 +1541,25 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
   const desde = inicioSafraValidacao(agora);
   const cliente = await abrirSessao(url, token, fetchImpl);
   try {
-    const ordens = [];
-    for (let pular = 0; ; pular += VALID_PAGINA) {
-      const pagina = objetosDe(await cliente.consultar(montarSqlOrdensValidacao(desde, pular), 'ordens de serviço abertas e fechadas com diferença de área (validação)', 'ordens de serviço'));
-      ordens.push(...pagina);
-      if (pagina.length < VALID_PAGINA) break;
-    }
-    const paginar = async (montar, motivo, rotulo) => {
-      const todas = [];
-      for (let pular = 0; ; pular += VALID_PAGINA) {
-        const pagina = objetosDe(await cliente.consultar(montar(pular), motivo, rotulo));
-        todas.push(...pagina);
-        if (pagina.length < VALID_PAGINA) return todas;
-      }
-    };
-    const talhoes = await paginar((pular) => montarSqlTalhoesValidacao(desde, pular), 'talhões planejados das ordens de serviço (validação)', 'talhões das ordens');
-    const apontamentos = await paginar((pular) => montarSqlApontamentosValidacao(desde, pular), 'apontamentos de cada ordem de serviço (validação)', 'apontamentos das ordens');
-    const evolucao = objetosDe(await cliente.consultar(SQL_EVOLUCAO_VALIDACAO, 'área apontada por dia nas ordens abertas (validação)', 'evolução das ordens'));
+    // Todas as consultas que crescem com a safra são lidas em páginas (consultarPaginas, com teto de páginas).
+    // `reserva`: as que passaram a ser paginadas agora; se a fonte recusar a página, vale a consulta inteira de sempre.
+    const paginar = async (montar, motivo, rotulo, reserva = false) => objetosDe(await consultarPaginas(cliente, montar, motivo, rotulo, { tamanho: VALID_PAGINA, reserva }));
+    const ordens = await paginar((pular, tamanho) => montarSqlOrdensValidacao(desde, pular, tamanho), 'ordens de serviço abertas e fechadas com diferença de área (validação)', 'ordens de serviço');
+    const talhoes = await paginar((pular, tamanho) => montarSqlTalhoesValidacao(desde, pular, tamanho), 'talhões planejados das ordens de serviço (validação)', 'talhões das ordens');
+    const apontamentos = await paginar((pular, tamanho) => montarSqlApontamentosValidacao(desde, pular, tamanho), 'apontamentos de cada ordem de serviço (validação)', 'apontamentos das ordens');
+    const evolucao = await paginar((pular, tamanho) => montarSqlEvolucaoValidacao(pular, tamanho), 'área apontada por dia nas ordens abertas (validação)', 'evolução das ordens', true);
+    // cadastros (equipes e depósitos): pequenos e limitados, numa consulta só
     const coordenadores = objetosDe(await cliente.consultar(montarSqlCoordenadoresValidacao(desde), 'coordenadores com ordem de serviço na safra (validação)', 'coordenadores'));
     const depositos = objetosDe(await cliente.consultar(SQL_DEPOSITOS_PIMS, 'depósitos do PIMS com código do SAP (validação)', 'depósitos'));
-    const falhas = objetosDe(await cliente.consultar(montarSqlBoletinsFalha(desde), 'itens de boletim recusados pelo SAP na integração (validação)', 'boletins com falha'));
-    const pendentes = objetosDe(await cliente.consultar(montarSqlBoletinsPendentes(desde), 'boletins ainda não enviados ao SAP (validação)', 'boletins pendentes'));
+    const falhas = await paginar((pular, tamanho) => montarSqlBoletinsFalha(desde, pular, tamanho), 'itens de boletim recusados pelo SAP na integração (validação)', 'boletins com falha', true);
+    const pendentes = await paginar((pular, tamanho) => montarSqlBoletinsPendentes(desde, pular, tamanho), 'boletins ainda não enviados ao SAP (validação)', 'boletins pendentes', true);
     // sem protótipo, como em depositosVinculados: as chaves são empresas, unidades e códigos de depósito
     const logs = Object.create(null);
     const sapItens = Object.create(null);
-    const apontRecentes = await paginar((pular) => montarSqlApontamentosRecentes(diaAnterior(agora, VALID_DIAS_APONT - 1), pular), 'apontamentos feitos ou lançados nos últimos dias (validação)', 'apontamentos recentes');
-    const necessidade = objetosDe(await cliente.consultar(montarSqlNecessidadeValidacao(desde), 'produtos planejados e já consumidos nas ordens abertas (validação)', 'necessidade das ordens'));
-    const dose = objetosDe(await cliente.consultar(montarSqlDoseValidacao(diaAnterior(agora, VALID_DIAS_DOSE)), 'aplicações com dose real fora da programada (validação)', 'dose real x programada'));
-    const coletor = objetosDe(await cliente.consultar(montarSqlColetorValidacao(desde), 'boletins na tela de validação do PIMS, aguardando a importação (validação)', 'boletins em validação'));
+    const apontRecentes = await paginar((pular, tamanho) => montarSqlApontamentosRecentes(diaAnterior(agora, VALID_DIAS_APONT - 1), pular, tamanho), 'apontamentos feitos ou lançados nos últimos dias (validação)', 'apontamentos recentes');
+    const necessidade = await paginar((pular, tamanho) => montarSqlNecessidadeValidacao(desde, pular, tamanho), 'produtos planejados e já consumidos nas ordens abertas (validação)', 'necessidade das ordens', true);
+    const dose = await paginar((pular, tamanho) => montarSqlDoseValidacao(diaAnterior(agora, VALID_DIAS_DOSE), pular, tamanho), 'aplicações com dose real fora da programada (validação)', 'dose real x programada', true);
+    const coletor = await paginar((pular, tamanho) => montarSqlColetorValidacao(desde, pular, tamanho), 'boletins na tela de validação do PIMS, aguardando a importação (validação)', 'boletins em validação', true);
 
     const avisos = [];
     const depositosSap = Object.create(null);
@@ -1446,14 +1577,14 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
         const daEmpresa = (r) => empresaDa(r.unidade) === empresa;
         const numeros = falhas.filter(daEmpresa).map((r) => String(r.boletim ?? ''));
         if (numeros.some((b) => /^\d{1,18}$/.test(b))) {
-          logs[empresa] = new Map(objetosDe(await cliente.consultar(montarSqlLogIntegracaoSap(numeros, desde), 'mensagens do SAP para os boletins recusados (validação)', `log de integração ${empresa}`, fonte))
+          logs[empresa] = new Map(objetosDe(await consultarPaginas(cliente, (pular, tamanho) => montarSqlLogIntegracaoSap(numeros, desde, pular, tamanho), 'mensagens do SAP para os boletins recusados (validação)', `log de integração ${empresa}`, { fonte, reserva: true }))
             .map((r) => [String(r.id_item), { msg: txt(r.msg), n: Number(r.tentativas) || 0, primeira: txt(r.primeira), ultima: txt(r.ultima) }]));
         }
         const doSap = [...falhas, ...pendentes].filter(daEmpresa);
         if (doSap.some((r) => ehCodigoSap(r.material))) {
           const itens = new Map();
           const saldo = new Map();
-          for (const r of objetosDe(await cliente.consultar(montarSqlSaldoItensSap(doSap.map((r) => r.material), doSap.map((r) => r.deposito)), 'cadastro e saldo dos itens dos boletins (validação)', `itens ${empresa}`, fonte))) {
+          for (const r of objetosDe(await consultarPaginas(cliente, (pular, tamanho) => montarSqlSaldoItensSap(doSap.map((r) => r.material), doSap.map((r) => r.deposito), pular, tamanho), 'cadastro e saldo dos itens dos boletins (validação)', `itens ${empresa}`, { fonte, reserva: true }))) {
             const item = txt(r.item);
             if (!item) continue;
             itens.set(item, { nome: txt(r.nome) ?? '', un: txt(r.unidade) ?? '', inativo: txt(r.congelado) === 'Y' });
@@ -1463,7 +1594,7 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
         }
         const porUnidade = vinculados[empresa];
         if (!porUnidade) continue;
-        const res = objetosDe(await cliente.consultar(montarSqlEstoqueSap(Object.values(porUnidade).flat()), 'saldo dos depósitos dos coordenadores e origem de cada produto pelas transferências (validação)', `saldo ${empresa}`, fonte));
+        const res = objetosDe(await consultarPaginas(cliente, (pular, tamanho) => montarSqlEstoqueSap(Object.values(porUnidade).flat(), pular, tamanho), 'saldo dos depósitos dos coordenadores e origem de cada produto pelas transferências (validação)', `saldo ${empresa}`, { fonte, reserva: true }));
         for (const [unidade, codigos] of Object.entries(porUnidade)) {
           const porDeposito = (estoque[unidade] ??= Object.create(null));
           for (const c of codigos) porDeposito[c] = [];
@@ -1493,11 +1624,11 @@ export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchI
     console.warn('Validação: o PIMS não retornou nenhuma ordem; valid_pims não foi alterada.');
     return 'vazio';
   }
-  const enviar = (linhas) => fetchImpl(`${url}/rest/v1/valid_pims?on_conflict=unidade`, {
+  const enviar = (linhas) => chamarSupabase(fetchImpl, `${url}/rest/v1/valid_pims?on_conflict=unidade`, {
     method: 'POST',
     headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(linhas),
-  });
+  }, 'o upsert em valid_pims');
   let resp = await enviar(dados.linhas);
   if (!resp.ok && /PGRST204/.test(await resp.clone().text().catch(() => ''))) {
     // banco ainda sem as colunas novas (scripts 0008 e 0009): grava o resto, para as ordens não pararem
@@ -1512,7 +1643,7 @@ export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchI
     }
     await erroSupabase(resp, chave, 'o upsert em valid_pims');
   }
-  const limpeza = await fetchImpl(`${url}/rest/v1/valid_pims?gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, { method: 'DELETE', headers: cabecalhosSupabase(chave) });
+  const limpeza = await chamarSupabase(fetchImpl, `${url}/rest/v1/valid_pims?gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, { method: 'DELETE', headers: cabecalhosSupabase(chave) }, 'a limpeza de valid_pims');
   if (!limpeza.ok) await erroSupabase(limpeza, chave, 'a limpeza de valid_pims');
   return 'ok';
 }
@@ -1541,7 +1672,10 @@ export async function rodarValidacao({ agrovex, supabase, fetchImpl = globalThis
 
 // ---------- boletins de atividades mecanizadas (botão "Buscar direto no PIMS" de Mecanizadas) ----------
 
-/** período máximo de um pedido de boletins (dias) */
+/**
+ * período máximo de um pedido de boletins: dias entre a primeira e a última data (ate − de), a mesma conta do
+ * banco (mec_pims_pedidos_periodo: ate - de <= 62). O pedido que o banco aceitou não pode ser recusado aqui.
+ */
 export const MEC_MAX_DIAS = 62;
 /** linhas por consulta (o servidor de dados corta o resultado em 5.000) e teto do pedido inteiro */
 const MEC_PAGINA = 4000;
@@ -1554,7 +1688,10 @@ export const MEC_CABECALHO = [
   'Total Hr/Km', 'Situação',
 ];
 
-/** Confere o pedido: unidade do PIMS (ex.: 'T. FLECHAS') e período 'YYYY-MM-DD' de até MEC_MAX_DIAS dias; lança Error legível. */
+/**
+ * Confere o pedido: unidade do PIMS (ex.: 'T. FLECHAS') e período 'YYYY-MM-DD' com até MEC_MAX_DIAS dias entre as
+ * duas datas; lança Error legível. `dias` (devolvido e citado na mensagem) conta os dois extremos.
+ */
 export function validarPedidoMec(unidade, de, ate) {
   const u = String(unidade ?? '').trim().toUpperCase();
   if (!/^[A-Z0-9][A-Z0-9 .]{1,29}$/.test(u)) throw erroDoTipo('invalido', 'Unidade inválida.');
@@ -1562,7 +1699,7 @@ export function validarPedidoMec(unidade, de, ate) {
   if (!ehData(de) || !ehData(ate)) throw erroDoTipo('invalido', 'Período inválido: informe as duas datas.');
   if (de > ate) throw erroDoTipo('invalido', 'Período inválido: a data inicial é depois da final.');
   const dias = Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000) + 1;
-  if (dias > MEC_MAX_DIAS) throw erroDoTipo('invalido', `Período muito longo (${dias} dias): o máximo é ${MEC_MAX_DIAS} dias.`);
+  if (dias - 1 > MEC_MAX_DIAS) throw erroDoTipo('invalido', `Período muito longo (${dias} dias): o máximo é ${MEC_MAX_DIAS} dias.`);
   return { unidade: u, de, ate, dias };
 }
 
@@ -1658,7 +1795,10 @@ export async function boletinsMecanizadas({ url, token, unidade, de, ate, fetchI
 
 // ---------- chuva por PIC (botão "Inserir dados via integração" do Mapa de Chuva) ----------
 
-/** período máximo de um pedido de chuva (dias) */
+/**
+ * período máximo de um pedido de chuva: dias entre a primeira e a última data (ate − de), a mesma conta do
+ * banco (mapas_chuva_pedidos_periodo: ate - de <= 366). O pedido que o banco aceitou não pode ser recusado aqui.
+ */
 export const CHUVA_PICS_MAX_DIAS = 366;
 
 /** 'hh:mm' (ou 'hh:mm:ss', como o Postgres devolve a coluna time) → 'hh:mm'; fora do formato → null. */
@@ -1668,15 +1808,16 @@ function horaDoPedido(h) {
 }
 
 /**
- * Confere as datas do pedido ('YYYY-MM-DD', de ≤ até, no máximo CHUVA_PICS_MAX_DIAS dias) e, se vierem, a
- * hora inicial e a final ('hh:mm', as duas ou nenhuma); lança Error legível. Sem hora devolve { de, ate, dias }.
+ * Confere as datas do pedido ('YYYY-MM-DD', de ≤ até, no máximo CHUVA_PICS_MAX_DIAS dias entre as duas) e, se
+ * vierem, a hora inicial e a final ('hh:mm', as duas ou nenhuma); lança Error legível. Sem hora devolve
+ * { de, ate, dias }; `dias` (devolvido e citado na mensagem) conta os dois extremos.
  */
 export function validarPeriodoChuva(de, ate, deHora = null, ateHora = null) {
   const ehData = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
   if (!ehData(de) || !ehData(ate)) throw erroDoTipo('invalido', 'Período inválido: informe as duas datas.');
   if (de > ate) throw erroDoTipo('invalido', 'Período inválido: a data inicial é depois da final.');
   const dias = Math.round((Date.parse(`${ate}T00:00:00Z`) - Date.parse(`${de}T00:00:00Z`)) / 86_400_000) + 1;
-  if (dias > CHUVA_PICS_MAX_DIAS) throw erroDoTipo('invalido', `Período muito longo (${dias} dias): o máximo é ${CHUVA_PICS_MAX_DIAS} dias.`);
+  if (dias - 1 > CHUVA_PICS_MAX_DIAS) throw erroDoTipo('invalido', `Período muito longo (${dias} dias): o máximo é ${CHUVA_PICS_MAX_DIAS} dias.`);
   const vazia = (h) => h === null || h === undefined || h === '';
   if (vazia(deHora) && vazia(ateHora)) return { de, ate, dias };
   if (vazia(deHora) || vazia(ateHora)) throw erroDoTipo('invalido', 'Período inválido: informe a hora inicial e a final.');
@@ -1793,7 +1934,11 @@ export async function chuvaPorPicZeus({ url, token, fazenda, de, ate, deHora = n
 
 // ---------- último dia da ZEUS no banco (aviso ao lado de "Inserir dados via integração") ----------
 
-/** Dias para trás em que se procura a última leitura de cada fazenda (fazenda parada há mais que isso some do aviso). */
+/**
+ * Dias para trás em que se procura a última leitura de cada fazenda. Fazenda parada há mais que isso deixa de
+ * vir na consulta e some do aviso: atualizarSituacaoZeus (atender-pedidos.mjs) apaga, depois de gravar, as
+ * linhas de mapas_zeus_situacao que não vieram na rodada.
+ */
 export const ZEUS_ULTIMO_DIA_JANELA = 45;
 
 /**
@@ -1890,8 +2035,9 @@ const dataSql = (d) => String(d).replace(/[^0-9-]/g, '').slice(0, 10);
  * Chuva diária de cada talhão desde `desde` (stg_field_data, a tabela do Power BI), uma linha por talhão:
  * `de` e `ate` = primeiro e último dia com registro e `dias` = só os dias com chuva, como 'n:mm' (n = dias
  * corridos desde `desde`; mm com duas casas, como no Power BI). Talhão de nome vazio fica de fora.
+ * Com `pular`, paginada: a ordem de sempre (unidade, talhão) são as colunas do GROUP BY, sem empate.
  */
-export function montarSqlChuvaTalhoes(desde) {
+export function montarSqlChuvaTalhoes(desde, pular = null, tamanho = PAGINA_CONSULTA) {
   const d = dataSql(desde);
   return `SELECT unidade, fieldname,
   (min(data)::date - DATE '${d}') AS de, (max(data)::date - DATE '${d}') AS ate,
@@ -1899,8 +2045,7 @@ export function montarSqlChuvaTalhoes(desde) {
     FILTER (WHERE round(pluviometry::numeric, 2) > 0) AS dias
 FROM "DATABASE".stg_field_data
 WHERE data >= DATE '${d}' AND coalesce(fieldname, '') <> ''
-GROUP BY unidade, fieldname
-ORDER BY unidade, fieldname`;
+GROUP BY unidade, fieldname${fimDaConsulta(pular, tamanho, 'unidade, fieldname', 'unidade, fieldname', paginaSqlZeus)}`;
 }
 
 /** Os dias que a stg_field_data tem em cada fazenda (a tabela tem falhas: dia ausente é dia sem dado, não seca). */
@@ -1966,10 +2111,18 @@ export function ciclosDoPims(linhas) {
     .filter((c) => c.inicio && c.fim);
 }
 
-/** Vínculo talhão → pluviômetro da ZEUS, com o cadastro do pluviômetro (a tabela repete o PIC a cada talhão). */
-export const SQL_VINCULOS_ZEUS = `SELECT DISTINCT farm, talhao, picid, picname, lat, lon
+/**
+ * Vínculo talhão → pluviômetro da ZEUS, com o cadastro do pluviômetro (a tabela repete o PIC a cada talhão).
+ * Com `pular`, paginada por todas as colunas devolvidas: com o DISTINCT, não há duas linhas iguais.
+ */
+export function montarSqlVinculosZeus(pular = null, tamanho = PAGINA_CONSULTA) {
+  return `SELECT DISTINCT farm, talhao, picid, picname, lat, lon
 FROM "DATABASE".stg_zeus_picarea
-WHERE picid IS NOT NULL`;
+WHERE picid IS NOT NULL${fimDaConsulta(pular, tamanho, '', '1, 2, 3, 4, 5, 6', paginaSqlZeus)}`;
+}
+
+/** Os vínculos inteiros, sem paginar (a rotina usa montarSqlVinculosZeus, em páginas). */
+export const SQL_VINCULOS_ZEUS = montarSqlVinculosZeus();
 
 /**
  * Chuva diária medida em cada pluviômetro desde `desde`, uma linha por pluviômetro: `dias` lista os dias com
@@ -2102,7 +2255,7 @@ export async function sincronizarChuvaTalhao({ url, token, fetchImpl = fetch, ag
   const dias = diasDaJanelaChuva(desde, agora);
   const cliente = await abrirSessao(url, token, fetchImpl);
   try {
-    const talhoes = await cliente.consultar(montarSqlChuvaTalhoes(desde), 'chuva diária por talhão da ZEUS (stg_field_data)', 'chuva por talhão', FONTES.zeus);
+    const talhoes = await consultarPaginas(cliente, (pular, tamanho) => montarSqlChuvaTalhoes(desde, pular, tamanho), 'chuva diária por talhão da ZEUS (stg_field_data)', 'chuva por talhão', { fonte: FONTES.zeus, reserva: true });
     const diasComDado = await cliente.consultar(montarSqlDiasChuvaTalhoes(desde), 'dias com chuva por talhão na ZEUS (stg_field_data)', 'dias da chuva por talhão', FONTES.zeus);
     const safras = safrasDaJanelaChuva(desde, agora);
     const talhoesPims = [];
@@ -2112,7 +2265,7 @@ export async function sincronizarChuvaTalhao({ url, token, fetchImpl = fetch, ag
       if (pagina.length < CHUVA_CICLOS_PAGINA) break;
     }
     const ciclos = ciclosDoPims(talhoesPims);
-    const vinculos = await cliente.consultar(SQL_VINCULOS_ZEUS, 'vínculo talhão × pluviômetro da ZEUS (chuva por talhão)', 'vínculos da ZEUS', FONTES.zeus);
+    const vinculos = await consultarPaginas(cliente, (pular, tamanho) => montarSqlVinculosZeus(pular, tamanho), 'vínculo talhão × pluviômetro da ZEUS (chuva por talhão)', 'vínculos da ZEUS', { fonte: FONTES.zeus, reserva: true });
     const chuva = await cliente.consultar(montarSqlChuvaDiariaPics(desde), 'chuva diária por pluviômetro (chuva por talhão)', 'chuva diária por pluviômetro', FONTES.zeus);
     return linhasChuvaTalhao({ talhoes, diasComDado, ciclos, vinculos, chuva }, desde, dias, agora.toISOString());
   } finally {
@@ -2145,11 +2298,14 @@ ORDER BY idfield
 OFFSET ${Math.max(0, Math.floor(pular))} LIMIT ${Math.max(1, Math.floor(tamanho))}`;
 }
 
-/** Os talhões que têm chuva na stg_field_data desde `desde` (unidade + nome). */
-export function montarSqlTalhoesComChuva(desde) {
+/**
+ * Os talhões que têm chuva na stg_field_data desde `desde` (unidade + nome). Com `pular`, paginada pelas duas
+ * colunas devolvidas: com o DISTINCT, não há duas linhas iguais.
+ */
+export function montarSqlTalhoesComChuva(desde, pular = null, tamanho = PAGINA_CONSULTA) {
   return `SELECT DISTINCT unidade, fieldname
 FROM "DATABASE".stg_field_data
-WHERE data >= DATE '${dataSql(desde)}' AND coalesce(fieldname, '') <> ''`;
+WHERE data >= DATE '${dataSql(desde)}' AND coalesce(fieldname, '') <> ''${fimDaConsulta(pular, tamanho, '', '1, 2', paginaSqlZeus)}`;
 }
 
 /**
@@ -2244,7 +2400,7 @@ export function linhasLimitesZeus(campos, comChuva, geradoEm) {
 export async function sincronizarLimitesZeus({ url, token, fetchImpl = fetch, agora = new Date() }) {
   const cliente = await abrirSessao(url, token, fetchImpl);
   try {
-    const comChuva = await cliente.consultar(montarSqlTalhoesComChuva(inicioChuvaTalhao(agora)), 'talhões com chuva na ZEUS (stg_field_data)', 'talhões com chuva', FONTES.zeus);
+    const comChuva = await consultarPaginas(cliente, (pular, tamanho) => montarSqlTalhoesComChuva(inicioChuvaTalhao(agora), pular, tamanho), 'talhões com chuva na ZEUS (stg_field_data)', 'talhões com chuva', { fonte: FONTES.zeus, reserva: true });
     const unidades = new Set(objetosDe(comChuva).map((r) => chaveNome(r.unidade)).filter(Boolean));
     const fazendas = objetosDe(await cliente.consultar(SQL_UNIDADES_LIMITES_ZEUS, 'fazendas com talhões da ZEUS no datalake (chuva por talhão)', 'fazendas com limite', FONTES.solos));
     const campos = new Map();
@@ -2268,13 +2424,41 @@ export async function sincronizarLimitesZeus({ url, token, fetchImpl = fetch, ag
 
 // ---------- execução pela linha de comando ----------
 
+/**
+ * O que a linha de comando pede, pelos argumentos e pelo ambiente:
+ *   { local: false, token, supabaseUrl, supabaseChave } — a rotina do servidor: consulta o PIMS e grava no Supabase;
+ *   { local: true, token, … }  — só com --local (ou PLANTIO_LOCAL=1): grava public/dados/plantio.json nesta
+ *     máquina e não toca no Supabase, mesmo que as variáveis dele estejam no ambiente.
+ * Sem o pedido de modo local, faltar AGROVEX_TOKEN, SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY LANÇA erro: antes,
+ * sem as variáveis do Supabase a rotina caía no modo local sem avisar, e na VM isso era parar de atualizar o
+ * banco em silêncio. A mensagem traz só os nomes das variáveis, nunca os valores.
+ */
+export function modoDeExecucao(args = [], env = {}) {
+  const valor = (nome) => (typeof env[nome] === 'string' ? env[nome].trim() : '');
+  const token = valor('AGROVEX_TOKEN');
+  if (args.includes('--local') || valor('PLANTIO_LOCAL') === '1') return { local: true, token, supabaseUrl: '', supabaseChave: '' };
+  const supabaseUrl = valor('SUPABASE_URL');
+  const supabaseChave = valor('SUPABASE_SERVICE_ROLE_KEY');
+  const faltam = [['AGROVEX_TOKEN', token], ['SUPABASE_URL', supabaseUrl], ['SUPABASE_SERVICE_ROLE_KEY', supabaseChave]].filter(([, v]) => !v).map(([nome]) => nome);
+  if (faltam.length) {
+    const nomes = faltam.length === 1 ? faltam[0] : `${faltam.slice(0, -1).join(', ')} e ${faltam[faltam.length - 1]}`;
+    throw new Error(
+      `${faltam.length === 1 ? 'Falta' : 'Faltam'} ${nomes} no ambiente: nada foi consultado nem gravado. ` +
+      'No servidor, confira o arquivo de variáveis da rotina. Para gravar public/dados/plantio.json nesta máquina, sem o Supabase, rode com --local (npm run plantio).',
+    );
+  }
+  return { local: false, token, supabaseUrl, supabaseChave };
+}
+
 async function main() {
+  // antes de qualquer consulta: sem as variáveis (e sem --local) a rotina termina com erro e código de saída 1
+  const modo = modoDeExecucao(process.argv.slice(2), process.env);
   const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const config = JSON.parse(readFileSync(join(raiz, 'scripts', 'plantio.config.json'), 'utf8'));
-  const token = process.env.AGROVEX_TOKEN?.trim();
+  const token = modo.token;
   if (!token) {
-    const aviso = 'AGROVEX_TOKEN não definido: plantio.json não foi atualizado.';
-    console.warn(process.env.GITHUB_ACTIONS ? `::warning::${aviso}` : aviso);
+    // só acontece no modo local (sem ele, a falta do token já virou erro acima)
+    console.warn('AGROVEX_TOKEN não definido: plantio.json não foi atualizado.');
     return;
   }
   // conferido antes de qualquer chamada: o token só sai para o host do Agrovex (o endereço vem de arquivo baixado)
@@ -2285,21 +2469,18 @@ async function main() {
     safras: config.safras ?? 'auto',
     excluirPrefixos: config.excluirPrefixos ?? [],
   });
-  const supabaseUrl = process.env.SUPABASE_URL?.trim();
-  const supabaseChave = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  const gravaNoSupabase = Boolean(supabaseUrl && supabaseChave);
   const log = () => {
-    const opcoes = { supabase: gravaNoSupabase, githubActions: Boolean(process.env.GITHUB_ACTIONS) };
-    for (const l of linhasDeLog(dados, opcoes)) console.log(l);
+    for (const l of linhasDeLog(dados, { supabase: !modo.local })) console.log(l);
   };
-  if (gravaNoSupabase) {
-    await gravarSupabase(dados, { url: supabaseUrl, chave: supabaseChave, fetch });
+  if (!modo.local) {
+    const supabase = { url: modo.supabaseUrl, chave: modo.supabaseChave };
+    await gravarSupabase(dados, { ...supabase, fetch });
     log();
     // Acompanhamento Operacional: depois do plantio dos mapas; um erro nele não desfaz o que já foi gravado
     if (config.acompanhamento !== false) {
       const erro = await rodarAcompanhamento({
         agrovex: { url: urlAgrovex, token, safras: config.safras ?? 'auto', excluirPrefixos: config.excluirPrefixos ?? [] },
-        supabase: { url: supabaseUrl, chave: supabaseChave },
+        supabase,
       });
       if (erro) process.exitCode = 1;
     }
@@ -2307,12 +2488,13 @@ async function main() {
     if (config.validacao !== false) {
       const erro = await rodarValidacao({
         agrovex: { url: urlAgrovex, token },
-        supabase: { url: supabaseUrl, chave: supabaseChave },
+        supabase,
       });
       if (erro) process.exitCode = 1;
     }
     return;
   }
+  // modo local (--local): o resumo por unidade e o arquivo public/dados/plantio.json, só nesta máquina
   log();
 
   const destino = join(raiz, 'public', 'dados', 'plantio.json');

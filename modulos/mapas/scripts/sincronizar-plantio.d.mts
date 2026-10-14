@@ -36,7 +36,12 @@ export const AGROVEX_HOST: string;
 /** confere o endereço do Agrovex (https, só AGROVEX_HOST) e devolve-o normalizado; qualquer outro lança erro */
 export function conferirUrlAgrovex(url: unknown): string;
 export function normalizarCodigo(s: string | null | undefined): string;
-export function montarSql(nomeSafra: string): string;
+/** linhas por página das consultas paginadas (o Agrovex corta o resultado em 5.000) */
+export const PAGINA_CONSULTA: number;
+/** teto de páginas de uma consulta paginada */
+export const PAGINAS_MAX: number;
+/** sem `pular`, a consulta inteira (sem paginar); com `pular`, a página que começa nessa linha */
+export function montarSql(nomeSafra: string, pular?: number | null, tamanho?: number): string;
 export function classificar(t: {
   areaPrevista: number | null;
   areaPlantada: number | null;
@@ -65,6 +70,21 @@ export function gravarSupabase(
 ): Promise<void>;
 export function cabecalhosSupabase(chave: string): Record<string, string>;
 export function semChave(texto: string, chave: string): string;
+/** prazo (ms) de uma leitura e de uma gravação no Supabase */
+export const SUPABASE_LEITURA_MS: number;
+export const SUPABASE_GRAVACAO_MS: number;
+/** o fetch ao Supabase, com prazo; prazo estourado vira erro com `acao` no texto */
+export function chamarSupabase(
+  fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
+  url: string,
+  init?: RequestInit,
+  acao?: string,
+): Promise<Response>;
+/** o que a linha de comando pede: gravar no Supabase ou, só com --local / PLANTIO_LOCAL=1, o modo local; variável faltando lança erro */
+export function modoDeExecucao(
+  args?: string[],
+  env?: Record<string, string | undefined>,
+): { local: boolean; token: string; supabaseUrl: string; supabaseChave: string };
 
 // ---- Acompanhamento Operacional (tabela acomp_pims) ----
 
@@ -131,7 +151,7 @@ export interface AcompanhamentoScript {
 
 type Resultado = { columns: string[]; rows: unknown[][] };
 
-export function montarSqlAcompanhamento(safras: string[]): { talhoes: string; plantio: string; colheita: string };
+export function montarSqlAcompanhamento(safras: string[], pular?: number | null, tamanho?: number): { talhoes: string; plantio: string; colheita: string };
 export function limparVariedade(v: string | null | undefined): string | null;
 export function primeiroNome(s: string | null | undefined): string;
 export function linhasAcompanhamento(
@@ -142,9 +162,9 @@ export function culturaDaSafra(nome: string): string;
 export function safrasAnteriores(atuais: string[], todas: string[], anos?: number): string[];
 export function unidadeDaFazendaZeus(nome: string): string;
 export function inicioChuva(agora?: Date, anos?: number): string;
-export function montarSqlChuva(desde: string): string;
+export function montarSqlChuva(desde: string, pular?: number | null, tamanho?: number): string;
 export function linhasChuva(r: Resultado, geradoEm: string, unidades: string[]): LinhaChuvaScript[];
-export function montarSqlHistorico(safras: string[]): string;
+export function montarSqlHistorico(safras: string[], pular?: number | null, tamanho?: number): string;
 export function linhasHistorico(r: Resultado, geradoEm: string, atuais?: string[]): LinhaHistScript[];
 export function sincronizarAcompanhamento(opcoes: {
   url: string;
@@ -199,11 +219,13 @@ export interface LinhaChuvaTalhao {
 }
 type ResultadoConsulta = { columns: string[]; rows: unknown[][] };
 export const CHUVA_TALHAO_SAFRAS_ANTES: number;
+/** os vínculos inteiros, sem paginar (= montarSqlVinculosZeus()) */
 export const SQL_VINCULOS_ZEUS: string;
+export function montarSqlVinculosZeus(pular?: number | null, tamanho?: number): string;
 export function inicioChuvaTalhao(agora?: Date): string;
 export function diasDaJanelaChuva(desde: string, agora?: Date): number;
 export function safrasDaJanelaChuva(desde: string, agora?: Date): string[];
-export function montarSqlChuvaTalhoes(desde: string): string;
+export function montarSqlChuvaTalhoes(desde: string, pular?: number | null, tamanho?: number): string;
 export function montarSqlDiasChuvaTalhoes(desde: string): string;
 export const CHUVA_CICLOS_PAGINA: number;
 export function montarSqlCiclosChuva(safras: string[], pular?: number, tamanho?: number): string;
@@ -224,7 +246,7 @@ export interface LinhaLimitesZeus { unidade: string; gerado_em: string; talhoes:
 export const LIMITES_ZEUS_PAGINA: number;
 export const SQL_UNIDADES_LIMITES_ZEUS: string;
 export function montarSqlLimitesZeus(fazenda: string, pular?: number, tamanho?: number): string;
-export function montarSqlTalhoesComChuva(desde: string): string;
+export function montarSqlTalhoesComChuva(desde: string, pular?: number | null, tamanho?: number): string;
 export function geometriaDoWkt(wkt: string | null | undefined, tolerancia?: number): GeometriaZeus | null;
 export function areaHaDaGeometria(geom: GeometriaZeus): number;
 export function linhasLimitesZeus(campos: Map<string, Record<string, unknown>[]>, comChuva: ResultadoConsulta, geradoEm: string): LinhaLimitesZeus[];
@@ -267,10 +289,10 @@ export interface BoletimValidScript {
   o: string; n: string; d: string | null; os: number | null; eq: string | null; sit: 'F' | 'P'; em: string | null;
   t?: number; p1?: string; ul?: string; m?: string[]; si?: 1; it: ItemBoletimScript[];
 }
-export function montarSqlBoletinsFalha(desde: string): string;
-export function montarSqlBoletinsPendentes(desde: string): string;
-export function montarSqlLogIntegracaoSap(boletins: unknown[], desde: string): string;
-export function montarSqlSaldoItensSap(itens: unknown[], depositos: unknown[]): string;
+export function montarSqlBoletinsFalha(desde: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlBoletinsPendentes(desde: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlLogIntegracaoSap(boletins: unknown[], desde: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlSaldoItensSap(itens: unknown[], depositos: unknown[], pular?: number | null, tamanho?: number): string;
 export function linhasBoletins(dados: {
   falhas?: Record<string, unknown>[];
   pendentes?: Record<string, unknown>[];
@@ -283,9 +305,9 @@ export const VALID_DIAS_DOSE: number;
 export const VALID_DOSE_TOLERANCIA: number;
 export function diaAnterior(agora: Date, dias: number): string;
 export function montarSqlApontamentosRecentes(desdeDia: string, pular?: number, tamanho?: number): string;
-export function montarSqlNecessidadeValidacao(desde: string): string;
-export function montarSqlDoseValidacao(desdeDia: string): string;
-export function montarSqlColetorValidacao(desde: string): string;
+export function montarSqlNecessidadeValidacao(desde: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlDoseValidacao(desdeDia: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlColetorValidacao(desde: string, pular?: number | null, tamanho?: number): string;
 export function linhasExtras(dados: {
   apontamentos?: Record<string, unknown>[];
   necessidade?: Record<string, unknown>[];
@@ -294,7 +316,9 @@ export function linhasExtras(dados: {
 }): Record<string, Record<string, Record<string, unknown>[]>>;
 export const VALID_TOLERANCIA_HA: number;
 export const SAP_EMPRESA_DA_UNIDADE: Record<string, string>;
+/** a evolução inteira, sem paginar (= montarSqlEvolucaoValidacao()) */
 export const SQL_EVOLUCAO_VALIDACAO: string;
+export function montarSqlEvolucaoValidacao(pular?: number | null, tamanho?: number): string;
 export const SQL_DEPOSITOS_PIMS: string;
 export const SQL_DEPOSITOS_SAP: string;
 export function inicioSafraValidacao(agora?: Date): string;
@@ -302,7 +326,7 @@ export function montarSqlOrdensValidacao(desde: string, pular?: number, tamanho?
 export function montarSqlCoordenadoresValidacao(desde: string): string;
 export function montarSqlTalhoesValidacao(desde: string, pular?: number, tamanho?: number): string;
 export function montarSqlApontamentosValidacao(desde: string, pular?: number, tamanho?: number): string;
-export function montarSqlEstoqueSap(codigos: unknown[]): string;
+export function montarSqlEstoqueSap(codigos: unknown[], pular?: number | null, tamanho?: number): string;
 export function linhasValidacao(
   dados: {
     ordens: Record<string, unknown>[];
@@ -328,4 +352,6 @@ export function rodarAcompanhamento(opcoes: {
   agrovex: { url: string; token: string; safras: 'auto' | string[]; excluirPrefixos?: string[] };
   supabase: { url: string; chave: string };
   fetchImpl?: FetchLike;
+  /** recebe o erro inteiro (para quem responde a um pedido escolher a mensagem pelo tipo) */
+  aoErro?: (e: unknown) => void;
 }): Promise<string | null>;

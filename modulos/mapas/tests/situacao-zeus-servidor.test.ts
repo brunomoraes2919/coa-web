@@ -50,7 +50,7 @@ describe('último dia da ZEUS no banco (servidor)', () => {
 interface Chamada { url: string; init?: RequestInit }
 
 /** Supabase e Agrovex falsos: o GET devolve `situacao`; cada execute_query, o resultado da vez. */
-function servidores(situacao: unknown[], consultas: unknown[], statusGet = 200) {
+function servidores(situacao: unknown[], consultas: unknown[], statusGet = 200, statusPost = 204) {
   const chamadas: Chamada[] = [];
   let n = 0;
   const impl = async (url: string, init?: RequestInit) => {
@@ -61,6 +61,7 @@ function servidores(situacao: unknown[], consultas: unknown[], statusGet = 200) 
           ? new Response(JSON.stringify(situacao), { status: 200 })
           : new Response(JSON.stringify({ code: 'PGRST205', message: 'Could not find the table' }), { status: statusGet });
       }
+      if (init.method === 'POST' && statusPost !== 204) return new Response(JSON.stringify({ code: '42501', message: 'permissão negada' }), { status: statusPost });
       return new Response(null, { status: 204 });
     }
     const corpo = init?.body ? JSON.parse(String(init.body)) : null;
@@ -128,5 +129,43 @@ describe('atualizarSituacaoZeus (tabela mapas_zeus_situacao)', () => {
     const { impl, chamadas } = servidores([], [{ columns: ['fazenda', 'ultimo', 'leitura'], rows: [] }]);
     expect(await atualizarSituacaoZeus(opcoes(impl))).toBe('vazio');
     expect(chamadas.some((c) => c.init?.method === 'POST' && c.url.startsWith(URL_SB))).toBe(false);
+  });
+
+  // A consulta só olha os últimos 45 dias: fazenda parada há mais que isso deixa de vir. Sem a limpeza, a
+  // linha antiga dela ficava na tabela para sempre e a tela seguia mostrando um aviso velho.
+  const gravacoes = (chamadas: Chamada[]) => chamadas.filter((c) => c.url.startsWith(URL_SB) && c.init?.method && c.init.method !== 'GET');
+
+  it('depois de gravar, tira as fazendas que não vieram nesta rodada', async () => {
+    const { impl, chamadas } = servidores([{ conferido_em: '2026-10-06T10:50:00.000Z' }], [ULTIMOS]);
+    expect(await atualizarSituacaoZeus(opcoes(impl))).toBe('ok');
+    const feitas = gravacoes(chamadas);
+    expect(feitas.map((c) => c.init?.method)).toEqual(['POST', 'DELETE']);
+    // todas as linhas da rodada levam o mesmo conferido_em: o que tem carimbo anterior não veio
+    expect(feitas[1].url).toBe(`${URL_SB}/rest/v1/mapas_zeus_situacao?conferido_em=lt.${encodeURIComponent('2026-10-06T11:20:00.000Z')}`);
+    expect((feitas[1].init?.headers as Record<string, string>).apikey).toBe(CHAVE);
+  });
+
+  it('a gravação falhou: não limpa nada (a tabela fica como estava)', async () => {
+    const { impl, chamadas } = servidores([{ conferido_em: '2026-10-06T10:50:00.000Z' }], [ULTIMOS], 200, 403);
+    await expect(atualizarSituacaoZeus(opcoes(impl))).rejects.toThrow(/Supabase recusou a gravação da situação da ZEUS \(HTTP 403\)/);
+    expect(gravacoes(chamadas).map((c) => c.init?.method)).toEqual(['POST']);
+  });
+
+  it('a ZEUS não devolveu nenhuma fazenda: também não limpa (uma consulta vazia não apaga a tabela)', async () => {
+    const { impl, chamadas } = servidores([{ conferido_em: '2026-10-06T10:50:00.000Z' }], [{ columns: ['fazenda', 'ultimo', 'leitura'], rows: [] }]);
+    expect(await atualizarSituacaoZeus(opcoes(impl))).toBe('vazio');
+    expect(gravacoes(chamadas)).toHaveLength(0);
+  });
+
+  it('conferido há pouco, fora do passo ou sem a tabela: não limpa', async () => {
+    for (const [situacao, quando, status] of [
+      [[{ conferido_em: '2026-10-06T11:12:00.000Z' }], AGORA, 200],
+      [[{ conferido_em: '2026-10-06T10:50:00.000Z' }], new Date('2026-10-06T11:22:30Z'), 200],
+      [[], AGORA, 404],
+    ] as [unknown[], Date, number][]) {
+      const { impl, chamadas } = servidores(situacao, [ULTIMOS], status);
+      await atualizarSituacaoZeus({ ...opcoes(impl), agora: () => quando });
+      expect(gravacoes(chamadas)).toHaveLength(0);
+    }
   });
 });

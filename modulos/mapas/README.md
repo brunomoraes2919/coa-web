@@ -18,6 +18,8 @@ a partir do CSV exportado da ZEUS, sem precisar do QGIS.
 - Layout pronto na identidade visual do COA, com textos editáveis, e **PNG em 150, 300 ou 600 dpi**.
 - Histórico dos mapas gerados (cópia em JPEG de 150 dpi, que pode ser reaberta, atualizada ou salva como novo
   mapa; para o PNG, reabra o mapa e baixe no dpi desejado).
+- No COA WEB, a chuva também entra sem CSV, por **Inserir dados via integração** (ZEUS), por período de
+  datas ou com hora; o mapa salvo com hora reabre com as horas do período.
 
 ## Módulo MAPAS no COA WEB
 
@@ -43,7 +45,11 @@ categoria **MAPAS**. O COA WEB mostra o módulo num `iframe` da mesma origem
   trocar o título. Quem renova o token da sessão é o COA WEB.
 - **Perfis** (`perfis.perfil` do COA WEB): o colaborador não vê os cadastros (Fazendas e Safras; se abrir
   o endereço de um deles, volta para os mapas com o aviso "Somente administradores…") nem os links para
-  eles dentro do editor. Quem garante o acesso é o RLS do banco.
+  eles dentro do editor. O administrador restrito a algumas fazendas (`perfis.todas_fazendas = false`) vê a
+  lista de Fazendas só para consulta, sem os botões de cadastrar, importar o cadastro padrão e editar: o
+  banco só deixa gravar fazendas de mapa para o administrador que vê todas as fazendas (ou o
+  ADMINISTRADOR+). Safras, plantio e áreas da cultura continuam com ele, nas fazendas que vê. Quem garante
+  o acesso é o RLS do banco.
 - **Cadastro padrão no COA WEB**: a publicação não leva `public/dados/`. Em `modulos/mapas`,
   `npm run pacote-seed` gera `cadastro-padrao-mapas.zip` (seed.json + GeoJSONs; dados da Locks, nunca vai
   para o git nem para a publicação); o admin usa **Mapas → Fazendas e shapes → Importar cadastro padrão** e
@@ -106,10 +112,14 @@ permissões do COA WEB.
    bucket privado `mapas-chuva`, onde ficam as imagens do histórico. Não altera nem apaga nada do COA
    WEB e pode ser executado de novo sem erro, mantendo os dados. Antes de publicar, rode também
    `supabase/coa-web/verificar-permissoes.sql` (só leitura) para conferir as regras do COA WEB.
-2. **Quem vê o quê** (tabelas `perfis` e `usuario_fazendas` do COA WEB): o admin vê e altera tudo; o
-   colaborador vê as fazendas liberadas para ele e nelas salva e exclui mapas de chuva; fazendas, talhões,
-   safras e plantio só o admin altera. Cada fazenda de mapa é ligada a uma fazenda do COA WEB; sem esse
-   vínculo, só o admin a vê.
+2. **Quem vê o quê** (tabelas `perfis` e `usuario_fazendas` do COA WEB): o administrador que vê todas as
+   fazendas (e o ADMINISTRADOR+) vê e altera tudo; o administrador restrito e o colaborador veem as
+   fazendas liberadas para eles e nelas salvam e excluem mapas de chuva. Talhões, áreas da cultura, safras
+   e plantio só o administrador altera (o restrito, só nas fazendas que vê); criar, editar e excluir
+   fazendas de mapa é só para o administrador que vê todas as fazendas. Cada fazenda de mapa é ligada a uma
+   fazenda do COA WEB; sem esse vínculo, só esse administrador a vê. As regras em vigor estão também nos
+   scripts `0002`, `0018`, `0019` e `0020` da pasta `supabase/` da raiz do repositório, que vieram depois
+   do `0001_mapas.sql`.
 3. **No COA WEB publicado** não há o que configurar: o build já sai em modo Supabase fixo (URL e chave anon
    do COA WEB, em `.env.coa-web`) e usa o login do COA WEB. Os dados ficam só no Supabase (cópias de
    segurança pelo Supabase); não há tela de Configurações nem backup em JSON.
@@ -136,9 +146,11 @@ clique em **Restore project**; os dados continuam lá.
 ## Publicação
 
 O COA WEB publica a pasta `mapas/` (saída de `npm run publicar`, que vai no commit) a partir do branch
-`main`, pela Vercel e pelo GitHub Pages (*deploy from branch*), **sem etapa de build**. Não há publicação
-própria do módulo: não troque a origem do GitHub Pages para *GitHub Actions*, o que quebraria a publicação
-do COA WEB. O cadastro padrão (limites das unidades e áreas de soja) e o plantio do PIMS **não** estão no
+`main`, pela Vercel, **sem etapa de build**: o build roda no computador de quem publica, e a pasta `mapas/`
+vai no mesmo commit do código de `modulos/mapas/`. Não há publicação própria do módulo. O site já foi
+publicado também pelo GitHub Pages; hoje a publicação é a da Vercel, que é quem envia os cabeçalhos de
+segurança e de cache do `vercel.json` (os arquivos de `mapas/assets/` têm hash no nome e ficam um ano em
+cache). O cadastro padrão (limites das unidades e áreas de soja) e o plantio do PIMS **não** estão no
 repositório (que é público) nem no site: ficam no Supabase, atrás do login.
 
 ## Plantio automático do PIMS
@@ -151,18 +163,24 @@ VM do Google Cloud (systemd, 1×/h) ──AGROVEX_TOKEN──▶ Agrovex (PIMS) 
 ```
 
 **Por que não no GitHub Actions:** a proteção de borda do Agrovex barra os servidores do GitHub (HTTP 403);
-a VM do Google Cloud passa. O workflow `.github/workflows/plantio-pims.yml` continua no repositório só
-com execução manual; se um dia o Agrovex liberar o acesso a partir do GitHub, basta religar o `schedule` dele.
+a VM do Google Cloud passa. O repositório não tem mais nenhum workflow para esta rotina (o antigo
+`plantio-pims.yml` foi removido): ela roda só na VM.
 
 **Como está instalado na VM** (usuário da VM, pasta `~/plantio-pims`; arquivos de referência em
 `scripts/servidor/`):
 
 1. `~/plantio-pims/atualizar-e-rodar.sh` (= `scripts/servidor/atualizar-e-rodar.sh`): a cada rodada baixa
-   do `main` a versão atual de `sincronizar-plantio.mjs` e `plantio.config.json` (então mudanças no
-   script chegam sozinhas) e roda com o Node da VM (≥ 18; o script não tem dependências).
+   do `main` a versão atual de três arquivos, `sincronizar-plantio.mjs`, `atender-pedidos.mjs` e
+   `plantio.config.json` (então mudanças nos programas chegam sozinhas, na hora seguinte; na versão de
+   referência do script, os três são conferidos e só então trocados, juntos: ver `scripts/servidor/README.md`).
+   Depois roda `sincronizar-plantio.mjs` com o Node da VM (18 ou superior,
+   pelo `fetch` nativo e pelo `AbortSignal.timeout`; os programas não têm dependências. O `package.json`
+   pede 20.19 por causa das ferramentas de build, que a VM não usa).
 2. As chaves ficam num arquivo de ambiente na VM, com permissão 600 (só o usuário da rotina lê):
    `AGROVEX_TOKEN`, `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` (a chave `service_role` do Supabase do
-   COA WEB — ignora o RLS; nunca vai para o código nem para o site). Para trocar uma chave sem mostrá-la
+   COA WEB — ignora o RLS; nunca vai para o código nem para o site). **As três são obrigatórias:** se
+   faltar alguma, os dois programas terminam com erro (código de saída 1) e uma linha `Falta …` ou
+   `Faltam …` no `rotina.log`, sem consultar nem gravar nada. Para trocar uma chave sem mostrá-la
    na tela (troque `ARQUIVO` pelo caminho do arquivo de ambiente e `AGROVEX_TOKEN` pelo nome da chave):
    `read -rsp "Cole a chave: " V; echo; V=$(printf %s "$V" | tr -d "[:space:]"); if [ ${#V} -gt 40 ]; then sed -i "/^AGROVEX_TOKEN=/d" ARQUIVO; echo "AGROVEX_TOKEN=$V" >> ARQUIVO; echo "gravada"; else echo "NAO gravada"; fi; unset V`
    (o teste de tamanho evita gravar uma chave vazia se o Enter for apertado sem colar nada).
@@ -173,9 +191,12 @@ com execução manual; se um dia o Agrovex liberar o acesso a partir do GitHub, 
    `mapas_plantio_pedidos` (`supabase/coa-web/0002_pedidos_plantio.sql`); na VM,
    `plantio-pims-pedidos.timer` roda `~/plantio-pims/atender-pedidos.sh` (= `scripts/servidor/`) a cada
    ~30 s: sem pedido, não faz nada; com pedido, roda a rotina do PIMS na hora, grava e marca o pedido
-   (`atendido_em`, `resultado` = `ok` ou o erro). Leva uns 15–45 s. Os dois agendamentos usam a mesma trava
-   (`~/plantio-pims/.trava`), então nunca rodam ao mesmo tempo; a rotina horária também baixa a versão nova
-   de `atender-pedidos.mjs`. Pedidos atendidos há mais de 30 dias são apagados.
+   (`atendido_em`, `resultado` = `ok` ou `erro: …`). Leva uns 15–45 s. O mesmo pedido serve ao botão
+   "Atualizar" do Operacional: se o plantio foi gravado mas a etapa do Acompanhamento falhou, o `resultado`
+   é `erro: Acompanhamento Operacional não atualizado (o plantio dos mapas foi gravado). …`. Os dois
+   agendamentos usam a mesma trava (`~/plantio-pims/.trava`), então nunca rodam ao mesmo tempo; a rotina
+   horária também baixa a versão nova de `atender-pedidos.mjs`. Pedidos atendidos há mais de 30 dias são
+   apagados.
    **Botão "Inserir dados via integração"** (passo 2 do Novo mapa): grava em `mapas_chuva_pedidos`
    (`supabase/coa-web/0003_pedidos_chuva.sql`) a fazenda e o período; a mesma verificação de ~30 s busca na
    ZEUS (`"DATABASE".stg_zeus_picarea` e `stg_climatemonitoring2`) a chuva de cada PIC da fazenda e grava a
@@ -185,9 +206,16 @@ com execução manual; se um dia o Agrovex liberar o acesso a partir do GitHub, 
    `sudo systemctl start plantio-pims.service`.
 
 A rotina faz upsert (uma linha por safra × unidade) e depois apaga as linhas que sumiram do PIMS; se o PIMS
-não devolver nenhum talhão, não mexe no Supabase. **No seu computador**, sem `SUPABASE_URL` /
-`SUPABASE_SERVICE_ROLE_KEY` no ambiente, `AGROVEX_TOKEN=... npm run plantio` (no PowerShell:
-`$env:AGROVEX_TOKEN='...'; npm run plantio`) grava `public/dados/plantio.json` (uso local/desenvolvimento).
+não devolver nenhum talhão, não mexe no Supabase. As consultas que crescem ao longo da safra são lidas em
+páginas de 4.000 linhas, porque o Agrovex corta qualquer resultado em 5.000; as chamadas ao Supabase têm
+prazo (60 s para ler, 120 s para gravar), como as do Agrovex (120 s).
+
+**No seu computador**, `AGROVEX_TOKEN=... npm run plantio` (no PowerShell:
+`$env:AGROVEX_TOKEN='...'; npm run plantio`) grava `public/dados/plantio.json` (uso local/desenvolvimento)
+e não toca no Supabase, mesmo que as variáveis dele estejam no ambiente. Esse **modo local** só vale quando
+pedido: o `npm run plantio` passa `--local` ao programa (também vale `PLANTIO_LOCAL=1`). Sem isso, rodar
+`node scripts/sincronizar-plantio.mjs` sem as três variáveis é erro; era assim que, na VM, uma variável
+apagada por engano fazia a rotina parar de atualizar o banco sem avisar.
 As safras consultadas ficam em `scripts/plantio.config.json` (padrão: as do ano-safra atual e do seguinte,
 sem as administrativas).
 
@@ -206,7 +234,8 @@ desenvolvimento):
 - **Safras → Áreas da cultura**: importe o shape da cultura (ex.: soja 26/27) da fazenda; no mapa, essas
   áreas são pintadas no lugar dos talhões base (área sem registro no PIMS = a plantar).
 - **Novo mapa**: "X plantados · Y plantando · Z a plantar (PIMS dd/mm hh:mm)", colunas Situação e % na
-  tabela, e a legenda com as situações presentes e a data do plantio do PIMS. A estatística "área
+  tabela, a legenda com as situações presentes e, no painel de informações, a data do plantio do PIMS
+  ("Plantio: PIMS dd/mm hh:mm"). A estatística "área
   plantada" (plantado + plantando) usa as **áreas da cultura** quando a safra tem áreas importadas (cada
   área é medida no próprio polígono, inclusive subáreas como `032A` dentro do talhão `032`) e os talhões
   base quando não tem. Na tabela "Chuva por talhão", as áreas sem talhão base do mesmo código aparecem
@@ -270,11 +299,14 @@ Mapas salvos antes desta versão reabrem com orientação e quadros automáticos
 ```
 src/lib/       lógica pura e testada (CSV, shapes, projeção, raster, IDW, estatísticas, paletas)
 src/worker/    interpolação em Web Worker
-src/render/    desenho do layout em Canvas (a prévia e o PNG usam o mesmo código)
+src/render/    desenho do layout em Canvas (a prévia, o PNG e a cópia JPEG do histórico usam o mesmo código)
 src/data/      persistência: IndexedDB (modo local) ou Supabase
 src/pages/     telas
+src/components/ peças das telas (editor do mapa, menu, avisos) e o perfil do usuário
+tests/         testes (Vitest): `npm test`
 supabase/      scripts SQL do Supabase do COA WEB (coa-web/0001_mapas.sql, coa-web/verificar-permissoes.sql)
-scripts/       sincronizar-plantio.mjs (PIMS → mapas_plantio_pims no Supabase; sem ele, plantio.json),
+scripts/       sincronizar-plantio.mjs e atender-pedidos.mjs (os programas da VM: PIMS, ZEUS e SAP → Supabase;
+               com --local, o primeiro grava plantio.json), servidor/ (cópias de referência do que está na VM),
                gerar-seed.mjs, pacote-seed.mjs, gerar-paletas.mjs, verificar-publicacao.mjs
 public/dados/  só no desenvolvimento, fora do git: plantio.json e seed/ (cadastro padrão)
 docs/          design e plano de implementação

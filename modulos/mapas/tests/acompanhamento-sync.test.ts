@@ -19,7 +19,7 @@ import {
   type AcompanhamentoScript,
   type FetchLike,
 } from '../scripts/sincronizar-plantio.mjs';
-import { atenderPedidos } from '../scripts/atender-pedidos.mjs';
+import { atenderPedidos, ETAPA_ACOMPANHAMENTO_FALHOU, MENSAGENS_DE_ERRO } from '../scripts/atender-pedidos.mjs';
 
 const COL_TALHOES = ['unidade', 'setor', 'safra', 'id', 'codigo', 'area', 'dano', 'variedade', 'encerrado'];
 const COL_PLANTIO = ['unidade', 'safra', 'id', 'codigo', 'data', 'area', 'equipe', 'cd_operacao', 'replantio'];
@@ -331,5 +331,102 @@ describe('atenderPedidos com o acompanhamento ligado', () => {
     expect(iPlantio).toBeGreaterThanOrEqual(0);
     expect(iAcomp).toBeGreaterThan(iPlantio);
     expect(iMarca).toBeGreaterThan(iAcomp);
+  });
+
+  /** Supabase que responde a tudo e Agrovex que atende o plantio dos mapas mas falha em `falha(sql)`. */
+  function servidores(falha: (sql: string) => string | null, statusAcomp = 201) {
+    const agrovex = agrovexFalso();
+    const chamadas: { url: string; init?: RequestInit }[] = [];
+    const impl = async (url: string, init?: RequestInit) => {
+      chamadas.push({ url, init });
+      if (url.startsWith(URL_SB)) {
+        if (!init?.method || init.method === 'GET') return new Response(JSON.stringify([{ id: 5 }]), { status: 200 });
+        if (init.method === 'POST' && url.includes('/acomp_pims')) {
+          return statusAcomp === 201 ? new Response(null, { status: 201 }) : new Response(JSON.stringify({ code: '42501', message: `permissão negada ${CHAVE}` }), { status: statusAcomp });
+        }
+        return new Response(null, { status: 204 });
+      }
+      const corpo = init?.body ? JSON.parse(String(init.body)) : null;
+      const erro = corpo?.method === 'tools/call' ? falha(String(corpo.params.arguments.sql)) : null;
+      if (erro) return new Response(JSON.stringify({ jsonrpc: '2.0', id: corpo.id, result: { isError: true, content: [{ type: 'text', text: erro }] } }), { status: 200 });
+      return agrovex.impl(url, init as RequestInit);
+    };
+    const marcacao = () => {
+      const patch = chamadas.find((c) => c.init?.method === 'PATCH' && c.url.includes('/mapas_plantio_pedidos'));
+      return patch ? (JSON.parse(String(patch.init?.body)) as { resultado: string }).resultado : null;
+    };
+    return { impl, chamadas, marcacao };
+  }
+  const pedir = (impl: (url: string, init?: RequestInit) => Promise<Response>, acompanhamento = true) => atenderPedidos({
+    supabase: { url: URL_SB, chave: CHAVE },
+    agrovex: { url: 'https://agrovex.test/mcp', token: 'token-secreto', safras: ['SOJA 26/27'] },
+    acompanhamento,
+    fetch: impl,
+  });
+
+  it('a etapa do acompanhamento falhou no PIMS: o pedido sai com erro, dizendo a etapa e que o plantio foi gravado', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const erroNoLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // só a consulta dos talhões do acompanhamento falha (a do plantio dos mapas, que traz area_prevista, passa)
+    const s = servidores((sql) => (sql.includes('up.QT_AREA_PROD > 0.1') ? "Invalid object name 'PIMSMCPRD.dbo.UPNIVEL3' (texto de fora)" : null));
+    const r = await pedir(s.impl);
+    log.mockRestore();
+    erroNoLog.mockRestore();
+    // a verificação termina normalmente (o erro da etapa já foi para o log, como na rotina de hora em hora)
+    expect(r).toBe(true);
+    expect(s.chamadas.some((c) => c.init?.method === 'POST' && c.url.includes('/mapas_plantio_pims'))).toBe(true);
+    expect(s.chamadas.some((c) => c.init?.method === 'POST' && c.url.includes('/acomp_pims'))).toBe(false);
+    expect(s.marcacao()).toBe(`erro: ${ETAPA_ACOMPANHAMENTO_FALHOU} ${MENSAGENS_DE_ERRO.fonte}`);
+    // as duas telas mostram o que vem depois de "erro:": tem de dizer qual etapa e que o plantio foi gravado
+    expect(ETAPA_ACOMPANHAMENTO_FALHOU).toMatch(/Acompanhamento Operacional/);
+    expect(ETAPA_ACOMPANHAMENTO_FALHOU).toMatch(/plantio dos mapas foi gravado/);
+    expect(s.marcacao()!.length).toBeLessThanOrEqual(300);
+    expect(s.marcacao()).not.toContain('texto de fora');
+    expect(s.marcacao()).not.toContain('token-secreto');
+  });
+
+  it('a etapa do acompanhamento falhou na gravação: erro interno, sem o texto do Supabase nem a chave', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const erroNoLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const s = servidores(() => null, 403);
+    expect(await pedir(s.impl)).toBe(true);
+    log.mockRestore();
+    erroNoLog.mockRestore();
+    expect(s.marcacao()).toBe(`erro: ${ETAPA_ACOMPANHAMENTO_FALHOU} ${MENSAGENS_DE_ERRO.interno}`);
+    expect(s.marcacao()).not.toContain('permissão negada');
+    expect(s.marcacao()).not.toContain(CHAVE);
+  });
+
+  it('com o acompanhamento desligado na configuração, a falha dele não existe: o pedido sai ok', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const s = servidores((sql) => (sql.includes('up.QT_AREA_PROD > 0.1') ? 'falhou' : null));
+    expect(await pedir(s.impl, false)).toBe(true);
+    log.mockRestore();
+    expect(s.marcacao()).toBe('ok');
+  });
+
+  it('falha no plantio dos mapas continua como era: erro do tipo da falha, sem citar o acompanhamento, e relançado', async () => {
+    const s = servidores((sql) => (sql.includes('area_prevista') ? 'falhou' : null));
+    await expect(pedir(s.impl)).rejects.toThrow(/Consulta ao PIMS falhou/);
+    expect(s.marcacao()).toBe(`erro: ${MENSAGENS_DE_ERRO.fonte}`);
+  });
+});
+
+describe('rodarAcompanhamento avisa quem chamou do erro inteiro', () => {
+  it('aoErro recebe o erro (para a mensagem da tela sair pelo tipo); sem aoErro, tudo como antes', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { impl } = agrovexFalso({ http: 401 });
+    const vistos: unknown[] = [];
+    const msg = await rodarAcompanhamento({
+      agrovex: { url: 'https://agrovex.test/mcp', token: 'token-secreto', safras: ['SOJA 26/27'] },
+      supabase: { url: URL_SB, chave: CHAVE },
+      fetchImpl: impl,
+      aoErro: (e) => { vistos.push(e); },
+    });
+    log.mockRestore();
+    expect(msg).toMatch(/O servidor de dados do PIMS recusou o acesso/);
+    expect(vistos).toHaveLength(1);
+    expect(vistos[0]).toBeInstanceOf(Error);
+    expect((vistos[0] as Error & { tipo?: string }).tipo).toBe('fonte');
   });
 });

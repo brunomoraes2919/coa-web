@@ -14,7 +14,7 @@
     "paletas": "node scripts/gerar-paletas.mjs",
     "seed": "node scripts/gerar-seed.mjs",
     "pacote-seed": "node scripts/pacote-seed.mjs",
-    "plantio": "node scripts/sincronizar-plantio.mjs",
+    "plantio": "node scripts/sincronizar-plantio.mjs --local",
     "validar-grass": "vitest run tests/validacao-grass.test.ts"
   },
   "dependencies": {

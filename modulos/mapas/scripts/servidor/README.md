@@ -34,6 +34,28 @@ grep '^AGROVEX_URL=' ~/.plantio-pims.env
 
 Se aparecer uma linha com um endereço diferente de `https://mcp.agrovex.com.br/...`, pare e avise.
 
+## Antes de publicar os programas novos: as três variáveis são obrigatórias
+
+A rotina de hora em hora (`sincronizar-plantio.mjs`) passou a **terminar com erro** quando falta `AGROVEX_TOKEN`, `SUPABASE_URL` ou `SUPABASE_SERVICE_ROLE_KEY`. Antes, sem as duas do Supabase ela gravava um arquivo na própria VM e deixava de atualizar o banco sem avisar; sem o token, só escrevia um aviso. O atendimento dos pedidos (`atender-pedidos.mjs`) já exigia as três, então nada muda se a VM está funcionando. Para conferir sem mostrar nenhuma chave (o comando mostra só os **nomes**), devem aparecer as três linhas:
+
+```bash
+grep -oE '^(AGROVEX_TOKEN|SUPABASE_URL|SUPABASE_SERVICE_ROLE_KEY)=' ~/.plantio-pims.env
+```
+
+Se faltar alguma, o registro passa a trazer, a cada hora, uma linha começando por **`Erro ao sincronizar o plantio: Falta`** (ou **`Faltam`**) com o nome do que falta. O arquivo de chaves **não** deve ter a linha `PLANTIO_LOCAL` (ela liga o modo de uso no computador de quem desenvolve, que não grava no banco); o esperado é **não aparecer nada**:
+
+```bash
+grep '^PLANTIO_LOCAL=' ~/.plantio-pims.env
+```
+
+## Depois de publicar: o que olhar no registro
+
+As consultas que crescem ao longo da safra passaram a ser lidas em páginas de 4.000 linhas (o servidor de dados corta qualquer resultado em 5.000). Na primeira hora depois de publicar, olhe o fim do registro (`tail -n 30 ~/plantio-pims/rotina.log`):
+
+- As linhas de sempre (plantio, `Acompanhamento: gravado no Supabase; …` e `Validação: gravado no Supabase; …`) têm de continuar aparecendo, com totais parecidos com os da hora anterior.
+- Se aparecer **`em páginas foi recusada`**, o servidor de dados não aceitou a forma nova daquela consulta e a rotina usou a consulta inteira, como fazia antes: nada parou, mas avise, porque aquela consulta continua sujeita ao corte de 5.000 linhas.
+- Se aparecer **`O Supabase não respondeu em`**, uma chamada ao banco passou do prazo (60 s para ler, 120 s para gravar) e foi interrompida; antes ela ficava pendurada até o sistema encerrar a rodada. Uma vez isolada não é problema; repetindo, avise.
+
 ## Como levar esta versão para a VM
 
 Faça depois que esta pasta estiver publicada no `main`. São cinco passos e leva uns cinco minutos. Nada aqui mexe nas chaves.

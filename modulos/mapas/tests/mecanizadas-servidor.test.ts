@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { atenderPedidosMec, pedidosMecPendentes, responderPedidoMec } from '../scripts/atender-pedidos.mjs';
-import { fmtHrKm, linhasMecanizadas, MEC_CABECALHO, montarSqlMecanizadas, validarPedidoMec } from '../scripts/sincronizar-plantio.mjs';
+import { fmtHrKm, linhasMecanizadas, MEC_CABECALHO, MEC_MAX_DIAS, montarSqlMecanizadas, validarPedidoMec } from '../scripts/sincronizar-plantio.mjs';
 
 const URL_SB = 'https://proj.supabase.co';
 const CHAVE = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.assinatura';
@@ -34,6 +34,19 @@ describe('boletins de atividades mecanizadas do PIMS (servidor)', () => {
     expect(() => validarPedidoMec("GLOBO' OR 1=1 --", '2026-09-01', '2026-09-30')).toThrow('Unidade inválida.');
     expect(() => validarPedidoMec('GLOBO', '2026-09-02', '2026-09-01')).toThrow('Período inválido: a data inicial é depois da final.');
     expect(() => validarPedidoMec('GLOBO', '2026-01-01', '2026-09-01')).toThrow(/Período muito longo \(244 dias\): o máximo é 62 dias\./);
+  });
+
+  // O banco aceita o pedido com "ate - de <= 62" (modulos/mecanizadas/supabase/0001_pedidos_mecanizadas.sql):
+  // o servidor não pode recusar o que o banco deixou gravar.
+  it('o período máximo é o mesmo do banco: até 62 dias entre a primeira e a última data', () => {
+    expect(MEC_MAX_DIAS).toBe(62);
+    // 01/09 → 02/11: ate - de = 62 (63 dias contando os dois)
+    expect(validarPedidoMec('GLOBO', '2026-09-01', '2026-11-02')).toEqual({ unidade: 'GLOBO', de: '2026-09-01', ate: '2026-11-02', dias: 63 });
+    expect(() => montarSqlMecanizadas('GLOBO', '2026-09-01', '2026-11-02')).not.toThrow();
+    // um dia a mais: o banco também recusa
+    expect(() => validarPedidoMec('GLOBO', '2026-09-01', '2026-11-03')).toThrow(/Período muito longo \(64 dias\): o máximo é 62 dias\./);
+    // e o menor período continua valendo: um dia só
+    expect(validarPedidoMec('GLOBO', '2026-09-01', '2026-09-01').dias).toBe(1);
   });
 
   it('a consulta filtra a unidade, o período inclusive e só horímetro/km, com paginação', () => {
@@ -139,6 +152,18 @@ describe('pedidos de boletins (mec_pims_pedidos)', () => {
     expect(corpo.dados.cabecalho).toEqual(MEC_CABECALHO);
     expect(corpo.dados.linhas).toHaveLength(1);
     expect(corpo.dados.linhas[0][18]).toBe('3.491,90');
+  });
+
+  it('pedido com o período máximo que o banco aceita (ate - de = 62) é atendido, não recusado', async () => {
+    const l = linha({});
+    const { impl, chamadas } = servidores(
+      [{ id: 11, pedido_por: QUEM, unidade: 'T. FLECHAS', de: '2026-09-01', ate: '2026-11-02' }],
+      [{ columns: COLUNAS, rows: [COLUNAS.map((c) => (l as Record<string, unknown>)[c])] }],
+    );
+    await atenderPedidosMec({ supabase: { url: URL_SB, chave: CHAVE }, agrovex: { url: 'https://agrovex.test/mcp', token: TOKEN }, fetch: impl });
+    const corpo = JSON.parse(String(chamadas.find((c) => c.init?.method === 'PATCH')?.init?.body));
+    expect(corpo.resultado).toBe('ok');
+    expect(corpo.dados).toMatchObject({ de: '2026-09-01', ate: '2026-11-02' });
   });
 
   it('pedido inválido vira o resultado do pedido, sem consultar o PIMS', async () => {

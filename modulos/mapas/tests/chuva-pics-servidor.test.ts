@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { atenderPedidosChuva, pedidosChuvaPendentes, responderPedidoChuva } from '../scripts/atender-pedidos.mjs';
-import { fazendasDaZeus, montarChuvaPics, montarSqlChuvaPics, picsDaFazendaZeus, SQL_PICS_ZEUS, validarPeriodoChuva } from '../scripts/sincronizar-plantio.mjs';
+import { CHUVA_PICS_MAX_DIAS, fazendasDaZeus, montarChuvaPics, montarSqlChuvaPics, picsDaFazendaZeus, SQL_PICS_ZEUS, validarPeriodoChuva } from '../scripts/sincronizar-plantio.mjs';
 
 const URL_SB = 'https://proj.supabase.co';
 const CHAVE = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.assinatura';
@@ -36,6 +36,20 @@ describe('chuva por PIC na ZEUS (servidor)', () => {
     expect(() => validarPeriodoChuva('2026-10-02', '2026-10-01')).toThrow('Período inválido: a data inicial é depois da final.');
     expect(() => validarPeriodoChuva("2026-10-01'; drop table x; --", '2026-10-01')).toThrow('Período inválido: informe as duas datas.');
     expect(() => validarPeriodoChuva('2024-01-01', '2026-10-01')).toThrow(/Período muito longo/);
+  });
+
+  // O banco aceita o pedido com "ate - de <= 366" (supabase/coa-web/0003_pedidos_chuva.sql): o servidor não
+  // pode recusar o que o banco deixou gravar.
+  it('o período máximo é o mesmo do banco: até 366 dias entre a primeira e a última data', () => {
+    expect(CHUVA_PICS_MAX_DIAS).toBe(366);
+    // 01/01/2026 → 02/01/2027: ate - de = 366 (367 dias contando os dois)
+    expect(validarPeriodoChuva('2026-01-01', '2027-01-02')).toEqual({ de: '2026-01-01', ate: '2027-01-02', dias: 367 });
+    expect(validarPeriodoChuva('2026-01-01', '2027-01-02', '06:00', '18:00')).toMatchObject({ dias: 367, deHora: '06:00', ateHora: '18:00' });
+    // um dia a mais: o banco também recusa
+    expect(() => validarPeriodoChuva('2026-01-01', '2027-01-03')).toThrow(/Período muito longo \(368 dias\): o máximo é 366 dias\./);
+    // atravessando um 29 de fevereiro a conta é a mesma (dias corridos)
+    expect(validarPeriodoChuva('2027-06-01', '2028-06-01').dias).toBe(367);
+    expect(() => validarPeriodoChuva('2027-06-01', '2028-06-02')).toThrow(/Período muito longo/);
   });
 
   it('acha os PICs da fazenda pelo nome, sem prefixo, acento nem caixa', () => {

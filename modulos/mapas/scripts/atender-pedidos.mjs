@@ -16,10 +16,12 @@
 //     pendentes recebe "muitos pedidos" nos que passam disso, sem consulta nenhuma;
 //   * chuva e boletins: antes de consultar, o servidor confere se quem pediu pode ver a fazenda/unidade
 //     (as mesmas regras das políticas de supabase/0018_seguranca_pedidos.sql); na dúvida, não atende.
+// Toda chamada ao Supabase passa por chamarSupabase (sincronizar-plantio.mjs), que põe prazo: 60 s na leitura,
+// 120 s na gravação. As chamadas ao Agrovex já tinham o prazo delas (120 s).
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { boletinsMecanizadas, cabecalhosSupabase, chuvaPorPicZeus, conferirUrlAgrovex, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, sincronizarLimitesZeus, ultimoDiaZeus, validarPedidoMec, validarPeriodoChuva } from './sincronizar-plantio.mjs';
+import { boletinsMecanizadas, cabecalhosSupabase, chamarSupabase, chuvaPorPicZeus, conferirUrlAgrovex, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, sincronizarLimitesZeus, ultimoDiaZeus, validarPedidoMec, validarPeriodoChuva } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -54,6 +56,12 @@ export const MENSAGENS_DE_ERRO = Object.freeze({
   invalido: 'Pedido inválido.',
   interno: 'Erro interno do servidor do COA WEB. Se continuar, avise o administrador.',
 });
+
+/**
+ * Começo do texto do pedido de "Atualizar" quando só a etapa do Acompanhamento Operacional falhou; depois dele
+ * vem o texto do tipo da falha (MENSAGENS_DE_ERRO). As duas telas que usam a fila mostram o que vem depois de "erro:".
+ */
+export const ETAPA_ACOMPANHAMENTO_FALHOU = 'Acompanhamento Operacional não atualizado (o plantio dos mapas foi gravado).';
 
 /** Respostas prontas dos pedidos que o servidor recusa sem consultar nenhuma fonte. */
 export const RESULTADOS = Object.freeze({
@@ -110,7 +118,7 @@ async function semTabela(resp) {
  */
 async function ultimoCarimbo({ url, chave, fetch: fetchImpl = globalThis.fetch }, tabela, coluna = 'gerado_em') {
   try {
-    const resp = await fetchImpl(`${url}/rest/v1/${tabela}?select=${coluna}&order=${coluna}.desc&limit=1`, { headers: cabecalhosSupabase(chave) });
+    const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${tabela}?select=${coluna}&order=${coluna}.desc&limit=1`, { headers: cabecalhosSupabase(chave) }, `a leitura do carimbo de ${tabela}`);
     if (!resp.ok) return (await semTabela(resp)) ? 'sem-tabela' : null;
     const linhas = await resp.json();
     if (!Array.isArray(linhas)) return null;
@@ -131,9 +139,9 @@ function ehRecente(carimbo, momento) {
 
 /** Ids dos pedidos pendentes, do mais antigo para o mais novo (no máximo MAX_PENDENTES_LIDOS por verificação). */
 export async function pedidosPendentes({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
-  const resp = await fetchImpl(`${url}/rest/v1/${TABELA}?select=id&atendido_em=is.null&order=id.asc&limit=${MAX_PENDENTES_LIDOS}`, {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA}?select=id&atendido_em=is.null&order=id.asc&limit=${MAX_PENDENTES_LIDOS}`, {
     headers: cabecalhosSupabase(chave),
-  });
+  }, 'a leitura dos pedidos');
   if (!resp.ok) await erroRest(resp, chave, 'a leitura dos pedidos');
   const linhas = await resp.json();
   return Array.isArray(linhas) ? linhas.map((l) => Number(l.id)).filter(Number.isFinite) : [];
@@ -141,21 +149,21 @@ export async function pedidosPendentes({ url, chave, fetch: fetchImpl = globalTh
 
 /** Marca como atendidos os pendentes com id ≤ ateId (os que chegarem durante a rodada ficam para a próxima). */
 export async function marcarAtendidos({ url, chave, fetch: fetchImpl = globalThis.fetch }, ateId, resultado, agora = new Date()) {
-  const resp = await fetchImpl(`${url}/rest/v1/${TABELA}?atendido_em=is.null&id=lte.${Number(ateId)}`, {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA}?atendido_em=is.null&id=lte.${Number(ateId)}`, {
     method: 'PATCH',
     headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
     body: JSON.stringify({ atendido_em: agora.toISOString(), resultado: String(resultado).slice(0, 300) }),
-  });
+  }, 'a marcação dos pedidos');
   if (!resp.ok) await erroRest(resp, chave, 'a marcação dos pedidos');
 }
 
 /** Apaga os pedidos atendidos há mais de GUARDAR_DIAS dias (melhor esforço). */
 export async function limparAntigos({ url, chave, fetch: fetchImpl = globalThis.fetch }, agora = new Date()) {
   const limite = new Date(agora.getTime() - GUARDAR_DIAS * 86_400_000).toISOString();
-  const resp = await fetchImpl(`${url}/rest/v1/${TABELA}?atendido_em=lt.${encodeURIComponent(limite)}`, {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA}?atendido_em=lt.${encodeURIComponent(limite)}`, {
     method: 'DELETE',
     headers: { ...cabecalhosSupabase(chave), Prefer: 'return=minimal' },
-  });
+  }, 'a limpeza dos pedidos');
   if (!resp.ok) await erroRest(resp, chave, 'a limpeza dos pedidos');
 }
 
@@ -164,6 +172,9 @@ export async function limparAntigos({ url, chave, fetch: fetchImpl = globalThis.
  * marca os pedidos; devolve true. Se o plantio (e o acompanhamento, quando ligado) foi gravado há menos de
  * RECENTE_MINUTOS, não consulta o PIMS de novo: os pedidos são marcados 'ok' e a tela relê o que já está
  * gravado. Um erro da rotina vira 'erro: <texto do tipo da falha>' nos pedidos (e é relançado, para o log).
+ * Se o plantio foi gravado e só a etapa do acompanhamento falhou, os pedidos levam 'erro: ' +
+ * ETAPA_ACOMPANHAMENTO_FALHOU + o texto do tipo da falha, e a verificação termina normalmente (devolve true:
+ * o erro da etapa já está no log, como na rotina de hora em hora).
  */
 export async function atenderPedidos({ supabase, agrovex, acompanhamento = false, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const ctx = { ...supabase, fetch: fetchImpl };
@@ -186,10 +197,17 @@ export async function atenderPedidos({ supabase, agrovex, acompanhamento = false
   try {
     const dados = await sincronizar({ ...agrovex, fetchImpl });
     await gravarSupabase(dados, ctx);
-    // o mesmo botão atualiza o Acompanhamento Operacional (erro nele só vai para o log)
-    if (acompanhamento) await rodarAcompanhamento({ agrovex, supabase, fetchImpl });
-    await marcarAtendidos(ctx, ateId, 'ok', agora());
-    console.log(`== ${agora().toISOString()} ${ids.length} pedido(s) atendido(s); plantio geradoEm ${dados.geradoEm}.`);
+    // O mesmo botão atualiza o Acompanhamento Operacional. A etapa não lança erro (devolve a mensagem, que já
+    // foi para o log): se ela falhar, o pedido sai com erro dizendo a etapa, senão quem apertou "Atualizar" no
+    // Operacional veria "ok" com os dados velhos. O plantio dos mapas, a esta altura, já foi gravado.
+    let resultado = 'ok';
+    if (acompanhamento) {
+      let erroDaEtapa = null;
+      const erro = await rodarAcompanhamento({ agrovex, supabase, fetchImpl, aoErro: (e) => { erroDaEtapa = e; } });
+      if (erro) resultado = `erro: ${ETAPA_ACOMPANHAMENTO_FALHOU} ${erroDaEtapa === null ? MENSAGENS_DE_ERRO.interno : mensagemPublica(erroDaEtapa)}`;
+    }
+    await marcarAtendidos(ctx, ateId, resultado, agora());
+    console.log(`== ${agora().toISOString()} ${ids.length} pedido(s) atendido(s); plantio geradoEm ${dados.geradoEm}${resultado === 'ok' ? '' : '; a etapa do acompanhamento falhou (pedidos marcados com erro)'}.`);
   } catch (e) {
     await marcarAtendidos(ctx, ateId, `erro: ${mensagemPublica(e)}`, agora()).catch(() => undefined);
     throw e;
@@ -249,11 +267,11 @@ async function recusarExcesso({ url, chave, fetch: fetchImpl = globalThis.fetch 
       ? `pedido_por=eq.${x.pedidoPor}&id=gt.${Number(x.depoisDoId)}`
       : `id=in.(${x.ids.map((i) => Number(i)).filter(Number.isFinite).join(',')})`;
     try {
-      const resp = await fetchImpl(`${url}/rest/v1/${tabela}?atendido_em=is.null&${filtro}`, {
+      const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${tabela}?atendido_em=is.null&${filtro}`, {
         method: 'PATCH',
         headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
         body: JSON.stringify({ atendido_em: quando.toISOString(), resultado: RESULTADOS.muitosPedidos, dados: null }),
-      });
+      }, 'a resposta dos pedidos em excesso');
       if (!resp.ok) await erroRest(resp, chave, 'a resposta dos pedidos em excesso');
       console.warn(`== ${quando.toISOString()} ${tabela}: um usuário tinha mais de ${MAX_PENDENTES_POR_USUARIO} pedidos pendentes; o excesso foi respondido sem consulta.`);
     } catch (e) {
@@ -371,7 +389,7 @@ export async function lerPermissao({ url, chave, fetch: fetchImpl = globalThis.f
   // sem dono legível não há o que consultar: decidirPermissao recusa por falta de perfil
   if (!ehUuid(pedidoPor)) return { perfil: null, fazendasDoUsuario: [], categorias: [], fazendas: [], mapasFazendas: [] };
   const ler = async (caminho, acao) => {
-    const resp = await fetchImpl(`${url}/rest/v1/${caminho}`, { headers: cabecalhosSupabase(chave) });
+    const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${caminho}`, { headers: cabecalhosSupabase(chave) }, acao);
     if (!resp.ok) await erroRest(resp, chave, acao);
     const linhas = await resp.json();
     if (!Array.isArray(linhas)) throw new Error(`Supabase devolveu resposta fora do formato (${acao}).`);
@@ -432,9 +450,9 @@ async function semColunaDeHora(resp) {
  * pedidos por data seguem funcionando). Quem decide quais são atendidos nesta verificação é planejarFila.
  */
 export async function pedidosChuvaPendentes({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
-  const ler = (colunas) => fetchImpl(`${url}/rest/v1/${TABELA_CHUVA}?select=${colunas}&atendido_em=is.null&order=id.asc&limit=${FILA_LIDA}`, {
+  const ler = (colunas) => chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_CHUVA}?select=${colunas}&atendido_em=is.null&order=id.asc&limit=${FILA_LIDA}`, {
     headers: cabecalhosSupabase(chave),
-  });
+  }, 'a leitura dos pedidos de chuva');
   let resp = await ler('id,pedido_por,fazenda,de,ate,de_hora,ate_hora');
   if (!resp.ok && (await semColunaDeHora(resp))) resp = await ler('id,pedido_por,fazenda,de,ate');
   if (!resp.ok) {
@@ -447,11 +465,11 @@ export async function pedidosChuvaPendentes({ url, chave, fetch: fetchImpl = glo
 
 /** Grava a resposta de um pedido de chuva: 'ok' com os dados, ou 'erro: ...' sem dados. */
 export async function responderPedidoChuva({ url, chave, fetch: fetchImpl = globalThis.fetch }, id, resultado, dados, agora = new Date()) {
-  const resp = await fetchImpl(`${url}/rest/v1/${TABELA_CHUVA}?atendido_em=is.null&id=eq.${Number(id)}`, {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_CHUVA}?atendido_em=is.null&id=eq.${Number(id)}`, {
     method: 'PATCH',
     headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
     body: JSON.stringify({ atendido_em: agora.toISOString(), resultado: String(resultado).slice(0, 400), dados: dados ?? null }),
-  });
+  }, 'a resposta do pedido de chuva');
   if (!resp.ok) await erroRest(resp, chave, 'a resposta do pedido de chuva');
 }
 
@@ -486,10 +504,10 @@ export async function atenderPedidosChuva({ supabase, agrovex, fetch: fetchImpl 
     }
   }
   const limite = new Date(agora().getTime() - GUARDAR_CHUVA_DIAS * 86_400_000).toISOString();
-  await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA}?atendido_em=lt.${encodeURIComponent(limite)}`, {
+  await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CHUVA}?atendido_em=lt.${encodeURIComponent(limite)}`, {
     method: 'DELETE',
     headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
-  }).catch(() => undefined);
+  }, 'a limpeza dos pedidos de chuva').catch(() => undefined);
   return plano.atender.length;
 }
 
@@ -504,9 +522,9 @@ const MAX_MEC_POR_RODADA = 2;
  * máximo FILA_LIDA; sem a tabela → []. Quem decide quais são atendidos nesta verificação é planejarFila.
  */
 export async function pedidosMecPendentes({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
-  const resp = await fetchImpl(`${url}/rest/v1/${TABELA_MEC}?select=id,pedido_por,unidade,de,ate&atendido_em=is.null&order=id.asc&limit=${FILA_LIDA}`, {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_MEC}?select=id,pedido_por,unidade,de,ate&atendido_em=is.null&order=id.asc&limit=${FILA_LIDA}`, {
     headers: cabecalhosSupabase(chave),
-  });
+  }, 'a leitura dos pedidos de boletins');
   if (!resp.ok) {
     if (await semTabela(resp)) return [];
     await erroRest(resp, chave, 'a leitura dos pedidos de boletins');
@@ -517,11 +535,11 @@ export async function pedidosMecPendentes({ url, chave, fetch: fetchImpl = globa
 
 /** Grava a resposta de um pedido de boletins: 'ok' com os dados, ou 'erro: ...' sem dados. */
 export async function responderPedidoMec({ url, chave, fetch: fetchImpl = globalThis.fetch }, id, resultado, dados, agora = new Date()) {
-  const resp = await fetchImpl(`${url}/rest/v1/${TABELA_MEC}?atendido_em=is.null&id=eq.${Number(id)}`, {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_MEC}?atendido_em=is.null&id=eq.${Number(id)}`, {
     method: 'PATCH',
     headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
     body: JSON.stringify({ atendido_em: agora.toISOString(), resultado: String(resultado).slice(0, 400), dados: dados ?? null }),
-  });
+  }, 'a resposta do pedido de boletins');
   if (!resp.ok) await erroRest(resp, chave, 'a resposta do pedido de boletins');
 }
 
@@ -557,10 +575,10 @@ export async function atenderPedidosMec({ supabase, agrovex, fetch: fetchImpl = 
   }
   // a resposta é grande (o relatório inteiro) e já foi para a tela: não fica guardada
   const limite = new Date(agora().getTime() - GUARDAR_MEC_DIAS * 86_400_000).toISOString();
-  await fetchImpl(`${supabase.url}/rest/v1/${TABELA_MEC}?atendido_em=lt.${encodeURIComponent(limite)}`, {
+  await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_MEC}?atendido_em=lt.${encodeURIComponent(limite)}`, {
     method: 'DELETE',
     headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
-  }).catch(() => undefined);
+  }, 'a limpeza dos pedidos de boletins').catch(() => undefined);
   return plano.atender.length;
 }
 
@@ -576,12 +594,15 @@ const SITUACAO_ZEUS_PASSO_MIN = 5;
  * Mantém mapas_zeus_situacao em dia: o último dia com leitura de chuva de cada fazenda da ZEUS, para a tela
  * avisar até onde dá para puxar antes de alguém pedir um período que ainda não chegou. Roda junto da
  * verificação dos pedidos, mas só consulta a ZEUS quando a última conferência tem mais de 15 min.
+ * Depois de gravar, apaga as linhas das fazendas que não vieram nesta rodada (a consulta só olha os últimos
+ * ZEUS_ULTIMO_DIA_JANELA dias: fazenda parada há mais que isso some do aviso em vez de ficar com um aviso
+ * velho). Como nas outras tabelas: só limpa depois de a gravação dar certo, e nunca quando a ZEUS não devolveu nada.
  * Devolve 'recente', 'fora-do-passo', 'sem-tabela' (script 0004 não aplicado), 'vazio' ou 'ok'.
  */
 export async function atualizarSituacaoZeus({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
-  const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?select=conferido_em&order=conferido_em.desc&limit=1`, {
+  const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?select=conferido_em&order=conferido_em.desc&limit=1`, {
     headers: cabecalhosSupabase(supabase.chave),
-  });
+  }, 'a leitura da situação da ZEUS');
   if (!resp.ok) {
     if (await semTabela(resp)) return 'sem-tabela';
     await erroRest(resp, supabase.chave, 'a leitura da situação da ZEUS');
@@ -593,12 +614,18 @@ export async function atualizarSituacaoZeus({ supabase, agrovex, fetch: fetchImp
   if (momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
   const novas = await ultimoDiaZeus({ url: agrovex.url, token: agrovex.token, fetchImpl, agora: momento });
   if (!novas.length) return 'vazio';
-  const gravar = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?on_conflict=fazenda`, {
+  const gravar = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?on_conflict=fazenda`, {
     method: 'POST',
     headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(novas),
-  });
+  }, 'a gravação da situação da ZEUS');
   if (!gravar.ok) await erroRest(gravar, supabase.chave, 'a gravação da situação da ZEUS');
+  // todas as linhas desta rodada levam o mesmo conferido_em: o que ficou com carimbo anterior não veio da ZEUS
+  const limpeza = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?conferido_em=lt.${encodeURIComponent(novas[0].conferido_em)}`, {
+    method: 'DELETE',
+    headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
+  }, 'a limpeza da situação da ZEUS');
+  if (!limpeza.ok) await erroRest(limpeza, supabase.chave, 'a limpeza da situação da ZEUS');
   console.log(`== ${momento.toISOString()} situação da ZEUS: ${novas.length} fazendas, dados até ${novas.reduce((m, l) => (l.ultimo_dia > m ? l.ultimo_dia : m), '')}.`);
   return 'ok';
 }
@@ -616,9 +643,9 @@ export const CHUVA_TALHAO_MINUTOS = 30;
  * aplicado), 'sem-coluna' (script 0014 não aplicado), 'vazio' ou 'ok'.
  */
 export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
-  const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?select=gerado_em&order=gerado_em.desc&limit=1`, {
+  const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?select=gerado_em&order=gerado_em.desc&limit=1`, {
     headers: cabecalhosSupabase(supabase.chave),
-  });
+  }, 'a leitura da chuva por talhão');
   if (!resp.ok) {
     if (await semTabela(resp)) return 'sem-tabela';
     await erroRest(resp, supabase.chave, 'a leitura da chuva por talhão');
@@ -632,11 +659,11 @@ export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl
   if (!novas.length) return 'vazio';
   // uma fazenda por pedido: cada linha leva a chuva de todos os talhões e passa de 300 KB nas maiores
   for (const linha of novas) {
-    const gravar = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?on_conflict=unidade`, {
+    const gravar = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?on_conflict=unidade`, {
       method: 'POST',
       headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify([linha]),
-    });
+    }, 'a gravação da chuva por talhão');
     if (gravar.ok) continue;
     const texto = await gravar.clone().text().catch(() => '');
     if (/PGRST204/.test(texto)) {
@@ -645,10 +672,10 @@ export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl
     }
     await erroRest(gravar, supabase.chave, 'a gravação da chuva por talhão');
   }
-  const limpeza = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?gerado_em=lt.${encodeURIComponent(novas[0].gerado_em)}`, {
+  const limpeza = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?gerado_em=lt.${encodeURIComponent(novas[0].gerado_em)}`, {
     method: 'DELETE',
     headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
-  });
+  }, 'a limpeza da chuva por talhão');
   if (!limpeza.ok) await erroRest(limpeza, supabase.chave, 'a limpeza da chuva por talhão');
   console.log(`== ${momento.toISOString()} chuva por talhão: ${novas.length} fazendas, ${novas.reduce((n, l) => n + Object.keys(l.talhoes).length, 0)} talhões, ${novas.reduce((n, l) => n + l.pics.length, 0)} pluviômetros.`);
   return 'ok';
@@ -666,9 +693,9 @@ export const LIMITES_ZEUS_HORAS = 24;
  * 'sem-tabela' (script 0016 não aplicado), 'vazio' ou 'ok'.
  */
 export async function atualizarLimitesZeus({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
-  const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?select=gerado_em&order=gerado_em.desc&limit=1`, {
+  const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?select=gerado_em&order=gerado_em.desc&limit=1`, {
     headers: cabecalhosSupabase(supabase.chave),
-  });
+  }, 'a leitura dos limites da ZEUS');
   if (!resp.ok) {
     if (await semTabela(resp)) return 'sem-tabela';
     await erroRest(resp, supabase.chave, 'a leitura dos limites da ZEUS');
@@ -682,17 +709,17 @@ export async function atualizarLimitesZeus({ supabase, agrovex, fetch: fetchImpl
   if (!novas.length) return 'vazio';
   // uma fazenda por pedido: cada linha leva o contorno de todos os talhões
   for (const linha of novas) {
-    const gravar = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?on_conflict=unidade`, {
+    const gravar = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?on_conflict=unidade`, {
       method: 'POST',
       headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify([linha]),
-    });
+    }, 'a gravação dos limites da ZEUS');
     if (!gravar.ok) await erroRest(gravar, supabase.chave, 'a gravação dos limites da ZEUS');
   }
-  const limpeza = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?gerado_em=lt.${encodeURIComponent(novas[0].gerado_em)}`, {
+  const limpeza = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?gerado_em=lt.${encodeURIComponent(novas[0].gerado_em)}`, {
     method: 'DELETE',
     headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
-  });
+  }, 'a limpeza dos limites da ZEUS');
   if (!limpeza.ok) await erroRest(limpeza, supabase.chave, 'a limpeza dos limites da ZEUS');
   console.log(`== ${momento.toISOString()} limites da ZEUS: ${novas.length} fazendas, ${novas.reduce((n, l) => n + l.talhoes.length, 0)} talhões.`);
   return 'ok';
@@ -712,7 +739,7 @@ const GUARDAR_VALID_DIAS = 7;
  */
 export async function atenderPedidosValidacao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const ctx = { ...supabase, fetch: fetchImpl };
-  const resp = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_VALID}?select=id&atendido_em=is.null&order=id.asc&limit=${MAX_PENDENTES_LIDOS}`, { headers: cabecalhosSupabase(supabase.chave) });
+  const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_VALID}?select=id&atendido_em=is.null&order=id.asc&limit=${MAX_PENDENTES_LIDOS}`, { headers: cabecalhosSupabase(supabase.chave) }, 'a leitura dos pedidos da validação');
   if (!resp.ok) {
     if (await semTabela(resp)) return false;
     await erroRest(resp, supabase.chave, 'a leitura dos pedidos da validação');
@@ -739,17 +766,17 @@ export async function atenderPedidosValidacao({ supabase, agrovex, fetch: fetchI
     // o texto de `erro` já foi para o log; o pedido leva só o texto do tipo da falha
     if (erro) resultado = `erro: ${erroDaRodada === null ? MENSAGENS_DE_ERRO.interno : mensagemPublica(erroDaRodada)}`;
   }
-  const marca = await fetchImpl(`${supabase.url}/rest/v1/${TABELA_VALID}?atendido_em=is.null&id=lte.${ids[ids.length - 1]}`, {
+  const marca = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_VALID}?atendido_em=is.null&id=lte.${ids[ids.length - 1]}`, {
     method: 'PATCH',
     headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
     body: JSON.stringify({ atendido_em: agora().toISOString(), resultado: resultado.slice(0, 300) }),
-  });
+  }, 'a marcação dos pedidos da validação');
   if (!marca.ok) await erroRest(marca, supabase.chave, 'a marcação dos pedidos da validação');
   const limite = new Date(agora().getTime() - GUARDAR_VALID_DIAS * 86_400_000).toISOString();
-  await fetchImpl(`${ctx.url}/rest/v1/${TABELA_VALID}?atendido_em=lt.${encodeURIComponent(limite)}`, {
+  await chamarSupabase(fetchImpl, `${ctx.url}/rest/v1/${TABELA_VALID}?atendido_em=lt.${encodeURIComponent(limite)}`, {
     method: 'DELETE',
     headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
-  }).catch(() => undefined);
+  }, 'a limpeza dos pedidos da validação').catch(() => undefined);
   return true;
 }
 
