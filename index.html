@@ -640,7 +640,6 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   .usuario-logado .perfil-badge{display:none;}
   .sidebar-acoes{flex-direction:row;gap:8px;width:auto;}
   .btn-sair{width:auto;padding:6px 10px;}
-  .protipo-nota{display:none;}
   main{padding:18px;margin-left:0;}
 }
 
@@ -1256,9 +1255,9 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
           <select id="ac-safra"></select>
         </div>
         <div style="flex:1"></div>
-        <button class="btn" id="btn-salvar-colheita">
+        <button class="btn" id="btn-salvar-colheita" title="Relê os dados do banco. Cada campo já é gravado ao sair dele.">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
-          <span id="btn-salvar-colheita-label">Salvar</span>
+          <span id="btn-salvar-colheita-label">Recarregar</span>
         </button>
       </div>
 
@@ -1266,7 +1265,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <div class="section-head">
           <div><h2>Lançamento diário</h2><div class="desc">Área colhida, módulos, bipagem, % pesado e peso/módulo — atualize a qualquer momento</div></div>
         </div>
-        <div class="legenda-editavel"><span class="amostra-editavel"></span> Coluna editável — altere e clique em Salvar para refletir no restante do sistema</div>
+        <div class="legenda-editavel"><span class="amostra-editavel"></span> Coluna editável — o valor é gravado assim que você sai do campo; o botão Recarregar só relê os dados do banco</div>
         <div class="legenda-editavel"><span class="amostra-preenchida"></span> Linha em azul mais escuro — já tem algum dado lançado</div>
         <div class="card tabela-wrap">
           <table class="tabela-colheita">
@@ -1657,7 +1656,7 @@ async function aguardarBiblioteca(nome){
   if(typeof window[nome] === 'undefined') throw new Error('A biblioteca "'+nome+'" ainda não carregou. Confira a conexão e tente de novo em instantes.');
 }
 /* "Carregando" do COA WEB (assets/coa-loader.css): aparece ao abrir o site e em cada espera (entrar, abrir um
-   módulo, sair). Fica no mínimo 900 ms na tela para o logo se montar uma vez, e some com um esmaecer curto. */
+   módulo, sair). Fica no mínimo 1.300 ms na tela para o logo se montar uma vez, e some com um esmaecer curto. */
 const coaLoader = (()=>{
   const el = document.getElementById('coa-loader'), txt = document.getElementById('coa-loader-texto');
   const MINIMO_MS = 1300; // tempo para o logo se montar e brilhar uma vez
@@ -1681,7 +1680,8 @@ const coaLoader = (()=>{
   return { mostrar, esconder };
 })();
 let categoriaAtual = null; // 'algodao' | 'mecanizadas' | 'administracao' | 'mapas' | 'acompanhamento' | 'sat' | 'previsao' | 'chuva' | 'validacao' | 'controle'
-/* categorias que o administrador libera por usuário (tabela usuario_categorias). O admin vê todas. */
+/* categorias que o administrador libera por usuário (tabela usuario_categorias). Só o ADMINISTRADOR+ vê todas
+   sem liberação (ver podeCategoria); o administrador comum vê as que foram liberadas a ele. */
 const CATEGORIAS = [
   { chave:'algodao', nome:'Algodão', card:'card-algodao' },
   { chave:'mecanizadas', nome:'Mecanizadas', card:'card-mecanizadas' },
@@ -1937,10 +1937,14 @@ function talhoesFiltrados(){
   }).sort(compararTalhao);
 }
 
+// O filtro de safra abre na "2ª Safra" (se ela existir). Só uma vez: depois vale o que a pessoa escolher,
+// inclusive "Todas".
+let relatorioSafraInicial = true;
 function renderRelatorio(){
   preencherSelect(document.getElementById('f-safra'), state.safras.map(s=>s.nome), true);
-  if(document.getElementById('f-safra').value===''||document.getElementById('f-safra').value==='todas'){
+  if(relatorioSafraInicial && state.safras.some(s=>s.nome==='2ª Safra')){
     document.getElementById('f-safra').value='2ª Safra';
+    relatorioSafraInicial = false;
   }
   const lista = talhoesFiltrados();
   const tbody = document.getElementById('tbl-relatorio');
@@ -1979,6 +1983,7 @@ function renderRelatorio(){
   document.getElementById('m-prod-simples').innerHTML = (()=>{ const ms = calcularMediaSimples(lista); return (ms!=null? fmt(ms,2) : '–'); })() + ' <span class="unidade">@/ha</span>';
   document.getElementById('m-mod').textContent = somaMod? fmt(somaMod,0) : '–';
 }
+document.getElementById('f-safra').addEventListener('change', ()=>{ relatorioSafraInicial = false; });
 ['f-safra','f-situacao','f-pct'].forEach(id=>{
   document.getElementById(id).addEventListener('change', renderRelatorio);
 });
@@ -2053,7 +2058,7 @@ function montarDocumentoExport(){
 
 function nomeArquivoExport(ext){
   const safra = document.getElementById('f-safra').value.replace(/[^a-zA-Z0-9]+/g,'-');
-  const data = new Date().toISOString().slice(0,10);
+  const data = isoLocalMec(new Date()); // dia do aparelho (toISOString daria o dia em UTC: à noite, o seguinte)
   return `relatorio-colheita-coa_${safra}_${data}.${ext}`;
 }
 
@@ -2061,7 +2066,9 @@ function comBotaoCarregando(btn, textoCarregando, tarefa){
   const original = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = textoCarregando;
-  tarefa().finally(()=>{ btn.disabled = false; btn.innerHTML = original; });
+  tarefa()
+    .catch(erro=>{ console.error(erro); alert('Não foi possível gerar o arquivo: ' + (erro && erro.message ? erro.message : erro)); })
+    .finally(()=>{ btn.disabled = false; btn.innerHTML = original; });
 }
 
 // Escala do PNG (nítido no celular/WhatsApp), limitada pela área máxima de canvas do aparelho
@@ -2164,15 +2171,25 @@ document.getElementById('c-safra').addEventListener('change', renderColheita);
 /* =====================================================================
    ATUALIZAR COLHEITA — lançamento diário editável
 ===================================================================== */
+// A tabela não é redesenhada com um campo dela em edição: o redesenho (que vem a cada mudança em tempo real)
+// apagaria o que a pessoa está digitando. O pedido fica guardado e é atendido quando o foco sai da tabela.
+let atualizarColheitaPendente = false;
+function editandoAtualizarColheita(){
+  return document.getElementById('tbl-atualizar-colheita').contains(document.activeElement);
+}
 function renderAtualizarColheita(){
+  if(editandoAtualizarColheita()){ atualizarColheitaPendente = true; return; }
+  atualizarColheitaPendente = false;
   preencherSelect(document.getElementById('ac-safra'), state.safras.map(s=>s.nome), true);
   if(!document.getElementById('ac-safra').value) document.getElementById('ac-safra').value='2ª Safra';
   const safraSel = document.getElementById('ac-safra').value;
   const fazendaId = fazendaSelecionadaId();
   const lista = state.talhoes.filter(t=> t.fazendaId===fazendaId && (safraSel==='todas' || t.safra===safraSel)).sort(compararTalhao);
   // referência para a hierarquia de peso: todos os talhões da fazenda (todas
-  // as safras), pra checar se a variedade/período já tem algum dado pesado
-  const referenciaPeso = state.talhoes.filter(t=>t.fazendaId===fazendaId);
+  // as safras), pra checar se a variedade/período já tem algum dado pesado.
+  // É montada a cada uso: uma releitura do banco troca os objetos de state.talhoes.
+  const referenciaPeso = ()=> state.talhoes.filter(t=>t.fazendaId===fazendaId);
+  const referenciaInicial = referenciaPeso();
   const tbody = document.getElementById('tbl-atualizar-colheita');
   tbody.innerHTML='';
 
@@ -2196,67 +2213,105 @@ function renderAtualizarColheita(){
       <td class="td-edit"><input type="number" class="in-percentPesado" value="${t.percentPesado??''}" min="0" max="100" step="1" placeholder="%"></td>
       <td class="td-edit">
         <input type="number" class="in-peso" value="${t.pesoModulo??''}" step="0.1" placeholder="kg">
-        <div class="dica-peso">${fraseCategoriaPeso(t.percentPesado, t.variedade, t.safra, referenciaPeso)}</div>
+        <div class="dica-peso">${fraseCategoriaPeso(t.percentPesado, t.variedade, t.safra, referenciaInicial)}</div>
       </td>
     `;
     tbody.appendChild(tr);
   });
 
-  async function salvarCampo(id, campoBanco, valor){
-    const { error } = await sb.from('talhoes').update({ [campoBanco]: valor }).eq('id', id);
-    if(error) alert('Erro ao salvar: '+error.message);
+  // Grava no banco. Se o banco recusar, avisa e volta o valor anterior na memória e na tela.
+  // mudancas = [[campo do talhão na memória, valor novo, valor anterior, classe do campo na linha (ou null)]].
+  // Só desfaz se o talhão ainda está com o valor recusado (uma alteração mais nova não é apagada). O talhão e a
+  // linha são procurados de novo: os dados podem ter sido relidos, e a tabela redesenhada, enquanto o banco respondia.
+  async function salvarCampo(id, valores, mudancas){
+    let error = null;
+    try{ ({ error } = await sb.from('talhoes').update(valores).eq('id', id)); }
+    catch(e){ error = e || { message:'falha na gravação' }; }
+    if(!error) return;
+    const t = state.talhoes.find(x=>x.id==id);
+    const tr = [...tbody.rows].find(r=>r.dataset.id==id);
+    const desfez = !!t && mudancas.every(([campo, novo])=>t[campo]===novo);
+    if(desfez) mudancas.forEach(([campo, , anterior])=>{ t[campo] = anterior; });
+    if(t && tr){
+      mudancas.forEach(([campo, , , classe])=>{
+        const el = classe ? tr.querySelector('.'+classe) : null;
+        // sem desfazer (já há valor mais novo), não mexe no campo em que a pessoa está digitando
+        if(el && (desfez || el !== document.activeElement)) el.value = t[campo] ?? '';
+      });
+      if(mudancas.some(m=>m[0]==='percentPesado')){
+        tr.querySelector('.dica-peso').textContent = fraseCategoriaPeso(t.percentPesado, t.variedade, t.safra, referenciaPeso());
+      }
+      tr.classList.toggle('linha-preenchida', talhaoTemDadoPreenchido(t));
+    }
+    alert('Erro ao salvar: '+(error.message || error)+'\nO valor não foi gravado. O campo voltou ao valor anterior.');
   }
 
   tbody.querySelectorAll('tr').forEach(tr=>{
-    const t = state.talhoes.find(x=>x.id==tr.dataset.id);
-    function atualizarDestaqueLinha(){
+    // o talhão é procurado a cada evento, e não uma vez só: com a tabela em edição ela não é redesenhada, e
+    // uma releitura do banco nesse meio-tempo troca os objetos de state.talhoes
+    const talhaoDaLinha = ()=> state.talhoes.find(x=>x.id==tr.dataset.id);
+    function atualizarDestaqueLinha(t){
       tr.classList.toggle('linha-preenchida', talhaoTemDadoPreenchido(t));
     }
     tr.querySelector('.in-areaColhida').addEventListener('change', e=>{
+      const t = talhaoDaLinha(); if(!t) return;
+      const anterior = t.areaColhida;
       t.areaColhida = parseFloat(e.target.value)||0;
-      atualizarDestaqueLinha();
-      salvarCampo(t.id, 'area_colhida', t.areaColhida);
+      atualizarDestaqueLinha(t);
+      salvarCampo(t.id, { area_colhida: t.areaColhida }, [['areaColhida', t.areaColhida, anterior, 'in-areaColhida']]);
     });
     tr.querySelector('.in-qtdModulos').addEventListener('change', e=>{
+      const t = talhaoDaLinha(); if(!t) return;
+      const anterior = t.qtdModulos;
       t.qtdModulos = parseFloat(e.target.value)||0;
-      atualizarDestaqueLinha();
-      salvarCampo(t.id, 'qtd_modulos', t.qtdModulos);
+      atualizarDestaqueLinha(t);
+      salvarCampo(t.id, { qtd_modulos: t.qtdModulos }, [['qtdModulos', t.qtdModulos, anterior, 'in-qtdModulos']]);
     });
     tr.querySelector('.in-bipagem').addEventListener('change', e=>{
+      const t = talhaoDaLinha(); if(!t) return;
+      const anterior = t.statusBipagem;
       t.statusBipagem = e.target.value;
-      atualizarDestaqueLinha();
-      salvarCampo(t.id, 'status_bipagem', t.statusBipagem);
+      atualizarDestaqueLinha(t);
+      salvarCampo(t.id, { status_bipagem: t.statusBipagem }, [['statusBipagem', t.statusBipagem, anterior, 'in-bipagem']]);
     });
     const campoPercent = tr.querySelector('.in-percentPesado');
     const dicaEl = tr.querySelector('.dica-peso');
     campoPercent.addEventListener('input', e=>{
-      dicaEl.textContent = fraseCategoriaPeso(e.target.value, t.variedade, t.safra, referenciaPeso);
+      const t = talhaoDaLinha(); if(!t) return;
+      dicaEl.textContent = fraseCategoriaPeso(e.target.value, t.variedade, t.safra, referenciaPeso());
     });
-    campoPercent.addEventListener('change', async e=>{
+    campoPercent.addEventListener('change', e=>{
+      const t = talhaoDaLinha(); if(!t) return;
+      const anterior = t.percentPesado, origemAnterior = t.origemPeso;
       t.percentPesado = e.target.value===''? null : parseFloat(e.target.value);
-      t.origemPeso = origemPesoPorCategoria(t.percentPesado, t.variedade, t.safra, referenciaPeso);
-      atualizarDestaqueLinha();
-      const { error } = await sb.from('talhoes').update({
-        percent_pesado: t.percentPesado, origem_peso: t.origemPeso
-      }).eq('id', t.id);
-      if(error) alert('Erro ao salvar: '+error.message);
+      t.origemPeso = origemPesoPorCategoria(t.percentPesado, t.variedade, t.safra, referenciaPeso());
+      atualizarDestaqueLinha(t);
+      salvarCampo(t.id, { percent_pesado: t.percentPesado, origem_peso: t.origemPeso },
+        [['percentPesado', t.percentPesado, anterior, 'in-percentPesado'], ['origemPeso', t.origemPeso, origemAnterior, null]]);
     });
     tr.querySelector('.in-peso').addEventListener('change', e=>{
+      const t = talhaoDaLinha(); if(!t) return;
+      const anterior = t.pesoModulo;
       t.pesoModulo = e.target.value===''? null : parseFloat(e.target.value);
-      atualizarDestaqueLinha();
-      salvarCampo(t.id, 'peso_modulo', t.pesoModulo);
+      atualizarDestaqueLinha(t);
+      salvarCampo(t.id, { peso_modulo: t.pesoModulo }, [['pesoModulo', t.pesoModulo, anterior, 'in-peso']]);
     });
   });
 }
 document.getElementById('ac-safra').addEventListener('change', renderAtualizarColheita);
+document.getElementById('tbl-atualizar-colheita').addEventListener('focusout', ()=>{
+  // espera o foco assentar: se foi para outro campo da tabela (ou só a janela perdeu o foco), continua em edição
+  setTimeout(()=>{ if(atualizarColheitaPendente && !editandoAtualizarColheita()) renderAtualizarColheita(); }, 0);
+});
+// Cada campo já grava sozinho ao sair dele; este botão só relê os dados do banco.
 document.getElementById('btn-salvar-colheita').addEventListener('click', async (e)=>{
   const label = document.getElementById('btn-salvar-colheita-label');
   const btn = e.currentTarget;
   btn.disabled = true;
-  label.textContent = 'Salvando…';
-  await recarregarTudoDoSupabase();
-  label.textContent = 'Salvo ✓';
-  setTimeout(()=>{ label.textContent = 'Salvar'; btn.disabled = false; }, 1200);
+  label.textContent = 'Recarregando…';
+  const leu = await recarregarTudoDoSupabase();
+  label.textContent = leu ? 'Recarregado ✓' : 'Não recarregou';
+  setTimeout(()=>{ label.textContent = 'Recarregar'; btn.disabled = false; }, 1200);
 });
 
 /* =====================================================================
@@ -2301,6 +2356,7 @@ function renderTalhoes(){
 
     tr.querySelector('.btn-remover-talhao').addEventListener('click', async e=>{
       const btn = e.target;
+      if(!confirm(`Remover o talhão ${t.talhao} (${t.safra})? Os lançamentos de colheita dele também são apagados.`)) return;
       btn.disabled = true;
       const { error } = await sb.from('talhoes').delete().eq('id', t.id);
       if(error){ alert('Erro ao remover: '+error.message); btn.disabled = false; return; }
@@ -2594,7 +2650,7 @@ async function confirmarImportacao(){
     let fazenda = state.fazendas.find(f=>f.nome===l.fazenda);
     if(!fazenda){
       const { data, error } = await sb.from('fazendas').insert({nome:l.fazenda}).select().single();
-      if(error){ erros.push(`Fazenda "${l.fazenda}": ${error.message}`); continue; }
+      if(error){ erros.push(`Talhão ${l.talhao}: a fazenda "${l.fazenda}" não existe e não pôde ser cadastrada (${error.message})`); continue; }
       fazenda = data; state.fazendas.push(fazenda); novasFazendas++;
     }
     if(l.variedade && !state.variedades.some(v=>v.nome===l.variedade)){
@@ -2619,13 +2675,21 @@ async function confirmarImportacao(){
         area_colhida:0, qtd_modulos:0, status_bipagem:'NÃO INICIADO', peso_modulo:null
       }));
     }
-    if(erro){ erros.push(`Talhão ${l.talhao}: ${erro.message}`); continue; }
+    if(erro){ erros.push(`Talhão ${l.talhao} (${l.fazenda}${l.safra ? ', ' + l.safra : ''}): ${erro.message}`); continue; }
     novosOuAtualizados++;
   }
 
-  let msg = `${novosOuAtualizados} talhão(ões) importados/atualizados. Cadastrados automaticamente: ${novasFazendas} fazenda(s), ${novasVariedades} variedade(s), ${novasSafras} safra(s).`;
-  if(erros.length){ msg += ` ${erros.length} linha(s) não puderam ser salvas (veja o console para detalhes).`; console.warn('Erros na importação:', erros); }
-  document.getElementById('import-resultado').innerHTML = `<div class="aviso-ok">${escHtml(msg)}</div>`;
+  const msg = `${novosOuAtualizados} talhão(ões) importados/atualizados. Cadastrados automaticamente: ${novasFazendas} fazenda(s), ${novasVariedades} variedade(s), ${novasSafras} safra(s).`;
+  if(erros.length){
+    // linha recusada não é sucesso: aviso, com o motivo de cada uma (as primeiras; o resto fica no console)
+    const MAX_MOTIVOS = 30;
+    console.warn('Erros na importação:', erros);
+    document.getElementById('import-resultado').innerHTML = `<div class="aviso"><b>${erros.length} linha(s) da planilha não foram salvas.</b> ${escHtml(msg)}
+      <ul style="margin:6px 0 0;padding-left:18px">${erros.slice(0, MAX_MOTIVOS).map(m=>`<li>${escHtml(m)}</li>`).join('')}</ul>
+      ${erros.length > MAX_MOTIVOS ? `<div style="margin-top:4px">… e mais ${erros.length - MAX_MOTIVOS} linha(s) com erro.</div>` : ''}</div>`;
+  } else {
+    document.getElementById('import-resultado').innerHTML = `<div class="aviso-ok">${escHtml(msg)}</div>`;
+  }
   pendentes=[];
   document.getElementById('import-preview').innerHTML='';
   inputArquivo.value='';
@@ -2634,10 +2698,11 @@ async function confirmarImportacao(){
 }
 
 /* =====================================================================
-   MECANIZADAS — importar e reapresentar o boletim de atividades (fase 1:
-   só leitura e exibição; as regras de detecção de erro entram depois)
+   MECANIZADAS — importar (arquivo exportado ou busca direta no PIMS) e
+   conferir o boletim de atividades: regras de erro e de atenção, filtros
+   e relatório de erros em Excel ou PDF. O resultado fica só na memória.
 ===================================================================== */
-let mecanizadasPorFazenda = {}; // { [fazendaId]: {headers, dados, nomeArquivo} }
+let mecanizadasPorFazenda = {}; // { [fazendaId]: {headers, dados, linhas, nomeArquivo, validacao, validacaoAtencao, preLimpeza} }
 
 function normalizarTextoMec(s){
   return String(s==null?'':s)
@@ -2654,12 +2719,6 @@ function removerAnoDoPeriodo(periodoNorm){
 }
 function ehPeriodoAdm(periodoNorm){
   return /^ADM(\s|$)/.test(periodoNorm);
-}
-function ehPeriodoPreparoOuCobertura(periodoNorm){
-  return /COBERTURA|PREPARO|PREP\.|CORRECAO/.test(periodoNorm);
-}
-function ehCentroPecuaria(ccNorm){
-  return /PECUARIA/.test(ccNorm);
 }
 function ehPeriodoPecuaria(periodoNorm){
   return /(^|\s)PECUARIA(\s|$)/.test(periodoNorm);
@@ -2720,21 +2779,12 @@ function validarPeriodoCentroCusto(headers, dados){
     return { periodoDesc, ccDesc, unidadeDesc, ehAdm, ehPecuaria, periodoBase, semRegraAinda };
   });
 
-  // centros de custo considerados "de cultura" (proibidos em ADM):
-  // 1) o centro bate exatamente com o período (sem o ano) de alguma linha não-ADM
-  // 2) o centro está associado a um período de preparo de solo/cobertura
-  // 3) o nome do centro contém "PECUARIA" (pega também "COLIGADA PECUARIA")
-  const centrosCulturais = new Set();
+  // quantas vezes cada centro de custo aparece em cada período de cultura (sem o ano)
   const contagemPorPeriodoBase = {};
   linhasInfo.forEach(info=>{
     if(info.ehAdm || info.ehPecuaria || !info.ccDesc || info.semRegraAinda) return;
-    if(info.ccDesc === info.periodoBase) centrosCulturais.add(info.ccDesc);
-    if(ehPeriodoPreparoOuCobertura(info.periodoDesc)) centrosCulturais.add(info.ccDesc);
     contagemPorPeriodoBase[info.periodoBase] = contagemPorPeriodoBase[info.periodoBase] || {};
     contagemPorPeriodoBase[info.periodoBase][info.ccDesc] = (contagemPorPeriodoBase[info.periodoBase][info.ccDesc]||0) + 1;
-  });
-  linhasInfo.forEach(info=>{
-    if(!info.ehAdm && info.ccDesc && ehCentroPecuaria(info.ccDesc)) centrosCulturais.add(info.ccDesc);
   });
 
   const esperadoPorPeriodoBase = {};
@@ -3039,26 +3089,37 @@ function processarArquivoMecanizadas(file){
   const fazendaId = fazendaSelecionadaId();
   const leitor = new FileReader();
   leitor.onload = (e)=>{
-    let headers = [], dados = [];
+    let headers = [], dados = [], linhas = [];
     try{
       const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
       const ws = wb.Sheets[wb.SheetNames[0]];
       const linhasBrutas = XLSX.utils.sheet_to_json(ws, {header:1, defval:'', raw:false});
       headers = (linhasBrutas[0]||[]).map(h=>String(h).trim());
-      dados = linhasBrutas.slice(1).filter(row=>row.some(c=>String(c).trim()!==''));
+      // número de cada linha na planilha, como o Excel mostra (a 1ª linha lida é a do início da área usada);
+      // as linhas vazias são descartadas, mas contam na numeração
+      const primeiraLinha = (ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']).s.r : 0) + 1;
+      linhasBrutas.forEach((row, k)=>{
+        if(k === 0 || !row.some(c=>String(c).trim()!=='')) return;
+        dados.push(row); linhas.push(primeiraLinha + k);
+      });
     } catch(erro){
       alert('Não foi possível ler o arquivo. Confira se é um .xlsx, .xls ou .csv válido.');
       return;
     }
-    carregarBoletimMecanizadas(fazendaId, headers, dados, file.name);
+    carregarBoletimMecanizadas(fazendaId, headers, dados, file.name, linhas);
   };
   leitor.readAsArrayBuffer(file);
 }
 
 // Valida e mostra um boletim (do arquivo exportado ou buscado direto no PIMS): mesmas colunas, mesmas regras.
-function carregarBoletimMecanizadas(fazendaId, headers, dados, nomeArquivo){
+// linhasOriginais = número de cada linha de dados no arquivo (na busca direta não há arquivo: vale a posição na
+// resposta, contando o cabeçalho como linha 1). É guardado antes da pré-limpeza para o relatório de erros
+// apontar a linha da planilha original, e não a posição depois de tirar as outras fazendas.
+function carregarBoletimMecanizadas(fazendaId, headers, dados, nomeArquivo, linhasOriginais){
+  const linhaDe = new Map(dados.map((row, i)=>[row, linhasOriginais ? linhasOriginais[i] : i + 2]));
   const preLimpeza = filtrarMecanizadasPorFazenda(headers, dados, fazendaId);
   dados = preLimpeza.dados;
+  const linhas = dados.map(row=>linhaDe.get(row));
   const v1 = validarPeriodoCentroCusto(headers, dados);
   const v2 = validarAnoAgricolaData(headers, dados);
   const v3 = validarRegrasOperacionais(headers, dados);
@@ -3066,7 +3127,7 @@ function carregarBoletimMecanizadas(fazendaId, headers, dados, nomeArquivo){
   const atencoes = mesclarMensagens(v2.atencoes, v3.atencoes);
   const validacao = { aplicavel: v1.aplicavel || v2.aplicavel || v3.aplicavel, erros };
   const validacaoAtencao = { aplicavel: v2.aplicavel || v3.aplicavel, atencoes };
-  mecanizadasPorFazenda[fazendaId] = { headers, dados, nomeArquivo, validacao, validacaoAtencao, preLimpeza };
+  mecanizadasPorFazenda[fazendaId] = { headers, dados, linhas, nomeArquivo, validacao, validacaoAtencao, preLimpeza };
   mecFiltroTipo = 'todos';
   mecFiltroErroDetalhe = '';
   mecFiltroAtencaoDetalhe = '';
@@ -3081,7 +3142,7 @@ function carregarBoletimMecanizadas(fazendaId, headers, dados, nomeArquivo){
 --------------------------------------------------------------------- */
 const MEC_PIMS_MAX_DIAS = 62;
 const MEC_PIMS_INTERVALO_MS = 4000;
-const MEC_PIMS_LIMITE_MS = 150000;
+const MEC_PIMS_LIMITE_MS = 150000; // o texto da janela ("até 2 minutos e meio") acompanha este limite
 let mecPimsBusca = 0; // busca em andamento que ainda vale (fechar a janela descarta a resposta)
 
 function isoLocalMec(d){
@@ -3101,7 +3162,7 @@ function validarPeriodoPimsMec(de, ate, hoje){
 }
 function erroPedidoPimsMec(erro){
   const codigo = (erro && erro.code) || '', msg = (erro && erro.message) || '';
-  if(codigo==='42501' || /row-level security|permission denied/i.test(msg)) return 'Sem permissão para buscar no PIMS: é preciso ter pelo menos uma fazenda liberada no COA WEB.';
+  if(codigo==='42501' || /row-level security|permission denied/i.test(msg)) return 'Sem permissão para buscar no PIMS: é preciso ter a categoria Mecanizadas e esta fazenda liberadas no COA WEB. Fale com o administrador.';
   if(codigo==='PGRST205' || codigo==='42P01') return 'Falta a tabela de pedidos no Supabase (rode modulos/mecanizadas/supabase/0001_pedidos_mecanizadas.sql).';
   if(/abort|timeout|timed out|failed to fetch|network/i.test(msg)) return 'O Supabase não respondeu a tempo. Verifique a internet e tente de novo.';
   return 'Não foi possível falar com o servidor' + (codigo ? ` (código ${codigo})` : '') + '. Tente de novo em instantes.';
@@ -3153,7 +3214,7 @@ async function buscarBoletinsPimsMec(){
     const pedido = await sb.from('mec_pims_pedidos').insert({ unidade, de, ate }).select('id').single();
     if(pedido.error) throw new Error(erroPedidoPimsMec(pedido.error));
     if(!vale()) return;
-    mostrarEtapaPimsMec('Buscando no PIMS… (até 1 minuto)');
+    mostrarEtapaPimsMec('Buscando no PIMS… (pode levar até 2 minutos e meio)');
     let resposta = null;
     for(let esperado = 0; esperado < MEC_PIMS_LIMITE_MS && !resposta; esperado += MEC_PIMS_INTERVALO_MS){
       await new Promise(r=>setTimeout(r, MEC_PIMS_INTERVALO_MS));
@@ -3457,7 +3518,7 @@ function cabecalhoRelatorioMec(){
 }
 function exportarExcelMec(ind, sel){
   if(typeof XLSX === 'undefined'){ aguardarBiblioteca('XLSX').then(()=>exportarExcelMec(ind, sel)).catch(e=>alert(e.message)); return; }
-  const { headers, dados, validacao, validacaoAtencao } = mecExport.atual, cab = cabecalhoRelatorioMec();
+  const { headers, dados, linhas: linhaNoArquivo, validacao, validacaoAtencao } = mecExport.atual, cab = cabecalhoRelatorioMec();
   const resumo = [
     ['Relatório de erros — boletins de atividades mecanizadas'], [],
     ['Fazenda', cab.faz], ['Arquivo', cab.arquivo], ['Gerado em', cab.gerado], ['Boletins no relatório', ind.length], [],
@@ -3466,7 +3527,7 @@ function exportarExcelMec(ind, sel){
   ];
   if(sel.semErro) resumo.push(['—', 'Boletins sem erro ou atenção incluídos', ind.filter(i=>!validacao.erros[i] && !validacaoAtencao.atencoes[i]).length]);
   const linhas = [['Linha do arquivo', ...headers, 'Erro', 'Atenção'],
-    ...ind.map(i=>[i+2, ...headers.map((_,j)=>dados[i][j]), validacao.erros[i]||'', validacaoAtencao.atencoes[i]||''])];
+    ...ind.map(i=>[linhaNoArquivo[i], ...headers.map((_,j)=>dados[i][j]), validacao.erros[i]||'', validacaoAtencao.atencoes[i]||''])];
   const wb = XLSX.utils.book_new();
   const ws1 = XLSX.utils.aoa_to_sheet(resumo); ws1['!cols'] = [{wch:22},{wch:80},{wch:12}];
   const ws2 = XLSX.utils.aoa_to_sheet(linhas); ws2['!cols'] = linhas[0].map((h,j)=>({ wch: j===0 ? 10 : (h==='Erro'||h==='Atenção') ? 70 : Math.min(30, Math.max(10, String(h).length + 2)) }));
@@ -3486,7 +3547,7 @@ async function exportarPdfMec(ind, sel){
   await aguardarBiblioteca('jspdf');
   const logo = await carregarLogoCoaMec();
   const { jsPDF } = window.jspdf;
-  const { headers, dados, validacao, validacaoAtencao } = mecExport.atual, cab = cabecalhoRelatorioMec();
+  const { headers, dados, linhas: linhaNoArquivo, validacao, validacaoAtencao } = mecExport.atual, cab = cabecalhoRelatorioMec();
   // colunas principais do relatório do PIMS (as de código levam a descrição na coluna seguinte)
   const achar = n => headers.findIndex(h=>normalizarTextoMec(h)===n);
   const cols = [];
@@ -3546,7 +3607,7 @@ async function exportarPdfMec(ind, sel){
     const alt = Math.max(1, mot.length, ...celulas.map(c=>c.length)) * 3.4 + 1.6;
     if(y + alt > H - 10){ doc.addPage(); cabPagina(); linhaCab(); doc.setFontSize(7.6); }
     if(k % 2 === 0){ doc.setFillColor(248,250,248); doc.rect(M, y-3.2, W-2*M, alt, 'F'); }
-    doc.setTextColor(...cinza); let x = M + 1; doc.text(String(i+2), x, y); x += 12;
+    doc.setTextColor(...cinza); let x = M + 1; doc.text(String(linhaNoArquivo[i]), x, y); x += 12;
     doc.setTextColor(23,37,31);
     celulas.forEach((t,j)=>{ doc.text(t, x, y); x += cols[j].larg; });
     doc.setTextColor(...(validacao.erros[i] ? [179,38,30] : [150,100,0])); doc.text(mot, x, y);
@@ -3676,7 +3737,7 @@ function renderUsuarios(){
               return f ? `<span class="fazendas-permitidas-tag">${escHtml(f.nome)}</span>` : '';
             }).join('')
           : '<span class="fazendas-permitidas-tag">Nenhuma</span>');
-    // "Todas": ADMINISTRADOR+, tabela ainda inexistente, quem tem as cinco; antes do script 0002 todo admin vê tudo
+    // "Todas": ADMINISTRADOR+, tabela ainda inexistente, quem tem todas as de CATEGORIAS; antes do script 0002 todo admin vê tudo
     const temTodasCat = u.categoriasPermitidas===null || u.super || (!state.adminMaisDisponivel && u.perfil==='admin')
       || CATEGORIAS.every(c=>u.categoriasPermitidas.includes(c.chave));
     const categoriasTxt = temTodasCat
@@ -4200,7 +4261,8 @@ document.getElementById('btn-add-usuario').addEventListener('click', ()=>{
 /* =====================================================================
    CONTATOS DO WHATSAPP — quem vai receber os alertas do Locks SAT
    (tabelas whatsapp_contatos e whatsapp_contato_fazendas, script 0003).
-   Por enquanto é só o cadastro: nada aqui envia mensagem.
+   Esta tela só cadastra os contatos e mostra o estado do envio (tabela whatsapp_estado, script 0006):
+   quem envia as mensagens é o serviço que roda na VM, não o site.
    Só administrador que vê todas as fazendas (o ADMINISTRADOR+ e o ADMINISTRADOR sem restrição)
    vê: número de telefone é dado pessoal, e o banco recusa os outros (script 0022; antes dele,
    só o ADMINISTRADOR+). Os nomes vão para a tela por textContent.
@@ -4651,7 +4713,7 @@ window.addEventListener('message', ev=>{
    ACOMPANHAMENTO OPERACIONAL — módulo num iframe da mesma origem
    (acompanhamento/index.html?embed=1#<vista>; a sessão do Supabase é a mesma do COA WEB)
    - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'acomp-vista', vista:'painel'|'metas'|'safras'|'relatorio' }
-   - módulo → COA: { tipo:'acomp-rota', vista }
+   - módulo → COA: { tipo:'acomp-rota', vista, coaFazenda } (coaFazenda = id da fazenda escolhida nas abas do módulo, ou null)
    Sempre com targetOrigin = location.origin; só aceita mensagens do próprio iframe.
 ===================================================================== */
 let acompFrame = null;      // iframe #acomp-frame (criado na primeira entrada; removido ao sair)
@@ -4938,12 +5000,12 @@ function irParaValidacao(vista){
 function entrarValidacao(){
   if(!podeCategoria('validacao')){ mostrarCategoriaScreen(); return; }
   categoriaAtual = 'validacao';
-  ['nav-algodao','nav-mecanizadas','nav-administracao','nav-mapas','nav-acompanhamento','nav-sat','nav-previsao','nav-controle']
+  ['nav-algodao','nav-mecanizadas','nav-administracao','nav-mapas','nav-acompanhamento','nav-sat','nav-previsao','nav-chuva','nav-controle']
     .forEach(id=>{ document.getElementById(id).style.display = 'none'; });
   document.getElementById('nav-validacao').style.display = '';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
-  irParaValidacao(null); // 1ª entrada: cria o iframe nas ordens em aberto; depois mantém o módulo onde estava
+  irParaValidacao(null); // 1ª entrada: cria o iframe nas pendências; depois mantém o módulo onde estava
   enviarFazendaValidacao();
 }
 function descarregarValidacao(){
@@ -5026,7 +5088,7 @@ function entrarControle(){
   document.getElementById('nav-controle').style.display = '';
   document.getElementById('categoria-screen').style.display = 'none';
   document.getElementById('app-shell').style.display = '';
-  irParaControle(null); // 1ª entrada: cria o iframe nas ordens em aberto; depois mantém o módulo onde estava
+  irParaControle(null); // 1ª entrada: cria o iframe no resumo (vista pendencias); depois mantém o módulo onde estava
   enviarFazendaControle();
 }
 function descarregarControle(){
@@ -5149,7 +5211,9 @@ function descarregarSat(){
   document.getElementById('sat-avisos').replaceChildren();
   document.getElementById('sat-resumo').textContent = '';
 }
-function mostrarAvisoSat(d){
+// aoTocar: o que o toque no aviso faz; sem ele, abre os alertas do Locks SAT (o aviso de falha de leitura do
+// banco, em avisarFalhaDeCarga, usa esta mesma caixa e passa o dele)
+function mostrarAvisoSat(d, aoTocar){
   const caixa = document.getElementById('sat-avisos');
   if([...caixa.children].some(el=>el.dataset.id===d.id)) return;
   const el = document.createElement('div');
@@ -5171,7 +5235,7 @@ function mostrarAvisoSat(d){
   fechar.textContent = '×';
   const relogio = setTimeout(()=>el.remove(), SAT_DURACAO_AVISO_MS);
   const remover = ()=>{ clearTimeout(relogio); el.remove(); };
-  corpo.addEventListener('click', ()=>{ remover(); entrarSat('/alertas'); });
+  corpo.addEventListener('click', ()=>{ remover(); if(aoTocar) aoTocar(); else entrarSat('/alertas'); });
   fechar.addEventListener('click', remover);
   el.append(corpo, fechar);
   caixa.appendChild(el);
@@ -5213,19 +5277,35 @@ function atualizarUsuarioLogado(){
   el.innerHTML = `<b>${escHtml(sessao.nome)}</b><span class="perfil-badge ${badgeClass}">${nomeDoPerfil(sessao.perfil, sessao.super)}</span>`;
 }
 
+/* Aviso de que a leitura do banco falhou, no mesmo canto dos avisos do Locks SAT. Um só por vez (mesmo id);
+   tocar nele tenta ler de novo. */
+function avisarFalhaDeCarga(){
+  mostrarAvisoSat({
+    id: 'coa-carga-falhou', severidade: 'critico',
+    titulo: 'Não foi possível atualizar os dados',
+    texto: 'O banco não respondeu. A tela segue com o que já estava carregado e pode estar desatualizada. Toque aqui para tentar de novo.'
+  }, ()=>{ recarregarTudoDoSupabase(); });
+}
+
 /* ---- carrega tudo do Supabase (fazendas/variedades/safras/talhões já
-       filtrados pela segurança do banco; perfis só se for admin) ---- */
+       filtrados pela segurança do banco; perfis só se for admin).
+       Consulta que falha (rede, sessão) não troca a lista boa por uma vazia: fica o que já
+       estava carregado e a pessoa é avisada. Devolve true se tudo foi lido. ---- */
 async function recarregarTudoDoSupabase(){
-  const [fz, vr, sf, th] = await Promise.all([
-    sb.from('fazendas').select('*').order('nome'),
-    sb.from('variedades').select('*').order('nome'),
-    sb.from('safras').select('*').order('id'),
-    sb.from('talhoes').select('*').order('talhao')
-  ]);
-  state.fazendas = fz.data || [];
-  state.variedades = vr.data || [];
-  state.safras = sf.data || [];
-  state.talhoes = (th.data || []).map(talhaoDoBanco);
+  let fz, vr, sf, th;
+  try{
+    [fz, vr, sf, th] = await Promise.all([
+      sb.from('fazendas').select('*').order('nome'),
+      sb.from('variedades').select('*').order('nome'),
+      sb.from('safras').select('*').order('id'),
+      sb.from('talhoes').select('*').order('talhao')
+    ]);
+  }catch(e){ fz = vr = sf = th = { data:null, error: e || { message:'falha na consulta' } }; }
+  if(!fz.error) state.fazendas = fz.data || [];
+  if(!vr.error) state.variedades = vr.data || [];
+  if(!sf.error) state.safras = sf.data || [];
+  if(!th.error) state.talhoes = (th.data || []).map(talhaoDoBanco);
+  let falhou = !!(fz.error || vr.error || sf.error || th.error);
 
   if(sessao && sessao.perfil==='admin'){
     const [pf, uf, uc, ce, vp, sp, tp] = await Promise.all([
@@ -5253,7 +5333,9 @@ async function recarregarTudoDoSupabase(){
     // erro na consulta (tabela ainda não criada no banco) = sem controle por categoria: todos veem todas
     state.categoriasDisponiveis = !uc.error;
     const permCategorias = uc.error ? [] : (uc.data || []);
-    state.usuarios = perfis.map(p=>({
+    // sem os perfis ou sem as fazendas de cada usuário não dá para montar a lista: fica a que já estava
+    if(pf.error || uf.error) falhou = true;
+    else state.usuarios = perfis.map(p=>({
       id: p.id, nome: p.nome, perfil: p.perfil, email: p.email,
       super: !!p.super, todasFazendas: p.todas_fazendas !== false,
       fazendasPermitidas: permissoes.filter(u=>u.usuario_id===p.id).map(u=>u.fazenda_id),
@@ -5264,8 +5346,10 @@ async function recarregarTudoDoSupabase(){
   } else {
     state.usuarios = [];
   }
-  await carregarContatosWhatsapp();
+  await carregarContatosWhatsapp(falhou); // com a leitura falhando, os contatos que já estavam na tela também ficam
   renderTudo();
+  if(falhou && sessao) avisarFalhaDeCarga();
+  return !falhou;
 }
 
 /* o banco respondeu que a tabela não existe (script ainda não rodado)? Qualquer outro erro NÃO é isso. */
