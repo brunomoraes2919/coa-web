@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { criarSupabaseRepo } from '../src/data/supabaseRepo';
 import { BUCKET, fazendaParaRow, mapaParaRow, TABELAS, type PlantioPimsRow } from '../src/data/supabaseLinhas';
@@ -61,13 +62,13 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
     expect(banco.requisicoes.filter((r) => r.op === 'select').length).toBeGreaterThan(0);
 
     await repo.listarFazendasCoa();
-    await repo.perfil();
+    await repo.acesso();
     expect([...banco.tabelasUsadas].filter((n) => !n.startsWith('mapas_')).sort()).toEqual(['fazendas', 'perfis']);
   });
 });
 
 describe('supabaseRepo: perfil do usuário no COA WEB', () => {
-  const comPerfil = (sessao: string | null, perfis: { id: string; perfil: unknown }[]) => {
+  const comPerfil = (sessao: string | null, perfis: { id: string; perfil: unknown; super?: unknown; todas_fazendas?: unknown }[]) => {
     const banco = new BancoFalso();
     banco.sessao = sessao ? { user: { id: sessao } } : null;
     banco.inserir('perfis', perfis.map((p) => ({ ...p, nome: 'X', email: 'x@y' })));
@@ -76,29 +77,61 @@ describe('supabaseRepo: perfil do usuário no COA WEB', () => {
 
   it('sem sessão → null (nem consulta perfis)', async () => {
     const banco = new BancoFalso();
-    expect(await criarSupabaseRepo(banco.cliente()).perfil()).toBeNull();
+    expect(await criarSupabaseRepo(banco.cliente()).acesso()).toBeNull();
     expect(banco.tabelasUsadas.has('perfis')).toBe(false);
   });
 
   it('sessão sem linha em perfis → null', async () => {
-    expect(await comPerfil('u1', [{ id: 'outro', perfil: 'admin' }]).perfil()).toBeNull();
+    expect(await comPerfil('u1', [{ id: 'outro', perfil: 'admin' }]).acesso()).toBeNull();
   });
 
   it("perfis.perfil = 'admin' → 'admin'; 'colaborador' → 'colaborador'", async () => {
-    expect(await comPerfil('u1', [{ id: 'u1', perfil: 'admin' }, { id: 'u2', perfil: 'colaborador' }]).perfil()).toBe('admin');
-    expect(await comPerfil('u2', [{ id: 'u1', perfil: 'admin' }, { id: 'u2', perfil: 'colaborador' }]).perfil()).toBe('colaborador');
+    expect((await comPerfil('u1', [{ id: 'u1', perfil: 'admin' }, { id: 'u2', perfil: 'colaborador' }]).acesso())?.perfil).toBe('admin');
+    expect((await comPerfil('u2', [{ id: 'u1', perfil: 'admin' }, { id: 'u2', perfil: 'colaborador' }]).acesso())?.perfil).toBe('colaborador');
   });
 
   it("valor desconhecido (ou nulo) → 'colaborador'", async () => {
-    expect(await comPerfil('u1', [{ id: 'u1', perfil: 'gestor' }]).perfil()).toBe('colaborador');
-    expect(await comPerfil('u1', [{ id: 'u1', perfil: null }]).perfil()).toBe('colaborador');
+    expect(await comPerfil('u1', [{ id: 'u1', perfil: 'gestor' }]).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false });
+    expect(await comPerfil('u1', [{ id: 'u1', perfil: null }]).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false });
+  });
+
+  it('administrador restrito (todas_fazendas = false): admin, mas não cadastra fazendas de mapa', async () => {
+    const perfis = [
+      { id: 'restrito', perfil: 'admin', super: false, todas_fazendas: false },
+      { id: 'geral', perfil: 'admin', super: false, todas_fazendas: true },
+      { id: 'mais', perfil: 'admin', super: true, todas_fazendas: false },
+      { id: 'colab', perfil: 'colaborador', super: false, todas_fazendas: true },
+    ];
+    expect(await comPerfil('restrito', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: false });
+    expect(await comPerfil('geral', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true });
+    // ADMINISTRADOR+ (super) vê tudo mesmo com todas_fazendas = false, como em admin_ve_tudo()
+    expect(await comPerfil('mais', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true });
+    // colaborador nunca, mesmo com o padrão todas_fazendas = true da coluna
+    expect(await comPerfil('colab', perfis).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false });
+  });
+
+  it('banco sem as colunas super e todas_fazendas (anterior ao 0002): todo admin vale como sem restrição', async () => {
+    expect(await comPerfil('u1', [{ id: 'u1', perfil: 'admin' }]).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true });
+  });
+
+  it('uma só consulta a perfis, pela linha do próprio usuário', async () => {
+    const banco = new BancoFalso();
+    banco.sessao = { user: { id: 'u1' } };
+    banco.inserir('perfis', [{ id: 'u1', perfil: 'admin', super: false, todas_fazendas: false }]);
+    await criarSupabaseRepo(banco.cliente()).acesso();
+    expect(banco.requisicoes.filter((r) => r.tabela === 'perfis').map((r) => r.op)).toEqual(['select']);
+  });
+
+  it('a conta da tela é a de admin_ve_tudo() no banco (supabase/0002_administrador_mais.sql)', () => {
+    const sql = readFileSync(new URL('../../../supabase/0002_administrador_mais.sql', import.meta.url), 'utf8');
+    expect(sql).toContain("where p.id = auth.uid() and p.perfil = 'admin' and (p.super or p.todas_fazendas)");
   });
 
   it('erro do servidor → exceção com contexto', async () => {
     const banco = new BancoFalso();
     banco.sessao = { user: { id: 'u1' } };
     banco.falhar = (r) => (r.tabela === 'perfis' ? 'falha simulada' : null);
-    await expect(criarSupabaseRepo(banco.cliente()).perfil()).rejects.toThrow('falha simulada');
+    await expect(criarSupabaseRepo(banco.cliente()).acesso()).rejects.toThrow('falha simulada');
   });
 });
 

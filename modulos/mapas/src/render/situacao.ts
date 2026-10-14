@@ -22,9 +22,9 @@ export const ESTILO_SITUACAO: Record<StatusPlantio, EstiloSituacao> = {
 
 const ORDEM: readonly StatusPlantio[] = ['plantado', 'plantando', 'a_plantar'];
 
-/** Situação de um talhão base ou área da cultura; aceita o antigo `plantados` (compatibilidade). */
+/** Situação de um talhão base ou área da cultura; undefined = sem situação. */
 export function situacaoDe(inp: RenderInput, id: string): StatusPlantio | undefined {
-  return inp.situacoes?.get(id) ?? (inp.plantados?.has(id) ? 'plantado' : undefined);
+  return inp.situacoes?.get(id);
 }
 
 export const usaAreasCultura = (inp: RenderInput): boolean => (inp.areasCultura?.length ?? 0) > 0;
@@ -37,8 +37,6 @@ export function situacoesPintadas(inp: RenderInput): StatusPlantio[] {
 
 export interface LegendaSituacao {
   itens: { status: StatusPlantio; texto: string }[];
-  /** linha pequena "Plantio: PIMS dd/MM/yyyy HH:mm"; null = sem PIMS */
-  nota: string | null;
 }
 
 /**
@@ -47,7 +45,7 @@ export interface LegendaSituacao {
  */
 export function itensLegendaSituacao(inp: RenderInput): LegendaSituacao {
   const presentes = new Set(situacoesPintadas(inp));
-  if (!presentes.size) return { itens: [], nota: null };
+  if (!presentes.size) return { itens: [] };
   const safra = inp.nomeSafra.trim();
   const dataPims = fmtDataHora(inp.plantioGeradoEm);
   const modoAntigo = !dataPims && !usaAreasCultura(inp) && presentes.size === 1 && presentes.has('plantado');
@@ -56,8 +54,5 @@ export function itensLegendaSituacao(inp: RenderInput): LegendaSituacao {
     plantando: 'Plantando',
     a_plantar: 'A plantar',
   };
-  return {
-    itens: ORDEM.filter((s) => presentes.has(s)).map((status) => ({ status, texto: rotulo[status] })),
-    nota: dataPims ? `Plantio: PIMS ${dataPims}` : null,
-  };
+  return { itens: ORDEM.filter((s) => presentes.has(s)).map((status) => ({ status, texto: rotulo[status] })) };
 }

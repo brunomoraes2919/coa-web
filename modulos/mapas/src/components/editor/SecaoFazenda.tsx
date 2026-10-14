@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import Aviso from '../Aviso';
 import Carregando from '../Carregando';
-import { usePerfil } from '../usePerfil';
+import { useAdminSemRestricao } from '../usePerfil';
 import type { Fazenda, FazendaCoaSelecionada, PlantioPimsTalhao, Safra, StatusPlantio } from '../../lib/types';
 import SecaoPlantioPims from './SecaoPlantioPims';
 
@@ -37,7 +37,8 @@ interface Props {
 export default function SecaoFazenda(p: Props) {
   const fazenda = p.fazendas.find((f) => f.id === p.fazendaId) ?? null;
   const safra = p.safras.find((s) => s.id === p.safraId) ?? null;
-  const admin = usePerfil() === 'admin';
+  // os dois caminhos abaixo gravam fazenda de mapa: só para o administrador que vê todas as fazendas
+  const admin = useAdminSemRestricao();
   /** fazenda do COA WEB escolhida no topo (id null = "todas": vale a lista inteira) */
   const coa = p.coa && p.coa.id !== null ? p.coa : null;
 

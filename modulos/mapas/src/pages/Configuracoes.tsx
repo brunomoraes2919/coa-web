@@ -226,9 +226,11 @@ export default function Configuracoes({ acessoDados = true }: Props) {
         )}
         {cfg.modo === 'supabase' && (
           <Aviso tipo="info" titulo="Quem vê o quê">
-            As permissões são as do COA WEB: o admin vê e altera tudo; o colaborador vê as fazendas liberadas para ele
-            e nelas salva e exclui mapas de chuva. Fazendas, talhões, safras e plantio só o admin altera. Uma fazenda de
-            mapa sem vínculo com uma fazenda do COA WEB só aparece para o admin.
+            As permissões são as do COA WEB: o admin que vê todas as fazendas vê e altera tudo; o colaborador vê as
+            fazendas liberadas para ele e nelas salva e exclui mapas de chuva. Talhões, safras e plantio só o admin
+            altera (o admin restrito a algumas fazendas, só nas que vê); cadastrar, editar e excluir fazendas de mapa
+            é só para o admin que vê todas as fazendas. Uma fazenda de mapa sem vínculo com uma fazenda do COA WEB só
+            aparece para esse admin.
           </Aviso>
         )}
       </div>

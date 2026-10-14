@@ -6,6 +6,7 @@ import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
 import { nomeVinculoCoa } from '../components/CampoFazendaCoa';
 import { useImportarCadastroPadrao } from '../components/ImportarCadastroPadrao';
+import { useAdminSemRestricao } from '../components/usePerfil';
 
 interface Linha {
   fazenda: Fazenda;
@@ -27,6 +28,8 @@ export default function Fazendas() {
   const [msg, setMsg] = useState<string | null>((loc.state as { msg?: string } | null)?.msg ?? null);
   /** muda ao fim de uma importação do cadastro padrão: recarrega a lista */
   const [versao, setVersao] = useState(0);
+  /** administrador restrito a algumas fazendas: o banco não deixa gravar fazendas de mapa, então a lista é só consulta */
+  const podeCadastrar = useAdminSemRestricao();
   const importacao = useImportarCadastroPadrao(() => setVersao((v) => v + 1));
   /** fazendas do COA WEB, para a coluna do vínculo (modo local: vazia → coluna escondida) */
   const [fazendasCoa, setFazendasCoa] = useState<FazendaCoa[]>([]);
@@ -99,13 +102,22 @@ export default function Fazendas() {
           <h1>Fazendas</h1>
           <p className="subtitulo">Shapes dos talhões usados nos mapas de chuva.</p>
         </div>
-        <div className="linha">
-          {importacao.botao}
-          <Link to="/fazendas/nova" className="botao botao-primario">
-            + Cadastrar fazenda
-          </Link>
-        </div>
+        {podeCadastrar && (
+          <div className="linha">
+            {importacao.botao}
+            <Link to="/fazendas/nova" className="botao botao-primario">
+              + Cadastrar fazenda
+            </Link>
+          </div>
+        )}
       </div>
+
+      {!podeCadastrar && (
+        <Aviso tipo="info">
+          Sua conta vê só as fazendas liberadas para ela: aqui você consulta as fazendas de mapa. Cadastrar, editar e excluir fazendas é só
+          para o administrador que vê todas as fazendas.
+        </Aviso>
+      )}
 
       {msg && (
         <Aviso tipo="sucesso" onFechar={() => setMsg(null)}>
@@ -126,11 +138,17 @@ export default function Fazendas() {
         ) : linhas.length === 0 ? (
           !erro && (
             <div className="vazio">
-              <p>Nenhuma fazenda cadastrada ainda.</p>
-              <p className="suave">Para as unidades do COA, use “Importar cadastro padrão” com o arquivo cadastro-padrao-mapas.zip.</p>
-              <Link to="/fazendas/nova" className="botao botao-primario">
-                Cadastrar a primeira fazenda
-              </Link>
+              {podeCadastrar ? (
+                <>
+                  <p>Nenhuma fazenda cadastrada ainda.</p>
+                  <p className="suave">Para as unidades do COA, use “Importar cadastro padrão” com o arquivo cadastro-padrao-mapas.zip.</p>
+                  <Link to="/fazendas/nova" className="botao botao-primario">
+                    Cadastrar a primeira fazenda
+                  </Link>
+                </>
+              ) : (
+                <p>Nenhuma fazenda de mapa liberada para a sua conta.</p>
+              )}
             </div>
           )
         ) : (
@@ -161,9 +179,11 @@ export default function Fazendas() {
                     <td>{fazenda.campoSetor ?? '—'}</td>
                     <td>{fmtDataCurta(fazenda.criadoEm)}</td>
                     <td className="num">
-                      <Link to={`/fazendas/${fazenda.id}`} className="botao botao-pequeno">
-                        Editar
-                      </Link>
+                      {podeCadastrar && (
+                        <Link to={`/fazendas/${fazenda.id}`} className="botao botao-pequeno">
+                          Editar
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}

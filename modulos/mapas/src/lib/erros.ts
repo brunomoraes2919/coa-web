@@ -13,6 +13,15 @@ const TRADUCOES: [RegExp, string][] = [
   [/relation "[^"]*" does not exist|could not find the .* in the schema cache/i, BANCO_DESATUALIZADO],
   [/failed to fetch|networkerror|load failed|network request failed/i, 'Não foi possível conectar ao servidor. Verifique a internet e as configurações.'],
   [/jwt expired|invalid jwt/i, 'Sua sessão expirou. Faça login de novo.'],
+  // gravação recusada no cadastro (regras do script 0019 do COA WEB); vêm antes da mensagem geral de permissão
+  [
+    /row-level security policy for table "mapas_fazendas"/i,
+    'Sua conta não pode cadastrar, alterar nem excluir fazendas de mapa: isso é só para o administrador que vê todas as fazendas.',
+  ],
+  [
+    /row-level security policy for table "mapas_(talhoes|areas_cultura|plantios)"/i,
+    'Sua conta não pode cadastrar nesta fazenda. Peça a um administrador do COA WEB que veja esta fazenda.',
+  ],
   [
     /row-level security|permission denied/i,
     'Sem permissão para acessar estes dados. Entre de novo com o seu e-mail; se continuar, peça a um administrador do COA WEB acesso a esta fazenda.',

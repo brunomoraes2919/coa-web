@@ -35,9 +35,9 @@ describe('ESTILO_SITUACAO', () => {
 });
 
 describe('situacaoDe', () => {
-  it('usa situacoes; compatível com o antigo `plantados`', () => {
+  it('usa situacoes; id sem situação (ou entrada sem o mapa de situações) → undefined', () => {
     expect(situacaoDe(entrada({ situacoes: new Map([['a', 'plantando']]) }), 'a')).toBe('plantando');
-    expect(situacaoDe(entrada({ situacoes: undefined as unknown as Map<string, StatusPlantio>, plantados: new Set(['a']) }), 'a')).toBe('plantado');
+    expect(situacaoDe(entrada({ situacoes: undefined as unknown as Map<string, StatusPlantio> }), 'a')).toBeUndefined();
     expect(situacaoDe(entrada(), 'x')).toBeUndefined();
   });
 });
@@ -45,10 +45,10 @@ describe('situacaoDe', () => {
 describe('itensLegendaSituacao', () => {
   it('sem PIMS nem áreas da cultura: comportamento antigo ("Área plantada – safra")', () => {
     const inp = entrada({ talhoes: [talhao('a'), talhao('b')], situacoes: new Map([['a', 'plantado']]) });
-    expect(itensLegendaSituacao(inp)).toEqual({ itens: [{ status: 'plantado', texto: 'Área plantada – SOJA 26/27' }], nota: null });
+    expect(itensLegendaSituacao(inp)).toEqual({ itens: [{ status: 'plantado', texto: 'Área plantada – SOJA 26/27' }] });
   });
 
-  it('com áreas da cultura: só as situações presentes, na ordem, e a linha do PIMS', () => {
+  it('com áreas da cultura: só as situações presentes, na ordem', () => {
     const inp = entrada({
       talhoes: [talhao('a')],
       areasCultura: [area('x'), area('y'), area('z')],
@@ -63,12 +63,11 @@ describe('itensLegendaSituacao', () => {
         { status: 'plantando', texto: 'Plantando' },
         { status: 'a_plantar', texto: 'A plantar' }, // 'z' sem situação = a plantar
       ],
-      nota: 'Plantio: PIMS 28/09/2026 07:05',
     });
   });
 
-  it('nada pintado → sem itens nem nota', () => {
-    expect(itensLegendaSituacao(entrada({ talhoes: [talhao('a')], plantioGeradoEm: '2026-09-28T07:05:00' }))).toEqual({ itens: [], nota: null });
+  it('nada pintado → sem itens', () => {
+    expect(itensLegendaSituacao(entrada({ talhoes: [talhao('a')], plantioGeradoEm: '2026-09-28T07:05:00' }))).toEqual({ itens: [] });
   });
 
   it('PIMS nos talhões base: "Plantado – safra"', () => {

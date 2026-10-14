@@ -25,8 +25,6 @@ export interface RenderInput {
   plantioGeradoEm?: string | null;
   /** estatísticas da interpolação (pares "Média da fazenda" e "Média dos PICs com chuva"); null/ausente = sem médias */
   resumo?: ResumoChuva | null;
-  /** @deprecated use `situacoes`; ids dos talhões base plantados (ainda aceito quando o id não está em `situacoes`) */
-  plantados?: Set<string>;
   nomeSafra: string;
   /** só os PICs incluídos */
   pics: Pic[];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { IDW_PADRAO, type LayoutConfig, type Talhao } from '../src/lib/types';
+import { IDW_PADRAO, type LayoutConfig, type StatusPlantio, type Talhao } from '../src/lib/types';
 import { desenharTalhoes, type TalhaoPx } from '../src/render/mapFrame';
 import type { RenderInput, Vista } from '../src/render/types';
 
@@ -67,7 +67,8 @@ function talhaoPx(id: string, xy: TalhaoPx['xy']): TalhaoPx {
 
 function entrada(plantados: string[]): RenderInput {
   const config = { estiloPlantado: 'quadriculado', idw: IDW_PADRAO } as unknown as LayoutConfig;
-  return { config, palette: { id: 'p', nome: 'p', classes: [] }, grid: null, talhoes: [], situacoes: new Map(), areasCultura: [], plantados: new Set(plantados), nomeSafra: '', pics: [], logo: null, tiles: null };
+  const situacoes = new Map(plantados.map((id): [string, StatusPlantio] => [id, 'plantado']));
+  return { config, palette: { id: 'p', nome: 'p', classes: [] }, grid: null, talhoes: [], situacoes, areasCultura: [], nomeSafra: '', pics: [], logo: null, tiles: null };
 }
 
 describe('desenharTalhoes: padrão dos plantados', () => {

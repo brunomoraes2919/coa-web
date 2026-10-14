@@ -6,7 +6,7 @@ import { onAuthChange, sair, sessaoAtual } from './data/auth';
 import Shell from './components/Shell';
 import Carregando from './components/Carregando';
 import Aviso, { mensagemDeErro, type TipoAviso } from './components/Aviso';
-import { PerfilContexto, useCarregarPerfil, useErroPerfil, usePerfil } from './components/usePerfil';
+import { PerfilContexto, useAdminSemRestricao, useCarregarPerfil, useErroPerfil, usePerfil } from './components/usePerfil';
 import { repo } from './data';
 import { avisarRota, emEmbed } from './lib/embed';
 import { carregarSeed, seedJaCarregado } from './lib/seed';
@@ -107,6 +107,16 @@ function SomenteAdmin() {
   if (perfil === undefined) return <Carregando texto="Verificando o perfil…" />;
   if (erroPerfil) return null;
   if (perfil !== 'admin') return <Navigate to="/mapas" replace state={{ aviso: AVISO_SOMENTE_ADMIN }} />;
+  return <Outlet />;
+}
+
+/**
+ * Cadastrar e editar fazenda de mapa: só o administrador que vê todas as fazendas (o banco recusa a
+ * gravação dos demais). O administrador restrito volta para a lista, que explica o motivo. Fica dentro de
+ * SomenteAdmin: aqui o perfil já foi lido.
+ */
+function SomenteAdminSemRestricao() {
+  if (!useAdminSemRestricao()) return <Navigate to="/fazendas" replace />;
   return <Outlet />;
 }
 
@@ -212,8 +222,10 @@ export default function App() {
               <Route path="/mapas/:id" element={<Tela><NovoMapa key="salvo" /></Tela>} />
               <Route element={<SomenteAdmin />}>
                 <Route path="/fazendas" element={<Tela><Fazendas /></Tela>} />
-                <Route path="/fazendas/nova" element={<Tela><FazendaNova /></Tela>} />
-                <Route path="/fazendas/:id" element={<Tela><FazendaEditar /></Tela>} />
+                <Route element={<SomenteAdminSemRestricao />}>
+                  <Route path="/fazendas/nova" element={<Tela><FazendaNova /></Tela>} />
+                  <Route path="/fazendas/:id" element={<Tela><FazendaEditar /></Tela>} />
+                </Route>
                 <Route path="/safras" element={<Tela><Safras /></Tela>} />
                 <Route path="/safras/:safraId/plantio/:fazendaId" element={<Tela><Plantio /></Tela>} />
                 <Route path="/safras/:safraId/areas/:fazendaId" element={<Tela><AreasCultura /></Tela>} />

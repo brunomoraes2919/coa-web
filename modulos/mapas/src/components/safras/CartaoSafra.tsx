@@ -4,7 +4,7 @@ import type { Fazenda, Safra } from '../../lib/types';
 import Carregando from '../Carregando';
 import BarraPlantio from './BarraPlantio';
 import MenuAcoes from './MenuAcoes';
-import { resumoSafra, textoContagem, textoManuais, textoPims, type ResumoPlantioFazenda } from './safrasResumo';
+import { acoesDaSafra, resumoSafra, textoContagem, textoManuais, textoPims, type ResumoPlantioFazenda } from './safrasResumo';
 import { chaveLinha, type LinhaResumo } from './useResumoSafras';
 
 interface Props {
@@ -13,7 +13,8 @@ interface Props {
   /** null = ainda carregando o plantio/áreas */
   linhas: Map<string, LinhaResumo> | null;
   onEditar: () => void;
-  onExcluir: () => void;
+  /** ausente = a conta não exclui safra (administrador restrito a algumas fazendas): sem "Excluir safra" no menu */
+  onExcluir?: () => void;
 }
 
 function CelulaPlantio({ plantio, safra, fazenda }: { plantio: ResumoPlantioFazenda; safra: Safra; fazenda: Fazenda }) {
@@ -69,13 +70,7 @@ export default function CartaoSafra({ safra, fazendas, linhas, onEditar, onExclu
             <Carregando inline texto="Calculando o plantio…" />
           )}
         </div>
-        <MenuAcoes
-          rotulo={`Mais ações da safra ${safra.nome}`}
-          acoes={[
-            { rotulo: 'Editar safra', onClick: onEditar },
-            { rotulo: 'Excluir safra', perigo: true, onClick: onExcluir },
-          ]}
-        />
+        <MenuAcoes rotulo={`Mais ações da safra ${safra.nome}`} acoes={acoesDaSafra(onEditar, onExcluir)} />
       </div>
 
       {fazendas.length === 0 ? (

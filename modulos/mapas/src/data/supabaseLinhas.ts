@@ -5,7 +5,7 @@
  * os campos novos.
  */
 import { completarPlantio } from '../lib/plantioPims';
-import type { AreaCultura, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, Safra, Talhao } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, Safra, Talhao } from '../lib/types';
 
 export { completarPlantio };
 
@@ -334,4 +334,21 @@ export interface PlantioPimsRow {
 /** talhoes (jsonb) nulo ou que não é lista vira lista vazia; a validação de cada talhão fica em montarPlantioPims. */
 export function rowParaLinhaPlantioPims(r: PlantioPimsRow): LinhaPlantioPims {
   return { safra: r.safra, unidade: r.unidade, geradoEm: r.gerado_em, talhoes: Array.isArray(r.talhoes) ? r.talhoes : [] };
+}
+
+/** Linha de perfis (tabela do COA WEB), só as colunas que o módulo lê; super e todas_fazendas vêm do script 0002 de lá. */
+export interface PerfilRow {
+  perfil?: unknown;
+  super?: unknown;
+  todas_fazendas?: unknown;
+}
+
+/**
+ * Perfil desconhecido → 'colaborador'. `adminSemRestricao` repete admin_ve_tudo() do banco: admin e
+ * (super ou todas_fazendas). Banco sem as duas colunas (anterior ao 0002): todo admin vê todas as
+ * fazendas, como no COA WEB.
+ */
+export function rowParaAcesso(r: PerfilRow): AcessoUsuario {
+  const perfil = r.perfil === 'admin' ? 'admin' : 'colaborador';
+  return { perfil, adminSemRestricao: perfil === 'admin' && (r.super === true || r.todas_fazendas !== false) };
 }

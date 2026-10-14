@@ -14,12 +14,12 @@ import { useCadastros, useInterpolacao, useLogo } from '../components/editor/hoo
 import { useMapaPlantio, useTalhoesEPlantio } from '../components/editor/usePlantioMapa';
 import { usePreSelecaoCoa } from '../components/editor/usePreSelecaoCoa';
 import '../components/editor/editor.css';
-import { aparenciaDoMapaSalvo, avisosPeriodoSafra, avisosPicsDistantes, layoutPadrao, textosAutomaticos } from '../lib/editor';
+import { aparenciaDoMapaSalvo, avisosPeriodoSafra, avisosPicsDistantes, horasDoPeriodo, layoutPadrao, periodoDoMapaSalvo, textosAutomaticos } from '../lib/editor';
 import { editarTexto } from '../lib/editorRegras';
 import { fazendasDoCoa } from '../lib/embed';
 import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarCopiaHistorico, gerarPng, nomeArquivoMapa } from '../lib/exportar';
 import { DPI_HISTORICO, identidadeMapa, type ModoSalvar } from '../lib/historico';
-import { isoData, parseIsoData } from '../lib/format';
+import { isoData } from '../lib/format';
 import { resolvePalette } from '../lib/palettes';
 import type { ResultadoIntegracao } from '../lib/chuvaZeus';
 import { decodeCsvBuffer, parseZeusCsv } from '../lib/zeusCsv';
@@ -78,7 +78,8 @@ export default function NovoMapa() {
         setSafraId(m.safraId ?? '');
         setSetores(m.config.setores ?? null);
         setPics(m.pics);
-        setCsv({ nome: m.config.nomeCsv ?? 'CSV salvo', inicio: parseIsoData(m.periodoInicio), fim: parseIsoData(m.periodoFim), avisos: [] });
+        // o período com hora (integração) volta com as horas: o texto automático não perde "hh:mm"
+        setCsv({ nome: m.config.nomeCsv ?? 'CSV salvo', ...periodoDoMapaSalvo(m), avisos: [] });
         setAparencia(aparenciaDoMapaSalvo(m.config));
         setEditados(m.config.textosEditados ?? m.config.textos);
       })
@@ -118,7 +119,16 @@ export default function NovoMapa() {
     if (!talhoesInterp.length) return null;
     return {
       // extent null = automático: o render enquadra cada quadro no retângulo da composição (paisagem/retrato)
-      config: { ...aparencia, extent: aparencia.extent, textos, setores, nomeCsv: csv?.nome, textosEditados: editados },
+      // periodoHoras vai sempre (undefined = só data): não herda as horas de um mapa reaberto que trocou de chuva
+      config: {
+        ...aparencia,
+        extent: aparencia.extent,
+        textos,
+        setores,
+        nomeCsv: csv?.nome,
+        periodoHoras: horasDoPeriodo(csv?.inicio ?? null, csv?.fim ?? null, csv?.comHora),
+        textosEditados: editados,
+      },
       palette: paleta,
       grid: resultado?.grid ?? null,
       talhoes: talhoesUsados,

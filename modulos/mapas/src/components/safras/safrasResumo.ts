@@ -6,6 +6,7 @@
 import { casarPlantio, combinarPlantios } from '../../lib/plantioPims';
 import { fmtDataHora, resumoContagem, situacaoDoMapa } from '../../lib/situacaoPlantio';
 import type { AreaCultura, Fazenda, Plantio, PlantioPimsArquivo, Safra, StatusPlantio, Talhao } from '../../lib/types';
+import type { AcaoMenu } from './MenuAcoes';
 
 export interface ResumoPlantioFazenda {
   /** 'pims' = a safra e a unidade da fazenda estão no plantio.json; 'manual' = só o plantio marcado à mão */
@@ -111,4 +112,13 @@ export function resumoSafra(linhas: ResumoPlantioFazenda[]): ResumoSafra {
   const pct = (plantados / total) * 100;
   const pctTexto = pct > 0 && pct < 1 ? '<1%' : `${Math.round(pct)}%`;
   return { plantados, plantando, total, pct, texto: `Plantio da safra: ${pctTexto} (${plantados} de ${total} ${total === 1 ? 'talhão' : 'talhões'})` };
+}
+
+/**
+ * Ações do menu "⋯" do cartão da safra. `onExcluir` ausente = a conta não exclui safra (o banco só deixa o
+ * administrador que vê todas as fazendas): o menu fica só com "Editar safra".
+ */
+export function acoesDaSafra(onEditar: () => void, onExcluir?: () => void): AcaoMenu[] {
+  const editar: AcaoMenu = { rotulo: 'Editar safra', onClick: onEditar };
+  return onExcluir ? [editar, { rotulo: 'Excluir safra', perigo: true, onClick: onExcluir }] : [editar];
 }

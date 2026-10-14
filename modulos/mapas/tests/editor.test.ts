@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { aparenciaDoMapaSalvo, avisosPeriodoSafra, avisosPicsDistantes, csvChuvaPorTalhao, layoutPadrao, textosAutomaticos } from '../src/lib/editor';
-import type { Pic, Safra, Talhao } from '../src/lib/types';
+import {
+  aparenciaDoMapaSalvo,
+  avisosPeriodoSafra,
+  avisosPicsDistantes,
+  csvChuvaPorTalhao,
+  horasDoPeriodo,
+  layoutPadrao,
+  periodoDoMapaSalvo,
+  textosAutomaticos,
+} from '../src/lib/editor';
+import { isoData } from '../src/lib/format';
+import type { LayoutConfig, Pic, Safra, Talhao } from '../src/lib/types';
 
 const talhao = (id: string, lon: number, lat: number, d = 0.01): Talhao => ({
   id,
@@ -122,5 +132,89 @@ describe('aparenciaDoMapaSalvo', () => {
     const a = aparenciaDoMapaSalvo({ ...layoutPadrao(), extent, orientacao: 'paisagem' });
     expect(a.extent).toEqual(extent);
     expect(a.orientacao).toBe('paisagem');
+  });
+});
+
+describe('período com hora: salvar e reabrir o mapa (as colunas guardam só a data)', () => {
+  const entradaTextos = { fazenda: 'SM3', safra, setores: null, hoje: new Date(2026, 9, 7) };
+  /** o que a tela grava (datas pelo isoData, horas em config.periodoHoras) e o que ela relê */
+  const salvarEReabrir = (inicio: Date, fim: Date, comHora: boolean) => {
+    const periodoHoras = horasDoPeriodo(inicio, fim, comHora);
+    const textos = textosAutomaticos({ ...entradaTextos, periodoInicio: inicio, periodoFim: fim, periodoComHora: comHora });
+    // passa por JSON, como a coluna jsonb do Supabase: campo undefined some
+    const config = JSON.parse(JSON.stringify({ ...layoutPadrao(), textos, textosEditados: {}, periodoHoras })) as LayoutConfig;
+    return { config, textos, reaberto: periodoDoMapaSalvo({ periodoInicio: isoData(inicio), periodoFim: isoData(fim), config }) };
+  };
+
+  it('horasDoPeriodo: só com o indicador de hora e as duas datas', () => {
+    expect(horasDoPeriodo(new Date(2026, 9, 5, 6, 0), new Date(2026, 9, 6, 7, 30), true)).toEqual({ inicio: '06:00', fim: '07:30' });
+    expect(horasDoPeriodo(new Date(2026, 9, 5, 6, 0), new Date(2026, 9, 6, 7, 30), false)).toBeUndefined();
+    expect(horasDoPeriodo(new Date(2026, 9, 5), new Date(2026, 9, 6), undefined)).toBeUndefined();
+    expect(horasDoPeriodo(null, new Date(2026, 9, 6, 7, 0), true)).toBeUndefined();
+  });
+
+  it('mapa da integração com hora reabre com as horas e o mesmo texto de período', () => {
+    const inicio = new Date(2026, 9, 5, 6, 0);
+    const fim = new Date(2026, 9, 6, 7, 0);
+    const { config, textos, reaberto } = salvarEReabrir(inicio, fim, true);
+    expect(config.periodoHoras).toEqual({ inicio: '06:00', fim: '07:00' });
+    expect(reaberto).toEqual({ inicio, fim, comHora: true });
+    const depois = textosAutomaticos({ ...entradaTextos, periodoInicio: reaberto.inicio, periodoFim: reaberto.fim, periodoComHora: reaberto.comHora });
+    expect(depois.periodo).toBe('05/10/2026 06:00 a 06/10/2026 07:00');
+    expect(depois.periodo).toBe(textos.periodo);
+  });
+
+  it('com hora no mesmo dia (inclusive 00:00)', () => {
+    const { reaberto } = salvarEReabrir(new Date(2026, 9, 5, 0, 0), new Date(2026, 9, 5, 18, 30), true);
+    expect(reaberto).toEqual({ inicio: new Date(2026, 9, 5, 0, 0), fim: new Date(2026, 9, 5, 18, 30), comHora: true });
+    expect(textosAutomaticos({ ...entradaTextos, periodoInicio: reaberto.inicio, periodoFim: reaberto.fim, periodoComHora: true }).periodo).toBe('05/10/2026 00:00 a 18:30');
+  });
+
+  it('mapa só por data (CSV ou integração sem hora) continua sem hora', () => {
+    const { config, reaberto } = salvarEReabrir(new Date(2026, 9, 1), new Date(2026, 9, 15), false);
+    expect('periodoHoras' in config).toBe(false);
+    expect(reaberto).toEqual({ inicio: new Date(2026, 9, 1), fim: new Date(2026, 9, 15), comHora: false });
+  });
+
+  it('mapa com hora salvo antes do campo: as horas voltam do texto "Período" gravado', () => {
+    const config = { ...layoutPadrao(), textosEditados: {} };
+    config.textos = { ...config.textos, periodo: '05/10/2026 06:00 a 06/10/2026 07:00' };
+    expect(periodoDoMapaSalvo({ periodoInicio: '2026-10-05', periodoFim: '2026-10-06', config })).toEqual({
+      inicio: new Date(2026, 9, 5, 6, 0),
+      fim: new Date(2026, 9, 6, 7, 0),
+      comHora: true,
+    });
+    config.textos = { ...config.textos, periodo: '05/10/2026 06:00 a 18:30' };
+    expect(periodoDoMapaSalvo({ periodoInicio: '2026-10-05', periodoFim: '2026-10-05', config })).toEqual({
+      inicio: new Date(2026, 9, 5, 6, 0),
+      fim: new Date(2026, 9, 5, 18, 30),
+      comHora: true,
+    });
+  });
+
+  it('texto gravado que não bate com as datas do mapa (ou sem hora): fica só a data', () => {
+    const soData = { inicio: new Date(2026, 9, 5), fim: new Date(2026, 9, 6), comHora: false };
+    const com = (periodo: string) => {
+      const config = layoutPadrao();
+      config.textos = { ...config.textos, periodo };
+      return periodoDoMapaSalvo({ periodoInicio: '2026-10-05', periodoFim: '2026-10-06', config });
+    };
+    expect(com('05 a 06/10/2026')).toEqual(soData);
+    expect(com('04/10/2026 06:00 a 06/10/2026 07:00')).toEqual(soData); // outro dia de início
+    expect(com('Chuva das 06:00 a 07:00')).toEqual(soData); // texto escrito à mão
+    expect(com('05/10/2026 06:00 a 06/10/2026 27:00')).toEqual(soData); // hora inválida
+    expect(com('')).toEqual(soData);
+  });
+
+  it('horas inválidas no campo, ou mapa sem período: sem hora e sem erro', () => {
+    const config = { ...layoutPadrao(), periodoHoras: { inicio: '6h', fim: '07:00' } };
+    expect(periodoDoMapaSalvo({ periodoInicio: '2026-10-05', periodoFim: '2026-10-06', config }).comHora).toBe(false);
+    const invertido = { ...layoutPadrao(), periodoHoras: { inicio: '18:00', fim: '06:00' } };
+    expect(periodoDoMapaSalvo({ periodoInicio: '2026-10-05', periodoFim: '2026-10-05', config: invertido }).comHora).toBe(false);
+    expect(periodoDoMapaSalvo({ periodoInicio: null, periodoFim: null, config: { ...layoutPadrao(), periodoHoras: { inicio: '06:00', fim: '07:00' } } })).toEqual({
+      inicio: null,
+      fim: null,
+      comHora: false,
+    });
   });
 });

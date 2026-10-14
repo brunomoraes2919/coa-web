@@ -2,7 +2,7 @@
 import { fmtData, fmtPeriodo, fmtPeriodoHora, parseIsoData } from './format';
 import { projetorUtm, utmEpsgFor } from './projection';
 import { ROTULO_STATUS } from './situacaoPlantio';
-import { IDW_PADRAO, type LayoutConfig, type LayoutTextos, type Pic, type Safra, type StatusPlantio, type Talhao, type TalhaoStats } from './types';
+import { IDW_PADRAO, type LayoutConfig, type LayoutTextos, type MapaSalvo, type Pic, type Safra, type StatusPlantio, type Talhao, type TalhaoStats } from './types';
 
 export interface EntradaTextos {
   fazenda: string;
@@ -57,6 +57,47 @@ export function layoutPadrao(): LayoutConfig {
 export function aparenciaDoMapaSalvo(config: LayoutConfig): Omit<LayoutConfig, 'textos'> {
   const { textos: _textos, ...resto } = config;
   return config.orientacao ? resto : { ...resto, extent: null };
+}
+
+const dois = (n: number) => String(n).padStart(2, '0');
+const hhmm = (d: Date) => `${dois(d.getHours())}:${dois(d.getMinutes())}`;
+const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Dia de `d` na hora 'hh:mm' (hora local); hora inválida → null. */
+function naHora(d: Date, hora: string): Date | null {
+  if (!HORA.test(hora)) return null;
+  const [h, min] = hora.split(':').map(Number);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, min);
+}
+
+/**
+ * Horas do período para gravar com o mapa (config.periodoHoras): só quando o período veio com hora (a
+ * integração com a opção de informar a hora). Período só por data → undefined (o campo não é gravado).
+ */
+export function horasDoPeriodo(inicio: Date | null, fim: Date | null, comHora: boolean | undefined): { inicio: string; fim: string } | undefined {
+  return comHora && inicio && fim ? { inicio: hhmm(inicio), fim: hhmm(fim) } : undefined;
+}
+
+/**
+ * Período de um mapa salvo ao reabrir. As colunas do mapa guardam só a data; as horas do período com hora
+ * vêm de `config.periodoHoras`. Mapa com hora salvo antes desse campo: as horas são lidas do texto
+ * "Período" gravado, e só valem se o período remontado der exatamente aquele texto.
+ */
+export function periodoDoMapaSalvo(m: Pick<MapaSalvo, 'periodoInicio' | 'periodoFim' | 'config'>): { inicio: Date | null; fim: Date | null; comHora: boolean } {
+  const inicio = parseIsoData(m.periodoInicio);
+  const fim = parseIsoData(m.periodoFim);
+  const soData = { inicio, fim, comHora: false };
+  if (!inicio || !fim) return soData;
+  const comHoras = (hIni: string, hFim: string) => {
+    const [i, f] = [naHora(inicio, hIni), naHora(fim, hFim)];
+    return i && f && i <= f ? { inicio: i, fim: f, comHora: true } : null;
+  };
+  const horas = m.config.periodoHoras;
+  if (horas) return (typeof horas.inicio === 'string' && typeof horas.fim === 'string' && comHoras(horas.inicio, horas.fim)) || soData;
+  const texto = (m.config.textos?.periodo ?? '').trim();
+  const lido = /(\d{2}:\d{2}) a (?:\d{2}\/\d{2}\/\d{4} )?(\d{2}:\d{2})$/.exec(texto);
+  const antigo = lido && comHoras(lido[1], lido[2]);
+  return antigo && fmtPeriodoHora(antigo.inicio, antigo.fim) === texto ? antigo : soData;
 }
 
 /** Retângulo (lon/lat) que envolve os anéis externos dos talhões. */

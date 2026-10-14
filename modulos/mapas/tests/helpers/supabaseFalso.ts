@@ -2,7 +2,8 @@
  * Cliente Supabase falso, em memória e sem rede, para testar o supabaseRepo. Imita o que importa do
  * PostgREST: cada resposta de select traz no máximo `maxLinhas` linhas (1000 no Supabase), com
  * .range/.order/.eq/.in, count exato, upsert pela chave primária, insert (com id gerado e os valores
- * padrão das colunas, como no banco), .single/.maybeSingle, delete e update; o Storage; e a
+ * padrão das colunas, como no banco), .single/.maybeSingle, delete (com .select devolve as linhas apagadas;
+ * `recusarExclusao` imita o RLS, que barra sem erro) e update; o Storage; e a
  * sessão (auth.getSession). Tabela desconhecida responde com o erro do PostgREST (PGRST205), então
  * um nome de tabela errado no repositório aparece nos testes. Registra os nomes usados em from(nome)
  * e storage.from(nome).
@@ -79,6 +80,11 @@ export class BancoFalso {
   sessao: { user: { id: string } } | null = null;
   /** devolve uma mensagem para simular erro do servidor nesta requisição (tabelas e Storage) */
   falhar: ((r: Requisicao) => string | null) | null = null;
+  /**
+   * true = o delete nesta tabela é barrado pela regra de acesso (RLS), como no Postgres: volta sem erro e
+   * sem apagar nenhuma linha.
+   */
+  recusarExclusao: ((tabela: string) => boolean) | null = null;
 
   constructor(public maxLinhas = 1000) {}
 
@@ -253,8 +259,10 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
       return { data: null, error: null, count: null };
     }
     if (this.op === 'delete') {
-      this.banco.tabelas[this.tabela] = tabela.filter((l) => !passa(l));
-      return { data: null, error: null, count: null };
+      const apagadas = this.banco.recusarExclusao?.(this.tabela) ? [] : tabela.filter(passa);
+      this.banco.tabelas[this.tabela] = tabela.filter((l) => !apagadas.includes(l));
+      // .select(...) depois do delete: devolve as linhas apagadas (Prefer: return=representation)
+      return this.devolver ? responder(apagadas, null) : { data: null, error: null, count: null };
     }
     if (this.op === 'update') {
       tabela.forEach((l, i) => {

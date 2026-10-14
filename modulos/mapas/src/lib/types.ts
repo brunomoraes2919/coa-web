@@ -51,6 +51,17 @@ export interface Fazenda {
 /** Perfil do usuário no COA WEB (tabela perfis). */
 export type PerfilUsuario = 'admin' | 'colaborador';
 
+/** O que o módulo sabe do usuário logado: sai de uma só leitura da linha dele em perfis. */
+export interface AcessoUsuario {
+  perfil: PerfilUsuario;
+  /**
+   * Administrador sem restrição de fazendas (vê todas) ou ADMINISTRADOR+: a mesma conta de admin_ve_tudo()
+   * no banco. Só ele cria, altera e exclui fazendas de mapa; o administrador restrito grava talhões, áreas
+   * da cultura e plantio só nas fazendas que vê. Colaborador: sempre false.
+   */
+  adminSemRestricao: boolean;
+}
+
 /** Fazenda do COA WEB (tabela fazendas), só leitura. */
 export interface FazendaCoa {
   id: number;
@@ -251,7 +262,10 @@ export interface ResumoChuva {
   mediaPicsComChuva?: number | null;
 }
 
-/** Um valor v cai na primeira classe com v <= max. */
+/**
+ * Um valor v (arredondado a uma casa decimal) cai na primeira classe com v < max: o limite de cima é
+ * exclusivo. Acima da última classe, fica na última (ver classify em palettes.ts).
+ */
 export interface PaletteClass {
   max: number;
   color: string;
@@ -308,6 +322,12 @@ export interface LayoutConfig {
   setores?: string[] | null;
   /** nome do arquivo CSV da ZEUS que gerou o mapa */
   nomeCsv?: string;
+  /**
+   * horas ('hh:mm') do início e do fim do período, só quando a chuva veio da integração com a opção de
+   * informar a hora. O mapa salvo guarda o período só como data (periodoInicio/periodoFim): é daqui que
+   * as horas voltam ao reabrir. Ausente = período só por data (e em mapas salvos antes deste campo).
+   */
+  periodoHoras?: { inicio: string; fim: string };
   /** campos de texto que o usuário alterou (os demais são preenchidos automaticamente) */
   textosEditados?: Partial<LayoutTextos>;
   /** orientação da folha; 'auto' (padrão; mapas antigos não têm o campo) decide pela forma dos talhões */

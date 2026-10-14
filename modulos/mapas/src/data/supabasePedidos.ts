@@ -12,10 +12,18 @@ interface ErroSupabase {
   message?: string;
 }
 
+/** As duas mensagens do gatilho pedidos_limitar: pedidos demais aguardando o servidor, ou demais na última hora. */
+const LIMITE_PEDIDOS = /pedidos aguardando o servidor|Muitos pedidos na última hora/;
+
 /** Erro do Supabase em português, específico dos pedidos ao servidor (`script` = o SQL que cria a tabela). */
 export function erroPedido(acao: string, e: ErroSupabase, script = '0002_pedidos_plantio.sql'): Error {
   const codigo = e.code ?? '';
   const msg = e.message ?? '';
+  // limite de pedidos (gatilho pedidos_limitar, script 0018 do COA WEB): "raise exception" sem código
+  // próprio chega como P0001, com a mensagem do banco já em português e pronta para a tela
+  if (LIMITE_PEDIDOS.test(msg) || (codigo === 'P0001' && msg.trim())) {
+    return new Error(`Não foi possível ${acao}: ${msg.trim()}`);
+  }
   if (codigo === '42501' || /row-level security|permission denied/i.test(msg)) {
     return new Error(`Sem permissão para ${acao}: é preciso ter pelo menos uma fazenda liberada no COA WEB.`);
   }

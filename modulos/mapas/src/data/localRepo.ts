@@ -131,8 +131,8 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
   return {
     modo: 'local',
 
-    async perfil() {
-      return 'admin';
+    async acesso() {
+      return { perfil: 'admin', adminSemRestricao: true };
     },
 
     async listarFazendasCoa() {

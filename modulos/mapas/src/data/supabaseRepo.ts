@@ -10,6 +10,7 @@ import {
   mapaParaRow,
   plantioParaRow,
   reviverPics,
+  rowParaAcesso,
   rowParaAreaCultura,
   rowParaFazenda,
   rowParaLinhaPlantioPims,
@@ -23,6 +24,7 @@ import {
   type AreaCulturaRow,
   type FazendaRow,
   type MapaRow,
+  type PerfilRow,
   type PlantioPimsRow,
   type PlantioRow,
   type SafraRow,
@@ -54,6 +56,13 @@ function falha(contexto: string, error: ErroComMensagem): never {
   throw new Error(`${contexto}: ${error.message}`);
 }
 
+/** Texto da recusa quando o banco não apaga a linha (delete sem erro e sem linha afetada). */
+export const RECUSA_EXCLUIR = {
+  fazenda: 'Sua conta não pode excluir esta fazenda de mapa: isso é só para o administrador que vê todas as fazendas.',
+  safra: 'Sua conta não pode excluir esta safra: isso é só para o administrador que vê todas as fazendas.',
+  mapa: 'Sua conta não pode excluir este mapa: é preciso ter acesso à fazenda dele no COA WEB.',
+} as const;
+
 type RespostaPagina = PromiseLike<{ data: unknown[] | null; error: ErroComMensagem | null; count?: number | null }>;
 
 /**
@@ -82,6 +91,29 @@ function emBlocos<T>(lista: T[], tamanho: number): T[][] {
 }
 
 export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
+  /**
+   * Apaga a linha `id` de `tabela` e confere se o banco apagou mesmo: quando a regra de acesso (RLS) não
+   * deixa excluir, o delete volta SEM erro e sem linha. Nesse caso, se a linha continua lá, é recusa (Error
+   * com o texto de `recusa`); se não existe mais (já excluída em outra aba ou por outra pessoa), vale como
+   * excluída.
+   */
+  async function apagarLinha(contexto: string, tabela: string, id: string, recusa: string): Promise<void> {
+    const { data, error } = await client.from(tabela).delete().eq('id', id).select('id');
+    if (error) falha(contexto, error);
+    if (Array.isArray(data) && data.length > 0) return;
+    const { data: resta, error: erroLeitura } = await client.from(tabela).select('id').eq('id', id).maybeSingle();
+    if (erroLeitura) falha(contexto, erroLeitura);
+    if (resta) throw new Error(recusa);
+  }
+
+  /**
+   * Remove do storage os arquivos de linhas que JÁ foram apagadas (melhor esforço): se falhar, a exclusão
+   * vale assim mesmo e o arquivo fica sobrando no bucket, com um aviso no console.
+   */
+  async function limparArquivos(paths: (string | null)[]): Promise<void> {
+    await excluirArquivos(paths).catch((e: unknown) => console.warn('Arquivo de mapa excluído não foi removido do storage', e));
+  }
+
   async function excluirArquivos(paths: (string | null)[]): Promise<void> {
     const validos = paths.filter((p): p is string => Boolean(p));
     for (const bloco of emBlocos(validos, BLOCO_IDS)) {
@@ -146,15 +178,16 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
   return {
     modo: 'supabase',
 
-    async perfil() {
+    async acesso() {
       const { data: sessao, error: erroSessao } = await client.auth.getSession();
       if (erroSessao) falha('Não foi possível obter a sessão', erroSessao);
       const uid = sessao.session?.user.id;
       if (!uid) return null;
-      const { data, error } = await client.from('perfis').select('perfil').eq('id', uid).maybeSingle();
+      // '*' como o COA WEB lê o próprio perfil: super e todas_fazendas só existem depois do script 0002 de lá
+      const { data, error } = await client.from('perfis').select('*').eq('id', uid).maybeSingle();
       if (error) falha('Não foi possível ler o perfil do usuário', error);
       if (!data) return null;
-      return (data as { perfil: unknown }).perfil === 'admin' ? 'admin' : 'colaborador';
+      return rowParaAcesso(data as PerfilRow);
     },
 
     async listarFazendasCoa() {
@@ -212,13 +245,13 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
 
     async excluirFazenda(id) {
       // Postgres cascateia talhões, plantios (via talhões), áreas e mapas (FK on delete cascade), mas não
-      // remove os arquivos do storage: buscamos os paths antes de excluir a linha da fazenda.
+      // remove os arquivos do storage: anotamos os paths antes (depois da cascata os mapas não existem mais)
+      // e só apagamos os arquivos DEPOIS de o banco apagar a fazenda. Se ele recusar, os mapas ficam inteiros.
       const mapas = await lerTodas<Pick<MapaRow, 'png_path' | 'thumb_path'>>('Não foi possível listar os mapas da fazenda', (de, ate) =>
         client.from(TABELAS.mapas).select('id, png_path, thumb_path', { count: 'exact' }).eq('fazenda_id', id).order('id').range(de, ate),
       );
-      await excluirArquivos(mapas.flatMap((m) => [m.png_path, m.thumb_path]));
-      const { error } = await client.from(TABELAS.fazendas).delete().eq('id', id);
-      if (error) falha('Não foi possível excluir a fazenda', error);
+      await apagarLinha('Não foi possível excluir a fazenda', TABELAS.fazendas, id, RECUSA_EXCLUIR.fazenda);
+      await limparArquivos(mapas.flatMap((m) => [m.png_path, m.thumb_path]));
     },
 
     async listarSafras() {
@@ -235,8 +268,7 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
 
     async excluirSafra(id) {
       // Postgres cuida da cascata: plantios e áreas (on delete cascade) e mapas_chuva.safra_id (on delete set null).
-      const { error } = await client.from(TABELAS.safras).delete().eq('id', id);
-      if (error) falha('Não foi possível excluir a safra', error);
+      await apagarLinha('Não foi possível excluir a safra', TABELAS.safras, id, RECUSA_EXCLUIR.safra);
     },
 
     async listarPlantios(safraId) {
@@ -324,9 +356,9 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
     },
 
     async excluirMapa(m) {
-      await excluirArquivos([m.pngPath, m.thumbPath]);
-      const { error } = await client.from(TABELAS.mapas).delete().eq('id', m.id);
-      if (error) falha('Não foi possível excluir o mapa', error);
+      // primeiro a linha, depois os arquivos: se o banco recusar a exclusão, o mapa continua com a imagem
+      await apagarLinha('Não foi possível excluir o mapa', TABELAS.mapas, m.id, RECUSA_EXCLUIR.mapa);
+      await limparArquivos([m.pngPath, m.thumbPath]);
     },
 
     async exportarBackup() {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  acoesDaSafra,
   resumoAreas,
   resumoPlantioFazenda,
   resumoSafra,
@@ -174,5 +175,22 @@ describe('textos do resumo', () => {
     expect(resumoSafra([{ ...base, contagem: { plantado: 1, plantando: 0, a_plantar: 0 }, total: 1, participa: true }]).texto).toBe(
       'Plantio da safra: 100% (1 de 1 talhão)',
     );
+  });
+});
+
+describe('acoesDaSafra (menu do cartão da safra)', () => {
+  it('quem pode excluir: "Editar safra" e "Excluir safra" (em destaque de perigo)', () => {
+    const editar = () => undefined;
+    const excluir = () => undefined;
+    expect(acoesDaSafra(editar, excluir)).toEqual([
+      { rotulo: 'Editar safra', onClick: editar },
+      { rotulo: 'Excluir safra', perigo: true, onClick: excluir },
+    ]);
+  });
+
+  it('administrador restrito (sem onExcluir): só "Editar safra"', () => {
+    const editar = () => undefined;
+    expect(acoesDaSafra(editar).map((a) => a.rotulo)).toEqual(['Editar safra']);
+    expect(acoesDaSafra(editar, undefined)).toEqual([{ rotulo: 'Editar safra', onClick: editar }]);
   });
 });

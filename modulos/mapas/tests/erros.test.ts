@@ -26,6 +26,19 @@ describe('mensagemDeErro (erros técnicos em inglês viram português)', () => {
     }
   });
 
+  it('administrador restrito gravando fazenda de mapa: diz quem pode, em vez de "acessar estes dados"', () => {
+    // o repositório põe o contexto na frente da mensagem do banco (upsert recusado pela regra de inserção)
+    const m = mensagemDeErro(new Error('Não foi possível atualizar a fazenda: new row violates row-level security policy for table "mapas_fazendas"'));
+    expect(m).toBe('Sua conta não pode cadastrar, alterar nem excluir fazendas de mapa: isso é só para o administrador que vê todas as fazendas.');
+  });
+
+  it('gravação recusada em talhões, áreas da cultura ou plantio: a conta não cadastra nesta fazenda', () => {
+    for (const tabela of ['mapas_talhoes', 'mapas_areas_cultura', 'mapas_plantios']) {
+      const m = mensagemDeErro(new Error(`Não foi possível salvar: new row violates row-level security policy for table "${tabela}"`));
+      expect(m).toMatch(/^Sua conta não pode cadastrar nesta fazenda\./);
+    }
+  });
+
   it('arquivo grande demais para o Storage', () => {
     for (const m of ['Payload too large', 'The object exceeded the maximum allowed size']) {
       expect(mensagemDeErro(new Error(m))).toMatch(/^Arquivo grande demais para o Storage/);

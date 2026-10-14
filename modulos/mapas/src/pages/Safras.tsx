@@ -7,6 +7,7 @@ import Carregando from '../components/Carregando';
 import Modal from '../components/Modal';
 import CartaoSafra from '../components/safras/CartaoSafra';
 import { useResumoSafras } from '../components/safras/useResumoSafras';
+import { useAdminSemRestricao } from '../components/usePerfil';
 
 const CULTURAS = ['SOJA', 'MILHO', 'ALGODÃO', 'FEIJÃO', 'SORGO'];
 const OUTRA = 'OUTRA';
@@ -64,6 +65,8 @@ export default function Safras() {
   const [salvando, setSalvando] = useState(false);
   const [excluir, setExcluir] = useState<Safra | null>(null);
   const [excluindo, setExcluindo] = useState(false);
+  /** excluir safra leva junto o plantio e as áreas dela em todas as fazendas: o banco só deixa o administrador que vê todas */
+  const podeExcluir = useAdminSemRestricao();
   const formRef = useRef<HTMLFormElement>(null);
   const chaveForm = form ? (form.id ?? 'nova') : null;
   const { linhas, erro: erroResumo } = useResumoSafras(safras, fazendas);
@@ -194,7 +197,7 @@ export default function Safras() {
                     setErroForm(null);
                     setForm(formDe(s));
                   }}
-                  onExcluir={() => setExcluir(s)}
+                  onExcluir={podeExcluir ? () => setExcluir(s) : undefined}
                 />
               ))}
             </>

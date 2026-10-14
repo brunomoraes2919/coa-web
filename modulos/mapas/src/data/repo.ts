@@ -1,7 +1,7 @@
 import type { PedidoChuva, SituacaoPedidoChuva } from '../lib/chuvaZeus';
 import type { SituacaoZeus } from '../lib/situacaoZeus';
 import type { SituacaoPedidoPlantio } from '../lib/pedidoPlantio';
-import type { AreaCultura, Fazenda, FazendaCoa, MapaSalvo, PerfilUsuario, Plantio, PlantioPimsArquivo, Safra, Talhao } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, Safra, Talhao } from '../lib/types';
 
 /** Contrato do repositório (implementado por localRepo.ts e supabaseRepo.ts). */
 
@@ -25,10 +25,11 @@ export interface Repositorio {
   modo: 'local' | 'supabase';
 
   /**
-   * Perfil do usuário logado no COA WEB. Local: 'admin'. Supabase: perfis.perfil do usuário da
-   * sessão; sem sessão ou sem linha em perfis → null; valor desconhecido → 'colaborador'.
+   * Perfil do usuário logado no COA WEB e se ele é administrador sem restrição de fazendas. Local:
+   * 'admin' sem restrição. Supabase: a linha do usuário da sessão em perfis (perfil, super e
+   * todas_fazendas); sem sessão ou sem linha em perfis → null; perfil desconhecido → 'colaborador'.
    */
-  perfil(): Promise<PerfilUsuario | null>;
+  acesso(): Promise<AcessoUsuario | null>;
   /** Fazendas do COA WEB visíveis ao usuário (id e nome), por nome. Local: []. */
   listarFazendasCoa(): Promise<FazendaCoa[]>;
   /**
