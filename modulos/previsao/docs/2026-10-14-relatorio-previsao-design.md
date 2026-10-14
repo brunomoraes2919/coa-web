@@ -57,7 +57,7 @@ Sem tabela nova e sem script de banco. Cada dia previsto em `prev_previsoes.dias
   - título com o nome da fazenda e o período ("15/10 a 29/10"), e uma linha com a foto usada de cada fonte (data e hora);
   - gráfico (ECharts, desenhado fora da tela e colocado como imagem em alta resolução). Painel de cima: máxima (laranja) e mínima (azul) em linhas com pontos, escala em °C. Painel de baixo: barras de chuva da ZEUS, escala em mm, com as mesmas datas embaixo. Cores conferidas no validador de paleta;
   - faixa de números: uma coluna por dia, com mm, probabilidade de chuva (%), máxima e mínima, e o total de chuva do período;
-  - rodapé com "COA WEB · Previsão do Tempo", as fontes e o número da página.
+  - rodapé com "COA WEB · Previsão do Tempo" e o número da página (as fontes de cada página ficam na linha abaixo do título).
 - **Sem dado:**
   - fazenda sem nenhuma foto nos últimos 3 dias: página com o aviso "Sem previsão recente para esta fazenda";
   - sem temperatura: só o painel da chuva, com a nota "Temperatura indisponível";
