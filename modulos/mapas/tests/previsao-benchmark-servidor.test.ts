@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   diaMT, horaMT, somarDias, diasEntre, inicioSafraMT, pontosDasFazendas, previsaoZeusPorFazenda, previsaoVisualCrossing,
   previsaoMetNo, observadoPorFazenda, montarSqlPrevisaoZeus, montarSqlObservadoZeus, urlVisualCrossing, urlMetNo, assinaturaDaPrevisao,
-  paresDoBenchmark, metricasDoBenchmark,
+  paresDoBenchmark, metricasDoBenchmark, PREV_USER_AGENT, rodarBenchmarkPrevisao,
 } from '../scripts/sincronizar-plantio.mjs';
+import { servidoresFalsos, URL_SB, URL_AGROVEX, CHAVE, TOKEN } from './helpers/servidoresFalsos';
 
 // Todos os dados daqui são FICTÍCIOS.
 const res = (columns: string[], rows: unknown[][]) => ({ columns, rows });
@@ -171,5 +172,114 @@ describe('benchmark de previsão: pares e métricas', () => {
     expect(n('30d')).toBe(2); // 14/09 a 13/10, 30 dias (o dia de hoje não conta)
     expect(n('60d')).toBe(3); // 15/08 a 13/10
     expect(n('safra')).toBe(3); // desde 01/09
+  });
+});
+
+describe('benchmark de previsão: etapa da rotina', () => {
+  const PICS = { columns: ['picid', 'picname', 'farm', 'lat', 'lon'], rows: [['10', 'PIC 1', 'Faz. Globo', -13, -56], ['11', 'PIC 2', 'Faz. Globo', -13.2, -56.2]] };
+  const ZEUS = { columns: ['picid', 'dia', 'mm', 'prob'], rows: [['10', '2026-10-15', 4, 80], ['11', '2026-10-15', 6, 90], ['10', '2026-10-16', 0, 5], ['11', '2026-10-16', 0, 5]] };
+  const ZEUS_GLOBO = [{ d: '2026-10-15', mm: 5, p: 85 }, { d: '2026-10-16', mm: 0, p: 5 }];
+  const OBS = { columns: ['picid', 'dia', 'mm'], rows: [['10', '2026-10-14', 2], ['11', '2026-10-14', 4]] };
+  const CHAVE_VC = ['chave', 'visual', 'inventada'].join('-');
+  const VC = { days: [{ datetime: '2026-10-15', precip: 3.2, precipprob: 70 }, { datetime: '2026-10-16', precip: 0, precipprob: 10 }] };
+  // 6 em 6 h: cobre o dia 16 de MT inteiro (16T04Z a 17T04Z)
+  const MET = { properties: { timeseries: [0, 6, 12, 18, 24].map((h) => ({ time: new Date(Date.UTC(2026, 9, 16, h)).toISOString().replace('.000', ''), data: { next_6_hours: { details: { precipitation_amount: 1.2 } } } })) } };
+  const tabelas = () => ({
+    mapas_fazendas: [{ unidade_pims: 'GLOBO' }, { unidade_pims: 'NEBRASKA' }],
+    prev_zeus_atualizacoes: [], prev_previsoes: [], prev_observado: [], prev_metricas: [],
+  });
+  // o fetch da rotina: Supabase e Agrovex falsos, e respostas prontas para as duas fontes de fora
+  function montar(opcoes: { vc?: number; met?: number } = {}, extras: Record<string, Record<string, unknown>[]> = {}) {
+    const s = servidoresFalsos({ ...tabelas(), ...extras }, [PICS, ZEUS, OBS]);
+    const externas: { url: string; ua: string; prazo: boolean }[] = [];
+    const fetchImpl = async (url: string, init?: RequestInit) => {
+      const ua = String((init?.headers as Record<string, string> | undefined)?.['User-Agent'] ?? '');
+      const prazo = init?.signal instanceof AbortSignal;
+      if (url.startsWith('https://weather.visualcrossing.com/')) { externas.push({ url, ua, prazo }); return new Response(JSON.stringify(VC), { status: opcoes.vc ?? 200 }); }
+      if (url.startsWith('https://api.met.no/')) { externas.push({ url, ua, prazo }); return new Response(JSON.stringify(MET), { status: opcoes.met ?? 200 }); }
+      return s.impl(url, init);
+    };
+    const gravado = (tabela: string) => s.chamadas
+      .filter((c) => c.url.startsWith(`${URL_SB}/rest/v1/${tabela}?`) && c.init?.method === 'POST')
+      .flatMap((c) => JSON.parse(String(c.init?.body)) as Record<string, unknown>[]);
+    return { s, fetchImpl, externas, gravado };
+  }
+  const rodar = (m: ReturnType<typeof montar>, agora: string, chave = CHAVE_VC) =>
+    rodarBenchmarkPrevisao({ agrovex: { url: URL_AGROVEX, token: TOKEN }, supabase: { url: URL_SB, chave: CHAVE }, visualCrossingChave: chave, fetchImpl: m.fetchImpl as typeof fetch, agora: new Date(agora) });
+  const fontes = (linhas: Record<string, unknown>[]) => linhas.map((f) => String(f.fonte)).sort();
+  afterEach(() => vi.restoreAllMocks());
+
+  it('às 6 h de MT tira a foto das três fontes, grava a chuva medida e a mudança da ZEUS', async () => {
+    const m = montar();
+    expect(await rodar(m, '2026-10-15T10:17:00Z')).toBeNull();
+    const fotos = m.gravado('prev_previsoes');
+    expect(fontes(fotos)).toEqual(['metno', 'visualcrossing', 'zeus']);
+    expect(fotos.every((f) => f.unidade === 'GLOBO' && f.emitida_em === '2026-10-15')).toBe(true);
+    expect(fotos.find((f) => f.fonte === 'zeus')?.dias).toEqual(ZEUS_GLOBO);
+    expect(fotos.find((f) => f.fonte === 'metno')?.dias).toEqual([{ d: '2026-10-16', mm: 4.8, p: null }]);
+    expect(m.gravado('prev_observado')).toEqual([{ unidade: 'GLOBO', dia: '2026-10-14', mm: 3, pluviometros: 2 }]);
+    expect(m.gravado('prev_zeus_atualizacoes')).toHaveLength(1);
+    // MET Norway: ponto = média dos pluviômetros, e a identificação exigida
+    const met = m.externas.find((e) => e.url.startsWith('https://api.met.no/'));
+    expect(met?.url).toBe('https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=-13.1&lon=-56.1');
+    expect(met?.ua).toBe(PREV_USER_AGENT);
+    // toda chamada de fora sai com prazo (a rotina não fica presa esperando uma fonte)
+    expect(m.externas.every((e) => e.prazo)).toBe(true);
+  });
+
+  it('antes das 6 h de MT (mesmo sendo 9 h em UTC) não tira foto, mas grava a chuva medida', async () => {
+    const m = montar();
+    expect(await rodar(m, '2026-10-15T09:59:00Z')).toBeNull();
+    expect(m.gravado('prev_previsoes')).toEqual([]);
+    expect(m.externas).toEqual([]);
+    expect(m.gravado('prev_observado')).toHaveLength(1);
+  });
+
+  it('rodada seguinte do mesmo dia: busca só o que faltou, não recalcula as métricas e não regrava a ZEUS sem mudança', async () => {
+    const m = montar({}, {
+      prev_previsoes: [{ fonte: 'zeus', unidade: 'GLOBO', emitida_em: '2026-10-15' }, { fonte: 'metno', unidade: 'GLOBO', emitida_em: '2026-10-15' }],
+      prev_metricas: [{ calculado_em: '2026-10-15T10:17:00Z' }],
+      prev_zeus_atualizacoes: [{ capturada_em: '2026-10-15T10:17:00Z', assinatura: assinaturaDaPrevisao(new Map([['GLOBO', ZEUS_GLOBO]])) }],
+    });
+    expect(await rodar(m, '2026-10-15T11:17:00Z')).toBeNull();
+    expect(m.externas.map((e) => new URL(e.url).hostname)).toEqual(['weather.visualcrossing.com']);
+    expect(fontes(m.gravado('prev_previsoes'))).toEqual(['visualcrossing']);
+    expect(m.gravado('prev_zeus_atualizacoes')).toEqual([]);
+    // só a leitura das fotos de hoje: sem a leitura da safra inteira para as métricas, e sem limpeza
+    expect(m.s.leituras('prev_previsoes')).toHaveLength(1);
+    expect(m.s.chamadas.filter((c) => c.url.startsWith(URL_SB) && c.init?.method === 'DELETE')).toEqual([]);
+  });
+
+  it('sem chave do Visual Crossing, ou com ela recusada, as outras fontes continuam; chave, token e fazenda fora do log', async () => {
+    const logs: string[] = [];
+    for (const k of ['log', 'warn', 'error'] as const) vi.spyOn(console, k).mockImplementation((...a: unknown[]) => { logs.push(a.join(' ')); });
+    const semChave = montar();
+    expect(await rodar(semChave, '2026-10-15T10:17:00Z', '')).toBeNull();
+    expect(fontes(semChave.gravado('prev_previsoes'))).toEqual(['metno', 'zeus']);
+    expect(semChave.externas.some((e) => e.url.includes('visualcrossing'))).toBe(false);
+    const recusada = montar({ vc: 401 });
+    expect(await rodar(recusada, '2026-10-15T10:17:00Z')).toBeNull();
+    expect(fontes(recusada.gravado('prev_previsoes'))).toEqual(['metno', 'zeus']);
+    const tudo = logs.join('\n');
+    expect(tudo).toContain('Visual Crossing: HTTP 401');
+    expect(tudo).not.toContain(CHAVE_VC);
+    expect(tudo).not.toContain(TOKEN);
+    expect(tudo).not.toContain(CHAVE);
+    expect(tudo).not.toContain('GLOBO');
+  });
+
+  it('MET Norway com 429 para a fonte na rodada, sem falhar a etapa', async () => {
+    const m = montar({ met: 429 });
+    expect(await rodar(m, '2026-10-15T10:17:00Z')).toBeNull();
+    expect(fontes(m.gravado('prev_previsoes'))).toEqual(['visualcrossing', 'zeus']);
+  });
+
+  it('Agrovex fora do ar: a etapa devolve o erro, não lança e não grava nada no Supabase', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const s = servidoresFalsos(tabelas(), [], { agrovexStatus: 503 });
+    const r = await rodarBenchmarkPrevisao({ agrovex: { url: URL_AGROVEX, token: TOKEN }, supabase: { url: URL_SB, chave: CHAVE }, fetchImpl: s.impl as typeof fetch, agora: new Date('2026-10-15T10:17:00Z') });
+    expect(typeof r).toBe('string');
+    expect(r).not.toContain(TOKEN);
+    expect(s.chamadas.filter((c) => c.url.startsWith(URL_SB) && c.init?.method && c.init.method !== 'GET')).toEqual([]);
   });
 });

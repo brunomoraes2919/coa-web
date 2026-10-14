@@ -2690,6 +2690,140 @@ export function metricasDoBenchmark(pares, hoje) {
   return linhas;
 }
 
+/** GET no Supabase que devolve a lista (erro do PostgREST sem a chave). */
+async function sbLer({ url, chave }, caminho, acao, fetchImpl) {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${caminho}`, { headers: cabecalhosSupabase(chave) }, acao);
+  if (!resp.ok) await erroSupabase(resp, chave, acao);
+  return resp.json();
+}
+/** Todas as páginas (1.000 linhas cada) de um GET. A consulta precisa de uma ordem sem empate. */
+async function sbLerTudo(supabase, caminho, acao, fetchImpl) {
+  const saida = [];
+  for (let de = 0; ; de += 1000) {
+    const linhas = await sbLer(supabase, `${caminho}&limit=1000&offset=${de}`, acao, fetchImpl);
+    saida.push(...linhas);
+    if (linhas.length < 1000) return saida;
+  }
+}
+/** Upsert (merge) de linhas numa tabela; lista vazia não faz chamada. */
+async function sbUpsert({ url, chave }, tabela, conflito, linhas, fetchImpl) {
+  if (!linhas.length) return;
+  const acao = `a gravação em ${tabela}`;
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${tabela}?on_conflict=${conflito}`, {
+    method: 'POST',
+    headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(linhas),
+  }, acao);
+  if (!resp.ok) await erroSupabase(resp, chave, acao);
+}
+
+/** GET numa fonte de fora, com prazo e identificação. O erro nunca traz o endereço (o do Visual Crossing tem a chave). */
+async function lerFonteExterna(fetchImpl, url, nome) {
+  let resp;
+  try {
+    resp = await fetchImpl(url, { headers: { 'User-Agent': PREV_USER_AGENT, Accept: 'application/json' }, signal: AbortSignal.timeout(PREV_PRAZO_MS) });
+  } catch (e) {
+    const prazo = e !== null && typeof e === 'object' && (e.name === 'TimeoutError' || e.name === 'AbortError');
+    throw Object.assign(new Error(`${nome}: ${prazo ? `sem resposta em ${PREV_PRAZO_MS / 1000} s` : 'falha de rede'}`), { status: 0 });
+  }
+  if (!resp.ok) throw Object.assign(new Error(`${nome}: HTTP ${resp.status}`), { status: resp.status });
+  return resp.json();
+}
+
+/**
+ * Etapa do benchmark de previsão dentro da rotina de hora em hora. Não lança: devolve null (ok) ou a mensagem de erro
+ * já registrada (como rodarAcompanhamento). Em toda rodada: registra a mudança da previsão da ZEUS e grava a chuva
+ * medida de anteontem e ontem. A partir das 6 h de MT: a foto de hoje do que ainda falta (fonte × fazenda) e, uma
+ * vez por dia, as métricas. Uma fonte que falha não impede as outras (só aviso no log, sem nome de fazenda).
+ */
+export async function rodarBenchmarkPrevisao({ agrovex, supabase, visualCrossingChave = '', fetchImpl = globalThis.fetch, agora = new Date() }) {
+  const limpar = (texto) => {
+    let t = semChave(semChave(String(texto), supabase.chave), agrovex.token);
+    if (visualCrossingChave) t = semChave(semChave(t, visualCrossingChave), encodeURIComponent(visualCrossingChave));
+    return t;
+  };
+  try {
+    const hoje = diaMT(agora);
+    const capturada = agora.toISOString();
+    const unidades = (await sbLer(supabase, 'mapas_fazendas?select=unidade_pims&unidade_pims=not.is.null', 'a leitura das fazendas', fetchImpl))
+      .map((f) => String(f.unidade_pims ?? '').trim().toUpperCase()).filter(Boolean);
+    const cliente = await abrirSessao(agrovex.url, agrovex.token, fetchImpl);
+    let pontos, zeus, observado;
+    try {
+      const fazendas = pontosDasFazendas(await cliente.consultar(SQL_PICS_ZEUS, 'pluviômetros da ZEUS e suas fazendas (benchmark de previsão)', 'pluviômetros', FONTES.zeus), unidades);
+      pontos = fazendas.pontos;
+      zeus = previsaoZeusPorFazenda(await consultarPaginas(cliente, (pular, tamanho) => montarSqlPrevisaoZeus(hoje, pular, tamanho),
+        'previsão de chuva da ZEUS por pluviômetro (benchmark de previsão)', 'previsão da ZEUS', { fonte: FONTES.zeus }), fazendas.fazendaDoPic);
+      observado = observadoPorFazenda(await cliente.consultar(montarSqlObservadoZeus(somarDias(hoje, -2), somarDias(hoje, -1)),
+        'chuva medida pelos pluviômetros da ZEUS (benchmark de previsão)', 'chuva medida', FONTES.zeus), fazendas.fazendaDoPic);
+    } finally {
+      await cliente.fechar();
+    }
+
+    // 1. a ZEUS mudou a previsão? (para saber a hora em que ela publica)
+    const assinatura = assinaturaDaPrevisao(zeus);
+    const ultima = await sbLer(supabase, 'prev_zeus_atualizacoes?select=assinatura&order=capturada_em.desc&limit=1', 'a leitura das atualizações da ZEUS', fetchImpl);
+    if (zeus.size && (!ultima.length || ultima[0].assinatura !== assinatura)) {
+      await sbUpsert(supabase, 'prev_zeus_atualizacoes', 'capturada_em', [{ capturada_em: capturada, assinatura }], fetchImpl);
+    }
+    // 2. chuva medida, em toda rodada (carga atrasada da telemetria entra na rodada seguinte)
+    await sbUpsert(supabase, 'prev_observado', 'unidade,dia', observado, fetchImpl);
+    if (horaMT(agora) < PREV_HORA_FOTO) return null;
+
+    // 3. a foto de hoje, só do que ainda falta (fonte × fazenda)
+    const feitas = new Set((await sbLer(supabase, `prev_previsoes?select=fonte,unidade&emitida_em=eq.${hoje}`, 'a leitura das fotos de hoje', fetchImpl))
+      .map((r) => `${r.fonte}|${r.unidade}`));
+    const falta = (fonte, unidade) => !feitas.has(`${fonte}|${unidade}`);
+    const dentro = (dias) => dias.filter((x) => { const k = diasEntre(hoje, x.d); return k >= 0 && k <= 14; });
+    const fotos = [];
+    const guardar = (fonte, unidade, dias) => { const d = dentro(dias); if (d.length) fotos.push({ fonte, unidade, emitida_em: hoje, capturada_em: capturada, dias: d }); };
+    for (const [unidade, dias] of zeus) if (falta('zeus', unidade)) guardar('zeus', unidade, dias);
+    const externas = [
+      ['visualcrossing', 'Visual Crossing', visualCrossingChave ? (p) => urlVisualCrossing(p, visualCrossingChave) : null, previsaoVisualCrossing],
+      ['metno', 'MET Norway', urlMetNo, previsaoMetNo],
+    ];
+    for (const [fonte, nome, endereco, converter] of externas) {
+      if (!endereco) { console.warn(`Benchmark de previsão: ${nome} sem chave no ambiente (VISUALCROSSING_KEY); fonte pulada.`); continue; }
+      let falhas = 0;
+      for (const [unidade, ponto] of pontos) {
+        if (!falta(fonte, unidade)) continue;
+        try {
+          guardar(fonte, unidade, converter(await lerFonteExterna(fetchImpl, endereco(ponto), nome)));
+        } catch (e) {
+          falhas += 1;
+          // recusa de acesso ou limite estourado vale para todas as fazendas: não insiste nesta rodada
+          if (e && (e.status === 401 || e.status === 403 || e.status === 429)) { console.warn(`Benchmark de previsão: ${limpar(e.message)}; fonte parada nesta rodada.`); break; }
+        }
+      }
+      if (falhas) console.warn(`Benchmark de previsão: ${nome} falhou em ${falhas} fazenda(s); tenta de novo na próxima rodada.`);
+    }
+    await sbUpsert(supabase, 'prev_previsoes', 'fonte,unidade,emitida_em', fotos, fetchImpl);
+
+    // 4. métricas, uma vez por dia (e de novo enquanto não houver nenhuma)
+    const conta = await sbLer(supabase, 'prev_metricas?select=calculado_em&order=calculado_em.desc&limit=1', 'a leitura das métricas', fetchImpl);
+    let metricas = [];
+    if (!conta.length || diaMT(conta[0].calculado_em) !== hoje) {
+      const desde = inicioSafraMT(hoje);
+      const previsoes = await sbLerTudo(supabase, `prev_previsoes?select=fonte,unidade,emitida_em,dias&emitida_em=gte.${somarDias(desde, -14)}&order=emitida_em,fonte,unidade`, 'a leitura das fotos', fetchImpl);
+      const medidos = await sbLerTudo(supabase, `prev_observado?select=unidade,dia,mm,pluviometros&dia=gte.${desde}&order=dia,unidade`, 'a leitura da chuva medida', fetchImpl);
+      metricas = metricasDoBenchmark(paresDoBenchmark(previsoes, medidos), hoje).map((m) => ({ ...m, calculado_em: capturada }));
+      if (metricas.length) {
+        await sbUpsert(supabase, 'prev_metricas', 'unidade,periodo,fonte,antecedencia', metricas, fetchImpl);
+        // combinação que não saiu agora (fonte parada, janela que andou) não fica com número velho
+        const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/prev_metricas?calculado_em=lt.${encodeURIComponent(capturada)}`,
+          { method: 'DELETE', headers: cabecalhosSupabase(supabase.chave) }, 'a limpeza de prev_metricas');
+        if (!resp.ok) await erroSupabase(resp, supabase.chave, 'a limpeza de prev_metricas');
+      }
+    }
+    console.log(`Benchmark de previsão: ${fotos.length} foto(s) nova(s), chuva medida de ${observado.length} fazenda×dia, ${metricas.length} métrica(s).`);
+    return null;
+  } catch (e) {
+    const msg = limpar(e instanceof Error ? e.message : String(e));
+    console.error(`Benchmark de previsão: erro (o resto da rotina não foi afetado): ${msg}`);
+    return msg;
+  }
+}
+
 // ---------- execução pela linha de comando ----------
 
 /**
@@ -2757,6 +2891,15 @@ async function main() {
       const erro = await rodarValidacao({
         agrovex: { url: urlAgrovex, token },
         supabase,
+      });
+      if (erro) process.exitCode = 1;
+    }
+    // Benchmark de previsão (aba da Previsão do Tempo): um erro nele não desfaz o resto
+    if (config.previsao !== false) {
+      const erro = await rodarBenchmarkPrevisao({
+        agrovex: { url: urlAgrovex, token },
+        supabase,
+        visualCrossingChave: (process.env.VISUALCROSSING_KEY || '').trim(),
       });
       if (erro) process.exitCode = 1;
     }

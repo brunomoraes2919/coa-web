@@ -56,6 +56,24 @@ As consultas que crescem ao longo da safra passaram a ser lidas em páginas de 4
 - Se aparecer **`em páginas foi recusada`**, o servidor de dados não aceitou a forma nova daquela consulta e a rotina usou a consulta inteira, como fazia antes: nada parou, mas avise, porque aquela consulta continua sujeita ao corte de 5.000 linhas.
 - Se aparecer **`O Supabase não respondeu em`**, uma chamada ao banco passou do prazo (60 s para ler, 120 s para gravar) e foi interrompida; antes ela ficava pendurada até o sistema encerrar a rodada. Uma vez isolada não é problema; repetindo, avise.
 
+## Chave do Visual Crossing (benchmark de previsão)
+
+A aba "Benchmark" da Previsão do Tempo compara a previsão de chuva da ZEUS com a do Visual Crossing e a do MET Norway. O MET Norway não precisa de chave. O Visual Crossing precisa de uma chave da conta grátis (criada por quem administra o COA WEB em visualcrossing.com). Sem ela, a rotina segue normalmente e só escreve no registro, a cada hora, `Visual Crossing sem chave no ambiente (VISUALCROSSING_KEY); fonte pulada.`
+
+Para gravar a chave **sem ela aparecer na tela** (o comando pede a chave; cole e aperte Enter; nada é mostrado):
+
+```bash
+read -rsp 'Chave do Visual Crossing: ' K && echo && [ ${#K} -ge 20 ] && printf 'VISUALCROSSING_KEY=%s\n' "$K" >> ~/.plantio-pims.env && echo 'Gravada.'; unset K
+```
+
+Para conferir (mostra só o **nome**; deve aparecer uma linha só):
+
+```bash
+grep -oE '^VISUALCROSSING_KEY=' ~/.plantio-pims.env
+```
+
+Se aparecer duas vezes, a chave foi gravada duas vezes: avise antes de seguir. A partir das 6 h de Mato Grosso, o registro passa a trazer `Benchmark de previsão: N foto(s) nova(s), …`; se aparecer `Visual Crossing: HTTP 401`, a chave foi recusada (conferir a conta).
+
 ## Como levar esta versão para a VM
 
 Faça depois que esta pasta estiver publicada no `main`. São cinco passos e leva uns cinco minutos. Nada aqui mexe nas chaves.

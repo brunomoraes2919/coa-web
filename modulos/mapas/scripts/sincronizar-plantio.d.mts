@@ -387,3 +387,10 @@ export interface PrevPar { fonte: string; unidade: string; dia: string; k: numbe
 export interface PrevMetrica { unidade: string; periodo: string; fonte: string; antecedencia: number; n: number; erro_medio: number; vies: number; acerto: number }
 export function paresDoBenchmark(previsoes: PrevFoto[], observado: PrevObservado[]): PrevPar[];
 export function metricasDoBenchmark(pares: PrevPar[], hoje: string): PrevMetrica[];
+export function rodarBenchmarkPrevisao(opcoes: {
+  agrovex: { url: string; token: string };
+  supabase: { url: string; chave: string };
+  visualCrossingChave?: string;
+  fetchImpl?: typeof fetch;
+  agora?: Date;
+}): Promise<string | null>;

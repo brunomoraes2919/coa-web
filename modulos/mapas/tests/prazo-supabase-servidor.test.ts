@@ -158,7 +158,8 @@ describe('as rotinas passam o prazo adiante', () => {
     const fonte = (arquivo: string) => readFileSync(resolve('scripts', arquivo), 'utf8');
     // atender-pedidos.mjs não chama o fetch direto em lugar nenhum
     expect(fonte('atender-pedidos.mjs').match(/\bfetchImpl\(/g)).toBeNull();
-    // sincronizar-plantio.mjs: só no cliente do Agrovex (que tem o prazo dele) e dentro de chamarSupabase
-    expect(fonte('sincronizar-plantio.mjs').match(/\bfetchImpl\(/g)).toHaveLength(2);
+    // sincronizar-plantio.mjs: só no cliente do Agrovex (que tem o prazo dele), dentro de chamarSupabase e na leitura
+    // das fontes de previsão de fora (lerFonteExterna, com prazo de 30 s; conferido em previsao-benchmark-servidor.test.ts)
+    expect(fonte('sincronizar-plantio.mjs').match(/\bfetchImpl\(/g)).toHaveLength(3);
   });
 });
