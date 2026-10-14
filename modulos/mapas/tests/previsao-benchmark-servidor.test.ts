@@ -124,11 +124,23 @@ describe('benchmark de previsão: pares e métricas', () => {
   it('comparação justa: dia em que uma fonte faltou sai para todas; D0 nunca entra', () => {
     const previsoes = [
       foto('zeus', 'GLOBO', '2026-10-01', [['2026-10-01', 9], ['2026-10-02', 5], ['2026-10-03', 1]]),
-      foto('metno', 'GLOBO', '2026-10-01', [['2026-10-02', 4]]), // o MET não tem o dia 3 nesta foto...
-      foto('metno', 'GLOBO', '2026-10-02', [['2026-10-04', 1]]), // ...mas alcança k = 2 em outra: o dia 3 (k = 2) sai para a ZEUS também
+      foto('metno', 'GLOBO', '2026-10-01', [['2026-10-02', 4]]), // o MET não tem o dia 3 para a Globo nesta foto...
+      foto('metno', 'DOURADO', '2026-10-01', [['2026-10-02', 0], ['2026-10-03', 1]]), // ...mas a foto do dia chega a k = 2: o dia 3 sai para a ZEUS também
     ];
     const pares = paresDoBenchmark(previsoes, [medido('GLOBO', '2026-10-01', 9), medido('GLOBO', '2026-10-02', 2), medido('GLOBO', '2026-10-03', 0)]);
     expect(pares.map((p) => `${p.fonte} ${p.dia} k${p.k}`).sort()).toEqual(['metno 2026-10-02 k1', 'zeus 2026-10-02 k1']);
+  });
+
+  it('fonte sem foto num dia (parou, ou ainda não tinha começado) não tira os pares das outras desse dia', () => {
+    const previsoes = [
+      foto('zeus', 'GLOBO', '2026-10-01', [['2026-10-02', 5]]),
+      foto('zeus', 'GLOBO', '2026-10-03', [['2026-10-04', 5]]),
+      foto('zeus', 'GLOBO', '2026-10-05', [['2026-10-06', 5]]),
+      // o Visual Crossing só tirou a foto do dia 3 (chave instalada no dia 3 e recusada a partir do dia 5)
+      foto('visualcrossing', 'GLOBO', '2026-10-03', [['2026-10-04', 3], ['2026-10-17', 0]]),
+    ];
+    const pares = paresDoBenchmark(previsoes, ['2026-10-02', '2026-10-04', '2026-10-06'].map((d) => medido('GLOBO', d, 4)));
+    expect(pares.map((p) => `${p.fonte} ${p.dia}`).sort()).toEqual(['visualcrossing 2026-10-04', 'zeus 2026-10-02', 'zeus 2026-10-04', 'zeus 2026-10-06']);
   });
 
   it('antecedência que uma fonte nunca alcança não tira as outras', () => {
@@ -266,6 +278,36 @@ describe('benchmark de previsão: etapa da rotina', () => {
     expect(tudo).not.toContain(TOKEN);
     expect(tudo).not.toContain(CHAVE);
     expect(tudo).not.toContain('GLOBO');
+  });
+
+  it('métricas no começo da safra: lê 90 dias para trás (não só desde 1º de setembro), grava e só depois limpa as velhas', async () => {
+    const m = montar({}, {
+      prev_previsoes: [{ fonte: 'zeus', unidade: 'GLOBO', emitida_em: '2027-07-01', dias: [{ d: '2027-07-02', mm: 3, p: null }] }],
+      prev_observado: [{ unidade: 'GLOBO', dia: '2027-07-02', mm: 1, pluviometros: 2 }],
+    });
+    expect(await rodar(m, '2027-09-15T10:17:00Z')).toBeNull();
+    // ontem = 14/09; 90 dias até ontem começam em 17/06; as fotos, 14 dias antes disso
+    expect(m.s.leituras('prev_previsoes').some((u) => u.includes('emitida_em=gte.2027-06-03'))).toBe(true);
+    expect(m.s.leituras('prev_observado').some((u) => u.includes('dia=gte.2027-06-17'))).toBe(true);
+    expect(m.gravado('prev_metricas').some((x) => x.periodo === '90d' && x.unidade === 'GLOBO' && x.n === 1)).toBe(true);
+    const sb = m.s.chamadas.filter((c) => c.url.startsWith(`${URL_SB}/rest/v1/prev_metricas?`) && c.init?.method && c.init.method !== 'GET');
+    expect(sb.map((c) => c.init?.method)).toEqual(['POST', 'DELETE']);
+    expect(sb[1].url).toContain('calculado_em=lt.2027-09-15T10%3A17%3A00.000Z');
+  });
+
+  it('fonte fora do ar (rede ou prazo estourado) é parada na primeira fazenda: a rodada não espera 30 s por fazenda', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const PICS2 = { columns: PICS.columns, rows: [...PICS.rows, ['20', 'PIC 7', 'Fazenda Nebraska', -14, -57]] };
+    const s = servidoresFalsos(tabelas(), [PICS2, ZEUS, OBS]);
+    let pedidosMet = 0;
+    const fetchImpl = async (url: string, init?: RequestInit) => {
+      if (url.startsWith('https://api.met.no/')) { pedidosMet += 1; throw new TypeError('fetch failed'); }
+      if (url.startsWith('https://weather.visualcrossing.com/')) return new Response(JSON.stringify(VC), { status: 200 });
+      return s.impl(url, init);
+    };
+    const r = await rodarBenchmarkPrevisao({ agrovex: { url: URL_AGROVEX, token: TOKEN }, supabase: { url: URL_SB, chave: CHAVE }, visualCrossingChave: CHAVE_VC, fetchImpl: fetchImpl as typeof fetch, agora: new Date('2026-10-15T10:17:00Z') });
+    expect(r).toBeNull();
+    expect(pedidosMet).toBe(1);
   });
 
   it('MET Norway com 429 para a fonte na rodada, sem falhar a etapa', async () => {

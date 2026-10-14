@@ -49,6 +49,7 @@
   }
   let fonte = null;        // fonte dos dados (Supabase ou servidor local), definida ao iniciar
   let windyFazenda = null; // fazenda para a qual o Windy foi carregado por último (null = ainda não carregou)
+  let iniciado = false;     // cadastro das fazendas já lido (a casca pode pedir a aba antes disso, ao terminar de carregar o quadro)
   const estado = { fazenda: TODAS, camada: 'rain', modelo: 'ecmwf', ponto: false, vista: vistaInicial() };
   let fazendas = [];       // [{ id, nome, coaId, geometrias, caixa }] — só as que têm limite
   let vista = null;        // onde o mapa do Windy está: a vista pedida ao carregar, depois o último aviso dele
@@ -269,7 +270,7 @@
     $('marca-sub').textContent = bench ? 'Previsão de chuva das fontes lado a lado e quem acerta mais' : 'Mapa do Windy com os limites das fazendas';
     history.replaceState(null, '', location.pathname + location.search + '#' + estado.vista);
     if (EMBED) window.parent.postMessage({ tipo: 'previsao-rota', vista: estado.vista }, location.origin);
-    if (!fonte) return; // ainda carregando: o início aplica
+    if (!iniciado) return; // ainda lendo o cadastro: o início aplica a aba guardada em estado.vista
     if (bench) window.PrevisaoBenchmarkTela.abrir(contextoBenchmark());
     else if (windyFazenda !== estado.fazenda) carregarWindy(vistaDaEscolha()); // nunca carregou, ou a fazenda mudou no benchmark
     else desenhar();
@@ -436,6 +437,7 @@
     preencherFazendas();
     if (falhou) avisoCadastro = 'Não foi possível ler os limites das fazendas. O mapa abre sem eles.';
     else if (!fazendas.length) avisoCadastro = 'Nenhuma fazenda com limites cadastrados no Mapas para o seu usuário.';
+    iniciado = true;
     mostrarVista(estado.vista);
     // aberto já como painel de TV (?tv=1): entra direto; a tela cheia depende de um clique
     if (PARAMS.get('tv') === '1') entrarTv();

@@ -1,6 +1,6 @@
 # Benchmark de previsão de chuva (aba nova da Previsão do Tempo) — especificação
 
-Data: 14/10/2026. Situação: aprovada em 14/10/2026 ("pode seguir para o plano de implementação"). Ajustada no mesmo dia, ao escrever o plano: previsões guardadas em JSON por foto, antecedência máxima 13 (alcance da ZEUS), função para as linhas "Todas", assinatura da ZEUS tirada da própria leitura da previsão e botão do menu com `data-previsao` (padrão da Chuva).
+Data: 14/10/2026. Situação: aprovada em 14/10/2026 ("pode seguir para o plano de implementação"). Ajustada no mesmo dia, na revisão final da implementação: alcance da comparação justa por dia de foto e janelas de 90 dias que atravessam o início da safra. Antes, ao escrever o plano: previsões guardadas em JSON por foto, antecedência máxima 13 (alcance da ZEUS), função para as linhas "Todas", assinatura da ZEUS tirada da própria leitura da previsão e botão do menu com `data-previsao` (padrão da Chuva).
 
 ## 1. Objetivo
 
@@ -54,12 +54,12 @@ Variável de ambiente nova: `VISUALCROSSING_KEY` (opcional: sem ela, a fonte é 
 
 Para a fonte *f*, a fazenda *u* e a antecedência *k* (dia previsto − dia da foto):
 
-- **Par avaliado:** existe previsão de *f* para (*u*, dia) emitida *k* dias antes **e** existe `prev_observado` (*u*, dia) com pelo menos 1 pluviômetro. **Comparação justa:** só entram os pares (*u*, dia, *k*) em que **todas** as fontes que alcançam *k* têm previsão. A ZEUS alcança D+13 e o MET Norway cerca de D+9: na coluna de 13 dias, o MET Norway não entra. D0 (*k* = 0 do dia da foto) nunca entra.
+- **Par avaliado:** existe previsão de *f* para (*u*, dia) emitida *k* dias antes **e** existe `prev_observado` (*u*, dia) com pelo menos 1 pluviômetro. **Comparação justa:** só entram os pares (*u*, dia, *k*) em que **todas** as fontes que tiraram a foto do dia (dia − *k*) e alcançam *k* nela (em qualquer fazenda) têm previsão. O alcance é contado por dia de foto: uma fonte que parou, ou que ainda não tinha começado (o Visual Crossing antes da chave), não tira os pares das outras nesses dias. A ZEUS alcança D+13 e o MET Norway cerca de D+9: na coluna de 13 dias, o MET Norway não entra. D0 (*k* = 0 do dia da foto) nunca entra.
 - **Erro médio** = média de |previsto − medido| (mm). **Viés** = média de (previsto − medido): positivo = prevê chuva demais. **Acerto** = % dos pares em que (previsto ≥ 1 mm) = (medido ≥ 1 mm).
 - **"Todas as fazendas":** junta os pares de todas as fazendas.
 - **Mínimo:** com menos de 10 pares, `n` é gravado e a tela mostra "histórico insuficiente".
 - **Ordem do ranking:** erro médio na média das antecedências 1 a 7 (`antecedencia = 0` na tabela).
-- **Períodos:** últimos 30, 60 e 90 dias (pelo dia previsto) e a safra corrente (setembro a agosto).
+- **Períodos:** últimos 30, 60 e 90 dias (pelo dia previsto) e a safra corrente (setembro a agosto). Em setembro, as janelas de 30, 60 e 90 dias continuam olhando para trás, na safra anterior.
 
 ## 6. Tela (aba "Benchmark")
 

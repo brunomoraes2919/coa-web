@@ -2626,19 +2626,23 @@ export function assinaturaDaPrevisao(porFazenda) {
 
 /**
  * Pares previsto × medido por fonte, fazenda, dia e antecedência k (dia previsto − dia da foto, de 1 em diante).
- * Comparação justa: um (fazenda, dia, k) só entra se todas as fontes que já alcançaram k em alguma foto têm
- * previsão para ele, e se houve chuva medida (pelo menos um pluviômetro lido) na fazenda naquele dia.
+ * Comparação justa: um (fazenda, dia, k) só entra se todas as fontes que tiraram a foto do dia dia − k e chegaram
+ * a k nela (em qualquer fazenda) têm previsão para ele, e se houve chuva medida (pelo menos um pluviômetro lido) na
+ * fazenda naquele dia. O alcance é por dia de foto: uma fonte que parou (ou que ainda não existia) não tira os pares
+ * das outras nos dias em que não tirou foto; uma que faltou só numa fazenda tira o par dessa fazenda de todas.
  */
 export function paresDoBenchmark(previsoes, observado) {
   const medido = new Map(observado.filter((o) => Number(o.pluviometros) > 0).map((o) => [`${o.unidade}|${o.dia}`, Number(o.mm)]));
   const previsto = new Map();
-  const alcance = new Map();
+  const alcance = new Map(); // 'emitida_em' → Map(fonte → maior k da foto daquele dia, entre as fazendas)
   for (const f of previsoes) {
     for (const x of Array.isArray(f.dias) ? f.dias : []) {
       const k = diasEntre(f.emitida_em, x.d);
       const mm = Number(x.mm);
       if (k < 1 || !Number.isFinite(mm)) continue;
-      alcance.set(f.fonte, Math.max(alcance.get(f.fonte) ?? 0, k));
+      if (!alcance.has(f.emitida_em)) alcance.set(f.emitida_em, new Map());
+      const doDia = alcance.get(f.emitida_em);
+      doDia.set(f.fonte, Math.max(doDia.get(f.fonte) ?? 0, k));
       const chave = `${f.unidade}|${x.d}|${k}`;
       if (!previsto.has(chave)) previsto.set(chave, new Map());
       previsto.get(chave).set(f.fonte, mm);
@@ -2650,7 +2654,7 @@ export function paresDoBenchmark(previsoes, observado) {
     const k = Number(kTexto);
     const real = medido.get(`${unidade}|${dia}`);
     if (real === undefined) continue;
-    const elegiveis = [...alcance].filter(([, maximo]) => maximo >= k).map(([fonte]) => fonte);
+    const elegiveis = [...(alcance.get(somarDias(dia, -k)) ?? new Map())].filter(([, maximo]) => maximo >= k).map(([fonte]) => fonte);
     if (!elegiveis.every((fonte) => porFonte.has(fonte))) continue;
     for (const [fonte, mm] of porFonte) pares.push({ fonte, unidade, dia, k, previsto: mm, medido: real });
   }
@@ -2791,8 +2795,9 @@ export async function rodarBenchmarkPrevisao({ agrovex, supabase, visualCrossing
           guardar(fonte, unidade, converter(await lerFonteExterna(fetchImpl, endereco(ponto), nome)));
         } catch (e) {
           falhas += 1;
-          // recusa de acesso ou limite estourado vale para todas as fazendas: não insiste nesta rodada
-          if (e && (e.status === 401 || e.status === 403 || e.status === 429)) { console.warn(`Benchmark de previsão: ${limpar(e.message)}; fonte parada nesta rodada.`); break; }
+          // recusa de acesso, limite estourado ou fonte fora do ar (rede, prazo: status 0) vale para todas as fazendas:
+          // não insiste nesta rodada (a rodada segura a trava que os pedidos das telas esperam)
+          if (e && (e.status === 0 || e.status === 401 || e.status === 403 || e.status === 429)) { console.warn(`Benchmark de previsão: ${limpar(e.message)}; fonte parada nesta rodada.`); break; }
         }
       }
       if (falhas) console.warn(`Benchmark de previsão: ${nome} falhou em ${falhas} fazenda(s); tenta de novo na próxima rodada.`);
@@ -2803,7 +2808,8 @@ export async function rodarBenchmarkPrevisao({ agrovex, supabase, visualCrossing
     const conta = await sbLer(supabase, 'prev_metricas?select=calculado_em&order=calculado_em.desc&limit=1', 'a leitura das métricas', fetchImpl);
     let metricas = [];
     if (!conta.length || diaMT(conta[0].calculado_em) !== hoje) {
-      const desde = inicioSafraMT(hoje);
+      // o que vier antes: o início da safra ou os 90 dias até ontem (em setembro, a janela de 90 dias começa na safra passada)
+      const desde = [inicioSafraMT(hoje), somarDias(hoje, -90)].sort()[0];
       const previsoes = await sbLerTudo(supabase, `prev_previsoes?select=fonte,unidade,emitida_em,dias&emitida_em=gte.${somarDias(desde, -14)}&order=emitida_em,fonte,unidade`, 'a leitura das fotos', fetchImpl);
       const medidos = await sbLerTudo(supabase, `prev_observado?select=unidade,dia,mm,pluviometros&dia=gte.${desde}&order=dia,unidade`, 'a leitura da chuva medida', fetchImpl);
       metricas = metricasDoBenchmark(paresDoBenchmark(previsoes, medidos), hoje).map((m) => ({ ...m, calculado_em: capturada }));

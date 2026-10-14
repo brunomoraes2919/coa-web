@@ -11,6 +11,8 @@ import { paresDoBenchmark, metricasDoBenchmark, somarDias, diaMT } from '../../m
 
 // Dados reais da conferência (Tarefa 5, --json): só nesta máquina, nunca no repositório. Sem a variável, fictícios.
 const BENCHMARK_DADOS = process.env.PREVISAO_BENCHMARK_DADOS || '';
+// Atraso no cadastro (ms), para testar a corrida "mensagem da casca chega antes das fazendas". Sem a variável, nenhum.
+const ATRASO_CADASTRO_MS = Number(process.env.PREVISAO_ATRASO_CADASTRO_MS) || 0;
 
 /** Benchmark FICTÍCIO: 30 dias de fotos e de chuva medida para as fazendas de teste, com as métricas calculadas pelas contas reais. */
 function benchmarkTeste() {
@@ -126,7 +128,7 @@ createServer((req, res) => {
     return;
   }
   if (caminho === '/api/previsao-teste') {
-    responder(res, 200, TIPOS['.json'], CADASTRO_TESTE);
+    setTimeout(() => responder(res, 200, TIPOS['.json'], CADASTRO_TESTE), ATRASO_CADASTRO_MS);
     return;
   }
   if (caminho === '/api/previsao-benchmark-teste') {
