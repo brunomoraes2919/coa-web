@@ -357,7 +357,7 @@ export function rodarAcompanhamento(opcoes: {
 }): Promise<string | null>;
 
 // benchmark de previsão (aba "Benchmark" da Previsão do Tempo)
-export interface PrevDia { d: string; mm: number; p: number | null }
+export interface PrevDia { d: string; mm: number; p: number | null; tx?: number | null; tn?: number | null }
 export interface PrevObservado { unidade: string; dia: string; mm: number; pluviometros: number }
 export const PREV_FONTES: string[];
 export const PREV_HORA_FOTO: number;

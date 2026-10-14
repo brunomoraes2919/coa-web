@@ -2532,36 +2532,45 @@ export function urlVisualCrossing({ lat, lon }, chave) {
   return `https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/${lat},${lon}?unitGroup=metric&include=days&contentType=json&key=${encodeURIComponent(chave)}`;
 }
 
-/** Resposta do Visual Crossing → [{ d, mm, p }] (os dias já vêm no fuso do ponto, que em MT é UTC−4). */
+/** Resposta do Visual Crossing → [{ d, mm, p, tx, tn }] (os dias já vêm no fuso do ponto, que em MT é UTC−4). */
 export function previsaoVisualCrossing(json) {
   const dias = Array.isArray(json?.days) ? json.days : [];
+  const grau = (v) => (typeof v === 'number' && Number.isFinite(v) ? arred1(v) : null);
   const saida = [];
   for (const x of dias) {
     const d = txt(x?.datetime);
     const mm = typeof x?.precip === 'number' ? x.precip : Number.NaN;
     if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d) || !Number.isFinite(mm) || mm < 0) continue;
     const p = typeof x?.precipprob === 'number' && Number.isFinite(x.precipprob) ? Math.round(x.precipprob) : null;
-    saida.push({ d, mm: arred1(mm), p });
+    saida.push({ d, mm: arred1(mm), p, tx: grau(x?.tempmax), tn: grau(x?.tempmin) });
   }
   return saida;
 }
 
-/** Endereço do MET Norway (Locationforecast 2.0, compacto). */
+/** Endereço do MET Norway (Locationforecast 2.0, completo: traz a máxima e a mínima de cada bloco de 6 h). */
 export function urlMetNo({ lat, lon }) {
-  return `https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=${lat}&lon=${lon}`;
+  return `https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=${lat}&lon=${lon}`;
 }
 
 /**
- * Resposta do MET Norway → [{ d, mm, p: null }] por dia de MT. Usa o bloco de 1 h enquanto o próximo horário vem
- * 1 h depois e o de 6 h quando o passo abre (o último horário de hora em hora já é seguido por um de 6 h depois),
- * sem somar blocos que se sobrepõem; cada bloco é repartido pelas horas de cada dia local que ele cobre.
- * Só ficam os dias com as 24 horas cobertas (o de hoje, a partir da hora da consulta, e o último, cortado, saem).
+ * Resposta do MET Norway → [{ d, mm, p: null, tx, tn }] por dia de MT. Usa o bloco de 1 h enquanto o próximo horário
+ * vem 1 h depois e o de 6 h quando o passo abre (o último horário de hora em hora já é seguido por um de 6 h depois),
+ * sem somar blocos que se sobrepõem; a chuva de cada bloco é repartida pelas horas de cada dia local que ele cobre.
+ * Temperatura: no bloco de 1 h, a do instante; no de 6 h, a máxima e a mínima do bloco, contadas no dia que tem a
+ * maioria das horas dele (o da 3ª hora). Só ficam os dias com as 24 horas cobertas (o de hoje, a partir da hora da
+ * consulta, e o último, cortado, saem); dia sem temperatura fica com tx e tn null.
  */
 export function previsaoMetNo(json) {
   const serie = Array.isArray(json?.properties?.timeseries) ? json.properties.timeseries : [];
   const numero = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
   const mm = new Map();
   const horas = new Map();
+  const tx = new Map();
+  const tn = new Map();
+  const temperatura = (dia, max, min) => {
+    if (max !== null) tx.set(dia, Math.max(tx.get(dia) ?? -Infinity, max));
+    if (min !== null) tn.set(dia, Math.min(tn.get(dia) ?? Infinity, min));
+  };
   let cobertoAte = -Infinity;
   for (let i = 0; i < serie.length; i++) {
     const item = serie[i];
@@ -2580,9 +2589,18 @@ export function previsaoMetNo(json) {
       mm.set(dia, (mm.get(dia) ?? 0) + total / duracao);
       horas.set(dia, (horas.get(dia) ?? 0) + 1);
     }
+    if (duracao === 1) {
+      const t = numero(item?.data?.instant?.details?.air_temperature);
+      temperatura(diaMT(inicio), t, t);
+    } else {
+      const d6 = item?.data?.next_6_hours?.details;
+      temperatura(diaMT(inicio + 2 * 3_600_000), numero(d6?.air_temperature_max), numero(d6?.air_temperature_min));
+    }
     cobertoAte = inicio + duracao * 3_600_000;
   }
-  return [...mm].filter(([d]) => horas.get(d) >= 24).sort(([a], [b]) => a.localeCompare(b)).map(([d, v]) => ({ d, mm: arred1(v), p: null }));
+  return [...mm].filter(([d]) => horas.get(d) >= 24).sort(([a], [b]) => a.localeCompare(b)).map(([d, v]) => ({
+    d, mm: arred1(v), p: null, tx: tx.has(d) ? arred1(tx.get(d)) : null, tn: tn.has(d) ? arred1(tn.get(d)) : null,
+  }));
 }
 
 /**

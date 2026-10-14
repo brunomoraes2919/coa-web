@@ -65,41 +65,58 @@ describe('benchmark de previsão: conversão de cada fonte', () => {
       { datetime: '2026-10-15', precip: 0, precipprob: null },
       { datetime: 'amanhã', precip: 3 },
       { datetime: '2026-10-17', precip: 'x' },
-    ] })).toEqual([{ d: '2026-10-14', mm: 2.3, p: 55 }, { d: '2026-10-15', mm: 0, p: null }]);
+    ] })).toEqual([{ d: '2026-10-14', mm: 2.3, p: 55, tx: null, tn: null }, { d: '2026-10-15', mm: 0, p: null, tx: null, tn: null }]);
     expect(previsaoVisualCrossing(null)).toEqual([]);
+  });
+  it('Visual Crossing: máxima e mínima com 1 casa; ausente ou inválida vira null', () => {
+    expect(previsaoVisualCrossing({ days: [
+      { datetime: '2026-10-14', precip: 1, precipprob: 10, tempmax: 33.46, tempmin: 21.04 },
+      { datetime: '2026-10-15', precip: 0, precipprob: 0, tempmax: 'x' },
+    ] })).toEqual([{ d: '2026-10-14', mm: 1, p: 10, tx: 33.5, tn: 21 }, { d: '2026-10-15', mm: 0, p: 0, tx: null, tn: null }]);
   });
   it('Visual Crossing e MET Norway: endereços (a chave vai codificada; coordenadas com 4 casas)', () => {
     expect(urlVisualCrossing({ lat: -13.05, lon: -56.1 }, 'a b')).toBe(
       'https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/-13.05,-56.1?unitGroup=metric&include=days&contentType=json&key=a%20b');
-    expect(urlMetNo({ lat: -13.05, lon: -56.1 })).toBe('https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=-13.05&lon=-56.1');
+    expect(urlMetNo({ lat: -13.05, lon: -56.1 })).toBe('https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=-13.05&lon=-56.1');
   });
-  it('MET Norway: blocos de 6 h repartidos pela meia-noite de MT; só dias com 24 h', () => {
-    const bloco = (time: string, mm: number) => ({ time, data: { next_6_hours: { details: { precipitation_amount: mm } } } });
+  it('MET Norway: blocos de 6 h repartidos pela meia-noite de MT; temperatura do bloco no dia da maioria das horas; só dias com 24 h', () => {
+    const temp: Record<string, [number, number]> = { '00': [26, 22], '06': [24, 19], '12': [31, 23], '18': [34, 28] };
+    const bloco = (time: string, mm: number, [max, min]: [number, number]) =>
+      ({ time, data: { next_6_hours: { details: { precipitation_amount: mm, air_temperature_max: max, air_temperature_min: min } } } });
     const serie = [];
     for (const dia of ['16', '17', '18']) for (const h of ['00', '06', '12', '18']) {
-      serie.push(bloco(`2026-10-${dia}T${h}:00:00Z`, dia === '17' && h === '00' ? 12 : 6));
+      serie.push(bloco(`2026-10-${dia}T${h}:00:00Z`, dia === '17' && h === '00' ? 12 : 6, dia === '17' && h === '12' ? [36, 23] : temp[h]));
     }
-    // 00Z do dia 16 = 20 h do dia 15 em MT: o dia 15 (4 h) e o dia 18 (20 h) ficam de fora
-    expect(previsaoMetNo({ properties: { timeseries: serie } })).toEqual([{ d: '2026-10-16', mm: 28, p: null }, { d: '2026-10-17', mm: 26, p: null }]);
+    // 00Z do dia 16 = 20 h do dia 15 em MT: o dia 15 (4 h) e o dia 18 (20 h) ficam de fora. O bloco das 00Z
+    // (20 h às 2 h de MT) conta a temperatura no dia anterior, onde estão 4 das 6 horas.
+    expect(previsaoMetNo({ properties: { timeseries: serie } })).toEqual([
+      { d: '2026-10-16', mm: 28, p: null, tx: 34, tn: 19 },
+      { d: '2026-10-17', mm: 26, p: null, tx: 36, tn: 19 },
+    ]);
   });
-  it('MET Norway: no trecho de hora em hora usa o bloco de 1 h e não soma o de 6 h junto', () => {
+  it('MET Norway: no trecho de hora em hora usa o bloco de 1 h (e a temperatura de cada hora), sem somar o de 6 h junto', () => {
     const serie = [];
     for (let h = 0; h < 24; h++) {
       const t = new Date(Date.UTC(2026, 9, 16, 4 + h)).toISOString().replace('.000', '');
-      serie.push({ time: t, data: { next_1_hours: { details: { precipitation_amount: 0.5 } }, next_6_hours: { details: { precipitation_amount: 3 } } } });
+      serie.push({ time: t, data: { instant: { details: { air_temperature: 20 + (h % 12) } }, next_1_hours: { details: { precipitation_amount: 0.5 } }, next_6_hours: { details: { precipitation_amount: 3 } } } });
     }
-    expect(previsaoMetNo({ properties: { timeseries: serie } })).toEqual([{ d: '2026-10-16', mm: 12, p: null }]);
+    // as 23 primeiras horas usam a hora (20 a 31 °C); a última vira bloco de 6 h (sem máxima e mínima) e conta no dia 17
+    expect(previsaoMetNo({ properties: { timeseries: serie } })).toEqual([{ d: '2026-10-16', mm: 12, p: null, tx: 31, tn: 20 }]);
   });
   it('MET Norway: na passagem de 1 h para 6 h o último horário usa o bloco de 6 h (sem buraco no dia)', () => {
     const serie = [];
-    // de hora em hora das 04Z às 18Z do dia 16 (meia-noite de MT às 14 h de MT), depois de 6 em 6 h
     for (let h = 4; h <= 18; h++) {
       const t = new Date(Date.UTC(2026, 9, 16, h)).toISOString().replace('.000', '');
-      serie.push({ time: t, data: { next_1_hours: { details: { precipitation_amount: 0.5 } }, next_6_hours: { details: { precipitation_amount: 3 } } } });
+      serie.push({ time: t, data: { instant: { details: { air_temperature: 25 } }, next_1_hours: { details: { precipitation_amount: 0.5 } }, next_6_hours: { details: { precipitation_amount: 3, air_temperature_max: 33, air_temperature_min: 27 } } } });
     }
-    serie.push({ time: '2026-10-17T00:00:00Z', data: { next_6_hours: { details: { precipitation_amount: 6 } } } });
-    // 14 h × 0,5 (04Z–17Z) + o bloco das 18Z inteiro (3) + 4 h do bloco das 00Z (4 × 1) = 14; o dia 17 fica incompleto
-    expect(previsaoMetNo({ properties: { timeseries: serie } })).toEqual([{ d: '2026-10-16', mm: 14, p: null }]);
+    serie.push({ time: '2026-10-17T00:00:00Z', data: { next_6_hours: { details: { precipitation_amount: 6, air_temperature_max: 26, air_temperature_min: 21 } } } });
+    // chuva: 14 h × 0,5 (04Z–17Z) + o bloco das 18Z (3) + 4 h do bloco das 00Z (4 × 1) = 14. Temperatura: horas a 25 °C,
+    // bloco das 18Z (33/27) e o das 00Z (26/21), que tem 4 das 6 horas no dia 16 → máxima 33, mínima 21
+    expect(previsaoMetNo({ properties: { timeseries: serie } })).toEqual([{ d: '2026-10-16', mm: 14, p: null, tx: 33, tn: 21 }]);
+  });
+  it('MET Norway: sem temperatura na resposta, máxima e mínima ficam null e a chuva continua', () => {
+    const serie = [0, 6, 12, 18, 24].map((h) => ({ time: new Date(Date.UTC(2026, 9, 16, h)).toISOString().replace('.000', ''), data: { next_6_hours: { details: { precipitation_amount: 1.2 } } } }));
+    expect(previsaoMetNo({ properties: { timeseries: serie } })).toEqual([{ d: '2026-10-16', mm: 4.8, p: null, tx: null, tn: null }]);
   });
   it('chuva medida: média dos pluviômetros que leram; quem não leu não conta como zero', () => {
     const obs = observadoPorFazenda(res(['picid', 'dia', 'mm'], [['10', '2026-10-13', 1], ['11', '2026-10-13', 3], ['99', '2026-10-13', 80]]), doPic);
@@ -228,12 +245,12 @@ describe('benchmark de previsão: etapa da rotina', () => {
     expect(fontes(fotos)).toEqual(['metno', 'visualcrossing', 'zeus']);
     expect(fotos.every((f) => f.unidade === 'GLOBO' && f.emitida_em === '2026-10-15')).toBe(true);
     expect(fotos.find((f) => f.fonte === 'zeus')?.dias).toEqual(ZEUS_GLOBO);
-    expect(fotos.find((f) => f.fonte === 'metno')?.dias).toEqual([{ d: '2026-10-16', mm: 4.8, p: null }]);
+    expect(fotos.find((f) => f.fonte === 'metno')?.dias).toEqual([{ d: '2026-10-16', mm: 4.8, p: null, tx: null, tn: null }]);
     expect(m.gravado('prev_observado')).toEqual([{ unidade: 'GLOBO', dia: '2026-10-14', mm: 3, pluviometros: 2 }]);
     expect(m.gravado('prev_zeus_atualizacoes')).toHaveLength(1);
     // MET Norway: ponto = média dos pluviômetros, e a identificação exigida
     const met = m.externas.find((e) => e.url.startsWith('https://api.met.no/'));
-    expect(met?.url).toBe('https://api.met.no/weatherapi/locationforecast/2.0/compact?lat=-13.1&lon=-56.1');
+    expect(met?.url).toBe('https://api.met.no/weatherapi/locationforecast/2.0/complete?lat=-13.1&lon=-56.1');
     expect(met?.ua).toBe(PREV_USER_AGENT);
     // toda chamada de fora sai com prazo (a rotina não fica presa esperando uma fonte)
     expect(m.externas.every((e) => e.prazo)).toBe(true);

@@ -27,7 +27,7 @@ Sem tabela nova e sem script de banco. Cada dia previsto em `prev_previsoes.dias
 |---|---|
 | Visual Crossing | `days[].tempmax` e `days[].tempmin` da mesma resposta (sem consulta a mais) |
 | MET Norway | Passa a ler o formato completo (`/locationforecast/2.0/complete`, mesma chuva). Por dia de MT: máxima e mínima entre os blocos usados para a chuva. No trecho de 6 h, `next_6_hours.details.air_temperature_max/min`; no trecho de hora em hora, a temperatura do instante (`instant.details.air_temperature`). Só para os dias completos, como a chuva. |
-| ZEUS | Não prevê temperatura: `tx` e `tn` ficam `null` |
+| ZEUS | Não prevê temperatura: os dias da ZEUS não ganham `tx` e `tn` (a tela lê a falta como sem temperatura) |
 
 - **Benchmark sem mudança:** ele ignora os campos novos, e as regras da comparação e das métricas continuam as mesmas.
 - **Falha só na temperatura:** um dia sem temperatura válida grava `null` e não tira a chuva da foto.
