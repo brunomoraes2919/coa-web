@@ -1,6 +1,6 @@
 # Montagens de Painel (TV do COA) — especificação
 
-Data: 15/10/2026. Situação: aprovada pelo usuário em 15/10/2026 ("Revisei a especificação, está aprovada"). Ajustada no mesmo dia, ao escrever o plano (`2026-10-15-montagens-de-painel-plano.md`): função de conferência por `GET ?url=`, com os resultados `invalido` e `sem-acesso`; ações Duplicar/Apagar na cabeça da montagem (no lugar do menu "⋯"); cobertura sobre os sites da TV com a tecla I para mexer neles; arquivos `fonte.js` e `tv.css`.
+Data: 15/10/2026. Situação: **publicada em 15/10/2026** (main a8e51c1; SQL 0025 aplicado e conferido; cabeçalhos conferidos num Preview da Vercel antes do main). Aprovada pelo usuário em 15/10/2026 ("Revisei a especificação, está aprovada"). Ajustada no mesmo dia, ao escrever o plano (`2026-10-15-montagens-de-painel-plano.md`): função de conferência por `GET ?url=`, com os resultados `invalido` e `sem-acesso`; ações Duplicar/Apagar na cabeça da montagem (no lugar do menu "⋯"); cobertura sobre os sites da TV com a tecla I para mexer neles; arquivos `fonte.js` e `tv.css`.
 
 ## 1. Objetivo
 
