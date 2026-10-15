@@ -58,6 +58,15 @@ describe('cores', () => {
     expect(PALETA_VARIEDADES).not.toContain(COR_SEM_VARIEDADE);
     expect(new Set(PALETA_VARIEDADES).size).toBe(20);
   });
+  it('paleta esgotada: a cor menos usada (na ordem da paleta), sem repetir a mesma cor para todas', () => {
+    expect(corAutomatica([...PALETA_VARIEDADES, PALETA_VARIEDADES[0]])).toBe(PALETA_VARIEDADES[1]);
+    expect(corAutomatica([...PALETA_VARIEDADES, PALETA_VARIEDADES[0], PALETA_VARIEDADES[1]])).toBe(PALETA_VARIEDADES[2]);
+    // 18 cores em uso e 5 variedades novas: as 2 livres e depois o começo da paleta, uma de cada
+    const existentes = new Map(PALETA_VARIEDADES.slice(0, 18).map((c, i) => [`V${i}`, c]));
+    expect([...coresNovas(['A', 'B', 'C', 'D', 'E'], existentes).values()]).toEqual([
+      PALETA_VARIEDADES[18], PALETA_VARIEDADES[19], PALETA_VARIEDADES[0], PALETA_VARIEDADES[1], PALETA_VARIEDADES[2],
+    ]);
+  });
   it('coresNovas: uma cor diferente para cada variedade nova, contando as que acabou de dar', () => {
     const existentes = new Map([['A', PALETA_VARIEDADES[0]]]);
     expect([...coresNovas(['B', 'C'], existentes)]).toEqual([['B', PALETA_VARIEDADES[1]], ['C', PALETA_VARIEDADES[2]]]);

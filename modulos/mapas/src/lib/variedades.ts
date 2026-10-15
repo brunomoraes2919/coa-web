@@ -103,10 +103,20 @@ export function variedadesSemCor(feicoes: FeicaoVariedade[], cores: ReadonlyMap<
   return [...area].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR')).map(([k]) => k);
 }
 
-/** A primeira cor da paleta que nenhuma variedade usa; esgotada a paleta, volta ao começo. */
+/**
+ * A primeira cor da paleta que nenhuma variedade usa; esgotada a paleta, volta ao começo: a cor menos usada,
+ * na ordem da paleta (a 21ª variedade fica com a 1ª cor, a 22ª com a 2ª, e assim por diante).
+ */
 export function corAutomatica(usadas: Iterable<string>): string {
-  const em = new Set([...usadas].map((c) => c.toUpperCase()));
-  return PALETA_VARIEDADES.find((c) => !em.has(c)) ?? PALETA_VARIEDADES[em.size % PALETA_VARIEDADES.length];
+  const vezes = new Map(PALETA_VARIEDADES.map((c) => [c, 0]));
+  for (const c of usadas) {
+    const k = c.toUpperCase();
+    const n = vezes.get(k);
+    if (n !== undefined) vezes.set(k, n + 1);
+  }
+  let escolhida = PALETA_VARIEDADES[0];
+  for (const c of PALETA_VARIEDADES) if (vezes.get(c)! < vezes.get(escolhida)!) escolhida = c;
+  return escolhida;
 }
 
 /** Cores para as variedades novas, uma depois da outra (a cor que acabou de dar conta como usada). */
