@@ -28,6 +28,11 @@
   const MAX_NOME_MONTAGEM = 60;
   const MAX_NOME_SITE = 80;
   const MAX_ENDERECO = 2000;
+  /* rotação da TV */
+  const PRE_CARGA_MS = 8000;          // o próximo site começa a carregar 8 s antes da troca…
+  const LIMIAR_PRE_CARGA_MS = 20000;  // …quando o site atual fica pelo menos 20 s; senão, logo depois da troca anterior
+  const ESPERA_MAX_MS = 10000;        // na hora da troca, espera o próximo terminar de carregar até 10 s
+  const ESMAECER_MS = 600;            // esmaecimento cruzado entre um site e o próximo
   /* camadas do Modo TV da Previsão do Tempo (as mesmas de previsao/app.js) */
   const CAMADAS_PREVISAO = [
     ['rain', 'Chuva e trovoadas'], ['rainAccu', 'Chuva acumulada'], ['wind', 'Vento'], ['gust', 'Rajadas de vento'],
@@ -245,7 +250,54 @@
     return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   }
 
+  /** Quanto tempo o site `i` fica no quadro: em rotação, o tempo dele; fixo, a recarga (sem recarga, para sempre). */
+  function duracaoMs(q, i) {
+    const n = q.sites.length;
+    if (!n) return Infinity;
+    if (n > 1) return q.sites[i].segundos * 1000;
+    return q.recarregar > 0 ? q.recarregar * 1000 : Infinity;
+  }
+
+  function proximoIndice(q, i) {
+    return q.sites.length ? (i + 1) % q.sites.length : 0;
+  }
+
+  /** Depois de quanto tempo, contado desde que o site entrou, o próximo começa a carregar escondido. */
+  function atrasoPreCarga(ms) {
+    if (!Number.isFinite(ms)) return Infinity;
+    return ms >= LIMIAR_PRE_CARGA_MS ? ms - PRE_CARGA_MS : 0;
+  }
+
+  /** O que roda num quadro (sites, ordem, tempos, nomes e recarga). O tempo padrão não entra: só vale para site novo. */
+  function assinaturaQuadro(q) {
+    return JSON.stringify([q.recarregar, q.sites.map((s) => [s.url, s.segundos, s.nome])]);
+  }
+
+  /**
+   * O que a TV faz em cada um dos 4 quadros quando a montagem muda: 'manter' (continua rodando, sem recarregar),
+   * 'recomecar' (volta ao primeiro site) ou 'remover' (sai da tela). `antiga` null = primeira montagem.
+   */
+  function planoDeAtualizacao(antiga, nova) {
+    const nAntiga = antiga ? divisao(antiga.divisao).areas.length : 0;
+    const nNova = divisao(nova.divisao).areas.length;
+    const acoes = [];
+    for (let i = 0; i < TOTAL_QUADROS; i++) {
+      if (i >= nNova) acoes.push('remover');
+      else if (antiga && i < nAntiga && assinaturaQuadro(antiga.quadros[i]) === assinaturaQuadro(nova.quadros[i])) acoes.push('manter');
+      else acoes.push('recomecar');
+    }
+    return acoes;
+  }
+
+  /** Marca leve da TV: muda quando outra montagem vai para a TV ou quando a montagem da TV é salva. */
+  function assinaturaDaTv(linha) {
+    if (!linha || !linha.montagem_id) return 'nenhuma';
+    return linha.montagem_id + '|' + ((linha.montagem && linha.montagem.atualizado_em) || '');
+  }
+
   return {
+    PRE_CARGA_MS, LIMIAR_PRE_CARGA_MS, ESPERA_MAX_MS, ESMAECER_MS,
+    duracaoMs, proximoIndice, atrasoPreCarga, assinaturaQuadro, planoDeAtualizacao, assinaturaDaTv,
     DIVISOES, TOTAL_QUADROS, MAX_SITES, TEMPOS, RECARGAS, TEMPO_PADRAO, TEMPOS_INTERNOS, CAMADAS_PREVISAO,
     divisao, tempoMaisProximo, rotuloTempo, plural, nomeDoHost, lerEndereco, enderecoNoNavegador,
     novoId, normalizarSite, normalizarQuadro, normalizarMontagem, paraGravar,
