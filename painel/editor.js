@@ -136,7 +136,7 @@
       b.appendChild(el('span', 'previa-numero', 'Quadro ' + (i + 1)));
       b.appendChild(el('span', 'previa-titulo', t.titulo));
       b.appendChild(el('span', 'previa-detalhe', t.detalhe));
-      b.addEventListener('click', () => { estado.quadro = i; desenharPrevia(m); desenharQuadro(m); });
+      b.addEventListener('click', () => { estado.quadro = i; mostrarFormEndereco(false); desenharPrevia(m); desenharQuadro(m); });
       g.appendChild(b);
     });
     const guardados = L.textoGuardados(m);
@@ -177,6 +177,7 @@
       fixo.appendChild(selR);
       conteudo.appendChild(fixo);
     }
+    conteudo.appendChild(acoesDoQuadro(m, q));
   }
 
   function linhaDoSite(m, q, s, i) {
@@ -298,6 +299,7 @@
     estado.sel = id;
     estado.quadro = 0;
     $('aviso-nome').hidden = true;
+    mostrarFormEndereco(false);
     desenharLista();
     desenharMontagem();
   }
@@ -361,6 +363,139 @@
       situacao(e.message || 'Não foi possível apagar.', true);
     }
   }
+
+  /* ------------------------------ adicionar sites ------------------------------ */
+  const ICONE_COA = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="1.5"/><path d="M12 4v13M2.5 10.5H12M8 20.5h8"/></svg>';
+  const ICONE_LINK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>';
+  let fazendasDoAtalho = null; // lidas uma vez, na primeira abertura do diálogo
+  let alvoDoAtalho = null;     // { m, q } do quadro que abriu o diálogo
+
+  function acoesDoQuadro(m, q) {
+    const acoes = el('div', 'quadro-acoes');
+    const cheio = q.sites.length >= L.MAX_SITES;
+    const bCoa = botao('botao', undefined, 'Acompanhamento ou Previsão do Tempo em Modo TV');
+    bCoa.innerHTML = ICONE_COA;
+    bCoa.appendChild(document.createTextNode('Do COA WEB'));
+    bCoa.disabled = cheio;
+    bCoa.addEventListener('click', () => abrirAtalho(m, q));
+    const bEnd = botao('botao', undefined, 'Endereço https de um site');
+    bEnd.innerHTML = ICONE_LINK;
+    bEnd.appendChild(document.createTextNode('Endereço'));
+    bEnd.disabled = cheio;
+    bEnd.addEventListener('click', () => mostrarFormEndereco(true));
+    acoes.append(bCoa, bEnd);
+    if (cheio) acoes.appendChild(el('span', 'quadro-limite', 'Limite de ' + L.MAX_SITES + ' sites por quadro.'));
+    return acoes;
+  }
+
+  function resultadoEndereco(texto, erro) {
+    $('end-resultado').textContent = texto;
+    $('end-resultado').classList.toggle('erro', !!erro);
+  }
+
+  function mostrarFormEndereco(abrir) {
+    $('form-endereco').hidden = !abrir;
+    resultadoEndereco('', false);
+    $('end-adicionar').disabled = false;
+    if (abrir) {
+      $('end-url').value = '';
+      $('end-nome').value = '';
+      $('end-nome').placeholder = 'Nome do site';
+      $('end-url').focus();
+    }
+  }
+
+  $('end-url').addEventListener('input', () => {
+    const lido = L.lerEndereco($('end-url').value, location.origin);
+    $('end-nome').placeholder = lido.ok ? (lido.origem === 'coa' ? 'COA WEB' : L.nomeDoHost(lido.url)) : 'Nome do site';
+  });
+  $('end-cancelar').addEventListener('click', () => mostrarFormEndereco(false));
+  $('form-endereco').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const m = atual();
+    if (!m) return;
+    const q = m.quadros[estado.quadro];
+    if (q.sites.length >= L.MAX_SITES) { resultadoEndereco('Limite de ' + L.MAX_SITES + ' sites por quadro.', true); return; }
+    const lido = L.lerEndereco($('end-url').value, location.origin);
+    if (!lido.ok) { resultadoEndereco(lido.motivo, true); return; }
+    let conferencia = 'abre';
+    if (lido.origem === 'externo') {
+      resultadoEndereco('Conferindo se o site abre dentro do painel…', false);
+      $('end-adicionar').disabled = true;
+      let r;
+      try { r = await fonte.conferirSite(lido.url); } catch (err) { r = { resultado: 'incerto', motivo: err.message }; }
+      $('end-adicionar').disabled = false;
+      if (r.resultado === 'bloqueado') { resultadoEndereco('Este site não deixa ser exibido dentro de outra página, então não aparece na TV. Sites com login, como John Deere e ZEUS, costumam bloquear.', true); return; }
+      if (r.resultado === 'invalido' || r.resultado === 'sem-acesso') { resultadoEndereco(r.motivo || 'Endereço não aceito.', true); return; }
+      conferencia = r.resultado === 'abre' ? 'abre' : 'incerto';
+    }
+    // vai para o quadro que estava aberto quando o botão foi clicado, mesmo que a tela tenha mudado na conferência
+    q.sites.push(L.normalizarSite({ nome: $('end-nome').value, url: lido.url, segundos: q.padrao, conferencia }));
+    mostrarFormEndereco(false);
+    if (atual() === m) mudouTudo(m); else agendarSalvar(m.id);
+    situacao(conferencia === 'abre' ? 'Site adicionado' : 'Site adicionado sem conferência: confira na TV se ele aparece');
+  });
+
+  /* atalhos do COA WEB */
+  L.CAMADAS_PREVISAO.forEach(([v, t]) => { const o = el('option', '', t); o.value = v; $('atalho-camada').appendChild(o); });
+  L.TEMPOS_INTERNOS.forEach((s) => { const o = el('option', '', s + ' s'); o.value = String(s); o.selected = s === 20; $('atalho-tempo').appendChild(o); });
+
+  function moduloDoAtalho() {
+    return document.querySelector('#form-atalho input[name="modulo"]:checked').value;
+  }
+  function desenharFazendasDoAtalho() {
+    const caixa = $('atalho-fazendas');
+    caixa.textContent = '';
+    const modulo = moduloDoAtalho();
+    $('campo-camada').hidden = modulo !== 'previsao';
+    (fazendasDoAtalho || []).filter((f) => modulo === 'previsao' || f.unidade).forEach((f) => {
+      const l = el('label', 'opcao-linha');
+      const c = el('input');
+      c.type = 'checkbox';
+      c.value = f.id;
+      c.disabled = $('atalho-todas').checked;
+      l.append(c, document.createTextNode(' ' + f.nome));
+      caixa.appendChild(l);
+    });
+  }
+  function escolhaDoAtalho() {
+    const ids = $('atalho-todas').checked ? [] : Array.from(document.querySelectorAll('#atalho-fazendas input:checked')).map((c) => c.value);
+    const op = { fazendas: (fazendasDoAtalho || []).filter((f) => ids.indexOf(f.id) >= 0), tempo: Number($('atalho-tempo').value), camada: $('atalho-camada').value };
+    return moduloDoAtalho() === 'previsao' ? L.atalhoPrevisao(op) : L.atalhoAcompanhamento(op);
+  }
+  function atualizarAtalho() { $('atalho-nome').textContent = escolhaDoAtalho().nome; }
+
+  async function abrirAtalho(m, q) {
+    alvoDoAtalho = { m, q };
+    if (!fazendasDoAtalho) {
+      try { fazendasDoAtalho = L.fazendasDoCadastro(await fonte.fazendas()); } catch (e) { fazendasDoAtalho = []; }
+    }
+    $('atalho-aviso').hidden = fazendasDoAtalho.length > 0;
+    $('atalho-aviso').textContent = 'Não foi possível ler as fazendas: o atalho entra com todas.';
+    desenharFazendasDoAtalho();
+    atualizarAtalho();
+    $('dlg-atalho').showModal();
+  }
+
+  // trocar de página volta para "Todas as fazendas" (a lista muda: o Acompanhamento só tem as fazendas com unidade do PIMS)
+  document.querySelectorAll('#form-atalho input[name="modulo"]').forEach((r) => r.addEventListener('change', () => { $('atalho-todas').checked = true; desenharFazendasDoAtalho(); atualizarAtalho(); }));
+  $('atalho-todas').addEventListener('change', () => {
+    document.querySelectorAll('#atalho-fazendas input').forEach((c) => { c.disabled = $('atalho-todas').checked; if (c.disabled) c.checked = false; });
+    atualizarAtalho();
+  });
+  $('atalho-fazendas').addEventListener('change', atualizarAtalho);
+  $('atalho-camada').addEventListener('change', atualizarAtalho);
+  $('atalho-tempo').addEventListener('change', atualizarAtalho);
+  $('atalho-cancelar').addEventListener('click', () => $('dlg-atalho').close());
+  $('form-atalho').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const alvo = alvoDoAtalho;
+    $('dlg-atalho').close();
+    if (!alvo || alvo.q.sites.length >= L.MAX_SITES) return;
+    alvo.q.sites.push(L.normalizarSite(Object.assign(escolhaDoAtalho(), { segundos: alvo.q.padrao })));
+    if (atual() === alvo.m) mudouTudo(alvo.m); else agendarSalvar(alvo.m.id);
+    situacao('Página do COA WEB adicionada');
+  });
 
   /* ------------------------------ eventos ------------------------------ */
   $('nome-montagem').addEventListener('input', (e) => {
