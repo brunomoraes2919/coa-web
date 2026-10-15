@@ -22,6 +22,7 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
       pedidosPlantio: 'mapas_plantio_pedidos',
       pedidosChuva: 'mapas_chuva_pedidos',
       situacaoZeus: 'mapas_zeus_situacao',
+      coresVariedade: 'mapas_variedade_cores',
     });
   });
 
@@ -51,6 +52,10 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
     await repo.situacaoPedidoPlantio(await repo.pedirAtualizacaoPlantio());
     await repo.situacaoPedidoChuva(await repo.pedirChuvaZeus({ fazenda: 'SM3', de: '2026-10-01', ate: '2026-10-01' }));
     await repo.situacaoZeus();
+    await repo.criarCorVariedade('TMG 2383', '#1F77B4');
+    await repo.listarCoresVariedade();
+    await repo.trocarCorVariedade('TMG 2383', '#000000');
+    await repo.excluirCorVariedade('TMG 2383');
     await repo.importarBackup(await repo.exportarBackup());
     await repo.excluirMapa(salvo);
     await repo.excluirSafra(s.id);

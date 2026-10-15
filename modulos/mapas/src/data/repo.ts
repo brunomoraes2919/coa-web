@@ -1,7 +1,7 @@
 import type { PedidoChuva, SituacaoPedidoChuva } from '../lib/chuvaZeus';
 import type { SituacaoZeus } from '../lib/situacaoZeus';
 import type { SituacaoPedidoPlantio } from '../lib/pedidoPlantio';
-import type { AcessoUsuario, AreaCultura, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, Safra, Talhao } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, Safra, Talhao, TipoMapa } from '../lib/types';
 
 /** Contrato do repositório (implementado por localRepo.ts e supabaseRepo.ts). */
 
@@ -90,8 +90,8 @@ export interface Repositorio {
   /** Substitui as áreas da cultura da safra × fazenda (safraId/fazendaId forçados nas áreas). */
   salvarAreasCultura(safraId: string, fazendaId: string, areas: AreaCultura[]): Promise<void>;
 
-  /** Mais recente primeiro. */
-  listarMapas(): Promise<MapaSalvo[]>;
+  /** Mais recente primeiro, só do tipo pedido ('chuva' por padrão; mapas antigos sem tipo são de chuva). */
+  listarMapas(tipo?: TipoMapa): Promise<MapaSalvo[]>;
   /** Um mapa do histórico pelo id; null se não existir. */
   obterMapa(id: string): Promise<MapaSalvo | null>;
   /**
@@ -105,6 +105,18 @@ export interface Repositorio {
   urlArquivo(path: string): Promise<string>;
   /** Remove o mapa e os arquivos (imagem e miniatura) associados. */
   excluirMapa(m: MapaSalvo): Promise<void>;
+
+  /** Cadastro de cores das variedades (mapas_variedade_cores), pela variedade. */
+  listarCoresVariedade(): Promise<CorVariedade[]>;
+  /**
+   * Grava a cor de uma variedade nova (só cria; nunca troca). Se a variedade já tem cor (gravada por outra
+   * pessoa no meio tempo), devolve a que está gravada.
+   */
+  criarCorVariedade(variedade: string, cor: string): Promise<CorVariedade>;
+  /** Troca a cor de uma variedade (administrador; no Supabase, a regra de acesso barra os demais). */
+  trocarCorVariedade(variedade: string, cor: string): Promise<void>;
+  /** Apaga a variedade do cadastro (administrador); se ela aparecer de novo num mapa, ganha cor automática. */
+  excluirCorVariedade(variedade: string): Promise<void>;
 
   exportarBackup(): Promise<BackupJson>;
   /**

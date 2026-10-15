@@ -13,13 +13,22 @@ import {
 } from '../src/data/supabaseLinhas';
 import { area, fazenda, mapa, plantio, safra, talhao } from './helpers/dominio';
 
-/** Os scripts do módulo, na ordem em que rodam (0002: pedidos de "Atualizar plantio"; 0003: pedidos de chuva da ZEUS). */
-const SCRIPTS = ['supabase/coa-web/0001_mapas.sql', 'supabase/coa-web/0002_pedidos_plantio.sql', 'supabase/coa-web/0003_pedidos_chuva.sql', 'supabase/coa-web/0004_situacao_zeus.sql'];
+/**
+ * Os scripts do módulo, na ordem em que rodam (0002: pedidos de "Atualizar plantio"; 0003: pedidos de chuva da ZEUS;
+ * 0026, na pasta supabase/ do COA WEB: mapa de variedade).
+ */
+const SCRIPTS = [
+  'supabase/coa-web/0001_mapas.sql',
+  'supabase/coa-web/0002_pedidos_plantio.sql',
+  'supabase/coa-web/0003_pedidos_chuva.sql',
+  'supabase/coa-web/0004_situacao_zeus.sql',
+  '../../supabase/0026_mapa_variedade.sql',
+];
 const sql = SCRIPTS.map((s) => readFileSync(s, 'utf8'))
   .join('\n')
   .replace(/--.*$/gm, '');
 
-/** Colunas de cada "create table if not exists public.<nome> ( ... );" do script. */
+/** Colunas de cada "create table if not exists public.<nome> ( ... );" do script, mais as de "add column if not exists". */
 function colunasDasTabelas(): Map<string, Set<string>> {
   const tabelas = new Map<string, Set<string>>();
   for (const [, nome, corpo] of sql.matchAll(/create table if not exists public\.(\w+) \(([\s\S]*?)\n\);/g)) {
@@ -29,10 +38,11 @@ function colunasDasTabelas(): Map<string, Set<string>> {
       .filter((c): c is string => !!c && c !== 'primary' && c !== 'constraint');
     tabelas.set(nome, new Set(colunas));
   }
+  for (const [, nome, coluna] of sql.matchAll(/alter table public\.(\w+) add column if not exists (\w+)\s/g)) tabelas.get(nome)?.add(coluna);
   return tabelas;
 }
 
-describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql + 0003_pedidos_chuva.sql + 0004_situacao_zeus.sql × repositório', () => {
+describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql + 0003_pedidos_chuva.sql + 0004_situacao_zeus.sql + supabase/0026_mapa_variedade.sql × repositório', () => {
   const tabelas = colunasDasTabelas();
 
   it('cria exatamente as tabelas de TABELAS', () => {
@@ -63,6 +73,8 @@ describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql + 0003_pedi
     for (const coluna of ['de_hora', 'ate_hora']) expect(sql).toMatch(new RegExp('add column if not exists ' + coluna + '\\s+time'));
     // situação da ZEUS: o repositório só lê estas colunas (quem grava é o servidor)
     for (const coluna of ['fazenda', 'ultimo_dia', 'ultima_leitura', 'conferido_em']) expect(tabelas.get(TABELAS.situacaoZeus)?.has(coluna), coluna).toBe(true);
+    // cores das variedades: o repositório insere variedade e cor, troca cor e atualizado_em, e lê criado_em
+    for (const coluna of ['variedade', 'cor', 'criado_em', 'atualizado_em']) expect(tabelas.get(TABELAS.coresVariedade)?.has(coluna), coluna).toBe(true);
   });
 
   it.each(Object.values(TABELAS))('tabela %s: RLS ligado, nada para anon, acesso explícito para authenticated', (t) => {

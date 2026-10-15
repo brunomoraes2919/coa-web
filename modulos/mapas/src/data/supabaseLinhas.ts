@@ -5,7 +5,7 @@
  * os campos novos.
  */
 import { completarPlantio } from '../lib/plantioPims';
-import type { AcessoUsuario, AreaCultura, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, Safra, Talhao } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, Safra, Talhao } from '../lib/types';
 
 export { completarPlantio };
 
@@ -27,6 +27,8 @@ export const TABELAS = {
   pedidosChuva: 'mapas_chuva_pedidos',
   /** último dia da ZEUS no banco, por fazenda (supabase/coa-web/0004_situacao_zeus.sql) */
   situacaoZeus: 'mapas_zeus_situacao',
+  /** cor fixa de cada variedade (supabase/0026_mapa_variedade.sql) */
+  coresVariedade: 'mapas_variedade_cores',
 } as const;
 
 /** Bucket privado com a imagem e a miniatura dos mapas salvos. */
@@ -287,6 +289,8 @@ export interface MapaRow {
   png_path: string | null;
   thumb_path: string | null;
   criado_em: string;
+  /** 'chuva' | 'variedade' (supabase/0026); ausente em linhas antigas */
+  tipo?: string;
 }
 
 export function mapaParaRow(m: MapaSalvo): MapaRow {
@@ -303,6 +307,7 @@ export function mapaParaRow(m: MapaSalvo): MapaRow {
     png_path: m.pngPath,
     thumb_path: m.thumbPath,
     criado_em: m.criadoEm,
+    tipo: m.tipo ?? 'chuva',
   };
 }
 
@@ -320,6 +325,7 @@ export function rowParaMapa(r: MapaRow): MapaSalvo {
     pngPath: r.png_path,
     thumbPath: r.thumb_path,
     criadoEm: r.criado_em,
+    ...(r.tipo === 'variedade' ? { tipo: 'variedade' as const } : {}),
   };
 }
 
@@ -351,4 +357,15 @@ export interface PerfilRow {
 export function rowParaAcesso(r: PerfilRow): AcessoUsuario {
   const perfil = r.perfil === 'admin' ? 'admin' : 'colaborador';
   return { perfil, adminSemRestricao: perfil === 'admin' && (r.super === true || r.todas_fazendas !== false) };
+}
+
+/** Linha de mapas_variedade_cores. */
+export interface CorVariedadeRow {
+  variedade: string;
+  cor: string;
+  criado_em: string;
+}
+
+export function rowParaCorVariedade(r: CorVariedadeRow): CorVariedade {
+  return { variedade: r.variedade, cor: r.cor, criadoEm: r.criado_em };
 }

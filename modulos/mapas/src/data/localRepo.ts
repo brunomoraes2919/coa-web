@@ -1,7 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { extensaoImagem } from '../lib/historico';
 import { carregarPlantioPims } from '../lib/plantioPims';
-import type { AreaCultura, Fazenda, MapaSalvo, Plantio, Safra, Talhao } from '../lib/types';
+import type { AreaCultura, CorVariedade, Fazenda, MapaSalvo, Plantio, Safra, Talhao } from '../lib/types';
 import type { BackupJson, Repositorio } from './repo';
 import { completarFazenda, completarPlantio, completarSafra, completarTalhao, reviverPics } from './supabaseLinhas';
 
@@ -35,9 +35,10 @@ interface CoaChuvaDB extends DBSchema {
     value: AreaCultura;
     indexes: { safraFazenda: [string, string]; safraId: string; fazendaId: string };
   };
+  coresVariedade: { key: string; value: CorVariedade };
 }
 
-const VERSAO_DB = 2;
+const VERSAO_DB = 3;
 
 const ERRO_BLOQUEADO =
   'O banco local está aberto em outra aba com uma versão anterior do app. Feche as outras abas do Mapa de Chuva COA e recarregue esta página.';
@@ -88,6 +89,10 @@ function atualizarEsquema(db: IDBPDatabase<CoaChuvaDB>, versaoAntiga: number): v
     areas.createIndex('safraFazenda', ['safraId', 'fazendaId']);
     areas.createIndex('safraId', 'safraId');
     areas.createIndex('fazendaId', 'fazendaId');
+  }
+  if (versaoAntiga < 3) {
+    // v3 (mapa de variedade): cor fixa de cada variedade
+    db.createObjectStore('coresVariedade', { keyPath: 'variedade' });
   }
 }
 
@@ -285,10 +290,10 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
       await tx.done;
     },
 
-    async listarMapas() {
+    async listarMapas(tipo = 'chuva') {
       const db = await dbPromise;
       const mapas = await db.getAll('mapas');
-      return mapas.sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
+      return mapas.filter((m) => (m.tipo ?? 'chuva') === tipo).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
     },
 
     async obterMapa(id) {
@@ -324,6 +329,33 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
     async excluirMapa(m) {
       const db = await dbPromise;
       await removerMapaEArquivos(db, m);
+    },
+
+    async listarCoresVariedade() {
+      const db = await dbPromise;
+      return (await db.getAll('coresVariedade')).sort((a, b) => a.variedade.localeCompare(b.variedade));
+    },
+
+    async criarCorVariedade(variedade, cor) {
+      const db = await dbPromise;
+      const tx = db.transaction('coresVariedade', 'readwrite');
+      const atual = await tx.store.get(variedade);
+      const salvo = atual ?? { variedade, cor, criadoEm: new Date().toISOString() };
+      if (!atual) await tx.store.put(salvo);
+      await tx.done;
+      return salvo;
+    },
+
+    async trocarCorVariedade(variedade, cor) {
+      const db = await dbPromise;
+      const atual = await db.get('coresVariedade', variedade);
+      if (!atual) throw new Error('Variedade não encontrada no cadastro de cores.');
+      await db.put('coresVariedade', { ...atual, cor });
+    },
+
+    async excluirCorVariedade(variedade) {
+      const db = await dbPromise;
+      await db.delete('coresVariedade', variedade);
     },
 
     async exportarBackup() {

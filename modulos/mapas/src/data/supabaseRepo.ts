@@ -12,6 +12,7 @@ import {
   reviverPics,
   rowParaAcesso,
   rowParaAreaCultura,
+  rowParaCorVariedade,
   rowParaFazenda,
   rowParaLinhaPlantioPims,
   rowParaMapa,
@@ -22,6 +23,7 @@ import {
   TABELAS,
   talhaoParaRow,
   type AreaCulturaRow,
+  type CorVariedadeRow,
   type FazendaRow,
   type MapaRow,
   type PerfilRow,
@@ -309,11 +311,12 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
       }
     },
 
-    async listarMapas() {
+    async listarMapas(tipo = 'chuva') {
       const linhas = await lerTodas<MapaRow>('Não foi possível listar os mapas', (de, ate) =>
         client
           .from(TABELAS.mapas)
           .select('*', { count: 'exact' })
+          .eq('tipo', tipo)
           .order('criado_em', { ascending: false })
           .order('id')
           .range(de, ate),
@@ -359,6 +362,34 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
       // primeiro a linha, depois os arquivos: se o banco recusar a exclusão, o mapa continua com a imagem
       await apagarLinha('Não foi possível excluir o mapa', TABELAS.mapas, m.id, RECUSA_EXCLUIR.mapa);
       await limparArquivos([m.pngPath, m.thumbPath]);
+    },
+
+    async listarCoresVariedade() {
+      const linhas = await lerTodas<CorVariedadeRow>('Não foi possível ler as cores das variedades', (de, ate) =>
+        client.from(TABELAS.coresVariedade).select('*', { count: 'exact' }).order('variedade').range(de, ate),
+      );
+      return linhas.map(rowParaCorVariedade);
+    },
+
+    async criarCorVariedade(variedade, cor) {
+      const { data, error } = await client.from(TABELAS.coresVariedade).insert({ variedade, cor }).select('*').single();
+      if (!error) return rowParaCorVariedade(data as CorVariedadeRow);
+      // chave repetida: outra pessoa gravou a cor desta variedade antes; vale a dela
+      if (error.code !== '23505') falha('Não foi possível gravar a cor da variedade', error);
+      const { data: atual, error: erroLeitura } = await client.from(TABELAS.coresVariedade).select('*').eq('variedade', variedade).maybeSingle();
+      if (erroLeitura) falha('Não foi possível ler a cor da variedade', erroLeitura);
+      if (!atual) falha('Não foi possível gravar a cor da variedade', error);
+      return rowParaCorVariedade(atual as CorVariedadeRow);
+    },
+
+    async trocarCorVariedade(variedade, cor) {
+      const { error } = await client.from(TABELAS.coresVariedade).update({ cor, atualizado_em: new Date().toISOString() }).eq('variedade', variedade);
+      if (error) falha('Não foi possível trocar a cor da variedade', error);
+    },
+
+    async excluirCorVariedade(variedade) {
+      const { error } = await client.from(TABELAS.coresVariedade).delete().eq('variedade', variedade);
+      if (error) falha('Não foi possível apagar a variedade', error);
     },
 
     async exportarBackup() {

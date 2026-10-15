@@ -44,6 +44,7 @@ const CHAVES: Record<string, string[]> = {
   mapas_plantio_pedidos: ['id'],
   mapas_chuva_pedidos: ['id'],
   mapas_zeus_situacao: ['fazenda'],
+  mapas_variedade_cores: ['variedade'],
   fazendas: ['id'],
   perfis: ['id'],
 };
@@ -65,6 +66,7 @@ const PADROES: Record<string, (b: BancoFalso) => Linha> = {
     resultado: null,
     dados: null,
   }),
+  mapas_variedade_cores: () => ({ criado_em: '2026-10-15T00:00:00.000Z', atualizado_em: null, atualizado_por: null }),
 };
 
 export class BancoFalso {
@@ -245,6 +247,10 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
 
     if (this.op === 'insert') {
       const novas = this.payload.map((l) => ({ ...(PADROES[this.tabela]?.(this.banco) ?? {}), ...l }));
+      const chave = CHAVES[this.tabela];
+      if (chave && novas.some((n) => tabela.some((l) => chave.every((k) => l[k] === n[k])))) {
+        return { data: null, error: { code: '23505', message: 'duplicate key value violates unique constraint' }, count: null };
+      }
       tabela.push(...novas);
       return this.devolver ? responder(novas, null) : { data: null, error: null, count: null };
     }
