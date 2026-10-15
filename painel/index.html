@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
 <link rel="stylesheet" href="estilo.css?v=202610151300">
+<link rel="stylesheet" href="tv.css?v=202610151400">
 <script src="config.js?v=202610151200"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
 <script src="logica.js?v=202610151200"></script>
@@ -127,9 +128,29 @@
 </dialog>
 
 <!-- ============================ TV (?tv=1) ============================ -->
-<div class="tv" id="tv" hidden></div>
+<div class="tv" id="tv" hidden>
+  <header class="tv-topo">
+    <div class="tv-marca"><img src="../acompanhamento/assets/logo_coa_branco.png" alt="COA · Centro de Operações Agrícolas"></div>
+    <div class="tv-montagem"><i aria-hidden="true"></i><span id="tv-nome"></span><b class="tv-conexao" id="tv-conexao" hidden></b></div>
+    <div class="tv-relogio"><b id="tv-hora">--:--</b><span id="tv-data"></span></div>
+  </header>
+  <main class="tv-grade" id="tv-grade"></main>
+  <section class="tv-aviso" id="tv-aviso" hidden>
+    <img src="../acompanhamento/assets/logo_coa_branco.png" alt="">
+    <h1 id="tv-aviso-titulo"></h1>
+    <p id="tv-aviso-texto"></p>
+    <a class="tv-aviso-botao" id="tv-aviso-botao" href="../" hidden>Entrar no COA WEB</a>
+  </section>
+  <div class="tv-cobertura" id="tv-cobertura" aria-hidden="true"></div>
+  <div class="tv-controles" id="tv-controles">
+    <span id="tv-mexendo" hidden>Mexendo nos sites · volta sozinho em 2 min</span>
+    <button type="button" id="tv-mexer">Mexer nos sites (I)</button>
+    <button type="button" id="tv-cheia">Tela cheia (F)</button>
+  </div>
+</div>
 
 <div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Abrindo as montagens</span><i>.</i><i>.</i><i>.</i></p></div></div>
 <script src="editor.js?v=202610151300"></script>
+<script src="tv.js?v=202610151400"></script>
 </body>
 </html>

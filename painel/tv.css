@@ -1,0 +1,53 @@
+/* =====================================================================
+   Montagens de Painel — a TV (?tv=1). Uma moldura só, verde-escura, em volta de tudo e entre os quadros:
+   faixa no topo (marca, montagem, relógio), uma etiqueta fina em cima de cada quadro (sem cobrir o site) e o
+   site embaixo. Medidas em vh/vmin com clamp(): proporcional de 1366×768 a 3840×2160, lida a 3–4 m.
+===================================================================== */
+html.modo-tv, html.modo-tv body { height: 100%; overflow: hidden; background: var(--verde-escuro); }
+.tv { --borda: .8vmin; --vao: .6vmin; --verde-claro: #9FC2B9; --texto-tv: #EAF2EF; position: fixed; inset: 0; display: flex; flex-direction: column; gap: var(--vao); padding: var(--borda); background: var(--verde-escuro); color: var(--texto-tv); font-family: var(--fonte); }
+
+/* faixa do topo */
+.tv-topo { flex: none; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 2vmin; height: 6.5vh; min-height: 44px; padding: 0 1.2vmin .7vh .4vmin; border-bottom: 2px solid var(--dourado); }
+/* a logo branca já traz "Centro de Operações Agrícolas" e a marca da Locks: nada de texto repetido ao lado */
+.tv-marca { display: flex; align-items: center; min-width: 0; }
+.tv-marca img { height: 4.6vh; min-height: 28px; width: auto; }
+.tv-montagem { display: flex; align-items: center; gap: 1.1vmin; font-size: clamp(14px, 2.1vh, 38px); font-weight: 500; color: #fff; white-space: nowrap; }
+.tv-montagem > i { width: 1.1vh; height: 1.1vh; min-width: 7px; min-height: 7px; border-radius: 50%; background: var(--dourado-claro); box-shadow: 0 0 0 .45vh rgba(240, 178, 74, .18); }
+.tv-montagem:has(#tv-nome:empty) > i { display: none; }
+.tv-conexao { margin-left: 1.2vmin; padding: .35vh 1vmin; border: 1px solid rgba(255, 180, 171, .4); border-radius: 4px; background: rgba(179, 38, 30, .22); font-size: clamp(11px, 1.35vh, 22px); font-weight: 500; color: #FFD2CC; }
+.tv-relogio { justify-self: end; line-height: 1.05; text-align: right; }
+.tv-relogio b { display: block; font-size: clamp(20px, 3.4vh, 60px); font-weight: 600; letter-spacing: -.01em; color: #fff; font-variant-numeric: tabular-nums; }
+.tv-relogio span { font-size: clamp(11px, 1.35vh, 22px); color: var(--verde-claro); }
+
+/* quadros */
+.tv-grade { flex: 1; display: grid; gap: var(--vao); min-height: 0; }
+.tv-quadro { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.tv-etiqueta { position: relative; flex: none; display: flex; align-items: center; justify-content: space-between; gap: 1vmin; height: 2.8vh; min-height: 20px; padding: 0 .4vmin .3vh .3vmin; font-size: clamp(11px, 1.45vh, 24px); font-weight: 500; color: var(--texto-tv); }
+.tv-etiqueta::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 2px; background: rgba(159, 194, 185, .16); }
+.tv-etiqueta-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-etiqueta-conta { flex: none; font-weight: 600; color: var(--dourado-claro); font-variant-numeric: tabular-nums; }
+.tv-progresso { position: absolute; right: 0; bottom: 0; left: 0; z-index: 1; height: 2px; background: var(--dourado); transform: scaleX(0); transform-origin: left center; }
+.tv-palco { position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: 4px; background: #0B2A27; }
+.tv-site { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; opacity: 0; transition: opacity .6s ease; }
+.tv-site.visivel { opacity: 1; }
+.tv-vazio { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2vh; padding: 2vmin; color: var(--verde-claro); text-align: center; }
+.tv-vazio img { width: 22%; max-width: 260px; opacity: .16; }
+.tv-vazio p { max-width: 32ch; margin: 0; font-size: clamp(12px, 1.8vh, 30px); }
+
+/* tela de aviso (sem montagem, sem login, sem conexão), por cima da cobertura */
+.tv-aviso { position: relative; z-index: 7; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.2vh; padding: 4vmin; border-radius: 4px; background: #0B2A27; text-align: center; }
+.tv-aviso img { width: 22vmin; opacity: .9; }
+.tv-aviso h1 { margin: 1vh 0 0; font-size: clamp(20px, 3.6vh, 64px); font-weight: 600; color: #fff; }
+.tv-aviso p { max-width: 52ch; margin: 0; font-size: clamp(13px, 2vh, 34px); color: var(--verde-claro); }
+.tv-aviso-botao { margin-top: 1vh; padding: 1.1vh 2.4vmin; border-radius: 6px; background: var(--dourado); font-size: clamp(13px, 1.9vh, 30px); font-weight: 600; color: #1B1405; text-decoration: none; }
+
+/* a TV é para assistir: a cobertura pega o mouse; a tecla I libera mexer nos sites */
+.tv-cobertura { position: absolute; inset: 0; z-index: 5; }
+html.parado .tv-cobertura { cursor: none; }
+html.mexendo .tv-cobertura { display: none; }
+.tv-controles { position: absolute; bottom: 3vh; left: 50%; z-index: 6; display: flex; align-items: center; gap: 1vmin; padding: .8vh 1vmin; border-radius: 999px; background: rgba(11, 42, 39, .94); box-shadow: 0 6px 24px rgba(0, 0, 0, .35); opacity: 0; pointer-events: none; transform: translateX(-50%); transition: opacity .25s; }
+html.mostrar .tv-controles, html.mexendo .tv-controles { opacity: 1; pointer-events: auto; }
+.tv-controles button { height: 4vh; min-height: 32px; padding: 0 1.8vmin; border: 1px solid rgba(159, 194, 185, .35); border-radius: 999px; background: transparent; font-size: clamp(12px, 1.6vh, 26px); font-weight: 500; color: #fff; }
+.tv-controles button:hover { background: rgba(255, 255, 255, .08); }
+.tv-controles span { padding: 0 1vmin; font-size: clamp(11px, 1.4vh, 22px); color: var(--verde-claro); }
+@media (prefers-reduced-motion: reduce) { .tv-site { transition: none; } }
