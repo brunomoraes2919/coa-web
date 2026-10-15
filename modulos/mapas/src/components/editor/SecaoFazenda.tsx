@@ -31,6 +31,8 @@ interface Props {
   /** null = todos os setores */
   setores: string[] | null;
   onSetores(setores: string[] | null): void;
+  /** 'variedade': a safra define as variedades (não a situação do plantio) */
+  modo?: 'chuva' | 'variedade';
 }
 
 /** Seção "1. Fazenda e safra" do editor: fazenda, safra (define os plantados) e setores no mapa. */
@@ -86,7 +88,7 @@ export default function SecaoFazenda(p: Props) {
         </label>
       )}
       <label className="campo">
-        <span>Safra (define a situação do plantio)</span>
+        <span>{p.modo === 'variedade' ? 'Safra (define as variedades)' : 'Safra (define a situação do plantio)'}</span>
         <select value={p.safraId} onChange={(e) => p.onSafra(e.target.value)}>
           <option value="">Sem safra</option>
           {p.safras.map((s) => (
@@ -108,6 +110,7 @@ export default function SecaoFazenda(p: Props) {
           usaAreas={p.plantio.usaAreas}
           semPoligono={p.plantio.semPoligono}
           semArea={p.plantio.semArea}
+          modo={p.modo}
         />
       )}
       {p.setoresDisponiveis.length > 1 && (

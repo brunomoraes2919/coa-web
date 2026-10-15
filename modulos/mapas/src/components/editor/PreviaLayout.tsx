@@ -17,6 +17,8 @@ interface Props {
   /** texto sobreposto (ex.: "Interpolando… 42%") */
   ocupado?: string | null;
   onAvisos?(avisos: string[]): void;
+  /** texto da prévia vazia (padrão: o do mapa de chuva) */
+  vazio?: string;
 }
 
 const ZOOM_PASSO = 1.2;
@@ -33,7 +35,7 @@ const FRACAO_ALTURA_JANELA = 0.85;
  * Centralizar volta ao enquadramento automático. Com vários quadros, cada um se enquadra sozinho e a
  * prévia não reage ao mouse (sem cadeado nem Centralizar).
  */
-export default function PreviaLayout({ input, extent, automatico, onExtentChange, ocupado, onAvisos }: Props) {
+export default function PreviaLayout({ input, extent, automatico, onExtentChange, ocupado, onAvisos, vazio }: Props) {
   const caixaRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   /** última imagem desenhada (base do retorno visual do arraste) */
@@ -273,7 +275,7 @@ export default function PreviaLayout({ input, extent, automatico, onExtentChange
         />
       ) : (
         <div className="previa-vazia" style={{ height: alturaCss || 300 }}>
-          Escolha a fazenda e carregue a chuva da ZEUS para ver o mapa.
+          {vazio ?? 'Escolha a fazenda e carregue a chuva da ZEUS para ver o mapa.'}
         </div>
       )}
       {(ocupado || desenhando) && input && <div className="previa-ocupado">{ocupado ?? 'Desenhando…'}</div>}

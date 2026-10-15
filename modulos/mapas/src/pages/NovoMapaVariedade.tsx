@@ -93,7 +93,8 @@ export default function NovoMapaVariedade() {
   const textos: LayoutTextos = { ...automaticos, ...editados };
 
   const renderInput: RenderInput | null = useMemo(() => {
-    if (!talhoesUsados.length || !resumo) return null;
+    // mapa de variedade = fazenda e safra (sem safra não há plantio do PIMS: tudo sairia "Sem variedade")
+    if (!safraId || !talhoesUsados.length || !resumo) return null;
     const usadas = Object.fromEntries(resumo.itens.filter((i) => i.chave).map((i) => [i.chave, i.cor]));
     return {
       config: { ...aparencia, textos, setores, textosEditados: editados, coresVariedade: usadas },
@@ -112,7 +113,7 @@ export default function NovoMapaVariedade() {
     };
     // textos é derivado de automaticos + editados
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aparencia, automaticos, editados, setores, talhoesUsados, areasUsadas, plantio.geradoEm, safra, logo, feicoes, resumo]);
+  }, [aparencia, automaticos, editados, setores, safraId, talhoesUsados, areasUsadas, plantio.geradoEm, safra, logo, feicoes, resumo]);
 
   const extentEfetivo = useMemo(() => {
     if (!renderInput) return null;
@@ -264,11 +265,12 @@ export default function NovoMapaVariedade() {
             setoresDisponiveis={setoresDisponiveis}
             setores={setores}
             onSetores={trocarSetores}
+            modo="variedade"
           />
 
           <section className="cartao pilha">
             <h2>2. Variedades</h2>
-            {resumo ? (
+            {fazendaId && safraId && resumo ? (
               <TabelaVariedades resumo={resumo} feicoes={feicoes} nomeArquivo={nomeArquivo.replace(/\.png$/, '_TALHOES.csv')} geradoEm={plantio.geradoEm} />
             ) : (
               <p className="suave">{fazendaId && safraId ? 'Lendo as cores das variedades…' : 'Escolha a fazenda e a safra.'}</p>
@@ -300,6 +302,7 @@ export default function NovoMapaVariedade() {
               onExtentChange={(ext) => setAparencia((a) => ({ ...a, extent: ext }))}
               ocupado={ocupado}
               onAvisos={setAvisosRender}
+              vazio="Escolha a fazenda e a safra para ver o mapa."
             />
           </section>
         </div>

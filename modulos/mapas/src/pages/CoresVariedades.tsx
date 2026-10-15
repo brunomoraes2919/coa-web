@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { repo } from '../data';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
+import SeletorCor from '../components/editor/SeletorCor';
 import '../components/editor/editor.css';
 import type { CorVariedade } from '../lib/types';
 
@@ -81,7 +82,7 @@ export default function CoresVariedades() {
               {visiveis.map((c) => (
                 <tr key={c.variedade}>
                   <td>
-                    <input type="color" value={c.cor} aria-label={`Cor de ${c.variedade}`} onChange={(e) => void trocar(c.variedade, e.target.value)} />
+                    <SeletorCor variedade={c.variedade} cor={c.cor} onTrocar={(cor) => void trocar(c.variedade, cor)} />
                   </td>
                   <td>{c.variedade}</td>
                   <td>{new Date(c.criadoEm).toLocaleDateString('pt-BR')}</td>

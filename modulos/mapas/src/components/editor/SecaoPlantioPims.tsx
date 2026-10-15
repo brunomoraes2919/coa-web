@@ -16,6 +16,18 @@ interface Props {
   semPoligono: PlantioPimsTalhao[];
   /** com áreas da cultura: plantados/plantando no PIMS com talhão base mas sem área da cultura (não aparecem pintados) */
   semArea: PlantioPimsTalhao[];
+  /** 'variedade': a nota fala da variedade do PIMS, não da chuva */
+  modo?: 'chuva' | 'variedade';
+}
+
+/** Nota abaixo da contagem: o que o mapa pinta e com qual informação do plantio. */
+export function notaDoPlantio(usaAreas: boolean, modo: 'chuva' | 'variedade' = 'chuva'): string {
+  if (modo === 'variedade') {
+    return usaAreas ? 'O mapa pinta as áreas da cultura, cada uma com a variedade do PIMS de mesmo código.' : 'Cada talhão sai com a variedade do plantio do PIMS.';
+  }
+  return usaAreas
+    ? 'O mapa pinta as áreas da cultura, e a chuva média na área plantada considera as áreas plantadas ou em plantio.'
+    : 'A chuva média na área plantada considera os talhões plantados ou em plantio.';
 }
 
 /** Resumo do plantio da safra no editor: "X plantados · Y plantando · Z a plantar (PIMS dd/MM HH:mm)". */
@@ -43,9 +55,7 @@ export default function SecaoPlantioPims(p: Props) {
         {link}
       </p>
       <small className="suave">
-        {p.usaAreas
-          ? 'O mapa pinta as áreas da cultura, e a chuva média na área plantada considera as áreas plantadas ou em plantio.'
-          : 'A chuva média na área plantada considera os talhões plantados ou em plantio.'}
+        {notaDoPlantio(p.usaAreas, p.modo)}
         {!p.geradoEm && ' Sem plantio do PIMS para esta fazenda/safra: vale o plantio marcado manualmente.'}
       </small>
       {p.usaAreas && p.semArea.length > 0 && (
