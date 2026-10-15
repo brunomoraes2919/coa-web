@@ -4,6 +4,7 @@
  * Em paisagem fica numa coluna do painel lateral; em retrato, em 2–4 colunas na faixa inferior.
  */
 import type { StatusPlantio } from '../lib/types';
+import { textoItemVariedade, TITULO_VARIEDADES } from '../lib/variedades';
 import { ALTURA_MAIUSC, fonte, type Rect } from './labels';
 import { desenharGota, desenharPadrao, picSemChuva } from './patterns';
 import { ESTILO_SITUACAO, itensLegendaSituacao } from './situacao';
@@ -44,6 +45,13 @@ export function rotuloClasse(label: string): string {
 
 /** Itens da legenda na ordem de desenho. `presentes` = classes presentes no grid; null = sem grid. */
 export function itensLegenda(inp: RenderInput, presentes: boolean[] | null): ItemLegenda[] {
+  if (inp.variedades) {
+    // mapa de variedade: só as variedades (sem PICs, situação do plantio ou classes de chuva)
+    return [
+      { tipo: 'titulo', texto: TITULO_VARIEDADES },
+      ...inp.variedades.resumo.itens.map((i): ItemLegenda => ({ tipo: 'classe', texto: textoItemVariedade(i), cor: i.cor })),
+    ];
+  }
   const itens: ItemLegenda[] = [];
   // a gota azul é o PIC com chuva; a cinza riscada só entra na legenda quando há PIC sem chuva no mapa
   const semChuva = inp.pics.filter((p) => picSemChuva(p.chuva)).length;

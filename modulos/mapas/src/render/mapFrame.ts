@@ -86,12 +86,37 @@ export interface FeicaoPx {
 const ORDEM_CONTORNO: readonly StatusPlantio[] = ['a_plantar', 'plantando', 'plantado'];
 
 /**
+ * Mapa de variedade: cada feição pintada (as áreas da cultura, ou os talhões base sem elas) com a cor sólida da
+ * variedade e, por cima, o contorno preto fino de todas. Sem padrões de situação do plantio.
+ */
+export function desenharVariedades(ctx: CanvasRenderingContext2D, v: Vista, geoms: TalhaoPx[], areas: FeicaoPx[], cores: Map<string, string>): void {
+  const pintados = areas.length ? areas.map((a) => ({ xy: a.xy, cor: cores.get(a.id) })) : geoms.map((g) => ({ xy: g.xy, cor: cores.get(g.t.id) }));
+  ctx.save();
+  ctx.lineJoin = 'round';
+  for (const p of pintados) {
+    if (!p.cor) continue;
+    ctx.beginPath();
+    tracar(ctx, p.xy);
+    ctx.fillStyle = p.cor;
+    ctx.fill('evenodd');
+  }
+  ctx.beginPath();
+  geoms.forEach((g) => tracar(ctx, g.xy));
+  areas.forEach((a) => tracar(ctx, a.xy));
+  ctx.lineWidth = 0.3 * v.s;
+  ctx.strokeStyle = '#1A1A1A';
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
  * Talhões base (contorno preto) e a situação do plantio. Com `areas` (áreas da cultura projetadas),
  * elas são pintadas no lugar dos talhões base (sem situação = a plantar); sem áreas, os talhões base
  * com situação. Plantado = padrão escolhido + contorno laranja; plantando = hachura + contorno
  * amarelos; a plantar = só contorno tracejado cinza (no modo sem áreas, no lugar do contorno preto).
  */
 export function desenharTalhoes(ctx: CanvasRenderingContext2D, v: Vista, geoms: TalhaoPx[], inp: RenderInput, areas: FeicaoPx[] = []): void {
+  if (inp.variedades) return desenharVariedades(ctx, v, geoms, areas, inp.variedades.cores);
   const s = v.s;
   const comAreas = areas.length > 0;
   const pintados: { xy: MultiPolyXY; status: StatusPlantio }[] = comAreas

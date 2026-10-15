@@ -7,6 +7,7 @@
  */
 import { fmtChuva, fmtData } from '../lib/format';
 import { fmtDataHora } from '../lib/situacaoPlantio';
+import { fmtAreaHa } from '../lib/variedades';
 import type { Composicao } from './composicao';
 import { ALTURA_MAIUSC, comReticencias, fonte, limitarLinhas, quebrarTexto, type Rect } from './labels';
 import { planejarLegenda } from './legend';
@@ -30,18 +31,31 @@ export function itensInformacao(inp: RenderInput): ParInfo[] {
   const t = inp.config.textos;
   const media = (v: number | null | undefined) => (v !== null && v !== undefined && Number.isFinite(v) ? fmtMm(v) : '');
   const pims = fmtDataHora(inp.plantioGeradoEm, true); // dd/MM HH:mm
-  const pares: ParInfo[] = [
-    { rotulo: 'Safra', valor: t.safra },
-    { rotulo: 'Período', valor: t.periodo },
-    { rotulo: 'Fonte', valor: t.fonte },
-    { rotulo: 'Talhões', valor: t.talhoes },
-    { rotulo: 'Setor', valor: t.setor },
-    { rotulo: 'Média da fazenda', valor: media(inp.resumo?.geral.media) },
-    { rotulo: 'Média dos PICs com chuva', valor: inp.resumo?.mediaPicsComChuva === null ? 'sem chuva' : media(inp.resumo?.mediaPicsComChuva) },
-    { rotulo: 'Plantio', valor: pims ? `PIMS ${pims}` : '' },
-    { rotulo: 'Data', valor: t.data },
-    { rotulo: 'Observação', valor: t.observacao },
-  ];
+  const r = inp.variedades?.resumo;
+  const pares: ParInfo[] = r
+    ? [
+        { rotulo: 'Safra', valor: t.safra },
+        { rotulo: 'Fonte', valor: t.fonte },
+        { rotulo: 'Área total', valor: `${fmtAreaHa(r.totalHa)} ha` },
+        { rotulo: 'Variedades', valor: String(r.itens.filter((i) => i.chave).length) },
+        { rotulo: 'Talhões', valor: t.talhoes },
+        { rotulo: 'Setor', valor: t.setor },
+        { rotulo: 'Plantio', valor: pims ? `PIMS ${pims}` : '' },
+        { rotulo: 'Data', valor: t.data },
+        { rotulo: 'Observação', valor: t.observacao },
+      ]
+    : [
+        { rotulo: 'Safra', valor: t.safra },
+        { rotulo: 'Período', valor: t.periodo },
+        { rotulo: 'Fonte', valor: t.fonte },
+        { rotulo: 'Talhões', valor: t.talhoes },
+        { rotulo: 'Setor', valor: t.setor },
+        { rotulo: 'Média da fazenda', valor: media(inp.resumo?.geral.media) },
+        { rotulo: 'Média dos PICs com chuva', valor: inp.resumo?.mediaPicsComChuva === null ? 'sem chuva' : media(inp.resumo?.mediaPicsComChuva) },
+        { rotulo: 'Plantio', valor: pims ? `PIMS ${pims}` : '' },
+        { rotulo: 'Data', valor: t.data },
+        { rotulo: 'Observação', valor: t.observacao },
+      ];
   return pares.map((p) => ({ ...p, valor: (p.valor ?? '').trim() })).filter((p) => p.valor);
 }
 
@@ -304,13 +318,14 @@ function blocoInfo(ctx: CanvasRenderingContext2D, itens: ParInfo[], r: Rect, s: 
 }
 
 const ASSINATURA = 'Mapa de Chuva COA · Locks';
+const ASSINATURA_VARIEDADE = 'Mapa de Variedade COA · Locks';
 
 /** Altura do rodapé (mm): uma linha na faixa inferior; no painel lateral, duas com a atribuição. */
 function alturaRodape(lateral: boolean, atribuicao: string | null): number {
   return lateral && atribuicao ? 7 : 4.2;
 }
 
-function rodape(ctx: CanvasRenderingContext2D, r: Rect, s: number, lateral: boolean, atribuicao: string | null): void {
+function rodape(ctx: CanvasRenderingContext2D, r: Rect, s: number, lateral: boolean, atribuicao: string | null, assinatura: string): void {
   ctx.save();
   ctx.fillStyle = COR_SEPARADOR;
   ctx.fillRect(r.x * s, r.y * s, r.w * s, 0.2 * s);
@@ -320,7 +335,7 @@ function rodape(ctx: CanvasRenderingContext2D, r: Rect, s: number, lateral: bool
   ctx.font = fonte(400, px);
   ctx.fillStyle = COR_CINZA;
   ctx.textAlign = 'left';
-  ctx.fillText(ASSINATURA, r.x * s, base);
+  ctx.fillText(assinatura, r.x * s, base);
   ctx.textAlign = 'right';
   ctx.fillText(`Gerado em ${fmtData(new Date())}`, (r.x + r.w) * s, base);
   if (atribuicao) {
@@ -403,6 +418,6 @@ export function desenharPainel(ctx: CanvasRenderingContext2D, comp: Composicao, 
       leg.desenhar(sec.legenda.x * s, sec.legenda.y * s);
     }
   }
-  rodape(ctx, sec.rodape, s, lateral, atribuicao);
+  rodape(ctx, sec.rodape, s, lateral, atribuicao, inp.variedades ? ASSINATURA_VARIEDADE : ASSINATURA);
   ctx.restore();
 }

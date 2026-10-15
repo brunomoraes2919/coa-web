@@ -149,8 +149,8 @@ export async function baixarDeUrl(url: string, nome: string | ((blob: Blob) => s
   baixarArquivo(blob, typeof nome === 'function' ? nome(blob) : nome);
 }
 
-/** "MAPA_CHUVA_GUAPIRAMA_01-02-2025_a_15-02-2025.png" */
-export function nomeArquivoMapa(fazenda: string, periodo: string, ext = 'png'): string {
+/** "MAPA_CHUVA_GUAPIRAMA_01-02-2025_a_15-02-2025.png"; mapa de variedade: prefixo "MAPA_VARIEDADE". */
+export function nomeArquivoMapa(fazenda: string, periodo: string, ext = 'png', prefixo = 'MAPA_CHUVA'): string {
   const limpo = (s: string) =>
     s
       .normalize('NFD')
@@ -159,6 +159,6 @@ export function nomeArquivoMapa(fazenda: string, periodo: string, ext = 'png'): 
       .replace(/[^A-Za-z0-9-]+/g, '_')
       .replace(/^_+|_+$/g, '')
       .toUpperCase();
-  const partes = ['MAPA_CHUVA', limpo(fazenda), limpo(periodo)].filter(Boolean);
+  const partes = [prefixo, limpo(fazenda), limpo(periodo)].filter(Boolean);
   return `${partes.join('_')}.${ext}`;
 }

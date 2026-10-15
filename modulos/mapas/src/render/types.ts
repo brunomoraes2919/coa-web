@@ -1,5 +1,5 @@
 /** Tipos e constantes da renderização do layout (a mesma função gera a prévia e o PNG). */
-import type { AreaCultura, Grid, LayoutConfig, MapExtent, Palette, Pic, ResumoChuva, StatusPlantio, Talhao } from '../lib/types';
+import type { AreaCultura, Grid, LayoutConfig, MapExtent, Palette, Pic, ResumoChuva, ResumoVariedades, StatusPlantio, Talhao } from '../lib/types';
 
 export interface TileSource {
   url(z: number, x: number, y: number): string;
@@ -31,6 +31,11 @@ export interface RenderInput {
   logo: CanvasImageSource | null;
   /** null = sem mapa base */
   tiles: TileSource | null;
+  /**
+   * Mapa de variedade: cor sólida de cada feição (id do talhão base ou da área da cultura → cor) e o resumo da
+   * legenda. Ausente/null = mapa de chuva (desenho de sempre).
+   */
+  variedades?: { cores: Map<string, string>; resumo: ResumoVariedades } | null;
 }
 
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
