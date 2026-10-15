@@ -19,6 +19,8 @@ interface Props {
   situacoes?: Map<string, StatusPlantio>;
   /** polígonos desenhados por cima em laranja, sem interação (ex.: prévia das áreas da cultura) */
   sobrepor?: Geometry[];
+  /** polígonos desenhados por baixo, só o contorno branco fino, sem interação (ex.: o shape da fazenda sob as áreas da cultura) */
+  fundo?: Geometry[];
 }
 
 interface PropsFeicao {
@@ -78,8 +80,9 @@ function ajustarRotulos(mapa: L.Map | null, caminhos: Caminho[]) {
 }
 
 const ESTILO_SOBREPOR: L.PathOptions = { color: LARANJA, weight: 2, opacity: 1, fill: true, fillColor: LARANJA, fillOpacity: 0.35 };
+const ESTILO_FUNDO: L.PathOptions = { color: '#ffffff', weight: 1, opacity: 0.55, fill: false };
 
-export default function MapaLeaflet({ talhoes, selecionados, onClickTalhao, rotulo, altura = 420, situacoes, sobrepor }: Props) {
+export default function MapaLeaflet({ talhoes, selecionados, onClickTalhao, rotulo, altura = 420, situacoes, sobrepor, fundo }: Props) {
   const divRef = useRef<HTMLDivElement>(null);
   const mapaRef = useRef<L.Map | null>(null);
   const camadaRef = useRef<L.GeoJSON | null>(null);
@@ -166,6 +169,21 @@ export default function MapaLeaflet({ talhoes, selecionados, onClickTalhao, rotu
       if (sobreporRef.current === camada) sobreporRef.current = null;
     };
   }, [sobrepor, talhoes]);
+
+  // camada de fundo (ex.: shape da fazenda), sempre por baixo dos talhões
+  useEffect(() => {
+    const mapa = mapaRef.current;
+    if (!mapa || !fundo?.length) return;
+    const fc: FeatureCollection<Geometry> = {
+      type: 'FeatureCollection',
+      features: fundo.map((g) => ({ type: 'Feature', properties: {}, geometry: g })),
+    };
+    const camada = L.geoJSON(fc, { interactive: false, style: () => ESTILO_FUNDO }).addTo(mapa);
+    camada.bringToBack();
+    return () => {
+      camada.remove();
+    };
+  }, [fundo, talhoes]);
 
   // atualiza o destaque dos selecionados sem redesenhar
   useEffect(() => {

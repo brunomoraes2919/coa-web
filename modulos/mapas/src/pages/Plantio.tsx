@@ -5,6 +5,7 @@ import type { AreaCultura, Fazenda, Plantio as PlantioT, PlantioPimsArquivo, Pla
 import { normalizarCodigo } from '../lib/codigoTalhao';
 import { casarPlantio } from '../lib/plantioPims';
 import { plantadosSemArea } from '../lib/mascaraCultura';
+import { linhasDasAreas } from '../lib/plantioAreas';
 import { fmtDataHora, resumoContagem, resumoPlantioPagina } from '../lib/situacaoPlantio';
 import MapaLeaflet from '../components/MapaLeaflet';
 import TabelaPlantio from '../components/TabelaPlantio';
@@ -110,7 +111,20 @@ export default function Plantio() {
     [casado],
   );
   const semArea = useMemo(() => plantadosSemArea(casado?.porCodigo ?? null, talhoes, areas), [casado, talhoes, areas]);
-  const doPims = useMemo(() => new Set(talhoes.filter((t) => pimsDe(t)).map((t) => t.id)), [talhoes, pimsDe]);
+  /** talhões do shape da fazenda com registro no PIMS (não são marcados à mão) */
+  const basePims = useMemo(() => new Set(talhoes.filter((t) => pimsDe(t)).map((t) => t.id)), [talhoes, pimsDe]);
+
+  // com áreas da cultura na safra, o mapa e a lista mostram as áreas (o limite dos mapas de chuva e de variedade);
+  // a marcação manual vai para o talhão do shape da fazenda com o mesmo código
+  const usaAreas = areas.length > 0;
+  const { linhas, baseDe } = useMemo(
+    () => (usaAreas ? linhasDasAreas(areas, talhoes) : { linhas: talhoes, baseDe: new Map(talhoes.map((t) => [t.id, t.id])) }),
+    [usaAreas, areas, talhoes],
+  );
+  const linhaPorId = useMemo(() => new Map(linhas.map((l) => [l.id, l])), [linhas]);
+  const fundoFazenda = useMemo(() => (usaAreas ? talhoes.map((t) => t.geom) : undefined), [usaAreas, talhoes]);
+  /** linha → talhão do shape da fazenda que recebe a marcação manual; null = linha com PIMS ou sem talhão de mesmo código */
+  const manualDe = useCallback((l: Talhao | undefined): string | null => (!l || pimsDe(l) ? null : (baseDe.get(l.id) ?? null)), [pimsDe, baseDe]);
 
   const mudar = useCallback((fn: (m: Marcacoes) => Marcacoes) => {
     setMarcados(fn);
@@ -119,8 +133,9 @@ export default function Plantio() {
   }, []);
 
   const alternar = useCallback(
-    (id: string) => {
-      if (doPims.has(id)) return; // situação do PIMS não é marcada à mão
+    (idLinha: string) => {
+      const id = manualDe(linhaPorId.get(idLinha)); // situação do PIMS não é marcada à mão
+      if (!id) return;
       mudar((m) => {
         const n = { ...m };
         if (id in n) delete n[id];
@@ -128,26 +143,38 @@ export default function Plantio() {
         return n;
       });
     },
-    [mudar, doPims],
+    [mudar, manualDe, linhaPorId],
   );
 
   const visiveis = useMemo(() => {
     const q = semAcento(busca.trim());
-    if (!q) return talhoes;
-    return talhoes.filter((t) => semAcento(`${t.nome} ${t.setor ?? ''} ${t.codigo ?? ''}`).includes(q));
-  }, [talhoes, busca]);
-  const manuaisVisiveis = useMemo(() => visiveis.filter((t) => !doPims.has(t.id)), [visiveis, doPims]);
+    if (!q) return linhas;
+    return linhas.filter((t) => semAcento(`${t.nome} ${t.setor ?? ''} ${t.codigo ?? ''}`).includes(q));
+  }, [linhas, busca]);
+  /** talhões do shape da fazenda que recebem a marcação manual das linhas visíveis */
+  const manuaisVisiveis = useMemo(() => visiveis.map((l) => manualDe(l)).filter((id): id is string => !!id), [visiveis, manualDe]);
 
-  /** mapa: marcação manual (laranja) nos talhões sem PIMS; situação do PIMS nos demais */
-  const selecionados = useMemo(() => new Set(Object.keys(marcados).filter((id) => !doPims.has(id))), [marcados, doPims]);
+  /** talhões do shape da fazenda marcados à mão (os sem PIMS) */
+  const selecionados = useMemo(() => new Set(Object.keys(marcados).filter((id) => !basePims.has(id))), [marcados, basePims]);
+  /** marcação manual vista pelas linhas (talhões ou áreas): linha → data */
+  const marcadosLinhas = useMemo(() => {
+    const out: Marcacoes = {};
+    for (const l of linhas) {
+      const id = manualDe(l);
+      if (id && id in marcados) out[l.id] = marcados[id];
+    }
+    return out;
+  }, [linhas, manualDe, marcados]);
+  /** mapa: marcação manual (laranja) nas linhas sem PIMS; situação do PIMS nas demais */
+  const selecionadosLinhas = useMemo(() => new Set(Object.keys(marcadosLinhas)), [marcadosLinhas]);
   const situacoes = useMemo(() => {
     const m = new Map<string, StatusPlantio>();
-    for (const t of talhoes) {
-      const p = pimsDe(t);
-      if (p) m.set(t.id, p.status);
+    for (const l of linhas) {
+      const p = pimsDe(l);
+      if (p) m.set(l.id, p.status);
     }
     return m;
-  }, [talhoes, pimsDe]);
+  }, [linhas, pimsDe]);
   // inclui os códigos do PIMS que só existem como área da cultura (subáreas como "023A")
   const { contagem, ha: areaPlantada } = useMemo(
     () => resumoPlantioPagina(talhoes, areas, casado?.porCodigo ?? null, selecionados),
@@ -158,7 +185,7 @@ export default function Plantio() {
   function marcarTodos() {
     mudar((m) => {
       const n = { ...m };
-      for (const t of manuaisVisiveis) if (!(t.id in n)) n[t.id] = '';
+      for (const id of manuaisVisiveis) if (!(id in n)) n[id] = '';
       return n;
     });
   }
@@ -166,7 +193,7 @@ export default function Plantio() {
   function limpar() {
     mudar((m) => {
       const n = { ...m };
-      for (const t of manuaisVisiveis) delete n[t.id];
+      for (const id of manuaisVisiveis) delete n[id];
       return n;
     });
   }
@@ -174,7 +201,7 @@ export default function Plantio() {
   function aplicarDataLote() {
     mudar((m) => {
       const n = { ...m };
-      for (const id of Object.keys(n)) if (!doPims.has(id)) n[id] = dataLote;
+      for (const id of Object.keys(n)) if (!basePims.has(id)) n[id] = dataLote;
       return n;
     });
   }
@@ -209,7 +236,7 @@ export default function Plantio() {
   }
 
   const semVinculo = arquivo && !casado;
-  const qtdManuais = talhoes.length - doPims.size;
+  const qtdManuais = linhas.filter((l) => manualDe(l)).length;
 
   return (
     <div className="pagina">
@@ -221,7 +248,7 @@ export default function Plantio() {
           <h1>Plantio · {safra.nome}</h1>
           <p className="subtitulo">
             {casado
-              ? `Plantio do PIMS de ${fmtDataHora(casado.geradoEm)} (atualizado automaticamente a cada hora). Talhões sem registro no PIMS podem ser marcados à mão.`
+              ? `Plantio do PIMS de ${fmtDataHora(casado.geradoEm)} (atualizado automaticamente a cada hora). Talhões sem registro no PIMS podem ser marcados à mão.${usaAreas ? ' O mapa e a lista mostram as áreas da cultura desta safra, o mesmo limite dos mapas de chuva e de variedade.' : ''}`
               : 'Clique nos talhões do mapa ou marque na lista os que já foram plantados.'}
           </p>
         </div>
@@ -297,18 +324,19 @@ export default function Plantio() {
         </div>
       </div>
 
-      {talhoes.length === 0 ? (
+      {linhas.length === 0 ? (
         <Aviso tipo="info">Esta fazenda não tem talhões cadastrados.</Aviso>
       ) : (
         <div className="grade-lado">
           <div className="cartao fixo">
             <MapaLeaflet
-              talhoes={talhoes}
-              selecionados={selecionados}
+              talhoes={linhas}
+              selecionados={selecionadosLinhas}
               situacoes={situacoes}
               onClickTalhao={alternar}
-              rotulo={(i) => talhoes[i]?.nome ?? ''}
+              rotulo={(i) => linhas[i]?.nome ?? ''}
               altura={560}
+              fundo={fundoFazenda}
             />
           </div>
 
@@ -349,10 +377,14 @@ export default function Plantio() {
               <TabelaPlantio
                 talhoes={visiveis}
                 pimsDe={pimsDe}
-                marcados={marcados}
+                marcados={marcadosLinhas}
                 onAlternar={alternar}
-                onData={(id, v) => mudar((m) => ({ ...m, [id]: v }))}
+                onData={(idLinha, v) => {
+                  const id = manualDe(linhaPorId.get(idLinha));
+                  if (id) mudar((m) => ({ ...m, [id]: v }));
+                }}
                 busca={busca}
+                semManual={(l) => !pimsDe(l) && !baseDe.has(l.id)}
               />
             </div>
           </div>

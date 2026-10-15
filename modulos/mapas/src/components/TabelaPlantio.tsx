@@ -13,6 +13,8 @@ interface Props {
   onAlternar(id: string): void;
   onData(id: string, data: string): void;
   busca: string;
+  /** linha sem PIMS que não aceita marcação manual (divisão que só existe nas áreas da cultura): fica "a plantar" */
+  semManual?(t: Talhao): boolean;
 }
 
 function datasPims(p: PlantioPimsTalhao): string {
@@ -22,7 +24,7 @@ function datasPims(p: PlantioPimsTalhao): string {
 }
 
 /** Lista do plantio: situação do PIMS (só leitura) ou marcação manual nos talhões sem PIMS. */
-export default function TabelaPlantio({ talhoes, pimsDe, marcados, onAlternar, onData, busca }: Props) {
+export default function TabelaPlantio({ talhoes, pimsDe, marcados, onAlternar, onData, busca, semManual }: Props) {
   return (
     <table className="tabela">
       <thead>
@@ -55,6 +57,24 @@ export default function TabelaPlantio({ talhoes, pimsDe, marcados, onAlternar, o
                 <td className="num">{fmtPct(pctPlantado(p.areaPlantada, p.areaPrevista))}</td>
                 <td>{datasPims(p)}</td>
                 <td>{p.variedade ?? '—'}</td>
+              </tr>
+            );
+          }
+          if (semManual?.(t)) {
+            return (
+              <tr key={t.id}>
+                <td title="Sem registro no PIMS e sem talhão de mesmo código no shape da fazenda: não dá para marcar à mão">
+                  <input type="checkbox" checked={false} disabled aria-label={`Sem registro no PIMS: ${t.nome}`} />
+                </td>
+                <td>{t.nome}</td>
+                <td>{t.setor ?? '—'}</td>
+                <td className="num">{fmtHa(t.areaHa)}</td>
+                <td>
+                  <span className="suave">sem PIMS</span>
+                </td>
+                <td className="num">—</td>
+                <td>—</td>
+                <td>—</td>
               </tr>
             );
           }
