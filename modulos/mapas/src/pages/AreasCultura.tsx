@@ -3,6 +3,9 @@ import { Link, useParams } from 'react-router-dom';
 import { repo } from '../data/index';
 import { areaHa, importarShape, ShapeError, type ShapeImport } from '../lib/shapes';
 import { normalizarCodigo, sugerirColunaCodigo, unirPorCodigo } from '../lib/codigoTalhao';
+import { conferirAreas } from '../lib/conferenciaAreas';
+import { casarPlantio } from '../lib/plantioPims';
+import { usePlantioPims } from '../components/usePlantioPims';
 import type { AreaCultura, Fazenda, Safra, Talhao } from '../lib/types';
 import MapaLeaflet from '../components/MapaLeaflet';
 import Modal from '../components/Modal';
@@ -102,12 +105,14 @@ export default function AreasCultura() {
   const exibidas = novas ?? salvas;
   const geoms = useMemo(() => exibidas.map((a) => a.geom), [exibidas]);
   const areaTotal = exibidas.reduce((a, x) => a + (x.areaHa || 0), 0);
-  const conferencia = useMemo(() => {
-    const base = new Set(talhoes.map((t) => normalizarCodigo(t.codigo)).filter(Boolean));
-    const semCodigo = exibidas.filter((a) => !a.codigo).length;
-    const foraDaBase = [...new Set(exibidas.map((a) => a.codigo).filter((c) => c && !base.has(c)))];
-    return { semCodigo, foraDaBase };
-  }, [exibidas, talhoes]);
+  // o que vale para o mapa é o PIMS: a área é casada com o plantio da safra pelo código, esteja ou não no shape da fazenda
+  const arquivoPims = usePlantioPims();
+  const pims = useMemo(
+    () => (arquivoPims && safra && fazenda ? (casarPlantio(arquivoPims, safra, fazenda, talhoes, exibidas)?.porCodigo ?? null) : null),
+    [arquivoPims, safra, fazenda, talhoes, exibidas],
+  );
+  const conferencia = useMemo(() => conferirAreas(exibidas, talhoes, pims), [exibidas, talhoes, pims]);
+  const lista = (codigos: string[]) => `${codigos.slice(0, 15).join(', ')}${codigos.length > 15 ? '…' : ''}`;
   const props = useMemo(() => imp?.feicoes.map((f) => f.props) ?? [], [imp]);
 
   async function gravar(lista: AreaCultura[]) {
@@ -227,16 +232,23 @@ export default function AreasCultura() {
               <small>Áreas com o mesmo código viram uma só (MultiPolygon).</small>
             </label>
           )}
-          {exibidas.length > 0 && (conferencia.semCodigo > 0 || conferencia.foraDaBase.length > 0) && (
+          {exibidas.length > 0 && arquivoPims !== undefined && (conferencia.semCodigo > 0 || (conferencia.foraDoPims?.length ?? 0) > 0) && (
             <Aviso tipo="alerta" titulo="Conferência dos códigos">
               {conferencia.semCodigo > 0 && <p>{conferencia.semCodigo} área(s) sem código: ficam sempre "a plantar".</p>}
-              {conferencia.foraDaBase.length > 0 && (
+              {conferencia.foraDoPims && conferencia.foraDoPims.length > 0 && (
                 <p>
-                  Códigos que não existem nos talhões base: {conferencia.foraDaBase.slice(0, 15).join(', ')}
-                  {conferencia.foraDaBase.length > 15 ? '…' : ''} (ainda são casados com o PIMS normalmente).
+                  Códigos que não existem no PIMS da {safra?.nome ?? 'safra'}: {lista(conferencia.foraDoPims)}. No mapa ficam "a plantar" e
+                  "Sem variedade".
                 </p>
               )}
             </Aviso>
+          )}
+          {exibidas.length > 0 && arquivoPims !== undefined && conferencia.soForaDaBase.length > 0 && (
+            <small className="suave">
+              {conferencia.foraDoPims
+                ? `${conferencia.soForaDaBase.length} código(s) não estão no shape da fazenda (talhões base): ${lista(conferencia.soForaDaBase)}. Estão no PIMS e são casados normalmente; no mapa, o rótulo é o do talhão base.`
+                : `Sem plantio do PIMS desta safra para conferir os códigos. Não estão no shape da fazenda (talhões base): ${lista(conferencia.soForaDaBase)}.`}
+            </small>
           )}
           {exibidas.length === 0 && <p className="suave">Nenhuma área da cultura cadastrada: o mapa pinta os talhões base.</p>}
           <div className="linha linha-fim">
