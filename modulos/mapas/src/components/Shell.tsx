@@ -58,6 +58,44 @@ const ITENS: ItemNav[] = [
     ativo: (c) => c === '/mapas/novo',
   },
   {
+    para: '/variedades',
+    texto: 'Mapas de variedade',
+    icone: svg(
+      <>
+        <path d="M12 21v-9" />
+        <path d="M12 12C12 8 9 6 5 6c0 4 3 6 7 6Z" />
+        <path d="M12 12c0-4 3-7 7-7 0 4-3 7-7 7Z" />
+      </>,
+    ),
+    ativo: (c) => c === '/variedades' || (c.startsWith('/variedades/') && c !== '/variedades/novo' && c !== '/variedades/cores'),
+  },
+  {
+    para: '/variedades/novo',
+    texto: 'Novo mapa de variedade',
+    icone: svg(
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="16" />
+        <line x1="8" y1="12" x2="16" y2="12" />
+      </>,
+    ),
+    ativo: (c) => c === '/variedades/novo',
+  },
+  {
+    para: '/variedades/cores',
+    texto: 'Cores das variedades',
+    icone: svg(
+      <>
+        <circle cx="13.5" cy="6.5" r="1.5" />
+        <circle cx="17.5" cy="10.5" r="1.5" />
+        <circle cx="8.5" cy="7.5" r="1.5" />
+        <path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4A5.6 5.6 0 0 0 22 10c0-4.4-4.5-8-10-8Z" />
+      </>,
+    ),
+    ativo: (c) => c === '/variedades/cores',
+    admin: true,
+  },
+  {
     para: '/fazendas',
     texto: 'Fazendas',
     icone: svg(

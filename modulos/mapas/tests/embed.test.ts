@@ -66,6 +66,10 @@ describe('tituloDaRota', () => {
     expect(tituloDaRota('/safras')).toBe('Safras e plantio');
     expect(tituloDaRota('/safras/s1/plantio/f1')).toBe('Safras e plantio');
     expect(tituloDaRota('/safras/s1/areas/f1')).toBe('Safras e plantio');
+    expect(tituloDaRota('/variedades/novo')).toBe('Novo mapa de variedade');
+    expect(tituloDaRota('/variedades')).toBe('Mapas de variedade');
+    expect(tituloDaRota('/variedades/cores')).toBe('Cores das variedades');
+    expect(tituloDaRota('/variedades/abc-123')).toBe('Mapa de variedade salvo');
     expect(tituloDaRota('/login')).toBe('Mapas');
     expect(tituloDaRota('/')).toBe('Mapas');
     expect(tituloDaRota('/config')).toBe('Mapas');

@@ -9,7 +9,8 @@ import '../components/editor/editor.css';
 import { baixarDeUrl, nomeArquivoMapa } from '../lib/exportar';
 import { fmtPeriodo, parseIsoData } from '../lib/format';
 import { extensaoImagem, rotuloBaixarHistorico } from '../lib/historico';
-import type { Fazenda, MapaSalvo, Safra } from '../lib/types';
+import type { Fazenda, MapaSalvo, Safra, TipoMapa } from '../lib/types';
+import { fmtAreaHa } from '../lib/variedades';
 
 interface Item {
   mapa: MapaSalvo;
@@ -22,8 +23,14 @@ const dataCurta = (iso: string) => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('pt-BR');
 };
 
-/** Histórico de mapas gerados. */
-export default function Mapas() {
+const TEXTOS: Record<TipoMapa, { titulo: string; base: string; vazio: string; prefixo: string }> = {
+  chuva: { titulo: 'Mapas de chuva', base: '/mapas', vazio: 'com o CSV da ZEUS', prefixo: 'MAPA_CHUVA' },
+  variedade: { titulo: 'Mapas de variedade', base: '/variedades', vazio: 'de uma fazenda e safra', prefixo: 'MAPA_VARIEDADE' },
+};
+
+/** Histórico de mapas gerados (de chuva ou de variedade). */
+export default function Mapas({ tipo = 'chuva' }: { tipo?: TipoMapa }) {
+  const tx = TEXTOS[tipo];
   const location = useLocation();
   // só quem cadastra fazenda de mapa (administrador que vê todas as fazendas) recebe a dica de cadastrar uma
   const admin = useAdminSemRestricao();
@@ -54,7 +61,7 @@ export default function Mapas() {
     (async () => {
       try {
         const r = repo();
-        const [ms, fs, ss] = await Promise.all([r.listarMapas(), r.listarFazendas(), r.listarSafras()]);
+        const [ms, fs, ss] = await Promise.all([r.listarMapas(tipo), r.listarFazendas(), r.listarSafras()]);
         const lista = await Promise.all(
           ms.map(async (mapa) => {
             const thumb = mapa.thumbPath ? registrar(await r.urlArquivo(mapa.thumbPath).catch(() => null)) : null;
@@ -76,7 +83,7 @@ export default function Mapas() {
       ativo = false;
       urls.forEach((u) => URL.revokeObjectURL(u));
     };
-  }, []);
+  }, [tipo]);
 
   const baixar = async (m: MapaSalvo) => {
     if (!m.pngPath) return;
@@ -87,7 +94,7 @@ export default function Mapas() {
       // A extensão segue o tipo do arquivo guardado: JPEG (mapas novos) ou PNG (mapas antigos).
       url = await repo().urlArquivo(m.pngPath);
       const fazenda = m.config.textos.fazenda || nomeFazenda(m.fazendaId);
-      await baixarDeUrl(url, (blob) => nomeArquivoMapa(fazenda, m.config.textos.periodo, extensaoImagem(blob.type)));
+      await baixarDeUrl(url, (blob) => nomeArquivoMapa(fazenda, tipo === 'variedade' ? m.config.textos.safra : m.config.textos.periodo, extensaoImagem(blob.type), tx.prefixo));
     } catch (e) {
       setErro(`Não foi possível baixar a imagem: ${mensagemDeErro(e)}`);
     } finally {
@@ -121,10 +128,10 @@ export default function Mapas() {
     <div className="pagina">
       <div className="pagina-cabecalho">
         <div>
-          <h1>Mapas de chuva</h1>
+          <h1>{tx.titulo}</h1>
           <p className="subtitulo">Histórico dos mapas gerados. Abra um mapa para editar, atualizar ou salvar uma cópia.</p>
         </div>
-        <Link to="/mapas/novo" className="botao botao-primario">
+        <Link to={`${tx.base}/novo`} className="botao botao-primario">
           Novo mapa
         </Link>
       </div>
@@ -145,12 +152,11 @@ export default function Mapas() {
           <p>Nenhum mapa gerado ainda.</p>
           {admin ? (
             <p className="suave">
-              Comece cadastrando uma <Link to="/fazendas/nova">fazenda</Link>, depois crie um <Link to="/mapas/novo">novo mapa</Link> com o CSV
-              da ZEUS.
+              Comece cadastrando uma <Link to="/fazendas/nova">fazenda</Link>, depois crie um <Link to={`${tx.base}/novo`}>novo mapa</Link> {tx.vazio}.
             </p>
           ) : (
             <p className="suave">
-              Crie um <Link to="/mapas/novo">novo mapa</Link> com o CSV da ZEUS.
+              Crie um <Link to={`${tx.base}/novo`}>novo mapa</Link> {tx.vazio}.
             </p>
           )}
         </div>
@@ -160,21 +166,24 @@ export default function Mapas() {
           <div className="grade-mapas">
             {visiveis.map(({ mapa, thumb }) => (
               <article key={mapa.id} className="cartao mapa-cartao">
-                <Link to={`/mapas/${mapa.id}`} aria-label={`Abrir ${mapa.titulo}`}>
+                <Link to={`${tx.base}/${mapa.id}`} aria-label={`Abrir ${mapa.titulo}`}>
                   {thumb ? <img className="miniatura" src={thumb} alt="" /> : <div className="miniatura miniatura-vazia">sem miniatura</div>}
                 </Link>
                 <div className="mapa-cartao-corpo">
                   <h3>{nomeFazenda(mapa.fazendaId)}</h3>
                   <span className="suave">
-                    {fmtPeriodo(parseIsoData(mapa.periodoInicio), parseIsoData(mapa.periodoFim)) || 'sem período'}
-                    {nomeSafra(mapa.safraId) ? ` · ${nomeSafra(mapa.safraId)}` : ''}
+                    {tipo === 'variedade'
+                      ? nomeSafra(mapa.safraId) || 'sem safra'
+                      : `${fmtPeriodo(parseIsoData(mapa.periodoInicio), parseIsoData(mapa.periodoFim)) || 'sem período'}${nomeSafra(mapa.safraId) ? ` · ${nomeSafra(mapa.safraId)}` : ''}`}
                   </span>
                   <span className="suave">
-                    Média {mm(mapa.resumo.geral.media)} mm
-                    {mapa.resumo.plantado ? ` · plantado ${mm(mapa.resumo.plantado.media)} mm` : ''} · criado em {dataCurta(mapa.criadoEm)}
+                    {tipo === 'variedade'
+                      ? `${mapa.resumo.variedades?.itens.filter((i) => i.chave).length ?? 0} variedades · ${fmtAreaHa(mapa.resumo.variedades?.totalHa ?? 0)} ha`
+                      : `Média ${mm(mapa.resumo.geral.media)} mm${mapa.resumo.plantado ? ` · plantado ${mm(mapa.resumo.plantado.media)} mm` : ''}`}
+                    {` · criado em ${dataCurta(mapa.criadoEm)}`}
                   </span>
                   <div className="linha">
-                    <Link to={`/mapas/${mapa.id}`} className="botao botao-pequeno">
+                    <Link to={`${tx.base}/${mapa.id}`} className="botao botao-pequeno">
                       Abrir
                     </Link>
                     {mapa.pngPath ? (

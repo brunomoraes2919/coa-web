@@ -72,6 +72,8 @@ export default function NovoMapa() {
       .then((m) => {
         if (!ativo) return;
         if (!m) return setErro('Mapa não encontrado no histórico.');
+        // um mapa de variedade aberto pelo endereço do de chuva vai para a tela dele
+        if (m.tipo === 'variedade') return navigate(`/variedades/${m.id}`, { replace: true });
         abertoRef.current = m.id;
         setMapaAtual(m);
         setFazendaId(m.fazendaId);
@@ -87,7 +89,7 @@ export default function NovoMapa() {
     return () => {
       ativo = false;
     };
-  }, [id]);
+  }, [id, navigate]);
 
   const automaticos = useMemo(
     () =>

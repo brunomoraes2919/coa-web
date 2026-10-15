@@ -20,6 +20,10 @@ export function emEmbed(loc?: Pick<Location, 'search'>): boolean {
 export function tituloDaRota(rota: string): string {
   const r = rota.length > 1 ? rota.replace(/\/+$/, '') : rota;
   const em = (base: string) => r === base || r.startsWith(`${base}/`);
+  if (r === '/variedades/novo') return 'Novo mapa de variedade';
+  if (r === '/variedades') return 'Mapas de variedade';
+  if (r === '/variedades/cores') return 'Cores das variedades';
+  if (r.startsWith('/variedades/')) return 'Mapa de variedade salvo';
   if (r === '/mapas/novo') return 'Novo mapa de chuva';
   if (r === '/mapas') return 'Mapas salvos';
   if (r.startsWith('/mapas/')) return 'Mapa salvo';

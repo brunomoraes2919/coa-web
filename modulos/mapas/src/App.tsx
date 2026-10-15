@@ -16,6 +16,8 @@ import Login, { EntrePeloCoa } from './pages/Login';
 // Telas carregadas sob demanda (o mapa Leaflet, o leitor de shapes e o editor ficam fora do pacote inicial)
 const Mapas = lazy(() => import('./pages/Mapas'));
 const NovoMapa = lazy(() => import('./pages/NovoMapa'));
+const NovoMapaVariedade = lazy(() => import('./pages/NovoMapaVariedade'));
+const CoresVariedades = lazy(() => import('./pages/CoresVariedades'));
 const Fazendas = lazy(() => import('./pages/Fazendas'));
 const FazendaNova = lazy(() => import('./pages/FazendaNova'));
 const FazendaEditar = lazy(() => import('./pages/FazendaEditar'));
@@ -217,9 +219,12 @@ export default function App() {
             <Route path="/config" element={fixo ? <Navigate to="/mapas" replace /> : <Configuracoes acessoDados={permitido} />} />
             <Route element={<RequerSessao permitido={permitido} carregando={carregando} />}>
               <Route path="/" element={<Navigate to="/mapas" replace />} />
-              <Route path="/mapas" element={<Tela><Mapas /></Tela>} />
+              <Route path="/mapas" element={<Tela><Mapas key="chuva" tipo="chuva" /></Tela>} />
               <Route path="/mapas/novo" element={<Tela><NovoMapa key="novo" /></Tela>} />
               <Route path="/mapas/:id" element={<Tela><NovoMapa key="salvo" /></Tela>} />
+              <Route path="/variedades" element={<Tela><Mapas key="variedade" tipo="variedade" /></Tela>} />
+              <Route path="/variedades/novo" element={<Tela><NovoMapaVariedade key="novo" /></Tela>} />
+              <Route path="/variedades/:id" element={<Tela><NovoMapaVariedade key="salvo" /></Tela>} />
               <Route element={<SomenteAdmin />}>
                 <Route path="/fazendas" element={<Tela><Fazendas /></Tela>} />
                 <Route element={<SomenteAdminSemRestricao />}>
@@ -229,6 +234,7 @@ export default function App() {
                 <Route path="/safras" element={<Tela><Safras /></Tela>} />
                 <Route path="/safras/:safraId/plantio/:fazendaId" element={<Tela><Plantio /></Tela>} />
                 <Route path="/safras/:safraId/areas/:fazendaId" element={<Tela><AreasCultura /></Tela>} />
+                <Route path="/variedades/cores" element={<Tela><CoresVariedades /></Tela>} />
               </Route>
               <Route path="*" element={<Navigate to="/mapas" replace />} />
             </Route>

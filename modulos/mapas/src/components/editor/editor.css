@@ -111,3 +111,6 @@
   .previa-vazia { height: auto !important; min-height: 96px; padding: 14px; font-size: 0.92rem; }
   .integracao-zeus .botao { flex: 1 1 auto; }
 }
+
+/* amostra da cor da variedade (tabela do mapa de variedade e cadastro de cores) */
+.amostra-cor { display: inline-block; width: 18px; height: 12px; border-radius: 2px; border: 1px solid #8a8a8a; vertical-align: middle; }

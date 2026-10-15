@@ -11,6 +11,8 @@ interface Props {
   onChange(parcial: Partial<Aparencia>): void;
   /** nome da paleta escolhida no modo automático (para mostrar ao usuário) */
   paletaAutomatica: string | null;
+  /** 'variedade' esconde as opções que só valem para a chuva (escala de cores, plantados, PICs, legenda compacta) */
+  modo?: 'chuva' | 'variedade';
 }
 
 const ESTILOS: { id: EstiloPlantado; nome: string }[] = [
@@ -44,7 +46,8 @@ const QUADROS: { id: string; nome: string }[] = [
 /** valor do seletor "Quadros" → LayoutConfig.quadros (o 1 é número) */
 const lerQuadros = (v: string): Quadros => (v === '1' ? 1 : v === 'setor' ? 'setor' : 'auto');
 
-export function SecaoAparencia({ config, onChange, paletaAutomatica }: Props) {
+export function SecaoAparencia({ config, onChange, paletaAutomatica, modo = 'chuva' }: Props) {
+  const chuva = modo === 'chuva';
   const marca = (campo: 'mostrarRotulosTalhoes' | 'mostrarValoresPics' | 'mostrarGrade' | 'legendaCompacta', rotulo: string) => (
     <label className="linha">
       <input type="checkbox" checked={config[campo]} onChange={(e) => onChange({ [campo]: e.target.checked })} />
@@ -96,44 +99,48 @@ export function SecaoAparencia({ config, onChange, paletaAutomatica }: Props) {
           </select>
         </label>
       </div>
-      <label className="campo">
-        <span>Escala de cores</span>
-        <select value={config.paletaId} onChange={(e) => onChange({ paletaId: e.target.value })}>
-          <option value="auto">Automática{paletaAutomatica ? ` — ${paletaAutomatica}` : ''}</option>
-          {PALETTES.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.nome}
-            </option>
-          ))}
-        </select>
-        <small>A automática escolhe pela chuva máxima, com as cores dos estilos do COA.</small>
-      </label>
-      <label className="campo">
-        <span>Talhões plantados</span>
-        <select value={config.estiloPlantado} onChange={(e) => onChange({ estiloPlantado: e.target.value as EstiloPlantado })}>
-          {ESTILOS.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.nome}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="campo">
-        <span>Destaque do valor dos PICs</span>
-        <select value={config.destaquePics ?? 'escuro'} onChange={(e) => onChange({ destaquePics: e.target.value as DestaquePics })}>
-          {DESTAQUES_PICS.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.nome}
-            </option>
-          ))}
-        </select>
-        <small>Compare na prévia: o contorno escuro lê bem sobre qualquer cor; o vermelho destaca mais em mapas azuis e verdes.</small>
-      </label>
+      {chuva && (
+        <>
+          <label className="campo">
+            <span>Escala de cores</span>
+            <select value={config.paletaId} onChange={(e) => onChange({ paletaId: e.target.value })}>
+              <option value="auto">Automática{paletaAutomatica ? ` — ${paletaAutomatica}` : ''}</option>
+              {PALETTES.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome}
+                </option>
+              ))}
+            </select>
+            <small>A automática escolhe pela chuva máxima, com as cores dos estilos do COA.</small>
+          </label>
+          <label className="campo">
+            <span>Talhões plantados</span>
+            <select value={config.estiloPlantado} onChange={(e) => onChange({ estiloPlantado: e.target.value as EstiloPlantado })}>
+              {ESTILOS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="campo">
+            <span>Destaque do valor dos PICs</span>
+            <select value={config.destaquePics ?? 'escuro'} onChange={(e) => onChange({ destaquePics: e.target.value as DestaquePics })}>
+              {DESTAQUES_PICS.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.nome}
+                </option>
+              ))}
+            </select>
+            <small>Compare na prévia: o contorno escuro lê bem sobre qualquer cor; o vermelho destaca mais em mapas azuis e verdes.</small>
+          </label>
+        </>
+      )}
       <div className="pilha pilha-justa">
         {marca('mostrarRotulosTalhoes', 'Mostrar nome dos talhões')}
-        {marca('mostrarValoresPics', 'Mostrar chuva de cada PIC')}
+        {chuva && marca('mostrarValoresPics', 'Mostrar chuva de cada PIC')}
         {marca('mostrarGrade', 'Mostrar coordenadas nas bordas')}
-        {marca('legendaCompacta', 'Legenda só com as classes presentes no mapa')}
+        {chuva && marca('legendaCompacta', 'Legenda só com as classes presentes no mapa')}
       </div>
       <div>
         <button type="button" className="botao botao-pequeno" onClick={() => onChange({ extent: null })} disabled={!config.extent}>
