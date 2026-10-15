@@ -89,7 +89,7 @@ Tudo dimensionado em `vh`/`vmin` com `clamp()`, para ficar proporcional de 1366�
 |---|---|
 | Quadro sem site | No quadro: marca d'água da logo do COA e "Quadro vazio. Adicione sites em Montagens de Painel." |
 | Nenhuma montagem na TV | Tela toda: "Nenhuma montagem na TV. Escolha uma em Montagens de Painel." |
-| Sem login no computador | Tela toda: "Entre no COA WEB neste computador" e botão "Entrar", que leva ao login (`/`) |
+| Sem login no computador | Tela toda: "Entre no COA WEB neste computador" e botão "Entrar", que abre o login (`/`) numa janela à parte (a aba da TV não sai do painel); a TV se recarrega a cada minuto e volta sozinha quando houver sessão. Recomendação no README: um login só da TV (o "Sair" do COA WEB encerra as sessões do usuário em todos os computadores) |
 | Login sem a categoria | Tela toda: "Este login não tem acesso a Montagens de Painel." |
 | Sem conexão (3 falhas seguidas) | Selo na faixa do topo: "Sem conexão desde 07:42". Os quadros seguem com o que tinham; o selo some na próxima consulta que der certo |
 

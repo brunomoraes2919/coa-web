@@ -34,6 +34,7 @@
   let wake = null;
   let paradoTimer = null;
   let mexerTimer = null;
+  let recarregarTimer = null; // recarga marcada por um aviso (sem login, sem conexão…)
   const quadros = [];
 
   /* ------------------------------ um quadro ------------------------------ */
@@ -165,24 +166,29 @@
     document.title = nova.nome + ' · TV do COA';
   }
 
-  function aviso(titulo, texto, entrar) {
+  /** Tela de aviso no lugar dos quadros (textos e recarga em PainelLogica.avisoDaTv). */
+  function aviso(codigo) {
+    const a = L.avisoDaTv(codigo);
     quadros.forEach((q) => { q.parar(); q.el.hidden = true; });
     montagem = null;
     $('tv-nome').textContent = '';
     $('tv-grade').hidden = true;
     $('tv-aviso').hidden = false;
-    $('tv-aviso-titulo').textContent = titulo;
-    $('tv-aviso-texto').textContent = texto;
-    $('tv-aviso-botao').hidden = !entrar;
+    $('tv-aviso-titulo').textContent = a.titulo;
+    $('tv-aviso-texto').textContent = a.texto;
+    $('tv-aviso-botao').hidden = !a.entrar;
+    clearTimeout(recarregarTimer);
+    if (a.recarregarMs > 0) recarregarTimer = setTimeout(() => location.reload(), a.recarregarMs);
   }
 
   async function carregar() {
     const r = await fonte.daTv();
     marca = L.assinaturaDaTv(r);
     if (!r.montagem) {
-      aviso('Nenhuma montagem na TV', 'Escolha uma em Montagens de Painel, no COA WEB. A TV troca sozinha em até 1 minuto.');
+      aviso('sem-montagem');
       return;
     }
+    clearTimeout(recarregarTimer); // a montagem voltou: a recarga marcada por um aviso não precisa mais acontecer
     $('tv-aviso').hidden = true;
     $('tv-grade').hidden = false;
     aplicar(L.normalizarMontagem(r.montagem));
@@ -206,7 +212,7 @@
     } catch (e) {
       if (e && e.codigo === 'sem-login') {
         marca = null; // quando alguém entrar de novo, a próxima conferência relê a montagem
-        aviso('Entre no COA WEB neste computador', 'A sessão deste computador terminou. Entre de novo para a TV voltar a mostrar a montagem do dia.', true);
+        aviso('sessao-terminou');
       } else {
         conexao(false);
       }
@@ -299,17 +305,15 @@
       await fonte.pronto();
     } catch (e) {
       $('carregando').classList.add('fora');
-      if (e.codigo === 'sem-categoria') aviso('Sem acesso a Montagens de Painel', 'Este login não tem a categoria Montagens de Painel. Peça a liberação na página Usuários do COA WEB.');
-      else if (e.codigo === 'sem-login') aviso('Entre no COA WEB neste computador', 'A TV mostra a montagem do dia depois que alguém entra no COA WEB neste navegador.', true);
-      else aviso('Sem conexão com o COA WEB', 'A página tenta de novo sozinha em 1 minuto.');
-      setTimeout(() => location.reload(), 60000); // depois do login (em outra aba) ou da volta da internet, a TV retoma sozinha
+      // o aviso marca a recarga: depois do login (na janela à parte) ou da volta da internet, a TV retoma sozinha
+      aviso(e.codigo === 'sem-categoria' || e.codigo === 'sem-login' ? e.codigo : 'sem-conexao');
       return;
     }
     try {
       await carregar();
     } catch (e) {
       conexao(false);
-      aviso('Sem conexão com o COA WEB', 'A TV tenta de novo sozinha a cada minuto.');
+      aviso('sem-conexao');
     }
     $('carregando').classList.add('fora');
     setInterval(conferir, CONFERIR_MS);

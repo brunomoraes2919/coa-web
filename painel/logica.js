@@ -160,6 +160,22 @@
     return { nome: n.nome, divisao: n.divisao, quadros: n.quadros };
   }
 
+  /**
+   * O que o editor grava de uma montagem: { dados, erroNome }. Com o nome digitado vazio ou repetido, o resto da
+   * montagem (divisão, quadros, sites) é gravado assim mesmo, com o último nome salvo (m.nomeSalvo): nenhuma
+   * mudança fica presa por causa do nome.
+   */
+  function dadosParaSalvar(m, montagens) {
+    const nome = texto(m.nome).trim();
+    // a repetição é contra o que está no banco: o nome digitado e ainda não salvo de outra montagem não conta
+    const noBanco = montagens.map((o) => ({ id: o.id, nome: o.nomeSalvo !== undefined ? o.nomeSalvo : o.nome }));
+    let erroNome = null;
+    if (!nome) erroNome = 'Dê um nome à montagem para salvar.';
+    else if (nomeRepetido(nome, noBanco, m.id)) erroNome = 'Já existe uma montagem com esse nome.';
+    const dados = paraGravar(erroNome ? Object.assign({}, m, { nome: m.nomeSalvo }) : m);
+    return { dados, erroNome };
+  }
+
   function quadrosVisiveis(m) { return m.quadros.slice(0, divisao(m.divisao).areas.length); }
 
   function resumoMontagem(m) {
@@ -295,9 +311,23 @@
     return linha.montagem_id + '|' + ((linha.montagem && linha.montagem.atualizado_em) || '');
   }
 
+  /* O que a TV mostra quando não há montagem na tela, e se ela se recarrega sozinha (0 = não). Sem login, o botão
+     Entrar abre o COA WEB numa janela à parte e a TV se recarrega a cada minuto: quando alguém entra, ela volta
+     sozinha, sem tirar a aba da TV do painel (no modo quiosque não haveria como voltar). */
+  const AVISOS_DA_TV = {
+    'sem-montagem': { titulo: 'Nenhuma montagem na TV', texto: 'Escolha uma em Montagens de Painel, no COA WEB. A TV troca sozinha em até 1 minuto.', entrar: false, recarregarMs: 0 },
+    'sem-login': { titulo: 'Entre no COA WEB neste computador', texto: 'Clique em Entrar: o login abre numa janela à parte. Depois de entrar, feche essa janela; a TV volta sozinha em até 1 minuto.', entrar: true, recarregarMs: 60000 },
+    'sessao-terminou': { titulo: 'Entre no COA WEB neste computador', texto: 'A sessão deste computador terminou. Clique em Entrar: o login abre numa janela à parte; depois de entrar, feche essa janela e a TV volta sozinha em até 1 minuto.', entrar: true, recarregarMs: 60000 },
+    'sem-categoria': { titulo: 'Sem acesso a Montagens de Painel', texto: 'Este login não tem a categoria Montagens de Painel. Peça a liberação na página Usuários do COA WEB.', entrar: false, recarregarMs: 300000 },
+    'sem-conexao': { titulo: 'Sem conexão com o COA WEB', texto: 'A TV tenta de novo sozinha a cada minuto.', entrar: false, recarregarMs: 60000 },
+  };
+  function avisoDaTv(codigo) {
+    return Object.assign({}, AVISOS_DA_TV[codigo] || AVISOS_DA_TV['sem-conexao']);
+  }
+
   return {
     PRE_CARGA_MS, LIMIAR_PRE_CARGA_MS, ESPERA_MAX_MS, ESMAECER_MS,
-    duracaoMs, proximoIndice, atrasoPreCarga, assinaturaQuadro, planoDeAtualizacao, assinaturaDaTv,
+    duracaoMs, proximoIndice, atrasoPreCarga, assinaturaQuadro, planoDeAtualizacao, assinaturaDaTv, avisoDaTv, dadosParaSalvar,
     DIVISOES, TOTAL_QUADROS, MAX_SITES, TEMPOS, RECARGAS, TEMPO_PADRAO, TEMPOS_INTERNOS, CAMADAS_PREVISAO,
     divisao, tempoMaisProximo, rotuloTempo, plural, nomeDoHost, lerEndereco, enderecoNoNavegador,
     novoId, normalizarSite, normalizarQuadro, normalizarMontagem, paraGravar,

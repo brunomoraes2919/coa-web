@@ -27,8 +27,10 @@ login dentro do quadro: na TV, a tecla **I** libera mexer nos sites por 2 minuto
 
 ## Deixar a TV abrindo sozinha (Linux)
 
-1. No Chrome/Chromium da TV, entre uma vez no COA WEB com um login que tenha a categoria **Montagens de Painel** e
-   as categorias das páginas que vão nos quadros (Operacional, Previsão do Tempo…).
+1. Crie um **login só da TV** (página Usuários) com a categoria **Montagens de Painel** e as categorias das páginas
+   que vão nos quadros (Operacional, Previsão do Tempo…), e entre com ele uma vez no Chrome/Chromium da TV. Não use
+   esse login em outro lugar: o "Sair" do COA WEB encerra as sessões do usuário em todos os computadores, e um login
+   pessoal usado na TV derrubaria a TV quando a pessoa saísse do PC dela.
 2. Teste o modo quiosque (sai com Alt+F4):
    `chromium --kiosk --noerrdialogs --disable-session-crashed-bubble https://coa-web-teal.vercel.app/painel/?tv=1`
    (ou `google-chrome` no lugar de `chromium`).
@@ -47,6 +49,10 @@ login dentro do quadro: na TV, a tecla **I** libera mexer nos sites por 2 minuto
 Na TV: **I** libera mexer nos sites por 2 min; **F** pede tela cheia (no quiosque já está). A TV confere a montagem
 a cada minuto e recarrega sozinha quando o painel é publicado de novo: ninguém precisa dar F5. Ao publicar mudança
 em `painel/`, troque o `?v=` do arquivo em `painel/index.html`.
+
+**Se a TV pedir login** ("Entre no COA WEB neste computador"): clique em **Entrar**. O login abre numa janela à
+parte (a aba da TV fica no painel). Entre com o login da TV e feche essa janela (Ctrl+W); a TV se recarrega a cada
+minuto e volta sozinha. Sem internet, ela também tenta de novo a cada minuto.
 
 ## Testes
 

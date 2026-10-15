@@ -268,26 +268,35 @@
     salvar.ocupado = true;
     let erro = null;
     let erroDeNome = false;
+    let avisoNome = null; // { id, texto }: o aviso embaixo do nome só aparece se for da montagem aberta
     let tocouTv = false;
     for (const id of Array.from(salvar.pendentes)) {
       const m = estado.montagens.find((x) => x.id === id);
       salvar.pendentes.delete(id);
       if (!m) continue;
-      if (!m.nome.trim()) { salvar.pendentes.add(id); erro = 'Dê um nome à montagem para salvar.'; erroDeNome = true; continue; }
-      if (L.nomeRepetido(m.nome, estado.montagens, m.id)) { salvar.pendentes.add(id); erro = 'Já existe uma montagem com esse nome.'; erroDeNome = true; continue; }
+      // nome vazio ou repetido não segura o resto: grava com o último nome salvo e avisa
+      const { dados, erroNome } = L.dadosParaSalvar(m, estado.montagens);
       try {
-        const linha = await fonte.salvar(id, L.paraGravar(m));
+        const linha = await fonte.salvar(id, dados);
         if (linha && linha.atualizado_em) m.atualizadoEm = linha.atualizado_em;
+        m.nomeSalvo = dados.nome;
         if (id === estado.tvId) tocouTv = true;
+        if (erroNome) {
+          erroDeNome = true;
+          erro = erroNome + ' O resto foi salvo com o nome "' + dados.nome + '".';
+          avisoNome = { id, texto: erroNome };
+        }
       } catch (e) {
         salvar.pendentes.add(id);
         erroDeNome = e.codigo === 'nome-repetido';
         erro = erroDeNome ? e.message : 'Não salvou: ' + (e.message || 'sem conexão');
+        if (erroDeNome) avisoNome = { id, texto: e.message };
       }
     }
     salvar.ocupado = false;
-    $('aviso-nome').hidden = !erroDeNome;
-    $('aviso-nome').textContent = erroDeNome ? erro : '';
+    const avisoAqui = avisoNome && avisoNome.id === estado.sel;
+    $('aviso-nome').hidden = !avisoAqui;
+    $('aviso-nome').textContent = avisoAqui ? avisoNome.texto : '';
     if (erro) situacao(erro, true, !erroDeNome);
     else if (!salvar.pendentes.size) situacao(tocouTv ? 'Salvo · a TV atualiza em até 1 min' : 'Salvo');
     if (salvar.denovo) { salvar.denovo = false; gravar(); }
@@ -311,6 +320,7 @@
     situacao(base ? 'Duplicando…' : 'Criando…');
     try {
       const m = L.normalizarMontagem(await fonte.criar(dados));
+      m.nomeSalvo = m.nome;
       estado.montagens.push(m);
       estado.sel = m.id;
       estado.quadro = 0;
@@ -525,7 +535,8 @@
     try {
       await fonte.pronto();
       const r = await fonte.listar();
-      estado.montagens = (r.montagens || []).map(L.normalizarMontagem);
+      // nomeSalvo: o nome que está no banco (com o nome digitado inválido, o resto é gravado com ele)
+      estado.montagens = (r.montagens || []).map((linha) => { const m = L.normalizarMontagem(linha); m.nomeSalvo = m.nome; return m; });
       estado.tvId = r.tvId || null;
       const primeira = L.ordenarMontagens(estado.montagens, estado.tvId)[0];
       estado.sel = primeira ? primeira.id : null;

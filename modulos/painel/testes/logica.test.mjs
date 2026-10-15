@@ -200,3 +200,51 @@ test('data por extenso e hora', () => {
   assert.equal(L.dataPorExtenso(d), 'Quinta-feira, 15 de outubro')
   assert.equal(L.horaMinuto(d), '07:11')
 })
+
+test('dadosParaSalvar: nome válido vai como está', () => {
+  const m = montagem('4', [1, 0, 0, 0])
+  m.nome = '  Plantio  '
+  m.nomeSalvo = 'Antigo'
+  const r = L.dadosParaSalvar(m, [m])
+  assert.equal(r.erroNome, null)
+  assert.equal(r.dados.nome, 'Plantio')
+})
+
+test('dadosParaSalvar: nome vazio grava o resto com o último nome salvo', () => {
+  const m = montagem('2a', [2, 1, 0, 0])
+  m.nome = '   '
+  m.nomeSalvo = 'Plantio'
+  const r = L.dadosParaSalvar(m, [m])
+  assert.equal(r.erroNome, 'Dê um nome à montagem para salvar.')
+  assert.equal(r.dados.nome, 'Plantio')
+  assert.equal(r.dados.divisao, '2a')
+  assert.equal(r.dados.quadros[0].sites.length, 2)
+})
+
+test('dadosParaSalvar: nome repetido (sem diferença de maiúsculas) grava o resto com o último nome salvo', () => {
+  const a = montagem('4', [1, 0, 0, 0])
+  a.nome = 'colheita'
+  a.nomeSalvo = 'Plantio'
+  const b = { id: 'm2', nome: 'Colheita' }
+  const r = L.dadosParaSalvar(a, [a, b])
+  assert.equal(r.erroNome, 'Já existe uma montagem com esse nome.')
+  assert.equal(r.dados.nome, 'Plantio')
+  assert.equal(r.dados.quadros[0].sites.length, 1)
+})
+
+test('dadosParaSalvar: o nome inválido ainda não salvo de outra montagem não acusa repetição nesta', () => {
+  const a = montagem('4', [1, 0, 0, 0])
+  a.id = 'a'
+  a.nome = 'Colheita'          // digitado em A, repetido, não foi para o banco
+  a.nomeSalvo = 'Plantio'
+  const b = montagem('2a', [1, 0, 0, 0])
+  b.id = 'b'
+  b.nome = 'Colheita'
+  b.nomeSalvo = 'Colheita'
+  const rb = L.dadosParaSalvar(b, [a, b])
+  assert.equal(rb.erroNome, null)
+  assert.equal(rb.dados.nome, 'Colheita')
+  const ra = L.dadosParaSalvar(a, [a, b])
+  assert.equal(ra.erroNome, 'Já existe uma montagem com esse nome.')
+  assert.equal(ra.dados.nome, 'Plantio')
+})
