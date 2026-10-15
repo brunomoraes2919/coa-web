@@ -13,6 +13,9 @@
   const GRAFICO = { largura: 1600, altura: 640 };
   // coluna dos nomes da faixa de números (mm); o gráfico começa no mesmo ponto para cada dia ficar em cima da sua coluna
   const ROTULO_MM = 32;
+  // nomes das duas séries da faixa entre as temperaturas (ficam fora da legenda)
+  const FAIXA_BASE = 'faixa-base';
+  const FAIXA = 'faixa';
   let jsPdfCarregando = null;
 
   function carregarJsPdf() {
@@ -64,6 +67,14 @@
       xAxis.push({ type: 'category', gridIndex: i, data: datas, axisLabel: Object.assign({ show: i === paineis.length - 1, interval: 0, formatter: (v) => v.split(' ')[0] }, eixo), axisTick: { alignWithLabel: true } });
       if (p === 'temp') {
         yAxis.push({ type: 'value', gridIndex: i, scale: true, name: '°C', nameTextStyle: eixo, axisLabel: eixo });
+        // faixa em degradê entre a mínima e a máxima (como no modelo): uma base invisível na mínima e, empilhada nela,
+        // a altura da faixa, com a área pintada do laranja da máxima (em cima) ao azul da mínima (embaixo)
+        const faixa = { type: 'line', xAxisIndex: i, yAxisIndex: i, stack: 'faixa', symbol: 'none', silent: true, lineStyle: { opacity: 0 } };
+        series.push(Object.assign({ name: FAIXA_BASE, data: f.tn }, faixa));
+        series.push(Object.assign({
+          name: FAIXA, data: R.faixaDeTemperatura(f.tx, f.tn),
+          areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(219,138,8,0.42)' }, { offset: 1, color: 'rgba(84,112,198,0.30)' }] } },
+        }, faixa));
         series.push({ name: 'Máxima (°C)', type: 'line', xAxisIndex: i, yAxisIndex: i, data: f.tx, symbolSize: 10, lineStyle: { width: 4, color: COR.max }, itemStyle: { color: COR.max } });
         series.push({ name: 'Mínima (°C)', type: 'line', xAxisIndex: i, yAxisIndex: i, data: f.tn, symbolSize: 10, lineStyle: { width: 4, color: COR.min }, itemStyle: { color: COR.min } });
       } else {
@@ -76,7 +87,7 @@
     document.body.appendChild(div);
     const c = window.echarts.init(div, null, { renderer: 'canvas', width: GRAFICO.largura, height: GRAFICO.altura });
     try {
-      c.setOption({ animation: false, backgroundColor: '#fff', legend: { top: 0, textStyle: { fontSize: 20, color: COR.texto } }, grid, xAxis, yAxis, series });
+      c.setOption({ animation: false, backgroundColor: '#fff', legend: { top: 0, data: series.map((s) => s.name).filter((n) => n !== FAIXA_BASE && n !== FAIXA), textStyle: { fontSize: 20, color: COR.texto } }, grid, xAxis, yAxis, series });
       return c.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#fff' });
     } finally {
       c.dispose();

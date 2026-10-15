@@ -87,3 +87,7 @@ test('temperatura: dia que falta na foto mais recente vem da foto anterior da me
   assert.deepEqual(g.tx, [null, 33, 34])
   assert.equal(g.fotos.temperaturaAnterior, null)
 })
+
+test('faixa de temperatura: altura da faixa entre a mínima e a máxima de cada dia; sem um dos dois, sem faixa', () => {
+  assert.deepEqual(R.faixaDeTemperatura([31.7, 33, null, 30], [22.2, null, 21, 19.9]), [9.5, null, null, 10.1])
+})

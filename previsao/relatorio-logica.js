@@ -92,6 +92,11 @@
     return { fazendas: lista, fotoMaisRecente: fotos.length ? fotos[fotos.length - 1] : null, fontesTemperatura };
   }
 
+  /** Altura da faixa colorida entre a mínima e a máxima de cada dia (gráfico do PDF); sem um dos dois, sem faixa. */
+  function faixaDeTemperatura(tx, tn) {
+    return tx.map((max, i) => (max === null || tn[i] === null ? null : Math.round((max - tn[i]) * 10) / 10));
+  }
+
   /* As fontes padrão do jsPDF só têm o conjunto WinAnsi: Latin-1 e estes sinais. O resto vira '?' (ou o equivalente). */
   const WINANSI_EXTRA = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
   const TROCAS = { '≥': '>=', '≤': '<=' };
@@ -102,5 +107,5 @@
   }
   const nomeArquivo = (hoje) => 'previsao-fazendas-' + hoje + '.pdf';
 
-  return { DIAS_MAX, FOTOS_DIAS, somarDias, montarRelatorio, paraPdf, nomeArquivo };
+  return { DIAS_MAX, FOTOS_DIAS, somarDias, montarRelatorio, faixaDeTemperatura, paraPdf, nomeArquivo };
 });
