@@ -17,15 +17,12 @@
     return d.toISOString().slice(0, 10);
   }
 
-  /** A foto mais recente de uma fonte para uma fazenda, entre as dos últimos FOTOS_DIAS dias. */
-  function fotoMaisRecente(previsoes, fonte, unidade, hoje) {
+  /** As fotos de uma fonte para uma fazenda nos últimos FOTOS_DIAS dias, da mais recente para a mais antiga. */
+  function fotosRecentes(previsoes, fonte, unidade, hoje) {
     const desde = somarDias(hoje, -(FOTOS_DIAS - 1));
-    let melhor = null;
-    previsoes.forEach((l) => {
-      if (l.fonte !== fonte || l.unidade !== unidade || l.emitida_em < desde || l.emitida_em > hoje) return;
-      if (!melhor || l.emitida_em > melhor.emitida_em) melhor = l;
-    });
-    return melhor;
+    return previsoes
+      .filter((l) => l.fonte === fonte && l.unidade === unidade && l.emitida_em >= desde && l.emitida_em <= hoje)
+      .sort((a, b) => (a.emitida_em < b.emitida_em ? 1 : a.emitida_em > b.emitida_em ? -1 : 0));
   }
   const diasDa = (foto) => (foto && Array.isArray(foto.dias) ? foto.dias : []);
   const temTemperatura = (foto) => diasDa(foto).some((x) => num(x.tx) !== null || num(x.tn) !== null);
@@ -34,19 +31,34 @@
     return x ? num(x[campo]) : null;
   }
 
-  /** Uma fazenda: chuva da ZEUS, temperatura do Visual Crossing (ou do MET Norway), de hoje ao último dia com dado. */
+  /**
+   * Uma fazenda: chuva da ZEUS (foto mais recente), temperatura do Visual Crossing (ou do MET Norway), de hoje ao último
+   * dia com dado. Na temperatura, o dia que falta na foto mais recente vem da foto anterior da mesma fonte: a foto da
+   * manhã do MET Norway começa em amanhã, e o hoje sai da foto de ontem (a página diz de qual foto veio).
+   */
   function fazendaDoRelatorio(previsoes, fazenda, hoje) {
-    const zeus = fotoMaisRecente(previsoes, 'zeus', fazenda.unidade, hoje);
-    const vc = fotoMaisRecente(previsoes, 'visualcrossing', fazenda.unidade, hoje);
-    const met = fotoMaisRecente(previsoes, 'metno', fazenda.unidade, hoje);
-    const temp = temTemperatura(vc) ? vc : temTemperatura(met) ? met : null;
+    const zeus = fotosRecentes(previsoes, 'zeus', fazenda.unidade, hoje)[0] || null;
+    const vcs = fotosRecentes(previsoes, 'visualcrossing', fazenda.unidade, hoje);
+    const mets = fotosRecentes(previsoes, 'metno', fazenda.unidade, hoje);
+    const temps = temTemperatura(vcs[0]) ? vcs : temTemperatura(mets[0]) ? mets : [];
+    const temp = temps[0] || null;
+    function grau(d, campo) {
+      for (let i = 0; i < temps.length; i++) {
+        const v = valor(temps[i], d, campo);
+        if (v !== null) return { v, foto: temps[i] };
+      }
+      return { v: null, foto: null };
+    }
     const todos = Array.from({ length: DIAS_MAX }, (_, i) => somarDias(hoje, i));
     let ultimo = -1;
     todos.forEach((d, i) => {
-      if (valor(zeus, d, 'mm') !== null || valor(temp, d, 'tx') !== null || valor(temp, d, 'tn') !== null) ultimo = i;
+      if (valor(zeus, d, 'mm') !== null || grau(d, 'tx').v !== null || grau(d, 'tn').v !== null) ultimo = i;
     });
     const dias = todos.slice(0, ultimo + 1);
     const mm = dias.map((d) => valor(zeus, d, 'mm'));
+    const tx = dias.map((d) => grau(d, 'tx'));
+    const tn = dias.map((d) => grau(d, 'tn'));
+    const anteriores = tx.concat(tn).filter((g) => g.foto && g.foto !== temp).map((g) => g.foto.capturada_em).sort();
     const comChuva = mm.filter((v) => v !== null);
     return {
       nome: fazenda.nome,
@@ -54,10 +66,14 @@
       dias,
       mm,
       p: dias.map((d) => valor(zeus, d, 'p')),
-      tx: dias.map((d) => valor(temp, d, 'tx')),
-      tn: dias.map((d) => valor(temp, d, 'tn')),
+      tx: tx.map((g) => g.v),
+      tn: tn.map((g) => g.v),
       fonteTemperatura: temp ? temp.fonte : null,
-      fotos: { chuva: zeus ? zeus.capturada_em : null, temperatura: temp ? temp.capturada_em : null },
+      fotos: {
+        chuva: zeus ? zeus.capturada_em : null,
+        temperatura: temp ? temp.capturada_em : null,
+        temperaturaAnterior: anteriores.length ? anteriores[anteriores.length - 1] : null,
+      },
       total: comChuva.length ? Math.round(comChuva.reduce((s, v) => s + v, 0) * 10) / 10 : null,
       semDados: !dias.length,
     };

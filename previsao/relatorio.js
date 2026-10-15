@@ -11,6 +11,8 @@
   const COR = { max: '#db8a08', min: '#5470c6', chuva: '#0f9484', texto: '#17251F', suave: '#5B6B62', marca: '#0C5A50', escuro: '#103632', faixa: '#F1F4F1' };
   const A4 = { largura: 297, altura: 210, margem: 12 };
   const GRAFICO = { largura: 1600, altura: 640 };
+  // coluna dos nomes da faixa de números (mm); o gráfico começa no mesmo ponto para cada dia ficar em cima da sua coluna
+  const ROTULO_MM = 32;
   let jsPdfCarregando = null;
 
   function carregarJsPdf() {
@@ -56,8 +58,10 @@
     const grid = [], xAxis = [], yAxis = [], series = [];
     paineis.forEach((p, i) => {
       const dois = paineis.length === 2;
-      grid.push({ left: 80, right: 30, top: dois ? (i === 0 ? 60 : 345) : 60, height: dois ? 240 : 525 });
-      xAxis.push({ type: 'category', gridIndex: i, data: datas, axisLabel: Object.assign({ show: i === paineis.length - 1 }, eixo), axisTick: { alignWithLabel: true } });
+      const esquerda = Math.round(GRAFICO.largura * ROTULO_MM / (A4.largura - 2 * A4.margem));
+      grid.push({ left: esquerda, right: 0, top: dois ? (i === 0 ? 60 : 345) : 60, height: dois ? 240 : 525 });
+      // embaixo, só o dia da semana (todos os dias); a data está na faixa de números logo abaixo
+      xAxis.push({ type: 'category', gridIndex: i, data: datas, axisLabel: Object.assign({ show: i === paineis.length - 1, interval: 0, formatter: (v) => v.split(' ')[0] }, eixo), axisTick: { alignWithLabel: true } });
       if (p === 'temp') {
         yAxis.push({ type: 'value', gridIndex: i, scale: true, name: '°C', nameTextStyle: eixo, axisLabel: eixo });
         series.push({ name: 'Máxima (°C)', type: 'line', xAxisIndex: i, yAxisIndex: i, data: f.tx, symbolSize: 10, lineStyle: { width: 4, color: COR.max }, itemStyle: { color: COR.max } });
@@ -125,7 +129,7 @@
   function faixa(pdf, f, topo) {
     const m = A4.margem;
     const largura = A4.largura - 2 * m;
-    const rotulo = 32;
+    const rotulo = ROTULO_MM;
     const coluna = (largura - rotulo) / f.dias.length;
     const altura = 6.4;
     const linhas = [
@@ -166,13 +170,18 @@
       return;
     }
     const chuva = f.fotos.chuva ? 'chuva: ZEUS (Locks), foto de ' + fmtHora(f.fotos.chuva) : 'chuva da ZEUS indisponível';
-    const temp = f.fonteTemperatura ? 'temperatura: ' + nomeFonte(f.fonteTemperatura) + ', foto de ' + fmtHora(f.fotos.temperatura) : 'temperatura indisponível';
+    const temp = f.fonteTemperatura
+      ? 'temperatura: ' + nomeFonte(f.fonteTemperatura) + ', foto de ' + fmtHora(f.fotos.temperatura) +
+        (f.fotos.temperaturaAnterior ? '; os dias que faltam nela vêm da foto de ' + fmtHora(f.fotos.temperaturaAnterior) : '')
+      : 'temperatura indisponível';
     pdf.setFontSize(9.5);
     pdf.setTextColor(COR.suave);
-    texto(pdf, fmtDia(f.dias[0]) + ' a ' + fmtDia(f.dias[f.dias.length - 1]) + ' · ' + chuva + ' · ' + temp, m, 25);
+    texto(pdf, fmtDia(f.dias[0]) + ' a ' + fmtDia(f.dias[f.dias.length - 1]) + ' · ' + chuva, m, 25);
+    texto(pdf, temp, m, 29.5);
+    const topo = 33;
     const alturaGrafico = largura * GRAFICO.altura / GRAFICO.largura;
-    pdf.addImage(grafico(f), 'PNG', m, 29, largura, alturaGrafico, undefined, 'FAST');
-    faixa(pdf, f, 29 + alturaGrafico + 7);
+    pdf.addImage(grafico(f), 'PNG', m, topo, largura, alturaGrafico, undefined, 'FAST');
+    faixa(pdf, f, topo + alturaGrafico + 7);
     rodape(pdf, n);
   }
 

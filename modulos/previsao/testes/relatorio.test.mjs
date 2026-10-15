@@ -70,3 +70,20 @@ test('paraPdf mantém acentos, travessão, ponto e grau; troca o que a fonte do 
   assert.equal(R.paraPdf('chuva → 🌧'), 'chuva ? ?')
   assert.equal(R.nomeArquivo('2026-10-15'), 'previsao-fazendas-2026-10-15.pdf')
 })
+
+test('temperatura: dia que falta na foto mais recente vem da foto anterior da mesma fonte (o hoje do MET Norway)', () => {
+  const zeus = foto('zeus', 'GLOBO', '2026-10-15', [dia('2026-10-15', 1, 10), dia('2026-10-16', 2, 20), dia('2026-10-17', 0, 5)])
+  // a foto de hoje do MET começa amanhã; a de ontem tem o dia de hoje inteiro (e um 16/10 mais velho, que perde para o de hoje)
+  const metHoje = foto('metno', 'GLOBO', '2026-10-15', [dia('2026-10-16', 0, null, 33, 22), dia('2026-10-17', 0, null, 34, 23)], '2026-10-15T10:17:00Z')
+  const metOntem = foto('metno', 'GLOBO', '2026-10-14', [dia('2026-10-15', 0, null, 31, 20), dia('2026-10-16', 0, null, 30, 19)], '2026-10-14T10:17:00Z')
+  const f = so([zeus, metOntem, metHoje])
+  assert.deepEqual(f.tx, [31, 33, 34])
+  assert.deepEqual(f.tn, [20, 22, 23])
+  assert.equal(f.fonteTemperatura, 'metno')
+  assert.equal(f.fotos.temperatura, '2026-10-15T10:17:00Z')
+  assert.equal(f.fotos.temperaturaAnterior, '2026-10-14T10:17:00Z')
+  // nada a completar: sem foto anterior
+  const g = so([zeus, metHoje, foto('metno', 'GLOBO', '2026-10-14', [], '2026-10-14T10:17:00Z')])
+  assert.deepEqual(g.tx, [null, 33, 34])
+  assert.equal(g.fotos.temperaturaAnterior, null)
+})

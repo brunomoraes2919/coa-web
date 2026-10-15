@@ -52,6 +52,8 @@
   let iniciado = false;     // cadastro das fazendas já lido (a casca pode pedir a aba antes disso, ao terminar de carregar o quadro)
   const estado = { fazenda: TODAS, camada: 'rain', modelo: 'ecmwf', ponto: false, vista: vistaInicial() };
   let fazendas = [];       // [{ id, nome, coaId, geometrias, caixa }] — só as que têm limite
+  let fazendasDoCadastro = []; // [{ nome, unidade }] — todas as que o usuário vê, com ou sem limite (relatório em PDF)
+  let cadastroFalhou = false;
   let vista = null;        // onde o mapa do Windy está: a vista pedida ao carregar, depois o último aviso dele
   let comSinal = true;     // falso quando o Windy não avisa a posição: os limites somem (estariam no lugar errado)
   let primeiroAviso = false; // o widget carregado já deu o primeiro aviso de posição
@@ -310,6 +312,11 @@
   $('btn-relatorio').addEventListener('click', async () => {
     const b = $('btn-relatorio');
     if (!iniciado || b.disabled) return;
+    if (cadastroFalhou) {
+      $('relatorio-erro').textContent = 'Não foi possível ler o cadastro das fazendas. Recarregue a página e tente de novo.';
+      $('relatorio-erro').hidden = false;
+      return;
+    }
     const rotulo = b.querySelector('span');
     const antes = rotulo.textContent;
     b.disabled = true;
@@ -320,7 +327,7 @@
         hoje: () => window.PrevisaoBenchmark.hojeMT(),
         carregar: (hoje) => fonte.relatorio(hoje),
         usuario: () => fonte.usuario(),
-        fazendas: () => fazendas.map((f) => ({ nome: f.nome, unidade: f.unidade })),
+        fazendas: () => fazendasDoCadastro,
       });
     } catch (e) {
       console.warn('PREVISÃO: relatório não gerado', e);
@@ -466,6 +473,10 @@
     let falhou = false;
     try {
       const c = await fonte.cadastro();
+      fazendasDoCadastro = (c.fazendas || []).map((f) => ({
+        nome: String(f.nome || '').replace(/^Fazenda\s+/i, ''),
+        unidade: f.unidade_pims ? String(f.unidade_pims).trim().toUpperCase() : null,
+      }));
       const limites = L.limitesPorFazenda(c.talhoes);
       fazendas = (c.fazendas || []).filter((f) => limites[f.id]).map((f) => ({
         id: String(f.id), nome: String(f.nome || '').replace(/^Fazenda\s+/i, ''), coaId: typeof f.coa_fazenda_id === 'number' ? f.coa_fazenda_id : null,
@@ -474,6 +485,7 @@
       }));
     } catch (e) {
       falhou = true;
+      cadastroFalhou = true;
       console.warn('PREVISÃO: não foi possível ler os limites das fazendas', e);
     }
     $('carregando').classList.add('fora');

@@ -87,8 +87,10 @@ const TESTE = [
   fazendaTeste('teste-2', 'Fazenda Teste Centro', 2, 'TESTE CENTRO', -13.6, -55.7, 6, 3),
   fazendaTeste('teste-3', 'Fazenda Teste Sul', 3, 'TESTE SUL', -14.6, -56.9, 4, 5),
 ];
+// uma fazenda do cadastro ainda sem limites de talhões: não aparece no mapa, mas entra no relatório em PDF
+const SEM_LIMITES = { id: 'teste-4', nome: 'Fazenda Teste Sem Limites', coa_fazenda_id: 4, unidade_pims: 'TESTE SEM LIMITES' };
 const CADASTRO_TESTE = JSON.stringify({
-  fazendas: TESTE.map((t) => t.fazenda),
+  fazendas: TESTE.map((t) => t.fazenda).concat(SEM_LIMITES),
   talhoes: TESTE.flatMap((t) => t.talhoes),
 });
 
