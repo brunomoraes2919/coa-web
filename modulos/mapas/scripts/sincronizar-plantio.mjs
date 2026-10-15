@@ -2431,6 +2431,8 @@ export async function sincronizarLimitesZeus({ url, token, fetchImpl = fetch, ag
 export const PREV_FONTES = ['zeus', 'visualcrossing', 'metno'];
 /** Hora de MT a partir da qual sai a foto do dia. */
 export const PREV_HORA_FOTO = 6;
+/** Hora de MT a partir da qual a foto da ZEUS sai mesmo com a previsão de uma fazenda incompleta (carga parada). */
+export const PREV_HORA_ZEUS_INCOMPLETA = 12;
 /** Antecedências do ranking (0 = todos os pares de 1 a 7 dias). A ZEUS chega a D+13. */
 export const PREV_ANTECEDENCIAS = [0, 1, 3, 7, 13];
 /** Abaixo disso a tela mostra "histórico insuficiente". */
@@ -2799,7 +2801,18 @@ export async function rodarBenchmarkPrevisao({ agrovex, supabase, visualCrossing
     const dentro = (dias) => dias.filter((x) => { const k = diasEntre(hoje, x.d); return k >= 0 && k <= 14; });
     const fotos = [];
     const guardar = (fonte, unidade, dias) => { const d = dentro(dias); if (d.length) fotos.push({ fonte, unidade, emitida_em: hoje, capturada_em: capturada, dias: d }); };
-    for (const [unidade, dias] of zeus) if (falta('zeus', unidade)) guardar('zeus', unidade, dias);
+    // a ZEUS recarrega a previsão por volta das 6 h (visto em 15/10/2026: na rodada das 6:17 faltou uma fazenda e outra
+    // veio com um dia a menos). No meio da carga, a fazenda sem previsão ou com menos dias que as outras fica para a
+    // próxima rodada; a partir das 12 h de MT vai como estiver (carga parada não pode deixar a fazenda sem foto).
+    const diasCompletos = Math.max(0, ...[...zeus.values()].map((dias) => dentro(dias).length));
+    const aceitaIncompleta = horaMT(agora) >= PREV_HORA_ZEUS_INCOMPLETA;
+    let zeusIncompletas = aceitaIncompleta ? 0 : [...pontos.keys()].filter((unidade) => !zeus.has(unidade) && falta('zeus', unidade)).length;
+    for (const [unidade, dias] of zeus) {
+      if (!falta('zeus', unidade)) continue;
+      if (dentro(dias).length < diasCompletos && !aceitaIncompleta) { zeusIncompletas += 1; continue; }
+      guardar('zeus', unidade, dias);
+    }
+    if (zeusIncompletas) console.warn(`Benchmark de previsão: ZEUS incompleta em ${zeusIncompletas} fazenda(s) (carga em andamento?); tenta de novo na próxima rodada.`);
     const externas = [
       ['visualcrossing', 'Visual Crossing', visualCrossingChave ? (p) => urlVisualCrossing(p, visualCrossingChave) : null, previsaoVisualCrossing],
       ['metno', 'MET Norway', urlMetNo, previsaoMetNo],

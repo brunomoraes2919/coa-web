@@ -327,6 +327,27 @@ describe('benchmark de previsão: etapa da rotina', () => {
     expect(pedidosMet).toBe(1);
   });
 
+  it('ZEUS no meio da carga (fazenda com menos dias que as outras): fica para a próxima rodada; a partir das 12 h de MT vai como estiver', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const PICS2 = { columns: PICS.columns, rows: [...PICS.rows, ['20', 'PIC 7', 'Fazenda Nebraska', -14, -57]] };
+    // a Globo já tem os dois dias; a Nebraska, no meio da carga, só o primeiro
+    const ZEUS2 = { columns: ZEUS.columns, rows: [...ZEUS.rows, ['20', '2026-10-15', 3, 60]] };
+    const zeusGravada = async (agora: string) => {
+      const s = servidoresFalsos(tabelas(), [PICS2, ZEUS2, OBS]);
+      const fetchImpl = async (url: string, init?: RequestInit) => {
+        if (url.startsWith('https://api.met.no/')) return new Response(JSON.stringify(MET), { status: 200 });
+        return s.impl(url, init);
+      };
+      expect(await rodarBenchmarkPrevisao({ agrovex: { url: URL_AGROVEX, token: TOKEN }, supabase: { url: URL_SB, chave: CHAVE }, fetchImpl: fetchImpl as typeof fetch, agora: new Date(agora) })).toBeNull();
+      return s.chamadas
+        .filter((c) => c.url.startsWith(`${URL_SB}/rest/v1/prev_previsoes?`) && c.init?.method === 'POST')
+        .flatMap((c) => JSON.parse(String(c.init?.body)) as Record<string, unknown>[])
+        .filter((f) => f.fonte === 'zeus').map((f) => String(f.unidade)).sort();
+    };
+    expect(await zeusGravada('2026-10-15T10:17:00Z')).toEqual(['GLOBO']);
+    expect(await zeusGravada('2026-10-15T16:17:00Z')).toEqual(['GLOBO', 'NEBRASKA']);
+  });
+
   it('MET Norway com 429 para a fonte na rodada, sem falhar a etapa', async () => {
     const m = montar({ met: 429 });
     expect(await rodar(m, '2026-10-15T10:17:00Z')).toBeNull();

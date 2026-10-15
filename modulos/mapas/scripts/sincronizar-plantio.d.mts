@@ -361,6 +361,7 @@ export interface PrevDia { d: string; mm: number; p: number | null; tx?: number 
 export interface PrevObservado { unidade: string; dia: string; mm: number; pluviometros: number }
 export const PREV_FONTES: string[];
 export const PREV_HORA_FOTO: number;
+export const PREV_HORA_ZEUS_INCOMPLETA: number;
 export const PREV_ANTECEDENCIAS: number[];
 export const PREV_MINIMO_PARES: number;
 export const PREV_USER_AGENT: string;
