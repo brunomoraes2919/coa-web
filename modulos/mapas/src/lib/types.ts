@@ -260,6 +260,8 @@ export interface ResumoChuva {
    * do painel); null = nenhum PIC choveu; ausente em mapas salvos antes deste campo.
    */
   mediaPicsComChuva?: number | null;
+  /** só nos mapas de variedade salvos (tipo 'variedade'): o resumo das variedades; os campos de chuva ficam zerados */
+  variedades?: ResumoVariedades;
 }
 
 /**
@@ -282,6 +284,37 @@ export type EstiloPlantado = 'quadriculado' | 'diagonal' | 'pontilhado' | 'conto
 /** Destaque do valor de chuva escrito ao lado de cada PIC */
 export type DestaquePics = 'escuro' | 'vermelho' | 'verde' | 'etiqueta';
 export type MapaBase = 'topo' | 'satelite' | 'nenhum';
+
+/** Tipo do mapa salvo: 'chuva' (padrão; mapas antigos não têm o campo) ou 'variedade'. */
+export type TipoMapa = 'chuva' | 'variedade';
+
+/** Uma variedade no mapa de variedade (legenda, tabela e mapa salvo). */
+export interface ItemVariedade {
+  /** chave da cor (nome limpo em maiúsculas); '' = "Sem variedade" */
+  chave: string;
+  /** nome mostrado (limpo) */
+  nome: string;
+  cor: string;
+  areaHa: number;
+  /** % da área total pintada */
+  pct: number;
+  /** nº de feições (talhões ou áreas da cultura) */
+  talhoes: number;
+}
+
+/** Resumo do mapa de variedade: da maior área para a menor, com "Sem variedade" por último. */
+export interface ResumoVariedades {
+  totalHa: number;
+  itens: ItemVariedade[];
+}
+
+/** Linha do cadastro de cores (mapas_variedade_cores): a cor fixa de uma variedade. */
+export interface CorVariedade {
+  /** chave (nome limpo em maiúsculas) */
+  variedade: string;
+  cor: string;
+  criadoEm: string;
+}
 
 export interface LayoutTextos {
   titulo: string;
@@ -334,6 +367,8 @@ export interface LayoutConfig {
   orientacao?: 'auto' | 'paisagem' | 'retrato';
   /** 'auto' (padrão) = quadros separados quando compensa; 1 = quadro único; 'setor' = um quadro por setor */
   quadros?: 'auto' | 1 | 'setor';
+  /** mapa de variedade: cores usadas (chave da variedade → cor), guardadas com o mapa salvo */
+  coresVariedade?: Record<string, string>;
 }
 
 export interface MapaSalvo {
@@ -350,4 +385,6 @@ export interface MapaSalvo {
   pngPath: string | null;
   thumbPath: string | null;
   criadoEm: string;
+  /** 'variedade' nos mapas de variedade; ausente = chuva */
+  tipo?: TipoMapa;
 }
