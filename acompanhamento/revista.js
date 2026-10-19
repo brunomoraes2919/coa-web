@@ -1048,15 +1048,63 @@
     c.putImageData(d, 0, 0);
     return cv;
   }
+  // ---------------------------------------------------------------- foto da capa escolhida pelo usuário
+  // Fica guardada neste navegador, por safra (localStorage, JPEG reduzido); sem ela, vale a foto padrão (CAPAS).
+  var LADO_CAPA = 2400;   // px: lado maior da foto guardada
+  var capasUsuario = {};  // safra → Image (ou null = sem foto própria)
+  function chaveCapa(s) { return 'acomp.revista.capa.' + s; }
+  function capaDoUsuario(s) {
+    if (s in capasUsuario) return Promise.resolve(capasUsuario[s]);
+    var url = null;
+    try { url = localStorage.getItem(chaveCapa(s)); } catch (e) { /* sem acesso ao armazenamento */ }
+    if (!url) { capasUsuario[s] = null; return Promise.resolve(null); }
+    return N.talvezImagem(url).then(function (img) { capasUsuario[s] = img; return img; });
+  }
+  /** Lê a foto escolhida, reduz para no máximo LADO_CAPA px e guarda (se couber no navegador). */
+  function lerFotoCapa(arquivo, s) {
+    return new Promise(function (ok, falha) {
+      if (!/^image\/(jpeg|png|webp)$/.test(arquivo.type)) { falha(new Error('Escolha uma imagem JPG, PNG ou WEBP.')); return; }
+      var url = URL.createObjectURL(arquivo), img = new Image();
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        var k = Math.min(1, LADO_CAPA / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        var dados = cv.toDataURL('image/jpeg', 0.86), guardada = true;
+        try { localStorage.setItem(chaveCapa(s), dados); } catch (e) { guardada = false; }
+        N.talvezImagem(dados).then(function (pronta) { capasUsuario[s] = pronta; ok(guardada); });
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); falha(new Error('Não foi possível abrir a imagem.')); };
+      img.src = url;
+    });
+  }
+  function voltarCapaPadrao(s) {
+    try { localStorage.removeItem(chaveCapa(s)); } catch (e) { /* nada guardado */ }
+    capasUsuario[s] = null;
+  }
+  async function trocarFotoCapa(ev) {
+    var arq = ev.target.files && ev.target.files[0], s = N.estado().s;
+    ev.target.value = '';
+    if (!arq) return;
+    try {
+      var guardada = await lerFotoCapa(arq, s);
+      estadoRv.chave = null; // a revista é montada de novo com a capa nova
+      await gerar();
+      if (!guardada) $('rv-status').textContent += ' · a foto não coube no armazenamento do navegador: vale só até fechar a página';
+    } catch (e) { $('rv-status').textContent = e.message; }
+  }
+  function atualizarBotaoPadrao() { $('rv-capa-padrao').hidden = !capasUsuario[N.estado().s]; }
+
   async function imagens(s) {
     var capa = CAPAS[s] || CAPAS[N.culturaDaSafra(s)] || CAPAS.padrao;
+    var propria = await capaDoUsuario(s);
     if (!imgsCache) {
       var r = await Promise.all([N.talvezImagem('assets/logo_locks.png'), N.talvezImagem('assets/logo_coa_branco.png'), N.talvezImagem('assets/rosa.png')]);
       imgsCache = { locksBranca: locksBranca(r[0]), coa: r[1], rosa: r[2], capas: {} };
     }
     if (!(capa in imgsCache.capas)) imgsCache.capas[capa] = await N.talvezImagem(capa);
     P_IMGS.rosa = imgsCache.rosa;
-    return { capa: imgsCache.capas[capa], locksBranca: imgsCache.locksBranca, coa: imgsCache.coa, rosa: imgsCache.rosa, cultura: await N.talvezImagem(N.fundoCultura(s)) };
+    return { capa: propria || imgsCache.capas[capa], locksBranca: imgsCache.locksBranca, coa: imgsCache.coa, rosa: imgsCache.rosa, cultura: await N.talvezImagem(N.fundoCultura(s)) };
   }
   async function fontesProntas() {
     if (!document.fonts || !document.fonts.load) return;
@@ -1119,7 +1167,7 @@
       $('rv-paginas').innerHTML = '';
       estadoRv.paginas.forEach(function (pg, i) { $('rv-paginas').appendChild(figura(pg, i, estadoRv.paginas.length)); });
       cabecalhoTela(estadoRv.ed, us);
-      mostrar('pronto', textoPronto()); return;
+      mostrar('pronto', textoPronto()); atualizarBotaoPadrao(); return;
     }
     $('rv-paginas').innerHTML = '';
     cabecalhoTela(null, us);
@@ -1172,6 +1220,7 @@
       liberar(estadoRv.paginas);
       estadoRv.paginas = paginas; estadoRv.ed = ed; estadoRv.chave = chave;
       mostrar('pronto', textoPronto());
+      atualizarBotaoPadrao();
     } catch (err) {
       liberar(paginas);
       if (viva()) mostrar('erro', 'Não foi possível montar a revista: ' + (err && err.message ? err.message : err));
@@ -1235,6 +1284,8 @@
 
   document.addEventListener('DOMContentLoaded', function () {
     $('rv-baixar').addEventListener('click', baixarPdf);
+    $('rv-capa-arquivo').addEventListener('change', trocarFotoCapa);
+    $('rv-capa-padrao').addEventListener('click', function () { voltarCapaPadrao(N.estado().s); estadoRv.chave = null; gerar(); });
   });
 
   window.AcompRevista = { render: render };
