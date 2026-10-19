@@ -421,7 +421,7 @@
     if (im.locksBranca) { var lh = 50, lw = im.locksBranca.width / im.locksBranca.height * lh; c.drawImage(im.locksBranca, (W - lw) / 2, 62, lw, lh); }
     tx(c, 'RELATÓRIO DE PLANTIO', W / 2, 262, 78, 700, '#FFFFFF', { al: 'center', esp: 2, max: W - 120, sombra: 'rgba(0,0,0,.35)' });
     tx(c, ed.nome.toUpperCase(), W / 2, 338, 40, 700, C.ouroClaro, { al: 'center', esp: 5, max: W - 160, sombra: 'rgba(0,0,0,.4)' });
-    tx(c, (ed.safraNome + (ed.grupo ? ' · ' + ed.unidades.length + ' unidades' : '')).toUpperCase(), W / 2, 384, 17, 600, 'rgba(255,255,255,.88)', { al: 'center', esp: 4, sombra: 'rgba(0,0,0,.4)' });
+    tx(c, (ed.safraNome + (ed.grupo ? ' · ' + ed.unidades.length + ' unidades' : '')).toUpperCase(), W / 2, 398, 28, 700, '#FFFFFF', { al: 'center', esp: 5, max: W - 160, sombra: 'rgba(0,0,0,.5)' });
     // a data em números vazados, à direita (como no modelo)
     var dg = digitosData(ed.dataRef);
     c.save(); c.font = fnt(330, 700); espaco(c, -6); c.textAlign = 'right'; c.textBaseline = 'alphabetic';
