@@ -349,9 +349,12 @@
     if (!fontes.length) return null;
     var dias = {}; fontes.forEach(function (f) { f.dias.forEach(function (x) { dias[x.d] = true; }); });
     dias = Object.keys(dias).sort().slice(0, 7);
-    var tot = fontes.map(function (f) { return soma(f.dias.filter(function (x) { return dias.indexOf(x.d) >= 0; }), function (x) { return x.mm || 0; }); });
+    // a soma e a média comparam só os dias que todas as fontes têm (fonte com menos dias não puxa a média para baixo)
+    var comuns = dias.filter(function (d) { return fontes.every(function (f) { return f.dias.some(function (x) { return x.d === d; }); }); });
+    if (!comuns.length) comuns = dias;
+    var tot = fontes.map(function (f) { return soma(f.dias.filter(function (x) { return comuns.indexOf(x.d) >= 0; }), function (x) { return x.mm || 0; }); });
     var media = soma(tot, function (x) { return x; }) / tot.length;
-    return { fontes: fontes, dias: dias, totais: tot, resumo: { mm: Math.round(media * 10) / 10, dias: dias.length, de: dias[0], ate: dias[dias.length - 1] } };
+    return { fontes: fontes, dias: dias, totais: tot, resumo: { mm: Math.round(media * 10) / 10, dias: comuns.length, de: comuns[0], ate: comuns[comuns.length - 1] } };
   }
 
   function nomeFazenda(u) { return 'Fazenda ' + N.titulo(u); }
@@ -440,6 +443,7 @@
     c.fillStyle = C.creme; c.fillRect(xS - 28, 100, wS + 28 + MX, H - 220);
     tx(c, 'NESTA EDIÇÃO', xS, 140, 13, 700, C.ouro, { esp: 2.5 });
     var ys = 196;
+    if (!P.sumario.length) para(c, 'As seções da revista (números, ritmo, mapas, chuva, variedades, equipes e talhões) entram assim que o PIMS tiver os primeiros boletins de plantio da safra.', xS, ys - 8, wS, 15, 400, C.suave, 22);
     P.sumario.forEach(function (s) {
       tx(c, s.sec, xS, ys, 30, 700, C.ouro);
       tx(c, String(s.pagina).padStart(2, '0'), xS + wS, ys - 4, 14, 700, C.suave, { al: 'right' });
@@ -587,11 +591,18 @@
   }
 
   async function pgChuva(c, P) {
-    var ed = P.ed, m = ed.m, rel = ed.rel, cr = rel.corr, ch = ed.chuvaPeriodo;
+    var ed = P.ed, ch = ed.chuvaPeriodo;
     folha(c, P);
-    var y = abertura(c, P.sec, 'A chuva e o plantio', ch ? n0(ch.mm) + ' mm em ' + ch.dias + ' ' + plural(ch.dias, 'dia', 'dias') + ' de chuva desde o início do plantio' : 'Chuva no período',
-      'Chuva diária da fazenda (média dos pluviômetros da ZEUS) nos 15 dias antes do plantio e durante ele, alinhada aos hectares plantados em cada dia.');
-    var ww = W - 2 * MX, de = RL.somarDias(iso(m.ini), -15), ate = iso(ed.hoje), dias = diasEntre(de, ate);
+    var ww = W - 2 * MX;
+    var y = abertura(c, P.sec, 'A chuva e o plantio', ed.temChuva && ch ? n0(ch.mm) + ' mm em ' + ch.dias + ' ' + plural(ch.dias, 'dia', 'dias') + ' de chuva desde o início do plantio' : 'A chuva por talhão no plantio',
+      ed.temChuva ? 'Chuva diária da fazenda (média dos pluviômetros da ZEUS) nos 15 dias antes do plantio e durante ele, alinhada aos hectares plantados em cada dia.' : 'A chuva diária dos pluviômetros da fazenda não está disponível; abaixo, a chuva por talhão da ZEUS.');
+    if (ed.temChuva) y = await chuvaDaFazenda(c, ed, y, ww);
+    await chuvaDosTalhoesPg(c, ed, y, ww);
+  }
+  /** Chuva diária da fazenda alinhada aos hectares por dia e os quatro números da correlação. Devolve o y livre. */
+  async function chuvaDaFazenda(c, ed, y, ww) {
+    var m = ed.m, cr = ed.rel.corr, ch = ed.chuvaPeriodo;
+    var de = RL.somarDias(iso(m.ini), -15), ate = iso(ed.hoje), dias = diasEntre(de, ate);
     y = subtitulo(c, 'Chuva por dia (mm)', MX, y, ww);
     await grafico(c, { x: MX, y: y, w: ww, h: 230 }, opColunas(dias, dias.map(function (d) { return Math.round((ed.chuvaU[d] || 0) * 10) / 10; }), C.chuva, { largura: ww, casas: 0 }));
     y += 230 + 18;
@@ -606,8 +617,11 @@
       ['Média sem chuva', cr.semChuva.media !== null ? n0(cr.semChuva.media) + ' ha/dia' : '—', cr.parados + ' ' + plural(cr.parados, 'dia parado', 'dias parados') + ' pela chuva']].forEach(function (k, i) {
       numero(c, { x: MX + i * (wc + 16), y: y, w: wc, h: 128 }, k[0], k[1], '', k[2], null, true);
     });
-    y += 128 + 34;
-    // chuva por talhão
+    return y + 128 + 34;
+  }
+  /** Chuva acumulada por talhão (mapa) e a chuva nos dias depois do plantio de cada talhão. */
+  async function chuvaDosTalhoesPg(c, ed, y, ww) {
+    var m = ed.m;
     if (ed.chT && ed.mapa) {
       var valores = {}; ed.chuvaTal.forEach(function (l) { if (l.periodo !== null) valores[l.u + '|' + l.t] = l.periodo; });
       var lista = Object.keys(valores).map(function (k) { return valores[k]; });
@@ -628,23 +642,26 @@
         if (pp.poucaChuva.length) {
           tx(c, 'MENOS DE ' + RL.POUCA_CHUVA_POS + ' MM NA JANELA', xL, yL, 11, 700, C.atencao, { esp: 1 });
           yL += 10;
+          var cabem = Math.max(3, Math.floor((H - 230 - yL) / 26));
           yL = tabela(c, { x: xL, y: yL, w: wL }, [{ t: 'Talhão', w: 0.3 }, { t: 'Plantio', w: 0.3, al: 'right' }, { t: 'mm', w: 0.4, al: 'right' }],
-            pp.poucaChuva.slice(0, 14).map(function (l) { return [l.t, dc(l.ini), N.fmtN(l.depois, 1)]; }), { lh: 26, px: 12.5 });
-          if (pp.poucaChuva.length > 14) tx(c, '+ ' + (pp.poucaChuva.length - 14) + ' talhões (lista completa no talhão a talhão)', xL, yL + 18, 11.5, 500, C.fraco, { max: wL });
-        } else para(c, 'Nenhum talhão teve menos de ' + RL.POUCA_CHUVA_POS + ' mm na janela.', xL, yL, wL, 14, 500, C.bom, 20);
-        if (pp.aguardando) para(c, pp.aguardando + ' ' + plural(pp.aguardando, 'talhão plantado há menos de', 'talhões plantados há menos de') + ' ' + RL.DIAS_POS_PLANTIO + ' dias ainda não entram na conta.', xL, H - 160, wL, 12, 500, C.fraco, 17);
+            pp.poucaChuva.slice(0, cabem).map(function (l) { return [l.t, dc(l.ini), N.fmtN(l.depois, 1)]; }), { lh: 26, px: 12.5 });
+          if (pp.poucaChuva.length > cabem) { tx(c, '+ ' + (pp.poucaChuva.length - cabem) + ' talhões (lista completa no talhão a talhão)', xL, yL + 18, 11.5, 500, C.fraco, { max: wL }); yL += 18; }
+        } else yL = para(c, 'Nenhum talhão teve menos de ' + RL.POUCA_CHUVA_POS + ' mm na janela.', xL, yL, wL, 14, 500, C.bom, 20);
+        if (pp.aguardando) para(c, pp.aguardando + ' ' + plural(pp.aguardando, 'talhão plantado', 'talhões plantados') + ' sem os ' + RL.DIAS_POS_PLANTIO + ' dias completos na tabela ainda não ' + plural(pp.aguardando, 'entra', 'entram') + ' na conta.', xL, Math.min(H - 150, yL + 34), wL, 12, 500, C.fraco, 17);
       } else para(c, 'Ainda não há talhão com ' + RL.DIAS_POS_PLANTIO + ' dias de chuva registrada depois do plantio.', xL, yL + 8, wL, 14, 500, C.suave, 20);
     } else {
       para(c, 'A chuva por talhão (tabela da ZEUS) não está disponível para esta fazenda' + (ed.semCategoriaChuva ? ' com o seu acesso (categoria Chuva por talhão).' : '.'), MX, y + 10, ww, 14, 500, C.fraco, 20);
     }
   }
 
-  /** Galeria dos mapas de chuva salvos no módulo Mapas (até 4 por página). */
+  var MAX_MAPAS = 8;
+  /** Galeria dos mapas de chuva salvos no módulo Mapas (até 4 por página; os MAX_MAPAS mais recentes). */
   function pgMapasSalvos(lista, primeira) {
     return async function (c, P) {
       var ed = P.ed;
       folha(c, P);
-      var y = primeira ? abertura(c, P.sec, 'Mapas de chuva do período', ed.mapasSalvos.length + ' ' + plural(ed.mapasSalvos.length, 'mapa salvo', 'mapas salvos') + ' no módulo Mapas',
+      var nM = ed.mapasSalvos.length, mostrados = Math.min(nM, MAX_MAPAS);
+      var y = primeira ? abertura(c, P.sec, 'Mapas de chuva do período', nM + ' ' + plural(nM, 'mapa salvo', 'mapas salvos') + ' no módulo Mapas' + (nM > mostrados ? ' (os ' + mostrados + ' mais recentes aqui)' : ''),
         'Os mapas de chuva (interpolação dos pluviômetros) salvos para a fazenda com período dentro do plantio, do mais antigo ao mais novo.') : 112;
       var ww = W - 2 * MX, g = 26, n = lista.length, colunas = n === 1 ? 1 : 2, linhasN = Math.ceil(n / colunas);
       var wq = (ww - g * (colunas - 1)) / colunas, hq = (H - 130 - y - g * (linhasN - 1)) / linhasN;
@@ -972,7 +989,7 @@
     if (ed.mapa) secao('O mapa do plantio', 'Situação dos talhões e semana do plantio', [pgMapa]);
     if (ed.temChuva || ed.chT) secao('A chuva e o plantio', 'Chuva diária, efeito no ritmo e chuva por talhão', [pgChuva]);
     if (ed.mapasSalvos.length) {
-      var l = ed.mapasSalvos.slice(-8), grupos = [];
+      var l = ed.mapasSalvos.slice(-MAX_MAPAS), grupos = [];
       for (var i = 0; i < l.length; i += 4) grupos.push(l.slice(i, i + 4));
       secao('Mapas de chuva do período', l.length + ' ' + plural(l.length, 'mapa salvo', 'mapas salvos') + ' no módulo Mapas', grupos.map(function (g, j) { return pgMapasSalvos(g, j === 0); }));
     }
@@ -1005,7 +1022,7 @@
   // ===========================================================================
   // Geração (tela + PDF)
   // ===========================================================================
-  var estadoRv = { chave: null, gerando: 0, paginas: [], ed: null, admin: null, extras: null };
+  var estadoRv = { chave: null, gerando: 0, paginas: [], ed: null, extras: null, pronto: false, baixando: false };
   var imgsCache = null;
   /** Logo da Locks em branco: o fundo branco some, a parte verde vira branca e o detalhe laranja fica. */
   function locksBranca(img) {
@@ -1038,16 +1055,25 @@
     try { await Promise.all([400, 500, 600, 700].map(function (p) { return document.fonts.load(p + ' 20px "IBM Plex Sans"'); })); } catch (e) { /* segue com a fonte do sistema */ }
   }
   var urlsMapas = {};
-  async function imagemMapa(mp) {
-    if (!mp.path) return null;
-    if (!urlsMapas[mp.path]) urlsMapas[mp.path] = N.imagemMapaSalvo(mp.path).then(function (b) { return b ? N.talvezImagem(URL.createObjectURL(b)) : null; }).catch(function () { return null; });
+  /** Imagem de um mapa salvo (baixada uma vez por sessão; falha não fica guardada, tenta de novo na próxima). */
+  function imagemMapa(mp) {
+    if (!mp.path) return Promise.resolve(null);
+    if (!urlsMapas[mp.path]) {
+      urlsMapas[mp.path] = N.imagemMapaSalvo(mp.path).then(function (b) {
+        if (!b) return null;
+        var url = URL.createObjectURL(b);
+        // a imagem já decodificada continua desenhável depois de liberar o endereço
+        return N.talvezImagem(url).then(function (img) { URL.revokeObjectURL(url); return img; });
+      }).catch(function () { return null; }).then(function (img) { if (!img) delete urlsMapas[mp.path]; return img; });
+    }
     return urlsMapas[mp.path];
   }
   function chaveEstado() { var e = N.estado(); return [e.u, e.s, e.o, N.dados().geradoEm].join('|'); }
 
   function mostrar(estadoTela, texto) {
+    estadoRv.pronto = estadoTela === 'pronto';
     $('rv-status').textContent = texto || '';
-    $('rv-baixar').disabled = estadoTela !== 'pronto';
+    $('rv-baixar').disabled = !estadoRv.pronto || estadoRv.baixando;
   }
   function cabecalhoTela(ed, us) {
     N.aplicarFundo($('rv-cab'), N.estado().s);
@@ -1056,72 +1082,91 @@
     var g = N.dados().geradoEm ? new Date(N.dados().geradoEm) : null;
     $('rv-sub').textContent = (ed && ed.grupo ? us.length + ' unidades · ' : '') + 'dados do PIMS de ' + (g ? g.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—');
   }
+  function figura(pg, i, total) {
+    var fig = document.createElement('figure'); fig.className = 'rv-pagina' + (i === 0 ? ' capa' : '');
+    fig.innerHTML = '<img alt="Página ' + (i + 1) + '" src="' + pg.url + '"><figcaption>' + (i === 0 ? 'Capa' : i === total - 1 ? 'Contracapa' : 'Página ' + (i + 1)) + '</figcaption>';
+    return fig;
+  }
+  function liberar(paginas) { paginas.forEach(function (p) { URL.revokeObjectURL(p.url); }); }
 
+  /**
+   * Monta a revista da aba escolhida. Cada geração guarda a fazenda, a safra e a operação do começo e para assim
+   * que a tela muda (outra geração, outra aba do módulo, outra fazenda, safra ou leitura do PIMS): as páginas
+   * prontas só vão para a tela e para o PDF se a geração chegou ao fim com tudo igual.
+   */
   async function gerar() {
     var e = N.estado(), n = ++estadoRv.gerando, chave = chaveEstado();
-    var us = N.unidadesDaSafra(e.s);
+    var u = e.u, s = e.s, o = e.o, us = N.unidadesDaSafra(s);
+    function viva() { return n === estadoRv.gerando && N.estado().vista === 'revista' && chaveEstado() === chave; }
     $('rv-aviso').hidden = true;
-    if (e.o !== 'PLANTIO') {
-      cabecalhoTela(null, us); $('rv-paginas').innerHTML = '';
+    if (o !== 'PLANTIO') {
+      cabecalhoTela(null, us);
+      $('rv-paginas').hidden = true;
       $('rv-aviso').hidden = false; $('rv-aviso').textContent = 'A revista cobre o plantio por enquanto. Escolha "Plantio" no campo Operação.';
       mostrar('vazio', ''); return;
     }
-    if (estadoRv.chave === chave && estadoRv.paginas.length) { mostrar('pronto', textoPronto()); return; }
-    estadoRv.paginas.forEach(function (p) { URL.revokeObjectURL(p.url); });
-    estadoRv.paginas = []; estadoRv.chave = null;
+    $('rv-paginas').hidden = false;
+    if (estadoRv.chave === chave && estadoRv.paginas.length) {
+      // a mesma revista já montada: só volta para a tela
+      $('rv-paginas').innerHTML = '';
+      estadoRv.paginas.forEach(function (pg, i) { $('rv-paginas').appendChild(figura(pg, i, estadoRv.paginas.length)); });
+      cabecalhoTela(estadoRv.ed, us);
+      mostrar('pronto', textoPronto()); return;
+    }
     $('rv-paginas').innerHTML = '';
     cabecalhoTela(null, us);
     mostrar('gerando', 'Buscando chuva, mapas salvos e previsão…');
+    var paginas = [];
     try {
       var hoje = N.hoje();
       // chuva por talhão, mapas salvos, cores e previsão: lidos uma vez por safra e por leitura do PIMS
-      var chaveExtras = e.s + '|' + N.dados().geradoEm;
+      var chaveExtras = s + '|' + N.dados().geradoEm;
       if (!estadoRv.extras || estadoRv.extras.chave !== chaveExtras) {
-        var ini = N.calcula(us, e.s, e.o).ini;
-        estadoRv.extras = await N.extrasRevista(us, e.s, ini ? RL.somarDias(N.paraIso(ini), -45) : N.paraIso(hoje));
-        estadoRv.extras.chave = chaveExtras;
+        var ini = N.calcula(us, s, o).ini;
+        var lidos = await N.extrasRevista(us, s, ini ? RL.somarDias(N.paraIso(ini), -45) : N.paraIso(hoje));
+        lidos.chave = chaveExtras;
+        estadoRv.extras = lidos;
       }
       var ex = estadoRv.extras;
-      if (n !== estadoRv.gerando) return;
       await N.mapasProntos();
       await fontesProntas();
-      if (n !== estadoRv.gerando) return;
-      var grupo = e.u === N.TODAS;
+      if (!viva()) return;
+      var grupo = u === N.TODAS;
       if (grupo && !ex.admin) {
         // a revista do grupo é só para administrador: os outros veem a da primeira fazenda da lista
         if (us.length) { N.irParaUnidade(us[0]); return; }
       }
-      var ed = grupo ? edicaoDoGrupo(us, e.s, e.o, ex, hoje) : edicaoDaFazenda(e.u, e.s, e.o, ex, hoje);
+      var ed = grupo ? edicaoDoGrupo(us, s, o, ex, hoje) : edicaoDaFazenda(u, s, o, ex, hoje);
       ed.semCategoriaChuva = !Object.keys(ex.chuva).length;
-      ed.s = e.s; ed.safraNome = N.nomeSafra(e.s); ed.o = e.o; ed.hoje = hoje;
+      ed.s = s; ed.safraNome = N.nomeSafra(s); ed.o = o; ed.hoje = hoje;
       ed.geradoEm = N.dados().geradoEm ? new Date(N.dados().geradoEm) : null;
       ed.dataRef = ed.geradoEm ? new Date(ed.geradoEm.getFullYear(), ed.geradoEm.getMonth(), ed.geradoEm.getDate()) : hoje;
       cabecalhoTela(ed, us);
-      var imgs = await imagens(e.s);
+      var imgs = await imagens(s);
       var ps = grupo ? paginasDoGrupo(ed) : paginasDaFazenda(ed);
       var sumario = [];
       ps.forEach(function (p, i) { if (p.titulo) sumario.push({ sec: p.sec, titulo: p.titulo, linha: p.linha, pagina: i + 1 }); });
-      estadoRv.ed = ed;
       for (var i = 0; i < ps.length; i++) {
-        if (n !== estadoRv.gerando) return;
+        if (!viva()) { liberar(paginas); return; }
         mostrar('gerando', 'Montando a página ' + (i + 1) + ' de ' + ps.length + '…');
         var cv = document.createElement('canvas'); cv.width = Math.round(W * ESC); cv.height = Math.round(H * ESC);
         var c = cv.getContext('2d'); c.scale(ESC, ESC);
         await ps[i].pintar(c, { n: i + 1, ed: ed, imgs: imgs, sec: ps[i].sec, sumario: sumario, imagemMapa: imagemMapa });
         var blob = await new Promise(function (ok) { cv.toBlob(ok, 'image/jpeg', QUALIDADE); });
         cv.width = cv.height = 0;
-        if (n !== estadoRv.gerando) return;
+        if (!viva()) { liberar(paginas); return; }
         var pg = { blob: blob, url: URL.createObjectURL(blob) };
-        estadoRv.paginas.push(pg);
-        var fig = document.createElement('figure'); fig.className = 'rv-pagina' + (i === 0 ? ' capa' : '');
-        fig.innerHTML = '<img alt="Página ' + (i + 1) + '" src="' + pg.url + '"><figcaption>' + (i === 0 ? 'Capa' : i === ps.length - 1 ? 'Contracapa' : 'Página ' + (i + 1)) + '</figcaption>';
-        $('rv-paginas').appendChild(fig);
+        paginas.push(pg);
+        $('rv-paginas').appendChild(figura(pg, i, ps.length));
         await new Promise(function (ok) { setTimeout(ok, 0); });
       }
-      estadoRv.chave = chave;
+      if (!viva()) { liberar(paginas); return; }
+      liberar(estadoRv.paginas);
+      estadoRv.paginas = paginas; estadoRv.ed = ed; estadoRv.chave = chave;
       mostrar('pronto', textoPronto());
     } catch (err) {
-      if (n === estadoRv.gerando) mostrar('erro', 'Não foi possível montar a revista: ' + (err && err.message ? err.message : err));
+      liberar(paginas);
+      if (viva()) mostrar('erro', 'Não foi possível montar a revista: ' + (err && err.message ? err.message : err));
       console.error('Revista', err);
     }
   }
@@ -1134,49 +1179,48 @@
   function carregarJsPdf() {
     if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
     if (!jsPdfCarregando) jsPdfCarregando = new Promise(function (ok, falha) {
-      var s = document.createElement('script');
+      var sc = document.createElement('script');
       // a mesma versão fixa (com SRI) do Relatório
-      s.integrity = 'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk';
-      s.crossOrigin = 'anonymous';
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-      s.onload = function () { ok(window.jspdf.jsPDF); };
-      s.onerror = function () { jsPdfCarregando = null; falha(new Error('Não foi possível carregar o gerador de PDF. Verifique a conexão.')); };
-      document.head.appendChild(s);
+      sc.integrity = 'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk';
+      sc.crossOrigin = 'anonymous';
+      sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+      sc.onload = function () { ok(window.jspdf.jsPDF); };
+      sc.onerror = function () { jsPdfCarregando = null; falha(new Error('Não foi possível carregar o gerador de PDF. Verifique a conexão.')); };
+      document.head.appendChild(sc);
     });
     return jsPdfCarregando;
   }
-  function nomeArquivo() {
+  function nomeArquivo(ed) {
     var s = function (t) { return String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); };
-    var ed = estadoRv.ed;
     return ['revista-plantio', s(ed.s), s(ed.grupo ? 'grupo' : ed.u), N.paraIso(N.hoje())].join('-') + '.pdf';
   }
+  /** PDF das páginas prontas (cópia da lista: uma geração nova no meio não mistura duas revistas). */
   async function baixarPdf() {
-    if (!estadoRv.paginas.length) return;
-    var b = $('rv-baixar'); b.disabled = true;
+    if (!estadoRv.pronto || !estadoRv.paginas.length) return;
+    var paginas = estadoRv.paginas.slice(), ed = estadoRv.ed, b = $('rv-baixar');
+    estadoRv.baixando = true; b.disabled = true;
     var antes = $('rv-status').textContent;
     $('rv-status').textContent = 'Gerando o PDF…';
     try {
       var jsPDF = await carregarJsPdf();
       var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-      for (var i = 0; i < estadoRv.paginas.length; i++) {
+      for (var i = 0; i < paginas.length; i++) {
         if (i) pdf.addPage('a4', 'portrait');
-        var bytes = new Uint8Array(await estadoRv.paginas[i].blob.arrayBuffer());
+        var bytes = new Uint8Array(await paginas[i].blob.arrayBuffer());
         pdf.addImage(bytes, 'JPEG', 0, 0, 210, 297, 'p' + i, 'NONE');
       }
-      var ed = estadoRv.ed;
       pdf.setProperties({ title: 'Relatório de plantio - ' + ed.nome + ' - ' + ed.safraNome, creator: 'COA WEB · Acompanhamento Operacional' });
       var url = URL.createObjectURL(pdf.output('blob'));
-      var a = document.createElement('a'); a.href = url; a.download = nomeArquivo();
+      var a = document.createElement('a'); a.href = url; a.download = nomeArquivo(ed);
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-      $('rv-status').textContent = antes;
+      if ($('rv-status').textContent === 'Gerando o PDF…') $('rv-status').textContent = antes;
     } catch (err) { $('rv-status').textContent = 'Não foi possível gerar o PDF: ' + (err && err.message ? err.message : err); }
-    finally { b.disabled = false; }
+    finally { estadoRv.baixando = false; b.disabled = !estadoRv.pronto; }
   }
 
   function render(nucleo) {
     N = nucleo;
-    cabecalhoTela(estadoRv.ed && estadoRv.chave === chaveEstado() ? estadoRv.ed : null, N.unidadesDaSafra(N.estado().s));
     gerar();
   }
 
