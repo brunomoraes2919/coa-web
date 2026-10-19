@@ -3,8 +3,8 @@
 Painel de acompanhamento do plantio e da colheita por fazenda e safra, com os dados do PIMS, e
 cadastro das metas diárias por período e da data estimada de término.
 
-No COA WEB: categoria **Operacional**, com quatro abas: **Painel**, **Metas**, **Safras** e
-**Relatórios**. O módulo roda num iframe da mesma origem (`acompanhamento/index.html?embed=1`) e usa
+No COA WEB: categoria **Operacional**, com cinco abas: **Painel**, **Metas**, **Safras**,
+**Relatórios** e **Revista**. O módulo roda num iframe da mesma origem (`acompanhamento/index.html?embed=1`) e usa
 a sessão do COA WEB.
 
 ## Safras (comparativo por fazenda)
@@ -30,6 +30,40 @@ mesma data do ano, hectares por dia com a meta e a chuva, evolução acumulada, 
 PNG único ou um PDF A4 em pé. Tela e exportação em `acompanhamento/relatorio.js`; a lógica sem tela
 (chuva × operação, comparativo, frases, executado por talhão e por dia, meta parcial) fica em
 `acompanhamento/relatorio-logica.js`, coberta pelos testes.
+
+## Revista (relatório do plantio em páginas A4)
+
+Aba **Revista** (COA WEB → Operacional → Revista): o relatório consolidado do período de produção (por
+enquanto só o plantio) diagramado como revista, em páginas A4 em pé, e exportado **só em PDF**. A fazenda
+é a da aba escolhida; em **Todas**, a revista do grupo, que só o administrador gera (`mapas_eh_admin`; os
+outros caem na primeira fazenda da lista). A tela mostra as mesmas páginas do PDF (capa sozinha, depois
+em pares, como uma revista aberta).
+
+Páginas da fazenda: capa (foto, marca da Locks, "Relatório de plantio", nome da fazenda, safra, a data
+dos dados em números vazados e "COA"), editorial com sumário e o mapa da situação, **Em números**
+(12 indicadores, esta safra × anteriores e a situação dos talhões pela área), **O ritmo do plantio**
+(hectares por dia × meta e acumulado × planejado × safras anteriores), **O mapa do plantio** (situação
+e semana do início de cada talhão), **A chuva e o plantio** (chuva diária da fazenda alinhada aos
+hectares por dia, médias com e sem chuva, chuva acumulada por talhão e a chuva nos 10 dias depois do
+plantio), **Mapas de chuva do período** (os salvos no módulo Mapas), **Variedades** (mapa com as cores
+do Mapa de variedade, área e janela de plantio), **Equipes** (por dia, resumo e a equipe que mais
+plantou em cada talhão), **Talhão a talhão** e **Os próximos dias** (a última previsão de cada fonte
+da Previsão do Tempo), e a contracapa com as fontes. Na revista do grupo: as unidades (ranking e
+quadro), o ritmo por unidade, o mosaico dos mapas, a chuva nas unidades e uma página por unidade.
+
+Cada leitura além do PIMS depende da categoria de quem gera; sem ela o banco devolve vazio e a seção
+sai da revista: `chuva_talhao` (Chuva por talhão), `mapas_chuva` + bucket `mapas-chuva` e
+`mapas_variedade_cores` (Mapas), `prev_previsoes` (Previsão do Tempo). A chuva por talhão vem da
+tabela da ZEUS carregada em lotes: a revista diz até que dia ela vai.
+
+**Foto da capa por período:** os arquivos ficam em `acompanhamento/assets/capas/` e a escolha no
+objeto `CAPAS` do `revista.js` (pela safra do PIMS, ex. `'SOJA 26/27'`, ou pela cultura, ex.
+`'SOJA'`). Sem foto própria, vale `padrao.webp` (foto simulada: céu de fim de tarde, lavoura e o trator
+8R). Só imagens sem dado da empresa: o repositório é público.
+
+Código: `acompanhamento/revista.js` (páginas em canvas, tela e PDF com o jsPDF do cdnjs) e
+`acompanhamento/revista-logica.js` (contas e textos, com testes); a chuva por talhão usa a lógica do
+módulo Chuva por talhão (`chuva/logica.js`).
 
 ## Exportar imagem (WhatsApp)
 
@@ -101,7 +135,8 @@ final `#painel/TODAS/SOJA%2026%2F27/PLANTIO` escolhe safra e operação.
 | Página (JS puro, sem build) | `acompanhamento/` na raiz do repositório (`index.html`, `app.js`, `estilo.css`, `config.js`) |
 | Aba Safras | `acompanhamento/safras.js` |
 | Aba Relatórios (tela, exportação e lógica) | `acompanhamento/relatorio.js` e `acompanhamento/relatorio-logica.js` |
-| Testes da lógica | `modulos/acompanhamento/testes/relatorio.test.mjs` |
+| Aba Revista (páginas, PDF e lógica) | `acompanhamento/revista.js`, `acompanhamento/revista-logica.js` e `acompanhamento/assets/capas/` |
+| Testes da lógica | `modulos/acompanhamento/testes/relatorio.test.mjs` e `revista.test.mjs` |
 | Banco (tabelas `acomp_*` e regras de acesso) | `modulos/acompanhamento/supabase/0001_acompanhamento.sql` |
 | Leitura do PIMS | etapa "Acompanhamento" de `modulos/mapas/scripts/sincronizar-plantio.mjs` |
 | Integração no COA WEB | `index.html` da raiz, seção "ACOMPANHAMENTO OPERACIONAL" |
@@ -165,11 +200,13 @@ node --test modulos/acompanhamento/testes/*.mjs
 ```
 
 (Com a pasta no lugar dos arquivos, `node --test modulos/acompanhamento/testes/`, o Node 24 falha.)
-Cobrem a lógica de `acompanhamento/relatorio-logica.js`; as contas do `app.js` (`calcula`) não têm
+Cobrem a lógica de `acompanhamento/relatorio-logica.js` e `acompanhamento/revista-logica.js`; as contas do `app.js` (`calcula`) não têm
 teste, porque dependem da tela.
 
 ## Testar localmente
 
 O projeto `CLAUDE GERAL/acompanhamento-plantio` serve esta mesma página com a API local
 (`node servidor.mjs` → http://localhost:8090; lê o PIMS pelo Agrovex desta máquina e usa `mapas.js`
-local). O `config.js` é trocado por `{ modo: 'local' }` por esse servidor.
+local). O `config.js` é trocado por `{ modo: 'local' }` por esse servidor. Na aba Revista, o que no
+COA WEB vem do Supabase (chuva por talhão, mapas salvos, cores e previsão) sai de `dados/revista.json`
+desse projeto (rota `/api/revista`, imagens em `dados/revista-mapas/`), fora deste repositório.

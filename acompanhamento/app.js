@@ -114,6 +114,9 @@
       salvar: function (p) { return api('PUT', '/api/metas', p); },
       excluir: function (p) { return api('DELETE', '/api/metas?chave=' + encodeURIComponent([p.unidade, p.safra, p.operacao].join('|'))); },
       atualizar: function () { return api('POST', '/api/sincronizar'); },
+      // revista: chuva por talhão, mapas salvos, cores e previsão vêm de um arquivo de teste do servidor local
+      extrasRevista: async function () { try { return await api('GET', '/api/revista'); } catch (e) { return { admin: true, chuva: {}, mapas: {}, cores: [], previsao: {} }; } },
+      imagemMapaSalvo: async function (path) { var r = await fetch('/api/revista-img?p=' + encodeURIComponent(path)); return r.ok ? r.blob() : null; },
       unidadeDaFazendaCoa: function () { return null; },
       fazendaCoaDaUnidade: function () { return null; }
     };
@@ -238,6 +241,58 @@
           }
         }
         throw new Error('O servidor do PIMS não respondeu em 2 minutos e meio. Os dados são atualizados sozinhos a cada hora.');
+      },
+      /**
+       * O que a Revista cruza além do PIMS (cada leitura depende da categoria do usuário; sem ela o banco devolve
+       * vazio e a seção some): administrador (revista do grupo), chuva por talhão (Chuva por talhão), mapas de
+       * chuva salvos e cores das variedades (Mapas) e a previsão mais recente de cada fonte (Previsão do Tempo).
+       * @param unidades  unidades do PIMS da safra
+       * @param desde     'AAAA-MM-DD': mapas salvos com período terminando a partir daqui
+       */
+      extrasRevista: async function (unidades, safra, desde) {
+        var r = { admin: false, chuva: {}, mapas: {}, cores: [], previsao: {} };
+        function aviso(o, e) { console.warn('Revista: ' + o, e && e.message ? e.message : e); }
+        var ontem = new Date(Date.now() - 2 * DIA).toISOString();
+        var res = await Promise.all([
+          sb.rpc('mapas_eh_admin'),
+          sb.from('chuva_talhao').select('unidade,gerado_em,inicio,dias,ultimo_dia,lidos,talhoes').in('unidade', unidades.map(function (u) { return u.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); })),
+          sb.from('mapas_fazendas').select('id,unidade_pims'),
+          sb.from('mapas_variedade_cores').select('variedade,cor'),
+          sb.from('prev_previsoes').select('fonte,unidade,emitida_em,dias').in('unidade', unidades).gte('emitida_em', ontem).order('emitida_em', { ascending: false })
+        ].map(function (q) { return Promise.resolve(q).catch(function (e) { return { error: e }; }); }));
+        r.admin = !res[0].error && res[0].data === true;
+        if (res[1].error) aviso('chuva por talhão', res[1].error); else (res[1].data || []).forEach(function (l) { r.chuva[String(l.unidade).toUpperCase()] = l; });
+        if (res[3].error) aviso('cores', res[3].error); else r.cores = (res[3].data || []).map(function (x) { return { chave: x.variedade, cor: x.cor }; });
+        if (res[4].error) aviso('previsão', res[4].error); else (res[4].data || []).forEach(function (p) {
+          var u = String(p.unidade).toUpperCase(), l = r.previsao[u] = r.previsao[u] || [];
+          if (!l.some(function (x) { return x.fonte === p.fonte; })) l.push(p); // a mais recente de cada fonte (vem em ordem decrescente)
+        });
+        var uDe = {};
+        (res[2].data || []).forEach(function (f) { if (f.unidade_pims) uDe[f.id] = String(f.unidade_pims).trim().toUpperCase(); });
+        var ids = Object.keys(uDe).filter(function (id) { return unidades.indexOf(uDe[id]) >= 0; });
+        if (ids.length) {
+          var mc = await sb.from('mapas_chuva').select('id,fazenda_id,titulo,periodo_inicio,periodo_fim,png_path,criado_em,tipo,geral:resumo->geral')
+            .in('fazenda_id', ids).eq('tipo', 'chuva').gte('periodo_fim', desde).order('criado_em', { ascending: false }).limit(300);
+          if (mc.error) aviso('mapas salvos', mc.error);
+          else {
+            // o mesmo período salvo mais de uma vez: fica o mais novo
+            var vistos = {};
+            (mc.data || []).forEach(function (x) {
+              var u = uDe[x.fazenda_id], k = u + '|' + x.periodo_inicio + '|' + x.periodo_fim;
+              if (!u || vistos[k] || !x.png_path) return;
+              vistos[k] = true;
+              (r.mapas[u] = r.mapas[u] || []).push({ id: x.id, titulo: x.titulo, inicio: x.periodo_inicio, fim: x.periodo_fim, criadoEm: x.criado_em, tipo: x.tipo, path: x.png_path,
+                media: x.geral && typeof x.geral.media === 'number' ? x.geral.media : null });
+            });
+          }
+        }
+        return r;
+      },
+      /** Imagem de um mapa salvo no módulo Mapas (bucket privado mapas-chuva). */
+      imagemMapaSalvo: async function (path) {
+        var r = await sb.storage.from('mapas-chuva').download(path);
+        if (r.error) throw new Error(erroLegivel(r.error));
+        return r.data;
       },
       unidadeDaFazendaCoa: function (id) { return id === null || id === undefined ? null : (fazendasCoa[id] || null); },
       /** Unidade do PIMS → id da fazenda no COA WEB (para o menu lateral acompanhar a aba escolhida aqui). */
@@ -2170,9 +2225,11 @@
     $('metas').hidden = estado.vista !== 'metas';
     $('safras').hidden = estado.vista !== 'safras';
     $('relatorio').hidden = estado.vista !== 'relatorio';
+    $('revista').hidden = estado.vista !== 'revista';
     document.documentElement.classList.toggle('vista-safras', estado.vista === 'safras');
     if (estado.vista === 'painel') renderPainel();
     else if (estado.vista === 'relatorio') { mostrarAviso(''); window.AcompRelatorio.render(NUCLEO); }
+    else if (estado.vista === 'revista') { mostrarAviso(''); window.AcompRevista.render(NUCLEO); }
     else if (estado.vista === 'safras') {
       // a análise é por fazenda: sem "Todas"
       if (estado.u === TODAS && us.length) { estado.u = us[0]; desenharTopo(); }
@@ -2249,13 +2306,17 @@
     } catch (e) { /* tenta de novo no próximo ciclo */ }
   }
 
-  async function carregarMapas() {
-    if (MAPAS || mapasCarregando) return;
-    mapasCarregando = true;
-    try { MAPAS = await fonte.mapas(); } catch (e) { MAPAS = {}; console.warn('Acompanhamento: mapas', e); }
-    mapasCarregando = false;
-    if (estado.vista === 'painel' && mUltimo) { renderMapa(mUltimo); }
-    if (tv.ativo) tvDesenhar();
+  var mapasPromessa = null;
+  /** Lê os limites dos talhões uma vez (a Revista espera por eles: devolve sempre a mesma promessa). */
+  function carregarMapas() {
+    if (!mapasPromessa) mapasPromessa = (async function () {
+      mapasCarregando = true;
+      try { MAPAS = await fonte.mapas(); } catch (e) { MAPAS = {}; console.warn('Acompanhamento: mapas', e); }
+      mapasCarregando = false;
+      if (estado.vista === 'painel' && mUltimo) { renderMapa(mUltimo); }
+      if (tv.ativo) tvDesenhar();
+    })();
+    return mapasPromessa;
   }
 
   async function atualizarAgora() {
@@ -2273,7 +2334,7 @@
   }
 
   // ---- eventos ----
-  $('abas').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; fecharAmpliado(true); estado.u = b.dataset.u; if (estado.vista !== 'safras' && estado.vista !== 'relatorio') estado.vista = 'painel'; render(); window.scrollTo({ top: 0 }); });
+  $('abas').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; fecharAmpliado(true); estado.u = b.dataset.u; if (estado.vista !== 'safras' && estado.vista !== 'relatorio' && estado.vista !== 'revista') estado.vista = 'painel'; render(); window.scrollTo({ top: 0 }); });
   $('sel-safra').addEventListener('change', function () { estado.s = this.value; render(); });
   $('sel-op').addEventListener('change', function () { estado.o = this.value; render(); });
   document.querySelectorAll('.alternador button').forEach(function (b) { b.addEventListener('click', function () { estado.vista = b.dataset.vista; render(); }); });
@@ -2389,10 +2450,10 @@
     var d = ev.data;
     if (!d || typeof d !== 'object') return;
     if (d.tipo === 'coa-fazenda') { coaFazenda = typeof d.id === 'number' ? d.id : null; aplicarFazendaCoa(); }
-    if (d.tipo === 'acomp-vista' && (d.vista === 'painel' || d.vista === 'metas' || d.vista === 'safras' || d.vista === 'relatorio') && d.vista !== estado.vista) { estado.vista = d.vista; render(); }
+    if (d.tipo === 'acomp-vista' && (d.vista === 'painel' || d.vista === 'metas' || d.vista === 'safras' || d.vista === 'relatorio' || d.vista === 'revista') && d.vista !== estado.vista) { estado.vista = d.vista; render(); }
   });
 
-  // núcleo compartilhado com as abas "Safras" (safras.js) e "Relatórios" (relatorio.js)
+  // núcleo compartilhado com as abas "Safras" (safras.js), "Relatórios" (relatorio.js) e "Revista" (revista.js)
   var NUCLEO = {
     dados: function () { return DADOS; }, estado: function () { return estado; }, TODAS: TODAS, unidadesDaSafra: unidadesDaSafra,
     calcula: calcula, culturaDaSafra: culturaDaSafra, anoDaSafra: anoDaSafra, anosAntes: anosAntes,
@@ -2402,14 +2463,18 @@
     opt: opt, tt: tt, eixoX: eixoX, eixoY: eixoY, chart: chart, vazio: vazio,
     aplicarFundo: aplicarFundo, fundoCultura: fundoCultura, faixaMarca: faixaMarca,
     escrever: escrever, caixa: caixa, rr: rr, legendaCartao: legendaCartao, grafico: grafico, talvezImagem: talvezImagem,
-    escalaExport: escalaExport, AVISO_WHATSAPP: AVISO_WHATSAPP
+    escalaExport: escalaExport, AVISO_WHATSAPP: AVISO_WHATSAPP,
+    escolherMapa: escolherMapa, compor: compor, mapasProntos: carregarMapas,
+    extrasRevista: function (us, s, desde) { return fonte.extrasRevista(us, s, desde); },
+    imagemMapaSalvo: function (path) { return fonte.imagemMapaSalvo(path); },
+    irParaUnidade: function (u) { estado.u = u; render(); }
   };
 
   // ---- início ----
   if (EMBED) document.documentElement.classList.add('embed');
   if (!window.echarts) { set('carregando-texto', 'Não foi possível carregar a biblioteca de gráficos. Verifique a conexão com a internet.'); return; }
   var h0 = location.hash.slice(1).split('/').map(decodeURIComponent);
-  if (h0[0] === 'painel' || h0[0] === 'metas' || h0[0] === 'safras' || h0[0] === 'relatorio') { estado.vista = h0[0]; estado.u = h0[1] || TODAS; estado.s = h0[2] || null; estado.o = h0[3] === 'COLHEITA' ? 'COLHEITA' : 'PLANTIO'; }
+  if (h0[0] === 'painel' || h0[0] === 'metas' || h0[0] === 'safras' || h0[0] === 'relatorio' || h0[0] === 'revista') { estado.vista = h0[0]; estado.u = h0[1] || TODAS; estado.s = h0[2] || null; estado.o = h0[3] === 'COLHEITA' ? 'COLHEITA' : 'PLANTIO'; }
 
   (async function iniciar() {
     try {
