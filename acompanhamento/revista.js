@@ -1200,7 +1200,8 @@
   }
   function nomeArquivo(ed) {
     var s = function (t) { return String(t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); };
-    return ['revista-plantio', s(ed.s), s(ed.grupo ? 'grupo' : ed.u), N.paraIso(N.hoje())].join('-') + '.pdf';
+    // 'relatorio-de-plantio-…' (o título da capa); a aba Relatórios baixa 'relatorio-plantio-…', e os dois não se confundem
+    return ['relatorio-de-plantio', s(ed.s), s(ed.grupo ? 'grupo' : ed.u), N.paraIso(N.hoje())].join('-') + '.pdf';
   }
   /** PDF das páginas prontas (cópia da lista: uma geração nova no meio não mistura duas revistas). */
   async function baixarPdf() {
