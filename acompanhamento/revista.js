@@ -425,8 +425,13 @@
     c.lineWidth = 3.2; c.strokeStyle = 'rgba(255,255,255,.95)'; c.shadowColor = 'rgba(0,0,0,.25)'; c.shadowBlur = 12;
     dg.forEach(function (t, i) { c.strokeText(t, W + 26, 1000 + i * 262); });
     espaco(c, 0); c.restore();
-    tx(c, 'COA', W / 2, H - 92, 70, 700, '#FFFFFF', { al: 'center', esp: 8, sombra: 'rgba(0,0,0,.45)' });
-    tx(c, 'CENTRO DE OPERAÇÕES AGRÍCOLAS', W / 2, H - 52, 14, 600, 'rgba(255,255,255,.85)', { al: 'center', esp: 4, sombra: 'rgba(0,0,0,.45)' });
+    // a logo oficial do COA (versão branca, a mesma dos relatórios), centralizada no pé da capa
+    if (im.coa) {
+      var cw = 460, ch = im.coa.height / im.coa.width * cw;
+      c.save(); c.shadowColor = 'rgba(0,0,0,.45)'; c.shadowBlur = 16; c.shadowOffsetY = 2;
+      c.drawImage(im.coa, (W - cw) / 2, H - 56 - ch, cw, ch);
+      c.restore();
+    }
   }
 
   async function pgAbertura(c, P) {
