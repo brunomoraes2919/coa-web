@@ -58,8 +58,8 @@ tabela da ZEUS carregada em lotes: a revista diz até que dia ela vai.
 
 **Foto da capa por período:** os arquivos ficam em `acompanhamento/assets/capas/` e a escolha no
 objeto `CAPAS` do `revista.js` (pela safra do PIMS, ex. `'SOJA 26/27'`, ou pela cultura, ex.
-`'SOJA'`). Sem foto própria, vale `padrao.webp` (foto simulada: céu de fim de tarde, lavoura e o trator
-8R). Só imagens sem dado da empresa: o repositório é público.
+`'SOJA'`). Hoje há só `soja.webp` (foto real da lavoura de soja, recortada em pé), que também vale
+para as safras sem foto própria. Só imagens sem dado da empresa: o repositório é público.
 
 Código: `acompanhamento/revista.js` (páginas em canvas, tela e PDF com o jsPDF do cdnjs) e
 `acompanhamento/revista-logica.js` (contas e textos, com testes); a chuva por talhão usa a lógica do

@@ -23,8 +23,11 @@
     bom: '#1E7B4F', ruim: '#B3261E', atencao: '#B7791F'
   };
   var COR_EQUIPES = ['#0C5A50', '#DB8A08', '#2a78d6', '#a8327a', '#8c5a2b', '#1baf7a', '#4a3aa7', '#e87ba4'];
-  /** Foto da capa por safra (nome do PIMS) ou cultura; sem foto própria, a foto padrão (simulada). */
-  var CAPAS = { padrao: 'assets/capas/padrao.webp' };
+  /**
+   * Foto da capa por safra (nome do PIMS, ex. 'SOJA 26/27') ou cultura (ex. 'SOJA'); sem foto própria, a padrão.
+   * Hoje só há a foto real da lavoura de soja (enviada pelo usuário em 19/10/2026), que também serve de padrão.
+   */
+  var CAPAS = { SOJA: 'assets/capas/soja.webp', padrao: 'assets/capas/soja.webp' };
   var NOME_GRUPO = 'Grupo Locks';
 
   function $(id) { return document.getElementById(id); }
@@ -422,7 +425,7 @@
     // a data em números vazados, à direita (como no modelo)
     var dg = digitosData(ed.dataRef);
     c.save(); c.font = fnt(330, 700); espaco(c, -6); c.textAlign = 'right'; c.textBaseline = 'alphabetic';
-    c.lineWidth = 3.2; c.strokeStyle = 'rgba(255,255,255,.95)'; c.shadowColor = 'rgba(0,0,0,.25)'; c.shadowBlur = 12;
+    c.lineWidth = 4; c.strokeStyle = 'rgba(255,255,255,.96)'; c.shadowColor = 'rgba(0,0,0,.5)'; c.shadowBlur = 14;
     dg.forEach(function (t, i) { c.strokeText(t, W + 26, 1000 + i * 262); });
     espaco(c, 0); c.restore();
     // a logo oficial do COA (versão branca, a mesma dos relatórios), centralizada no pé da capa
