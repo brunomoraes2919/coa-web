@@ -114,7 +114,6 @@
       salvar: function (p) { return api('PUT', '/api/metas', p); },
       excluir: function (p) { return api('DELETE', '/api/metas?chave=' + encodeURIComponent([p.unidade, p.safra, p.operacao].join('|'))); },
       atualizar: function () { return api('POST', '/api/sincronizar'); },
-      ehSuper: async function () { return PARAMS.get('super') !== '0'; }, // teste local: ?super=0 simula quem não é ADMINISTRADOR+
       // revista: chuva por talhão, mapas salvos, cores e previsão vêm de um arquivo de teste do servidor local
       extrasRevista: async function () { try { return await api('GET', '/api/revista'); } catch (e) { return { admin: true, chuva: {}, mapas: {}, cores: [], previsao: {} }; } },
       imagemMapaSalvo: async function (path) { var r = await fetch('/api/revista-img?p=' + encodeURIComponent(path)); return r.ok ? r.blob() : null; },
@@ -243,10 +242,6 @@
         }
         throw new Error('O servidor do PIMS não respondeu em 2 minutos e meio. Os dados são atualizados sozinhos a cada hora.');
       },
-      /** ADMINISTRADOR+ (perfis.super)? A Revista fica só para ele enquanto é validada. */
-      ehSuper: async function () {
-        try { var r = await sb.rpc('is_super'); return !r.error && r.data === true; } catch (e) { return false; }
-      },
       /**
        * O que a Revista cruza além do PIMS (cada leitura depende da categoria do usuário; sem ela o banco devolve
        * vazio e a seção some): administrador (revista do grupo), chuva por talhão (Chuva por talhão), mapas de
@@ -312,8 +307,6 @@
   // ===========================================================================
   var DADOS = null, PLANOS = [], MAPAS = null, mapasCarregando = false;
   var estado = { vista: 'painel', u: TODAS, s: null, o: 'PLANTIO' };
-  /** a aba Revista, enquanto é validada, é só do ADMINISTRADOR+ (fonte.ehSuper) */
-  var REVISTA_LIBERADA = false;
 
   function unidadesDaSafra(s) {
     var us = {};
@@ -2223,7 +2216,6 @@
 
   function render() {
     if (!DADOS) return;
-    if (estado.vista === 'revista' && !REVISTA_LIBERADA) estado.vista = 'painel';
     var us = unidadesDaSafra(estado.s);
     if (DADOS.safras.indexOf(estado.s) < 0) estado.s = DADOS.safras.indexOf('SOJA 26/27') >= 0 ? 'SOJA 26/27' : DADOS.safras[0];
     us = unidadesDaSafra(estado.s);
@@ -2487,8 +2479,6 @@
   (async function iniciar() {
     try {
       await fonte.prontoParaUsar();
-      REVISTA_LIBERADA = await fonte.ehSuper();
-      document.querySelector('.alternador button[data-vista="revista"]').hidden = !REVISTA_LIBERADA;
       await carregarDados();
       // a TV que se recarregou por causa de uma versão nova volta para onde estava
       var retomar = null;

@@ -33,7 +33,7 @@ PNG único ou um PDF A4 em pé. Tela e exportação em `acompanhamento/relatorio
 
 ## Revista (relatório do plantio em páginas A4)
 
-Aba **Revista** (COA WEB → Operacional → Revista; **por enquanto só o ADMINISTRADOR+ vê**, até ser validada: o botão do menu tem a classe `super-only` na casca e o módulo pergunta `is_super()`): o relatório consolidado do período de produção (por
+Aba **Revista** (COA WEB → Operacional → Revista; liberada para todos com a categoria Operacional desde 19/10/2026, anunciada pelo aviso de novidade da casca, `NOVIDADE` + `#dlg-novidade` no `index.html`, que aparece uma vez por usuário em cada navegador): o relatório consolidado do período de produção (por
 enquanto só o plantio) diagramado como revista, em páginas A4 em pé, e exportado **só em PDF**. A fazenda
 é a da aba escolhida; em **Todas**, a revista do grupo, que só o administrador gera (`mapas_eh_admin`; os
 outros caem na primeira fazenda da lista). A tela mostra as mesmas páginas do PDF (capa sozinha, depois
