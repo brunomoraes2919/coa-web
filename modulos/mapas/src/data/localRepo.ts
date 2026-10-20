@@ -1,7 +1,8 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { extensaoImagem } from '../lib/historico';
 import { carregarPlantioPims } from '../lib/plantioPims';
-import type { AreaCultura, CorVariedade, Fazenda, MapaSalvo, Plantio, Safra, Talhao } from '../lib/types';
+import type { AreaCultura, CorVariedade, Fazenda, MapaSalvo, Plantio, Safra, Talhao, VariedadePims } from '../lib/types';
+import { rowParaVariedadePims, type VariedadeRow } from './supabaseLinhas';
 import type { BackupJson, Repositorio } from './repo';
 import { completarFazenda, completarPlantio, completarSafra, completarTalhao, reviverPics } from './supabaseLinhas';
 
@@ -36,9 +37,10 @@ interface CoaChuvaDB extends DBSchema {
     indexes: { safraFazenda: [string, string]; safraId: string; fazendaId: string };
   };
   coresVariedade: { key: string; value: CorVariedade };
+  nomesVariedade: { key: string; value: { chave: string; nome: string; em: string } };
 }
 
-const VERSAO_DB = 3;
+const VERSAO_DB = 4;
 
 const ERRO_BLOQUEADO =
   'O banco local está aberto em outra aba com uma versão anterior do app. Feche as outras abas do Mapa de Chuva COA e recarregue esta página.';
@@ -93,6 +95,25 @@ function atualizarEsquema(db: IDBPDatabase<CoaChuvaDB>, versaoAntiga: number): v
   if (versaoAntiga < 3) {
     // v3 (mapa de variedade): cor fixa de cada variedade
     db.createObjectStore('coresVariedade', { keyPath: 'variedade' });
+  }
+  if (versaoAntiga < 4) {
+    // v4 (nome comercial das variedades): o nome digitado, pela chave da variedade
+    db.createObjectStore('nomesVariedade', { keyPath: 'chave' });
+  }
+}
+
+/**
+ * Cadastro de variedades do modo local: public/dados/variedades.json (gravado por `npm run plantio`, só nesta
+ * máquina). Sem o arquivo, lista vazia.
+ */
+async function lerVariedadesLocais(): Promise<VariedadePims[]> {
+  try {
+    const r = await fetch('./dados/variedades.json', { cache: 'no-store' });
+    if (!r.ok) return [];
+    const j = (await r.json()) as { atualizadoEm?: string; linhas?: VariedadeRow[] };
+    return (j.linhas ?? []).map((l) => rowParaVariedadePims({ ...l, visto_em: l.visto_em ?? j.atualizadoEm ?? new Date(0).toISOString(), nome_comercial: null, comercial_em: null }));
+  } catch {
+    return [];
   }
 }
 
@@ -356,6 +377,23 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
     async excluirCorVariedade(variedade) {
       const db = await dbPromise;
       await db.delete('coresVariedade', variedade);
+    },
+
+    async listarVariedadesPims() {
+      const db = await dbPromise;
+      const [lista, nomes] = await Promise.all([lerVariedadesLocais(), db.getAll('nomesVariedade')]);
+      const porChave = new Map(nomes.map((n) => [n.chave, n]));
+      return lista.map((v) => {
+        const n = porChave.get(v.chave);
+        return n ? { ...v, nomeComercial: n.nome, comercialEm: n.em } : v;
+      });
+    },
+
+    async salvarNomeComercial(chave, nome) {
+      const db = await dbPromise;
+      const valor = nome && nome.trim() ? nome.trim() : null;
+      if (valor) await db.put('nomesVariedade', { chave, nome: valor, em: new Date().toISOString() });
+      else await db.delete('nomesVariedade', chave);
     },
 
     async exportarBackup() {

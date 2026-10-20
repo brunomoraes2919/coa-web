@@ -348,6 +348,25 @@ export function lerVinculosValidacao(opcoes: { url: string; chave: string; fetch
 export function sincronizarValidacao(opcoes: { url: string; token: string; vinculos?: { unidade: string; deposito: string | null }[]; fetchImpl?: FetchLike; agora?: Date }): Promise<{ geradoEm: string; linhas: LinhaValidScript[]; avisos: string[] }>;
 export function gravarValidacaoSupabase(dados: { geradoEm: string; linhas: LinhaValidScript[] }, opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<'ok' | 'vazio' | 'sem-tabela'>;
 export function rodarValidacao(opcoes: { agrovex: { url: string; token: string }; supabase: { url: string; chave: string }; fetchImpl?: FetchLike; /** recebe o erro inteiro (para quem responde a um pedido escolher a mensagem pelo tipo) */ aoErro?: (e: unknown) => void }): Promise<string | null>;
+// cadastro de variedades do PIMS (nome comercial no Mapas)
+export interface VariedadePimsScript { id: string | null; codigo: number | null; abreviada: string | null; descricao: string | null; grupo: string | null; ativo: boolean; talhoes: number }
+export interface LinhaVariedadeScript {
+  chave: string;
+  nome_pims: string;
+  grupo: string | null;
+  pims: VariedadePimsScript[];
+  em_uso: boolean;
+  talhoes: number;
+  ativo: boolean;
+  atualizado_em: string;
+}
+export function nomeDaVariedade(descricao: string | null | undefined): string | null;
+export function chaveDaVariedade(nome: string): string;
+export function montarSqlVariedades(safras: string[], pular?: number | null, tamanho?: number): string;
+export function linhasVariedades(res: Resultado, atualizadoEm: string): LinhaVariedadeScript[];
+export function sincronizarVariedades(opcoes: { url: string; token: string; safras?: 'auto' | string[]; excluirPrefixos?: string[]; fetchImpl?: FetchLike; agora?: Date }): Promise<{ atualizadoEm: string; safras: string[]; linhas: LinhaVariedadeScript[] }>;
+export function gravarVariedadesSupabase(dados: { linhas: LinhaVariedadeScript[] }, opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<'ok' | 'vazio' | 'sem-tabela'>;
+export function rodarVariedades(opcoes: { agrovex: { url: string; token: string; safras?: 'auto' | string[]; excluirPrefixos?: string[] }; supabase: { url: string; chave: string }; fetchImpl?: FetchLike }): Promise<string | null>;
 export function rodarAcompanhamento(opcoes: {
   agrovex: { url: string; token: string; safras: 'auto' | string[]; excluirPrefixos?: string[] };
   supabase: { url: string; chave: string };

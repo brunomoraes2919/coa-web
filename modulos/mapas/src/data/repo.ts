@@ -1,7 +1,7 @@
 import type { PedidoChuva, SituacaoPedidoChuva } from '../lib/chuvaZeus';
 import type { SituacaoZeus } from '../lib/situacaoZeus';
 import type { SituacaoPedidoPlantio } from '../lib/pedidoPlantio';
-import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, Safra, Talhao, TipoMapa } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, Safra, Talhao, TipoMapa, VariedadePims } from '../lib/types';
 
 /** Contrato do repositório (implementado por localRepo.ts e supabaseRepo.ts). */
 
@@ -117,6 +117,14 @@ export interface Repositorio {
   trocarCorVariedade(variedade: string, cor: string): Promise<void>;
   /** Apaga a variedade do cadastro (administrador); se ela aparecer de novo num mapa, ganha cor automática. */
   excluirCorVariedade(variedade: string): Promise<void>;
+
+  /**
+   * Cadastro de variedades do PIMS com o nome comercial (mapas_variedades, gravada pela rotina da VM; local:
+   * public/dados/variedades.json com os nomes guardados no navegador). Pela chave.
+   */
+  listarVariedadesPims(): Promise<VariedadePims[]>;
+  /** Grava (ou apaga, com null ou vazio) o nome comercial de uma variedade (administrador). */
+  salvarNomeComercial(chave: string, nome: string | null): Promise<void>;
 
   exportarBackup(): Promise<BackupJson>;
   /**

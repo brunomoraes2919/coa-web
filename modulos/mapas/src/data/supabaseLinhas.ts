@@ -5,7 +5,7 @@
  * os campos novos.
  */
 import { completarPlantio } from '../lib/plantioPims';
-import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, Safra, Talhao } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, CodigoVariedadePims, CorVariedade, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, Safra, Talhao, VariedadePims } from '../lib/types';
 
 export { completarPlantio };
 
@@ -29,6 +29,7 @@ export const TABELAS = {
   situacaoZeus: 'mapas_zeus_situacao',
   /** cor fixa de cada variedade (supabase/0026_mapa_variedade.sql) */
   coresVariedade: 'mapas_variedade_cores',
+  variedades: 'mapas_variedades',
 } as const;
 
 /** Bucket privado com a imagem e a miniatura dos mapas salvos. */
@@ -357,6 +358,43 @@ export interface PerfilRow {
 export function rowParaAcesso(r: PerfilRow): AcessoUsuario {
   const perfil = r.perfil === 'admin' ? 'admin' : 'colaborador';
   return { perfil, adminSemRestricao: perfil === 'admin' && (r.super === true || r.todas_fazendas !== false) };
+}
+
+/** Linha de mapas_variedades (supabase/0027). */
+export interface VariedadeRow {
+  chave: string;
+  nome_pims: string;
+  grupo: string | null;
+  pims: unknown;
+  em_uso: boolean;
+  talhoes: number;
+  ativo: boolean;
+  visto_em: string;
+  nome_comercial: string | null;
+  comercial_em: string | null;
+}
+
+/** Os códigos do PIMS gravados pela rotina (jsonb); item fora do formato é ignorado. */
+export function codigosDaVariedade(pims: unknown): CodigoVariedadePims[] {
+  if (!Array.isArray(pims)) return [];
+  const txt = (x: unknown) => (typeof x === 'string' && x.trim() ? x.trim() : null);
+  return pims
+    .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object')
+    .map((p) => ({
+      codigo: typeof p.codigo === 'number' && Number.isFinite(p.codigo) ? p.codigo : null,
+      abreviada: txt(p.abreviada),
+      descricao: txt(p.descricao),
+      grupo: txt(p.grupo),
+      ativo: p.ativo !== false,
+      talhoes: typeof p.talhoes === 'number' && Number.isFinite(p.talhoes) ? p.talhoes : 0,
+    }));
+}
+
+export function rowParaVariedadePims(r: VariedadeRow): VariedadePims {
+  return {
+    chave: r.chave, nomePims: r.nome_pims, grupo: r.grupo, emUso: r.em_uso === true, talhoes: Number(r.talhoes) || 0, ativo: r.ativo !== false,
+    codigos: codigosDaVariedade(r.pims), vistoEm: r.visto_em, nomeComercial: r.nome_comercial, comercialEm: r.comercial_em,
+  };
 }
 
 /** Linha de mapas_variedade_cores. */

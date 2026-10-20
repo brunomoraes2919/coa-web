@@ -15,7 +15,7 @@ import { area, fazenda, mapa, plantio, safra, talhao } from './helpers/dominio';
 
 /**
  * Os scripts do módulo, na ordem em que rodam (0002: pedidos de "Atualizar plantio"; 0003: pedidos de chuva da ZEUS;
- * 0026, na pasta supabase/ do COA WEB: mapa de variedade).
+ * 0026 e 0027, na pasta supabase/ do COA WEB: mapa de variedade e nome comercial das variedades).
  */
 const SCRIPTS = [
   'supabase/coa-web/0001_mapas.sql',
@@ -23,6 +23,7 @@ const SCRIPTS = [
   'supabase/coa-web/0003_pedidos_chuva.sql',
   'supabase/coa-web/0004_situacao_zeus.sql',
   '../../supabase/0026_mapa_variedade.sql',
+  '../../supabase/0027_variedades_nome_comercial.sql',
 ];
 const sql = SCRIPTS.map((s) => readFileSync(s, 'utf8'))
   .join('\n')
@@ -42,7 +43,7 @@ function colunasDasTabelas(): Map<string, Set<string>> {
   return tabelas;
 }
 
-describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql + 0003_pedidos_chuva.sql + 0004_situacao_zeus.sql + supabase/0026_mapa_variedade.sql × repositório', () => {
+describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql + 0003_pedidos_chuva.sql + 0004_situacao_zeus.sql + supabase/0026 e 0027 × repositório', () => {
   const tabelas = colunasDasTabelas();
 
   it('cria exatamente as tabelas de TABELAS', () => {
@@ -75,12 +76,17 @@ describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql + 0003_pedi
     for (const coluna of ['fazenda', 'ultimo_dia', 'ultima_leitura', 'conferido_em']) expect(tabelas.get(TABELAS.situacaoZeus)?.has(coluna), coluna).toBe(true);
     // cores das variedades: o repositório insere variedade e cor, troca cor e atualizado_em, e lê criado_em
     for (const coluna of ['variedade', 'cor', 'criado_em', 'atualizado_em']) expect(tabelas.get(TABELAS.coresVariedade)?.has(coluna), coluna).toBe(true);
+    // variedades do PIMS: o repositório lê estas colunas e só grava nome_comercial (o resto vem da rotina da VM)
+    for (const coluna of ['chave', 'nome_pims', 'grupo', 'pims', 'em_uso', 'talhoes', 'ativo', 'visto_em', 'nome_comercial', 'comercial_em']) {
+      expect(tabelas.get(TABELAS.variedades)?.has(coluna), coluna).toBe(true);
+    }
+    expect(sql).toMatch(/grant update \(nome_comercial\) on table public\.mapas_variedades to authenticated;/);
   });
 
   it.each(Object.values(TABELAS))('tabela %s: RLS ligado, nada para anon, acesso explícito para authenticated', (t) => {
     expect(sql).toMatch(new RegExp(`alter table public\\.${t}\\s+enable row level security;`));
     expect(sql).toMatch(new RegExp(`revoke all on table public\\.${t}\\s+from anon, authenticated;`));
-    const soLeitura = t === TABELAS.plantioPims || t === TABELAS.situacaoZeus;
+    const soLeitura = t === TABELAS.plantioPims || t === TABELAS.situacaoZeus || t === TABELAS.variedades;
     const privilegios = soLeitura ? 'select' : t === TABELAS.pedidosPlantio || t === TABELAS.pedidosChuva ? 'select, insert' : 'select, insert, update, delete';
     expect(sql).toMatch(new RegExp(`grant ${privilegios}\\s+on table public\\.${t}\\s+to authenticated;`));
   });

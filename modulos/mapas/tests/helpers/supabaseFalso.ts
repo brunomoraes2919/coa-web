@@ -45,6 +45,7 @@ const CHAVES: Record<string, string[]> = {
   mapas_chuva_pedidos: ['id'],
   mapas_zeus_situacao: ['fazenda'],
   mapas_variedade_cores: ['variedade'],
+  mapas_variedades: ['chave'],
   fazendas: ['id'],
   perfis: ['id'],
 };
@@ -271,10 +272,15 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
       return this.devolver ? responder(apagadas, null) : { data: null, error: null, count: null };
     }
     if (this.op === 'update') {
+      const alteradas: Linha[] = [];
       tabela.forEach((l, i) => {
-        if (passa(l)) tabela[i] = { ...l, ...this.mudancas };
+        if (passa(l)) {
+          tabela[i] = { ...l, ...this.mudancas };
+          alteradas.push(tabela[i]);
+        }
       });
-      return { data: null, error: null, count: null };
+      // .select(...) depois do update: devolve as linhas alteradas (Prefer: return=representation)
+      return this.devolver ? responder(alteradas, null) : { data: null, error: null, count: null };
     }
 
     let linhas = tabela.filter(passa);

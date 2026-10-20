@@ -5,7 +5,7 @@
  */
 import { normalizarCodigo } from './codigoTalhao';
 import { fmtData } from './format';
-import type { AreaCultura, ItemVariedade, LayoutTextos, Plantio, PlantioPimsTalhao, ResumoChuva, ResumoVariedades, Safra, Talhao } from './types';
+import type { AreaCultura, ItemVariedade, LayoutTextos, Plantio, PlantioPimsTalhao, ResumoChuva, ResumoVariedades, Safra, Talhao, VariedadePims } from './types';
 
 export const SEM_VARIEDADE = 'Sem variedade';
 export const COR_SEM_VARIEDADE = '#B5B5B5';
@@ -131,8 +131,47 @@ export function coresNovas(novas: string[], existentes: ReadonlyMap<string, stri
   return out;
 }
 
-/** Resumo da legenda: área e % por variedade, da maior para a menor, com "Sem variedade" (cinza) por último. */
-export function resumoVariedades(feicoes: FeicaoVariedade[], cores: ReadonlyMap<string, string>): ResumoVariedades {
+// ---------------------------------------------------------------- nome comercial (Mapas → Cadastros → Variedades)
+
+/** "Bônus (80I82 IPRO)": o nome comercial com o nome do PIMS entre parênteses; sem nome comercial, só o do PIMS. */
+export function nomeExibido(nomePims: string, comercial: string | null | undefined): string {
+  const c = (comercial ?? '').trim();
+  return c ? `${c} (${nomePims})` : nomePims;
+}
+
+/** chave da variedade → nome comercial (só as que têm). */
+export function comerciaisDe(lista: readonly VariedadePims[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const v of lista) if (v.nomeComercial && v.nomeComercial.trim()) out.set(v.chave, v.nomeComercial.trim());
+  return out;
+}
+
+/** Em uso nas safras atuais e sem nome comercial: as que a tela Variedades e o mapa pedem para cadastrar. */
+export function emUsoSemNome(lista: readonly VariedadePims[]): VariedadePims[] {
+  return lista.filter((v) => v.emUso && !(v.nomeComercial ?? '').trim()).sort((a, b) => b.talhoes - a.talhoes || a.chave.localeCompare(b.chave, 'pt-BR'));
+}
+
+/**
+ * Chaves das variedades novas sem nome comercial: as que a rotina viu pela primeira vez mais de um dia depois da
+ * primeira leitura do cadastro (na primeira leitura todas entram juntas; essas não contam como novas).
+ */
+export function novasSemNome(lista: readonly VariedadePims[]): Set<string> {
+  const tempos = lista.map((v) => Date.parse(v.vistoEm)).filter(Number.isFinite);
+  if (!tempos.length) return new Set();
+  const corte = Math.min(...tempos) + 86_400_000;
+  return new Set(lista.filter((v) => !(v.nomeComercial ?? '').trim() && Date.parse(v.vistoEm) > corte).map((v) => v.chave));
+}
+
+/** Variedades do mapa (pela legenda) sem nome comercial, da maior área para a menor. */
+export function semNomeNoMapa(resumo: ResumoVariedades, comerciais: ReadonlyMap<string, string>): string[] {
+  return resumo.itens.filter((i) => i.chave && !comerciais.has(i.chave)).map((i) => i.nome);
+}
+
+/**
+ * Resumo da legenda: área e % por variedade, da maior para a menor, com "Sem variedade" (cinza) por último. Com
+ * `comerciais`, o nome de cada variedade sai como "Nome comercial (nome do PIMS)" (nomeExibido).
+ */
+export function resumoVariedades(feicoes: FeicaoVariedade[], cores: ReadonlyMap<string, string>, comerciais?: ReadonlyMap<string, string>): ResumoVariedades {
   const grupos = new Map<string, ItemVariedade>();
   let totalHa = 0;
   for (const f of feicoes) {
@@ -140,7 +179,7 @@ export function resumoVariedades(feicoes: FeicaoVariedade[], cores: ReadonlyMap<
     const chave = f.variedade ? chaveVariedade(f.variedade) : '';
     const g = grupos.get(chave) ?? {
       chave,
-      nome: f.variedade ?? SEM_VARIEDADE,
+      nome: f.variedade ? nomeExibido(f.variedade, comerciais?.get(chave)) : SEM_VARIEDADE,
       cor: chave ? (cores.get(chave) ?? COR_SEM_VARIEDADE) : COR_SEM_VARIEDADE,
       areaHa: 0,
       pct: 0,
@@ -201,11 +240,17 @@ export function resumoDoMapaVariedade(r: ResumoVariedades): ResumoChuva {
   return { geral: { media: 0, min: 0, max: 0, areaHa: r.totalHa }, plantado: null, talhoes: [], variedades: r };
 }
 
-/** CSV para o Excel em português: Talhão;Setor;Variedade;Área (ha), pela ordem do nome do talhão. */
-export function csvVariedadePorTalhao(feicoes: FeicaoVariedade[]): string {
+/**
+ * CSV para o Excel em português: Talhão;Setor;Variedade;Nome comercial;Área (ha), pela ordem do nome do talhão
+ * (o nome comercial vem do cadastro de Variedades; vazio quando a variedade não tem).
+ */
+export function csvVariedadePorTalhao(feicoes: FeicaoVariedade[], comerciais?: ReadonlyMap<string, string>): string {
   const esc = (s: string) => (/[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   const linhas = [...feicoes]
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }))
-    .map((f) => [esc(f.nome), esc(f.setor ?? ''), esc(f.variedade ?? SEM_VARIEDADE), f.areaHa.toFixed(2).replace('.', ',')].join(';'));
-  return ['Talhão;Setor;Variedade;Área (ha)', ...linhas].join('\r\n');
+    .map((f) => [
+      esc(f.nome), esc(f.setor ?? ''), esc(f.variedade ?? SEM_VARIEDADE),
+      esc((f.variedade && comerciais?.get(chaveVariedade(f.variedade))) || ''), f.areaHa.toFixed(2).replace('.', ','),
+    ].join(';'));
+  return ['Talhão;Setor;Variedade;Nome comercial;Área (ha)', ...linhas].join('\r\n');
 }

@@ -13,6 +13,7 @@ import {
   rowParaAcesso,
   rowParaAreaCultura,
   rowParaCorVariedade,
+  rowParaVariedadePims,
   rowParaFazenda,
   rowParaLinhaPlantioPims,
   rowParaMapa,
@@ -24,6 +25,7 @@ import {
   talhaoParaRow,
   type AreaCulturaRow,
   type CorVariedadeRow,
+  type VariedadeRow,
   type FazendaRow,
   type MapaRow,
   type PerfilRow,
@@ -390,6 +392,21 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
     async excluirCorVariedade(variedade) {
       const { error } = await client.from(TABELAS.coresVariedade).delete().eq('variedade', variedade);
       if (error) falha('Não foi possível apagar a variedade', error);
+    },
+
+    async listarVariedadesPims() {
+      const linhas = await lerTodas<VariedadeRow>('Não foi possível ler o cadastro de variedades', (de, ate) =>
+        client.from(TABELAS.variedades).select('*', { count: 'exact' }).order('chave').range(de, ate),
+      );
+      return linhas.map(rowParaVariedadePims);
+    },
+
+    async salvarNomeComercial(chave, nome) {
+      const valor = nome && nome.trim() ? nome.trim() : null;
+      const { data, error } = await client.from(TABELAS.variedades).update({ nome_comercial: valor }).eq('chave', chave).select('chave');
+      if (error) falha('Não foi possível gravar o nome comercial', error);
+      // a regra de acesso barra sem erro (nenhuma linha alterada): só o administrador grava
+      if (!data || !data.length) throw new Error('Não foi possível gravar o nome comercial: só o administrador altera o cadastro de variedades.');
     },
 
     async exportarBackup() {

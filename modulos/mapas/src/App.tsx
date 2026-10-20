@@ -18,6 +18,7 @@ const Mapas = lazy(() => import('./pages/Mapas'));
 const NovoMapa = lazy(() => import('./pages/NovoMapa'));
 const NovoMapaVariedade = lazy(() => import('./pages/NovoMapaVariedade'));
 const CoresVariedades = lazy(() => import('./pages/CoresVariedades'));
+const VariedadesPims = lazy(() => import('./pages/VariedadesPims'));
 const Fazendas = lazy(() => import('./pages/Fazendas'));
 const FazendaNova = lazy(() => import('./pages/FazendaNova'));
 const FazendaEditar = lazy(() => import('./pages/FazendaEditar'));
@@ -235,6 +236,7 @@ export default function App() {
                 <Route path="/safras/:safraId/plantio/:fazendaId" element={<Tela><Plantio /></Tela>} />
                 <Route path="/safras/:safraId/areas/:fazendaId" element={<Tela><AreasCultura /></Tela>} />
                 <Route path="/variedades/cores" element={<Tela><CoresVariedades /></Tela>} />
+                <Route path="/variedades/nomes" element={<Tela><VariedadesPims /></Tela>} />
               </Route>
               <Route path="*" element={<Navigate to="/mapas" replace />} />
             </Route>

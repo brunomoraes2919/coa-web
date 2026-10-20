@@ -4,8 +4,9 @@ import {
   chaveVariedade, COR_SEM_VARIEDADE, corAutomatica, coresDasFeicoes, coresNovas, csvVariedadePorTalhao, feicoesDoMapa, juntarCores,
   limparVariedade, PALETA_VARIEDADES, resumoDoMapaVariedade, resumoVariedades, SEM_VARIEDADE, textoItemVariedade, textosAutomaticosVariedade,
   variedadesSemCor, type FeicaoVariedade,
+  comerciaisDe, emUsoSemNome, nomeExibido, novasSemNome, semNomeNoMapa,
 } from '../src/lib/variedades';
-import type { AreaCultura, Plantio, PlantioPimsTalhao, Talhao } from '../src/lib/types';
+import type { AreaCultura, Plantio, PlantioPimsTalhao, Talhao, VariedadePims } from '../src/lib/types';
 
 const geom = { type: 'Polygon' as const, coordinates: [[[0, 0], [1, 0], [1, 1], [0, 0]]] };
 const talhao = (id: string, codigo: string | null, areaHa: number, setor: string | null = 'S1'): Talhao =>
@@ -111,6 +112,41 @@ describe('textos, resumo salvo e CSV', () => {
   });
   it('CSV dos talhões: ordem pelo nome (numérica), ";" e vírgula decimal', () => {
     const csv = csvVariedadePorTalhao([feicao('b', null, 2.5, '010'), feicao('a', 'TMG; 2383', 10, '002')]);
-    expect(csv).toBe('Talhão;Setor;Variedade;Área (ha)\r\n002;;"TMG; 2383";10,00\r\n010;;Sem variedade;2,50');
+    expect(csv).toBe('Talhão;Setor;Variedade;Nome comercial;Área (ha)\r\n002;;"TMG; 2383";;10,00\r\n010;;Sem variedade;;2,50');
+  });
+  it('CSV dos talhões: o nome comercial em coluna própria', () => {
+    const csv = csvVariedadePorTalhao([feicao('a', 'TMG 2383', 10, '002')], new Map([['TMG 2383', 'Bônus']]));
+    expect(csv.split('\r\n')[1]).toBe('002;;TMG 2383;Bônus;10,00');
+  });
+});
+
+describe('nome comercial', () => {
+  const variedade = (chave: string, emUso: boolean, nomeComercial: string | null, vistoEm = '2026-10-20T10:00:00Z', talhoes = 1): VariedadePims => ({
+    chave, nomePims: chave, grupo: null, emUso, talhoes, ativo: true, codigos: [], vistoEm, nomeComercial, comercialEm: null,
+  });
+
+  it('nomeExibido: "Nome comercial (nome do PIMS)"; sem nome comercial, só o do PIMS', () => {
+    expect(nomeExibido('80I82 IPRO', 'Bônus')).toBe('Bônus (80I82 IPRO)');
+    expect(nomeExibido('80I82 IPRO', '  ')).toBe('80I82 IPRO');
+    expect(nomeExibido('80I82 IPRO', null)).toBe('80I82 IPRO');
+  });
+
+  it('resumo da legenda com o nome comercial; a cor continua pela chave do PIMS', () => {
+    const f = [feicao('a', 'TMG 2383', 10), feicao('b', '84KA92 CE', 5)];
+    const r = resumoVariedades(f, new Map([['TMG 2383', '#1F77B4'], ['84KA92 CE', '#FF7F0E']]), new Map([['TMG 2383', 'Bônus']]));
+    expect(r.itens.map((i) => [i.chave, i.nome, i.cor])).toEqual([['TMG 2383', 'Bônus (TMG 2383)', '#1F77B4'], ['84KA92 CE', '84KA92 CE', '#FF7F0E']]);
+    expect(semNomeNoMapa(r, new Map([['TMG 2383', 'Bônus']]))).toEqual(['84KA92 CE']);
+  });
+
+  it('comerciaisDe e emUsoSemNome: só as em uso sem nome, das mais usadas para as menos', () => {
+    const l = [variedade('A', true, null, undefined, 2), variedade('B', true, 'Bê'), variedade('C', false, null), variedade('D', true, ' ', undefined, 9)];
+    expect([...comerciaisDe(l)]).toEqual([['B', 'Bê']]);
+    expect(emUsoSemNome(l).map((v) => v.chave)).toEqual(['D', 'A']);
+  });
+
+  it('novasSemNome: só as que chegaram depois da primeira leitura do cadastro', () => {
+    const l = [variedade('A', false, null, '2026-10-20T10:00:00Z'), variedade('B', false, null, '2026-10-20T11:00:00Z'), variedade('C', false, null, '2026-10-25T09:00:00Z'), variedade('D', false, 'Dê', '2026-10-26T09:00:00Z')];
+    expect([...novasSemNome(l)]).toEqual(['C']);
+    expect([...novasSemNome([])]).toEqual([]);
   });
 });

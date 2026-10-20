@@ -9,12 +9,14 @@ interface Props {
   nomeArquivo: string;
   /** ISO da última atualização do plantio do PIMS; null = sem PIMS para a safra */
   geradoEm: string | null;
+  /** chave da variedade → nome comercial (coluna própria no CSV) */
+  comerciais?: ReadonlyMap<string, string>;
 }
 
 /** Seção "2. Variedades": cor, nome, área, % e talhões, e o CSV dos talhões. */
-export default function TabelaVariedades({ resumo, feicoes, nomeArquivo, geradoEm }: Props) {
+export default function TabelaVariedades({ resumo, feicoes, nomeArquivo, geradoEm, comerciais }: Props) {
   const exportar = () => {
-    const blob = new Blob(['﻿' + csvVariedadePorTalhao(feicoes)], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['﻿' + csvVariedadePorTalhao(feicoes, comerciais)], { type: 'text/csv;charset=utf-8' });
     baixarArquivo(blob, nomeArquivo);
   };
   const pims = fmtDataHora(geradoEm, true);

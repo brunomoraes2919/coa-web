@@ -23,6 +23,7 @@ export function tituloDaRota(rota: string): string {
   if (r === '/variedades/novo') return 'Novo mapa de variedade';
   if (r === '/variedades') return 'Mapas de variedade';
   if (r === '/variedades/cores') return 'Cores das variedades';
+  if (r === '/variedades/nomes') return 'Variedades';
   if (r.startsWith('/variedades/')) return 'Mapa de variedade salvo';
   if (r === '/mapas/novo') return 'Novo mapa de chuva';
   if (r === '/mapas') return 'Mapas salvos';

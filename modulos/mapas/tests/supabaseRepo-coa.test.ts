@@ -23,6 +23,7 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
       pedidosChuva: 'mapas_chuva_pedidos',
       situacaoZeus: 'mapas_zeus_situacao',
       coresVariedade: 'mapas_variedade_cores',
+      variedades: 'mapas_variedades',
     });
   });
 
@@ -56,6 +57,9 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
     await repo.listarCoresVariedade();
     await repo.trocarCorVariedade('TMG 2383', '#000000');
     await repo.excluirCorVariedade('TMG 2383');
+    banco.inserir('mapas_variedades', [{ chave: 'TMG 2383', nome_pims: 'TMG 2383', grupo: null, pims: [], em_uso: true, talhoes: 3, ativo: true, visto_em: '2026-10-20T00:00:00Z', nome_comercial: null, comercial_em: null }]);
+    await repo.listarVariedadesPims();
+    await repo.salvarNomeComercial('TMG 2383', 'Bônus');
     await repo.importarBackup(await repo.exportarBackup());
     await repo.excluirMapa(salvo);
     await repo.excluirSafra(s.id);

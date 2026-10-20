@@ -308,6 +308,35 @@ export interface ResumoVariedades {
   itens: ItemVariedade[];
 }
 
+/** Um código do cadastro VARIEDADE do PIMS dentro de uma variedade (códigos com o mesmo nome limpo ficam juntos). */
+export interface CodigoVariedadePims {
+  codigo: number | null;
+  abreviada: string | null;
+  descricao: string | null;
+  grupo: string | null;
+  ativo: boolean;
+  talhoes: number;
+}
+
+/** Variedade do cadastro do PIMS com o nome comercial (mapas_variedades; gravada pela rotina da VM). */
+export interface VariedadePims {
+  /** chave (nome limpo em maiúsculas): a mesma do cadastro de cores e dos mapas */
+  chave: string;
+  /** nome limpo do PIMS ('80I82 IPRO') */
+  nomePims: string;
+  /** grupo de maturação do PIMS */
+  grupo: string | null;
+  /** algum talhão das safras atuais usa a variedade */
+  emUso: boolean;
+  talhoes: number;
+  ativo: boolean;
+  codigos: CodigoVariedadePims[];
+  /** primeira vez que a rotina viu a variedade */
+  vistoEm: string;
+  nomeComercial: string | null;
+  comercialEm: string | null;
+}
+
 /** Linha do cadastro de cores (mapas_variedade_cores): a cor fixa de uma variedade. */
 export interface CorVariedade {
   /** chave (nome limpo em maiúsculas) */

@@ -268,6 +268,8 @@ ol.passos li { margin-bottom: 4px; }
   font-size: 0.8rem; font-weight: 600; white-space: nowrap; line-height: 1.4;
 }
 .chip-neutro { background: #f1f4f3; border-color: var(--borda); color: var(--texto-suave); }
+/* selo dentro de uma linha de tabela (Variedades: "nova", "sem nome") */
+.selo-alerta { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; border: 1px solid #efd598; background: #fdf5e3; color: var(--alerta); font-size: 0.75rem; font-weight: 600; line-height: 1.4; }
 .chip-alerta { background: #fdf5e3; border-color: #efd598; color: var(--alerta); }
 .chip-alerta > span[aria-hidden] {
   width: 15px; height: 15px; border-radius: 50%; background: var(--laranja); color: #fff; display: grid; place-items: center;

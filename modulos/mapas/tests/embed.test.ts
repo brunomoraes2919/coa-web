@@ -69,6 +69,7 @@ describe('tituloDaRota', () => {
     expect(tituloDaRota('/variedades/novo')).toBe('Novo mapa de variedade');
     expect(tituloDaRota('/variedades')).toBe('Mapas de variedade');
     expect(tituloDaRota('/variedades/cores')).toBe('Cores das variedades');
+    expect(tituloDaRota('/variedades/nomes')).toBe('Variedades');
     expect(tituloDaRota('/variedades/abc-123')).toBe('Mapa de variedade salvo');
     expect(tituloDaRota('/login')).toBe('Mapas');
     expect(tituloDaRota('/')).toBe('Mapas');

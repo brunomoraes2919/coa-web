@@ -857,6 +857,126 @@ export async function rodarAcompanhamento({ agrovex, supabase, fetchImpl = globa
   }
 }
 
+// ---------- cadastro de variedades do PIMS (nome comercial: Mapas → Cadastros → Variedades) ----------
+// A tabela VARIEDADE do PIMS com o grupo de maturação e se alguma safra atual usa a variedade. Gravada em
+// mapas_variedades (supabase/0027) pela chave do nome limpo, a mesma dos mapas de variedade e das cores. O
+// nome comercial é do administrador: o upsert nunca manda essa coluna, então a rotina não apaga o que ele digitou.
+
+/** 'SEMENTE DE SOJA 80I82 IPRO' → '80I82 IPRO'; vazio e "A DEFINIR…" (marcadores do PIMS) → null. */
+export function nomeDaVariedade(descricao) {
+  const nome = limparVariedade(limparVariedade(descricao));
+  if (!nome || /^A\s*DEFINIR\b/i.test(nome)) return null;
+  return nome.replace(/\s+/g, ' ').trim();
+}
+
+/** Chave da variedade (src/lib/variedades.ts → chaveVariedade): maiúsculas, um espaço só. */
+export function chaveDaVariedade(nome) {
+  return String(nome).replace(/\s+/g, ' ').trim().toUpperCase();
+}
+
+/**
+ * Todas as variedades do PIMS (o cadastro inteiro, poucas centenas de linhas) com o grupo de maturação e quantos
+ * talhões das `safras` a usam. ID_VARIEDADE vai como texto (o numeric de 19 dígitos perde precisão no JSON).
+ */
+export function montarSqlVariedades(safras, pular = null, tamanho = PAGINA_CONSULTA) {
+  const em = safras.length ? listaSql(safras) : "''";
+  return `SELECT CONVERT(varchar(30), v.ID_VARIEDADE) AS id, v.CD_VARIEDADE AS codigo, v.DA_VARIEDADE AS abreviada,
+  v.DE_VARIEDADE AS descricao, g.DE_GRP_MATUR AS grupo, v.FG_ATIVO AS ativo,
+  (SELECT COUNT(*) FROM ${PIMS}UPNIVEL3 up JOIN ${PIMS}PERIODOSAFRA ps ON up.ID_PERIODOSAFRA = ps.ID_PERIODOSAFRA
+    WHERE up.ID_VARIEDADE = v.ID_VARIEDADE AND ps.DE_PER_SAFRA IN (${em})) AS talhoes
+FROM ${PIMS}VARIEDADE v
+LEFT JOIN ${PIMS}GRPMATURACAO g ON g.ID_GRPMATURACAO = v.ID_GRPMATURACAO${fimDaConsulta(pular, tamanho, '', 'v.ID_VARIEDADE')}`;
+}
+
+/**
+ * Linhas de mapas_variedades: uma por chave (códigos do PIMS com o mesmo nome limpo ficam juntos em `pims`). O
+ * grupo é o do primeiro código em uso (senão o do primeiro). Sem nome_comercial e sem visto_em (o banco guarda o
+ * nome digitado e a data da primeira vez que a variedade apareceu).
+ */
+export function linhasVariedades(res, atualizadoEm) {
+  const por = new Map();
+  for (const r of objetosDe(res)) {
+    const nome = nomeDaVariedade(r.descricao);
+    if (!nome) continue;
+    const chave = chaveDaVariedade(nome);
+    const talhoes = Number(r.talhoes) || 0;
+    const codigo = r.codigo === null || r.codigo === undefined || r.codigo === '' ? null : Number(r.codigo);
+    const item = {
+      id: txt(r.id), codigo: Number.isFinite(codigo) ? codigo : null, abreviada: txt(r.abreviada), descricao: txt(r.descricao),
+      grupo: txt(r.grupo), ativo: txt(r.ativo) !== 'N', talhoes,
+    };
+    const l = por.get(chave) ?? { chave, nome_pims: nome, grupo: null, pims: [], em_uso: false, talhoes: 0, ativo: false, atualizado_em: atualizadoEm };
+    l.pims.push(item);
+    l.talhoes += talhoes;
+    l.em_uso = l.em_uso || talhoes > 0;
+    l.ativo = l.ativo || item.ativo;
+    por.set(chave, l);
+  }
+  return [...por.values()]
+    .map((l) => {
+      l.pims.sort((a, b) => (b.talhoes - a.talhoes) || ((a.codigo ?? Infinity) - (b.codigo ?? Infinity)));
+      l.grupo = (l.pims.find((p) => p.talhoes > 0 && p.grupo) ?? l.pims.find((p) => p.grupo))?.grupo ?? null;
+      return l;
+    })
+    .sort((a, b) => comparar(a.chave, b.chave));
+}
+
+/** Consulta o PIMS (safras atuais pela mesma regra do plantio) e devolve { atualizadoEm, safras, linhas }. */
+export async function sincronizarVariedades({ url, token, safras = 'auto', excluirPrefixos = [], fetchImpl = fetch, agora = new Date() }) {
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    let nomes;
+    if (safras === 'auto') {
+      const lista = await cliente.consultar(SQL_SAFRAS, 'lista de safras do PIMS', 'lista de safras');
+      nomes = filtrarSafras(lista.rows.map((r) => r[0]), safrasPadrao(agora), excluirPrefixos);
+    } else {
+      nomes = [...new Set(safras.map((s) => String(s).trim()).filter(Boolean))];
+    }
+    const res = await consultarPaginas(cliente, (pular, tamanho) => montarSqlVariedades(nomes, pular, tamanho), 'cadastro de variedades do PIMS', 'variedades', { reserva: true });
+    const atualizadoEm = agora.toISOString();
+    return { atualizadoEm, safras: nomes, linhas: linhasVariedades(res, atualizadoEm) };
+  } finally {
+    await cliente.fechar();
+  }
+}
+
+/**
+ * Upsert em mapas_variedades (sem apagar nada: variedade que some do PIMS fica com o último estado). Devolve
+ * 'ok', 'vazio' (PIMS sem variedade: não mexe) ou 'sem-tabela' (supabase/0027 ainda não rodado: só avisa).
+ */
+export async function gravarVariedadesSupabase(dados, { url, chave, fetch: fetchImpl = globalThis.fetch }) {
+  if (!dados.linhas.length) return 'vazio';
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/mapas_variedades?on_conflict=chave`, {
+    method: 'POST',
+    headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify(dados.linhas),
+  }, 'o upsert em mapas_variedades');
+  if (!resp.ok) {
+    const texto = await resp.clone().text().catch(() => '');
+    if (resp.status === 404 || /PGRST205|42P01/.test(texto)) {
+      console.warn('Variedades: a tabela mapas_variedades ainda não existe no Supabase (rode supabase/0027_variedades_nome_comercial.sql).');
+      return 'sem-tabela';
+    }
+    await erroSupabase(resp, chave, 'o upsert em mapas_variedades');
+  }
+  return 'ok';
+}
+
+/** Etapa das variedades na rotina de hora em hora. Não lança: devolve null (ok) ou a mensagem do erro. */
+export async function rodarVariedades({ agrovex, supabase, fetchImpl = globalThis.fetch }) {
+  try {
+    const dados = await sincronizarVariedades({ ...agrovex, fetchImpl });
+    const situacao = await gravarVariedadesSupabase(dados, { ...supabase, fetch: fetchImpl });
+    const emUso = dados.linhas.filter((l) => l.em_uso).length;
+    console.log(`Variedades: ${dados.linhas.length} do PIMS (${emUso} em uso nas safras atuais) · ${situacao === 'ok' ? 'gravado no Supabase' : situacao}`);
+    return null;
+  } catch (e) {
+    const msg = semChave(semChave(e instanceof Error ? e.message : String(e), supabase.chave), agrovex.token);
+    console.error(`Variedades: erro (o plantio dos mapas não foi afetado): ${msg}`);
+    return msg;
+  }
+}
+
 // ---------- validação de apontamentos (módulo validacao/ do COA WEB) ----------
 // Ordens de serviço do PIMS (abertas e fechadas com diferença de área), coordenadores (a Equipe da
 // ordem), depósitos e, para os depósitos que o usuário vinculou aos coordenadores, o saldo do SAP.
@@ -2923,6 +3043,14 @@ async function main() {
       });
       if (erro) process.exitCode = 1;
     }
+    // Cadastro de variedades do PIMS (nome comercial no Mapas): um erro nele não desfaz o resto
+    if (config.variedades !== false) {
+      const erro = await rodarVariedades({
+        agrovex: { url: urlAgrovex, token, safras: config.safras ?? 'auto', excluirPrefixos: config.excluirPrefixos ?? [] },
+        supabase,
+      });
+      if (erro) process.exitCode = 1;
+    }
     // Validação de apontamentos (ordens de serviço e saldo dos depósitos): um erro nela não desfaz o resto
     if (config.validacao !== false) {
       const erro = await rodarValidacao({
@@ -2944,6 +3072,18 @@ async function main() {
   }
   // modo local (--local): o resumo por unidade e o arquivo public/dados/plantio.json, só nesta máquina
   log();
+  // e o cadastro de variedades (public/dados/variedades.json, a tela Variedades no modo local); falha só avisa
+  if (config.variedades !== false) {
+    try {
+      const v = await sincronizarVariedades({ url: urlAgrovex, token, safras: config.safras ?? 'auto', excluirPrefixos: config.excluirPrefixos ?? [] });
+      const arq = join(raiz, 'public', 'dados', 'variedades.json');
+      mkdirSync(dirname(arq), { recursive: true });
+      writeFileSync(arq, JSON.stringify(v, null, 1) + '\n');
+      console.log(`Gravado public/dados/variedades.json (${v.linhas.length} variedades).`);
+    } catch (e) {
+      console.warn(`Variedades: não foi possível ler o cadastro do PIMS (${semChave(e instanceof Error ? e.message : String(e), token)}).`);
+    }
+  }
 
   const destino = join(raiz, 'public', 'dados', 'plantio.json');
   let antigo = null;

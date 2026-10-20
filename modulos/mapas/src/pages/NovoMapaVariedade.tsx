@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { repo } from '../data';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import AtualizarPlantio from '../components/AtualizarPlantio';
@@ -11,6 +11,8 @@ import TabelaVariedades from '../components/editor/TabelaVariedades';
 import { SecaoAparencia } from '../components/editor/SecaoAparencia';
 import { useCadastros, useLogo } from '../components/editor/hooks';
 import { useCoresVariedade } from '../components/editor/useCoresVariedade';
+import { useNomesComerciais } from '../components/editor/useNomesComerciais';
+import { usePerfil } from '../components/usePerfil';
 import { useMapaPlantio, useTalhoesEPlantio } from '../components/editor/usePlantioMapa';
 import { usePreSelecaoCoa } from '../components/editor/usePreSelecaoCoa';
 import '../components/editor/editor.css';
@@ -20,7 +22,7 @@ import { fazendasDoCoa } from '../lib/embed';
 import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarCopiaHistorico, gerarPng, nomeArquivoMapa } from '../lib/exportar';
 import { DPI_HISTORICO, identidadeMapa, type ModoSalvar } from '../lib/historico';
 import type { LayoutConfig, LayoutTextos, MapaSalvo, Palette } from '../lib/types';
-import { coresDasFeicoes, feicoesDoMapa, resumoDoMapaVariedade, resumoVariedades, textosAutomaticosVariedade } from '../lib/variedades';
+import { coresDasFeicoes, feicoesDoMapa, resumoDoMapaVariedade, resumoVariedades, semNomeNoMapa, textosAutomaticosVariedade } from '../lib/variedades';
 import { composicaoDe, extentsDosQuadros, TILES, type RenderInput } from '../render';
 
 type Aparencia = Omit<LayoutConfig, 'textos'>;
@@ -84,7 +86,12 @@ export default function NovoMapaVariedade() {
   const feicoes = useMemo(() => feicoesDoMapa(talhoesUsados, areasUsadas, plantio.efetivos, plantio.pims), [talhoesUsados, areasUsadas, plantio.efetivos, plantio.pims]);
   const fixas = mapaAtual?.config.coresVariedade ?? null;
   const { cores, aviso: avisoCores } = useCoresVariedade(feicoes, fixas);
-  const resumo = useMemo(() => (cores ? resumoVariedades(feicoes, cores) : null), [feicoes, cores]);
+  // nome comercial do cadastro de Variedades: "Nome comercial (nome do PIMS)" na legenda, na tabela e no mapa salvo
+  const { lista: variedadesPims, comerciais } = useNomesComerciais();
+  const admin = usePerfil() === 'admin';
+  const resumo = useMemo(() => (cores ? resumoVariedades(feicoes, cores, comerciais) : null), [feicoes, cores, comerciais]);
+  // só avisa depois de ler o cadastro (sem ele, ou sem a tabela, o mapa segue com os nomes do PIMS)
+  const semNome = useMemo(() => (resumo && variedadesPims && variedadesPims.length ? semNomeNoMapa(resumo, comerciais) : []), [resumo, variedadesPims, comerciais]);
 
   const automaticos = useMemo(
     () => textosAutomaticosVariedade({ fazenda: fazenda?.nome ?? '', safra, setores, hoje: new Date() }),
@@ -239,6 +246,15 @@ export default function NovoMapaVariedade() {
           {sucesso}
         </Aviso>
       )}
+      {semNome.length > 0 && (
+        <Aviso tipo="alerta" titulo={semNome.length === 1 ? 'Variedade sem nome comercial' : `${semNome.length} variedades sem nome comercial`}>
+          <p>
+            {semNome.slice(0, 8).join(', ')}
+            {semNome.length > 8 ? ` e mais ${semNome.length - 8}` : ''}: no mapa {semNome.length === 1 ? 'ela sai' : 'elas saem'} só com o nome do PIMS.{' '}
+            {admin ? <Link to="/variedades/nomes">Cadastrar o nome comercial</Link> : 'Peça ao administrador para cadastrar em Mapas → Cadastros → Variedades.'}
+          </p>
+        </Aviso>
+      )}
       {avisos.length > 0 && (
         <Aviso tipo="alerta" titulo="Atenção">
           <ul>
@@ -271,7 +287,7 @@ export default function NovoMapaVariedade() {
           <section className="cartao pilha">
             <h2>2. Variedades</h2>
             {fazendaId && safraId && resumo ? (
-              <TabelaVariedades resumo={resumo} feicoes={feicoes} nomeArquivo={nomeArquivo.replace(/\.png$/, '_TALHOES.csv')} geradoEm={plantio.geradoEm} />
+              <TabelaVariedades resumo={resumo} feicoes={feicoes} nomeArquivo={nomeArquivo.replace(/\.png$/, '_TALHOES.csv')} geradoEm={plantio.geradoEm} comerciais={comerciais} />
             ) : (
               <p className="suave">{fazendaId && safraId ? 'Lendo as cores das variedades…' : 'Escolha a fazenda e a safra.'}</p>
             )}

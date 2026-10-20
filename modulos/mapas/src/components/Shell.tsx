@@ -67,7 +67,7 @@ const ITENS: ItemNav[] = [
         <path d="M12 12c0-4 3-7 7-7 0 4-3 7-7 7Z" />
       </>,
     ),
-    ativo: (c) => c === '/variedades' || (c.startsWith('/variedades/') && c !== '/variedades/novo' && c !== '/variedades/cores'),
+    ativo: (c) => c === '/variedades' || (c.startsWith('/variedades/') && c !== '/variedades/novo' && c !== '/variedades/cores' && c !== '/variedades/nomes'),
   },
   {
     para: '/variedades/novo',
@@ -93,6 +93,18 @@ const ITENS: ItemNav[] = [
       </>,
     ),
     ativo: (c) => c === '/variedades/cores',
+    admin: true,
+  },
+  {
+    para: '/variedades/nomes',
+    texto: 'Variedades',
+    icone: svg(
+      <>
+        <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z" />
+        <circle cx="7.5" cy="7.5" r="1.5" />
+      </>,
+    ),
+    ativo: (c) => c === '/variedades/nomes',
     admin: true,
   },
   {
