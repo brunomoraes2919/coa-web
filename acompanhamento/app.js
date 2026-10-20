@@ -117,6 +117,8 @@
       // revista: chuva por talhão, mapas salvos, cores e previsão vêm de um arquivo de teste do servidor local
       extrasRevista: async function () { try { return await api('GET', '/api/revista'); } catch (e) { return { admin: true, chuva: {}, mapas: {}, cores: [], comerciais: [], previsao: {} }; } },
       imagemMapaSalvo: async function (path) { var r = await fetch('/api/revista-img?p=' + encodeURIComponent(path)); return r.ok ? r.blob() : null; },
+      populacoes: async function (unidades, safra) { return ((await api('GET', '/api/populacao?safra=' + encodeURIComponent(safra))).linhas || []).filter(function (l) { return unidades.indexOf(l.unidade) >= 0; }); },
+      salvarPopulacoes: function (unidade, safra, linhas) { return api('PUT', '/api/populacao', { unidade: unidade, safra: safra, linhas: linhas }); },
       unidadeDaFazendaCoa: function () { return null; },
       fazendaCoaDaUnidade: function () { return null; }
     };
@@ -290,6 +292,32 @@
           }
         }
         return r;
+      },
+      /**
+       * Sementes por metro e população de cada variedade (cadastro manual da aba Revista; supabase/0028), das
+       * unidades e da safra. Sem a tabela no banco, o erro diz qual script rodar.
+       */
+      populacoes: async function (unidades, safra) {
+        var r = await sb.from('acomp_variedade_populacao').select('unidade,safra,variedade,sementes_metro,populacao').in('unidade', unidades).eq('safra', safra);
+        if (r.error) throw new Error(/PGRST205|Could not find the table|does not exist/i.test((r.error.code || '') + ' ' + r.error.message) ? 'O cadastro de sementes e população ainda não foi preparado no banco (script supabase/0028_variedades_populacao.sql).' : erroLegivel(r.error));
+        return (r.data || []).map(function (l) {
+          return { unidade: l.unidade, safra: l.safra, variedade: l.variedade, sementesMetro: l.sementes_metro === null ? null : Number(l.sementes_metro), populacao: l.populacao };
+        });
+      },
+      /** Grava as linhas de uma fazenda e safra: linha com algum valor é gravada; linha sem nenhum é apagada. */
+      salvarPopulacoes: async function (unidade, safra, linhas) {
+        var gravar = linhas.filter(function (l) { return l.sementesMetro !== null || l.populacao !== null; })
+          .map(function (l) { return { unidade: unidade, safra: safra, variedade: l.variedade, sementes_metro: l.sementesMetro, populacao: l.populacao }; });
+        var apagar = linhas.filter(function (l) { return l.sementesMetro === null && l.populacao === null; }).map(function (l) { return l.variedade; });
+        var semPermissao = function (e) { return new Error(/row-level security|permission denied/i.test(e.message) ? 'Você não tem permissão para cadastrar sementes e população desta fazenda.' : erroLegivel(e)); };
+        if (gravar.length) {
+          var g = await sb.from('acomp_variedade_populacao').upsert(gravar, { onConflict: 'unidade,safra,variedade' });
+          if (g.error) throw semPermissao(g.error);
+        }
+        if (apagar.length) {
+          var a = await sb.from('acomp_variedade_populacao').delete().eq('unidade', unidade).eq('safra', safra).in('variedade', apagar);
+          if (a.error) throw semPermissao(a.error);
+        }
       },
       /** Imagem de um mapa salvo no módulo Mapas (bucket privado mapas-chuva). */
       imagemMapaSalvo: async function (path) {
@@ -2470,6 +2498,8 @@
     escolherMapa: escolherMapa, compor: compor, mapasProntos: carregarMapas,
     extrasRevista: function (us, s, desde) { return fonte.extrasRevista(us, s, desde); },
     imagemMapaSalvo: function (path) { return fonte.imagemMapaSalvo(path); },
+    populacoes: function (us, s) { return fonte.populacoes(us, s); },
+    salvarPopulacoes: function (u, s, linhas) { return fonte.salvarPopulacoes(u, s, linhas); },
     irParaUnidade: function (u) { estado.u = u; render(); }
   };
 

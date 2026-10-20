@@ -341,7 +341,49 @@
     return p;
   }
 
+  // ---------------------------------------------------------------- sementes por metro e população (cadastro manual)
+
+  /**
+   * Número digitado em português: "12,2" → 12.2; "244.000" ou "244000" → 244000; vazio → null; texto que não é
+   * número → NaN. O ponto com 3 dígitos depois é milhar ("244.000"); com 1 ou 2 é decimal ("12.2").
+   */
+  function lerNumeroBr(texto) {
+    var t = String(texto === null || texto === undefined ? '' : texto).replace(/\s+/g, '');
+    if (!t) return null;
+    if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, '').replace(',', '.');
+    else if (/^\d+(,\d+)?$/.test(t)) t = t.replace(',', '.');
+    else if (!/^\d+(\.\d{1,2})?$/.test(t)) return NaN;
+    var n = Number(t);
+    return isFinite(n) ? n : NaN;
+  }
+
+  /**
+   * Confere uma linha da tela: sementes por metro entre 0 e 100 (até 2 casas) e população inteira de 1.000 a
+   * 2.000.000 plantas/ha (os mesmos limites do banco). Devolve { sementesMetro, populacao, erro }.
+   */
+  function validarPopulacao(sementesTexto, populacaoTexto) {
+    var s = lerNumeroBr(sementesTexto), p = lerNumeroBr(populacaoTexto);
+    if (s !== null && (isNaN(s) || s <= 0 || s >= 100)) return { erro: 'Sementes por metro: use um número entre 0 e 100, como 12,2.' };
+    if (p !== null && (isNaN(p) || p < 1000 || p > 2000000)) return { erro: 'População: use plantas por hectare, entre 1.000 e 2.000.000, como 244.000.' };
+    return { sementesMetro: s === null ? null : Math.round(s * 100) / 100, populacao: p === null ? null : Math.round(p), erro: null };
+  }
+
+  /** chave da variedade → { sementesMetro, populacao } das linhas gravadas de uma fazenda e safra. */
+  function populacaoDe(linhas, unidade, safra) {
+    var saida = {}, u = String(unidade || '').toUpperCase();
+    (linhas || []).forEach(function (l) {
+      if (!l || String(l.unidade).toUpperCase() !== u || l.safra !== safra) return;
+      saida[chaveVariedade(l.variedade)] = { sementesMetro: l.sementesMetro === null || l.sementesMetro === undefined ? null : Number(l.sementesMetro), populacao: l.populacao === null || l.populacao === undefined ? null : Number(l.populacao) };
+    });
+    return saida;
+  }
+
+  /** "12,2" (uma casa, ou duas quando há) e "244.000". */
+  function fmtSementes(v) { return v === null || v === undefined ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }); }
+  function fmtPopulacao(v) { return v === null || v === undefined ? '' : Math.round(Number(v)).toLocaleString('pt-BR'); }
+
   return {
+    lerNumeroBr: lerNumeroBr, validarPopulacao: validarPopulacao, populacaoDe: populacaoDe, fmtSementes: fmtSementes, fmtPopulacao: fmtPopulacao,
     CHUVA_MIN: CHUVA_MIN, DIAS_POS_PLANTIO: DIAS_POS_PLANTIO, POUCA_CHUVA_POS: POUCA_CHUVA_POS,
     SEM_VARIEDADE: SEM_VARIEDADE, COR_SEM_VARIEDADE: COR_SEM_VARIEDADE, PALETA_VARIEDADES: PALETA_VARIEDADES, CORES_SEMANA: CORES_SEMANA,
     somarDias: somarDias, difDias: difDias, dataCurta: dataCurta, titulo: titulo,
