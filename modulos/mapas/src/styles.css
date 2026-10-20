@@ -194,6 +194,16 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--laranja); widt
 .tabela .destaque { background: var(--laranja-claro) !important; }
 .tabela tr.marcado td { background: #fff7ea; }
 .tabela input[type='date'] { padding: 3px 6px; font-size: 0.82rem; width: auto; }
+/* tabela de variedades do mapa: os nomes quebram linha para caber no cartão */
+.tabela-variedades { font-size: 0.82rem; table-layout: fixed; }
+.tabela-variedades .col-cor { width: 32px; }
+.tabela-variedades .col-ha { width: 52px; }
+.tabela-variedades .col-pct { width: 42px; }
+.tabela-variedades .col-talhoes { width: 66px; }
+.tabela-variedades th, .tabela-variedades td { padding: 6px 6px; }
+.tabela-variedades th:first-child, .tabela-variedades td:first-child { padding-left: 10px; }
+.tabela-variedades td.nome { white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
+.tabela-variedades th { position: static; white-space: normal; vertical-align: bottom; line-height: 1.25; }
 .lista-alta { max-height: 520px; }
 
 /* ---------- Avisos ---------- */

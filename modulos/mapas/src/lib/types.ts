@@ -292,8 +292,12 @@ export type TipoMapa = 'chuva' | 'variedade';
 export interface ItemVariedade {
   /** chave da cor (nome limpo em maiúsculas); '' = "Sem variedade" */
   chave: string;
-  /** nome mostrado (limpo) */
+  /** nome mostrado (limpo): "Nome comercial (nome do PIMS)", ou só o do PIMS */
   nome: string;
+  /** nome do PIMS (limpo) ou "Sem variedade"; ausente nos resumos gravados antes do nome comercial */
+  nomePims?: string;
+  /** nome comercial do cadastro de Variedades; '' = sem nome comercial */
+  comercial?: string;
   cor: string;
   areaHa: number;
   /** % da área total pintada */

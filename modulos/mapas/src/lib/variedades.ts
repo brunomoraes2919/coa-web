@@ -180,6 +180,8 @@ export function resumoVariedades(feicoes: FeicaoVariedade[], cores: ReadonlyMap<
     const g = grupos.get(chave) ?? {
       chave,
       nome: f.variedade ? nomeExibido(f.variedade, comerciais?.get(chave)) : SEM_VARIEDADE,
+      nomePims: f.variedade || SEM_VARIEDADE,
+      comercial: (f.variedade && comerciais?.get(chave)) || '',
       cor: chave ? (cores.get(chave) ?? COR_SEM_VARIEDADE) : COR_SEM_VARIEDADE,
       areaHa: 0,
       pct: 0,
@@ -199,6 +201,19 @@ export function resumoVariedades(feicoes: FeicaoVariedade[], cores: ReadonlyMap<
 export function coresDasFeicoes(feicoes: FeicaoVariedade[], resumo: ResumoVariedades): Map<string, string> {
   const porChave = new Map(resumo.itens.map((i) => [i.chave, i.cor]));
   return new Map(feicoes.map((f) => [f.id, porChave.get(f.variedade ? chaveVariedade(f.variedade) : '') ?? COR_SEM_VARIEDADE]));
+}
+
+/**
+ * As duas colunas de nome da tabela de variedades (legenda do mapa e tela): nome comercial ('' = sem) e nome do
+ * PIMS. Resumo gravado antes do nome comercial (sem `nomePims`): o nome mostrado vai na coluna do PIMS.
+ */
+export function colunasNomeVariedade(i: ItemVariedade): { comercial: string; pims: string } {
+  return { comercial: (i.comercial ?? '').trim(), pims: i.nomePims ?? i.nome };
+}
+
+/** "24,3" (uma casa) ou "0,4"; o % das tabelas de variedades. */
+export function fmtPctVariedade(v: number): string {
+  return v.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
 }
 
 /** "1.234" (sem casa acima de 100 ha) ou "12,3". */
