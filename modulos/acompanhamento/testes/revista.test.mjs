@@ -45,6 +45,21 @@ test('coresDasVariedades: usa a cor cadastrada (pela chave) e, sem cadastro, a c
   assert.equal(cores.Y, L.PALETA_VARIEDADES[2])
 })
 
+test('nomeExibido e comerciaisDe: "Nome comercial (nome do PIMS)", pela chave da variedade', () => {
+  const c = L.comerciaisDe([{ chave: '80i82  ipro', nome: ' Bônus ' }, { chave: 'X', nome: '' }, { chave: 'Y', nome: null }])
+  assert.deepEqual(c, { '80I82 IPRO': 'Bônus' })
+  assert.equal(L.nomeExibido('80I82 IPRO', c[L.chaveVariedade('80I82 IPRO')]), 'Bônus (80I82 IPRO)')
+  assert.equal(L.nomeExibido('23311 I2X', undefined), '23311 I2X')
+})
+
+test('editorial: a maior variedade sai com o nome de exibição quando ele existe', () => {
+  const m = Object.assign(indicadores(), { pct: 0.5, exec: 150, areaTotal: 300, restante: 150, media: 50 })
+  const vs = L.variedadesDoPlantio(m, L.talhoesDoPlantio(m))
+  vs[0].nome = 'Bônus (80I82 IPRO)'
+  const p = L.editorial({ m, nome: 'Fazenda Globo', rel: { concluida: false, difPrevisao: null, corr: null }, destaques: L.destaquesDoRitmo(m), variedades: vs })
+  assert.ok(p.some((t) => t.includes('a **Bônus (80I82 IPRO)** é a maior')))
+})
+
 // ------------------------------------------------------------- talhões e ritmo
 test('talhoesDoPlantio: primeiro e último dia, dias com boletim, equipes da que mais fez e variedade limpa', () => {
   const t = L.talhoesDoPlantio(indicadores())

@@ -361,6 +361,16 @@
   }
 
   function nomeFazenda(u) { return 'Fazenda ' + N.titulo(u); }
+  /** Nome da variedade como no mapa de variedade: "Nome comercial (nome do PIMS)" quando o cadastro tem o comercial. */
+  function nomeDaVariedade(extras) {
+    var comerciais = extras.comerciaisMapa || (extras.comerciaisMapa = RL.comerciaisDe(extras.comerciais));
+    return function (nome) { return !nome || nome === RL.SEM_VARIEDADE ? nome : RL.nomeExibido(nome, comerciais[RL.chaveVariedade(nome)]); };
+  }
+  /** Põe em cada variedade o nome de exibição (`nome`); a cor e as contas seguem pela chave do PIMS (`v`). */
+  function nomesComerciais(variedades, extras) {
+    var nomeVar = nomeDaVariedade(extras);
+    variedades.forEach(function (v) { v.nome = nomeVar(v.v); });
+  }
   /** Tudo que a revista de UMA fazenda usa (no grupo, uma por unidade). */
   function edicaoDaFazenda(u, s, o, extras, hoje) {
     var m = N.calcula([u], s, o), chuvaU = chuvaDe(u);
@@ -368,11 +378,12 @@
     var tal = RL.talhoesDoPlantio(m), variedades = RL.variedadesDoPlantio(m, tal);
     var cores = RL.coresDasVariedades(variedades.filter(function (v) { return v.v !== RL.SEM_VARIEDADE; }).map(function (v) { return v.v; }), extras.cores);
     cores[RL.SEM_VARIEDADE] = RL.COR_SEM_VARIEDADE;
+    nomesComerciais(variedades, extras);
     var iniIso = iso(m.ini), hojeIso = iso(hoje);
     var chT = chuvaPorTalhao(extras.chuva[semAcento(u)]);
     var chuvaTal = chT ? RL.chuvaDosTalhoes(tal, chT, iniIso) : [];
     var ed = {
-      u: u, nome: nomeFazenda(u), m: m, rel: rel, tal: tal, variedades: variedades, cores: cores,
+      u: u, nome: nomeFazenda(u), m: m, rel: rel, tal: tal, variedades: variedades, cores: cores, nomeVar: nomeDaVariedade(extras),
       destaques: RL.destaquesDoRitmo(m), equipes: RL.equipesDoPlantio(m), semanas: RL.semanasDePlantio(tal, iniIso),
       chuvaU: chuvaU, temChuva: Object.keys(chuvaU).length > 0,
       chuvaPeriodo: iniIso ? RL.resumoChuva(RL.serieChuva(chuvaU, iniIso, hojeIso)) : null,
@@ -392,8 +403,9 @@
     var tal = RL.talhoesDoPlantio(m), variedades = RL.variedadesDoPlantio(m, tal);
     var cores = RL.coresDasVariedades(variedades.filter(function (v) { return v.v !== RL.SEM_VARIEDADE; }).map(function (v) { return v.v; }), extras.cores);
     cores[RL.SEM_VARIEDADE] = RL.COR_SEM_VARIEDADE;
+    nomesComerciais(variedades, extras);
     var ed = {
-      grupo: true, u: N.TODAS, nome: NOME_GRUPO, m: m, rel: rel, tal: tal, variedades: variedades, cores: cores, unidades: porU, linhas: linhas,
+      grupo: true, u: N.TODAS, nome: NOME_GRUPO, m: m, rel: rel, tal: tal, variedades: variedades, cores: cores, nomeVar: nomeDaVariedade(extras), unidades: porU, linhas: linhas,
       destaques: RL.destaquesDoRitmo(m), equipes: RL.equipesDoPlantio(m)
     };
     var comChuva = porU.filter(function (x) { return x.chuvaPeriodo && x.temChuva; });
@@ -502,7 +514,7 @@
     if (ed.grupo) k.push(['Unidades', String(ed.unidades.length), '', ed.linhas.filter(function (l) { return l.concluida; }).length + ' com plantio concluído', null]);
     else k.push(['Chuva no plantio', ed.chuvaPeriodo && ed.temChuva ? n0(ed.chuvaPeriodo.mm) : '—', ed.chuvaPeriodo && ed.temChuva ? 'mm' : '', ed.chuvaPeriodo && ed.temChuva ? ed.chuvaPeriodo.dias + ' ' + plural(ed.chuvaPeriodo.dias, 'dia', 'dias') + ' com chuva · ' + rel.corr.parados + ' ' + plural(rel.corr.parados, 'parado', 'parados') : 'sem dados de chuva', null]);
     k.push(['Talhões plantados', m.porClasse[3].n + ' / ' + m.talhoes.length, '', (m.porClasse[1].n + m.porClasse[2].n) + ' em andamento', null]);
-    k.push(['Variedades', String(ed.variedades.filter(function (v) { return v.v !== RL.SEM_VARIEDADE; }).length), '', ed.variedades.length && ed.variedades[0].v !== RL.SEM_VARIEDADE ? 'maior: ' + ed.variedades[0].v : '—', null]);
+    k.push(['Variedades', String(ed.variedades.filter(function (v) { return v.v !== RL.SEM_VARIEDADE; }).length), '', ed.variedades.length && ed.variedades[0].v !== RL.SEM_VARIEDADE ? 'maior: ' + ed.variedades[0].nome : '—', null]);
     k.push(['Equipes', String(ed.equipes.length), '', ed.equipes.length ? 'maior: ' + ed.equipes[0].nome + ' · ' + n0(ed.equipes[0].total) + ' ha' : 'sem boletins', null]);
     return k;
   }
@@ -694,7 +706,7 @@
     for (var i = 0; i <= dias; i += 7) { var d = RL.somarDias(de, i), gx = x(d); c.fillStyle = C.grade; c.fillRect(gx, r.y, 1, lh * vs.length); tx(c, dc(d), gx, r.y + lh * vs.length + 18, 11, 500, C.fraco, { al: 'center' }); }
     vs.forEach(function (v, j) {
       var y = r.y + j * lh;
-      tx(c, v.v, r.x, y + lh / 2 + 5, 12.5, 600, C.texto, { max: 180 });
+      tx(c, v.nome || v.v, r.x, y + lh / 2 + 5, 12.5, 600, C.texto, { max: 180 });
       if (!v.ini) { tx(c, 'não iniciada', xl, y + lh / 2 + 5, 11.5, 500, C.fraco); return; }
       var x0 = x(v.ini), x1 = x(RL.somarDias(v.fim, 1));
       c.fillStyle = cores[v.v] || C.verde; rr(c, x0, y + lh * 0.22, Math.max(6, x1 - x0), lh * 0.56, 3); c.fill();
@@ -705,7 +717,7 @@
     var ed = P.ed, m = ed.m, vs = ed.variedades, mp = ed.mapa;
     folha(c, P);
     var nV = vs.filter(function (v) { return v.v !== RL.SEM_VARIEDADE; }).length;
-    var y = abertura(c, P.sec, 'Variedades', nV + ' ' + plural(nV, 'variedade', 'variedades') + (vs.length && vs[0].v !== RL.SEM_VARIEDADE ? '; a ' + vs[0].v + ' ocupa ' + pct(vs[0].prev / m.areaTotal) + ' da área' : ''),
+    var y = abertura(c, P.sec, 'Variedades', nV + ' ' + plural(nV, 'variedade', 'variedades') + (vs.length && vs[0].v !== RL.SEM_VARIEDADE ? '; a ' + vs[0].nome + ' ocupa ' + pct(vs[0].prev / m.areaTotal) + ' da área' : ''),
       'Cada talhão com a cor da variedade (as mesmas cores do Mapa de variedade do módulo Mapas), a área prevista e plantada de cada uma e a janela em que foi plantada.');
     var ww = W - 2 * MX;
     if (mp) {
@@ -715,7 +727,7 @@
       var xL = MX + wM + 30, wL = ww - wM - 30, yL = subtitulo(c, 'Legenda', xL, y + 10, wL);
       vs.slice(0, 16).forEach(function (v) {
         c.fillStyle = ed.cores[v.v]; rr(c, xL, yL - 11, 14, 14, 3); c.fill();
-        tx(c, v.v, xL + 22, yL, 13, 600, C.texto, { max: wL - 100 });
+        tx(c, v.nome || v.v, xL + 22, yL, 13, 600, C.texto, { max: wL - 100 });
         tx(c, pct(v.prev / m.areaTotal), xL + wL, yL, 13, 600, C.suave, { al: 'right' });
         yL += 26;
       });
@@ -724,7 +736,7 @@
     }
     y = subtitulo(c, 'Área por variedade', MX, y, ww);
     var ls = vs.slice(0, 12).map(function (v) {
-      return [{ t: v.v, bola: ed.cores[v.v], peso: 700 }, String(v.talhoes), n0(v.prev) + ' ha', n0(v.exec) + ' ha', { barra: v.pct, t: pct(v.pct), cor: ed.cores[v.v] }, v.ini ? dc(v.ini) + ' a ' + dc(v.fim) : 'não iniciada'];
+      return [{ t: v.nome || v.v, bola: ed.cores[v.v], peso: 700 }, String(v.talhoes), n0(v.prev) + ' ha', n0(v.exec) + ' ha', { barra: v.pct, t: pct(v.pct), cor: ed.cores[v.v] }, v.ini ? dc(v.ini) + ' a ' + dc(v.fim) : 'não iniciada'];
     });
     y = tabela(c, { x: MX, y: y, w: ww }, [{ t: 'Variedade', w: 0.27 }, { t: 'Talhões', w: 0.09, al: 'right' }, { t: 'Prevista', w: 0.12, al: 'right' }, { t: 'Plantada', w: 0.12, al: 'right' }, { t: '% plantado', w: 0.22 }, { t: 'Janela', w: 0.18, al: 'right' }], ls, { lh: 30 });
     y += 30;
@@ -772,7 +784,7 @@
       var l = ch[t.u + '|' + t.t] || {};
       var mm = function (v) { return v === null || v === undefined ? '—' : N.fmtN(v, 0); };
       return [t.t, t.setor ? N.titulo(t.setor) : '—', N.fmtN(t.base, 1), { barra: t.perc, t: pct(t.perc), cor: N.COR.s[Math.max(1, t.k)] }, t.ini ? dc(t.ini) : '—', t.fim && t.perc >= 0.99 ? dc(t.fim) : t.ini ? '…' : '—',
-        { t: t.variedade || '—', bola: ed.cores[t.variedade || RL.SEM_VARIEDADE] }, t.equipes[0] || '—', mm(l.antes), { t: mm(l.depois), cor: l.depois !== null && l.depois !== undefined && l.depois < RL.POUCA_CHUVA_POS ? C.atencao : C.texto, peso: 600 }, mm(l.desde)];
+        { t: t.variedade ? ed.nomeVar(t.variedade) : '—', bola: ed.cores[t.variedade || RL.SEM_VARIEDADE] }, t.equipes[0] || '—', mm(l.antes), { t: mm(l.depois), cor: l.depois !== null && l.depois !== undefined && l.depois < RL.POUCA_CHUVA_POS ? C.atencao : C.texto, peso: 600 }, mm(l.desde)];
     });
   }
   var Y_TALHOES = 318, LH_TALHAO = 29;
@@ -950,7 +962,7 @@
       yr = subtitulo(c, 'Variedades', xr, yr, wr);
       x.variedades.slice(0, 9).forEach(function (v) {
         c.fillStyle = x.cores[v.v]; rr(c, xr, yr - 11, 13, 13, 3); c.fill();
-        tx(c, v.v, xr + 21, yr, 13, 600, C.texto, { max: wr - 110 });
+        tx(c, v.nome || v.v, xr + 21, yr, 13, 600, C.texto, { max: wr - 110 });
         tx(c, n0(v.exec) + ' / ' + n0(v.prev) + ' ha', xr + wr, yr, 12.5, 500, C.suave, { al: 'right' });
         yr += 25;
       });

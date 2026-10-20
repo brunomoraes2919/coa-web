@@ -115,7 +115,7 @@
       excluir: function (p) { return api('DELETE', '/api/metas?chave=' + encodeURIComponent([p.unidade, p.safra, p.operacao].join('|'))); },
       atualizar: function () { return api('POST', '/api/sincronizar'); },
       // revista: chuva por talhão, mapas salvos, cores e previsão vêm de um arquivo de teste do servidor local
-      extrasRevista: async function () { try { return await api('GET', '/api/revista'); } catch (e) { return { admin: true, chuva: {}, mapas: {}, cores: [], previsao: {} }; } },
+      extrasRevista: async function () { try { return await api('GET', '/api/revista'); } catch (e) { return { admin: true, chuva: {}, mapas: {}, cores: [], comerciais: [], previsao: {} }; } },
       imagemMapaSalvo: async function (path) { var r = await fetch('/api/revista-img?p=' + encodeURIComponent(path)); return r.ok ? r.blob() : null; },
       unidadeDaFazendaCoa: function () { return null; },
       fazendaCoaDaUnidade: function () { return null; }
@@ -250,7 +250,7 @@
        * @param desde     'AAAA-MM-DD': mapas salvos com período terminando a partir daqui
        */
       extrasRevista: async function (unidades, safra, desde) {
-        var r = { admin: false, chuva: {}, mapas: {}, cores: [], previsao: {} };
+        var r = { admin: false, chuva: {}, mapas: {}, cores: [], comerciais: [], previsao: {} };
         function aviso(o, e) { console.warn('Revista: ' + o, e && e.message ? e.message : e); }
         var ontem = new Date(Date.now() - 2 * DIA).toISOString();
         var res = await Promise.all([
@@ -258,7 +258,9 @@
           sb.from('chuva_talhao').select('unidade,gerado_em,inicio,dias,ultimo_dia,lidos,talhoes').in('unidade', unidades.map(function (u) { return u.normalize('NFD').replace(/[\u0300-\u036f]/g, ''); })),
           sb.from('mapas_fazendas').select('id,unidade_pims'),
           sb.from('mapas_variedade_cores').select('variedade,cor'),
-          sb.from('prev_previsoes').select('fonte,unidade,emitida_em,dias').in('unidade', unidades).gte('emitida_em', ontem).order('emitida_em', { ascending: false })
+          sb.from('prev_previsoes').select('fonte,unidade,emitida_em,dias').in('unidade', unidades).gte('emitida_em', ontem).order('emitida_em', { ascending: false }),
+          // nome comercial das variedades (Mapas → Cadastros → Variedades; supabase/0027)
+          sb.from('mapas_variedades').select('chave,nome_comercial').not('nome_comercial', 'is', null)
         ].map(function (q) { return Promise.resolve(q).catch(function (e) { return { error: e }; }); }));
         r.admin = !res[0].error && res[0].data === true;
         if (res[1].error) aviso('chuva por talhão', res[1].error); else (res[1].data || []).forEach(function (l) { r.chuva[String(l.unidade).toUpperCase()] = l; });
@@ -267,6 +269,7 @@
           var u = String(p.unidade).toUpperCase(), l = r.previsao[u] = r.previsao[u] || [];
           if (!l.some(function (x) { return x.fonte === p.fonte; })) l.push(p); // a mais recente de cada fonte (vem em ordem decrescente)
         });
+        if (res[5].error) aviso('nomes comerciais', res[5].error); else r.comerciais = (res[5].data || []).map(function (x) { return { chave: x.chave, nome: x.nome_comercial }; });
         var uDe = {};
         (res[2].data || []).forEach(function (f) { if (f.unidade_pims) uDe[f.id] = String(f.unidade_pims).trim().toUpperCase(); });
         var ids = Object.keys(uDe).filter(function (id) { return unidades.indexOf(uDe[id]) >= 0; });

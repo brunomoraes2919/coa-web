@@ -1125,6 +1125,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <button class="nav-btn admin-only" data-page="mapas" data-rota="/fazendas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 21 9.5 17.5 20h-11L3 9.5Z"/></svg>Fazendas e shapes</button>
         <button class="nav-btn admin-only" data-page="mapas" data-rota="/safras"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21v-9"/><path d="M12 12C12 8 9 6 5 6c0 4 3 6 7 6Z"/><path d="M12 12c0-4 3-7 7-7 0 4-3 7-7 7Z"/></svg>Safras e plantio</button>
         <button class="nav-btn admin-only" data-page="mapas" data-rota="/variedades/cores"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4A5.6 5.6 0 0 0 22 10c0-4.4-4.5-8-10-8Z"/></svg>Cores das variedades</button>
+        <button class="nav-btn admin-only" data-page="mapas" data-rota="/variedades/nomes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>Variedades</button>
       </nav>
     </div>
     <div id="nav-acompanhamento" style="display:none">
@@ -1951,7 +1952,7 @@ function atualizarCabecalhoPagina(){
   if(paginaAtiva === 'sat' && satTitulo) titulo = satTitulo;
   document.getElementById('titulo-pagina').textContent = titulo;
   let subtitulo = titulos[paginaAtiva][1];
-  if(paginaAtiva === 'mapas' && /^\/(fazendas|safras|variedades\/cores)(\/|$)/.test(mapasRotaAtual)) subtitulo = 'Cadastros dos mapas';
+  if(paginaAtiva === 'mapas' && /^\/(fazendas|safras|variedades\/(cores|nomes))(\/|$)/.test(mapasRotaAtual)) subtitulo = 'Cadastros dos mapas';
   if(paginaAtiva === 'relatorio'){
     const fazendaAtual = state.fazendas.find(f=>f.id===fazendaSelecionadaId());
     if(fazendaAtual) subtitulo = fazendaAtual.nome + ' — ' + subtitulo;

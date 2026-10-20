@@ -59,6 +59,17 @@
     return limpo;
   }
   function chaveVariedade(nome) { return String(nome).replace(/\s+/g, ' ').trim().toUpperCase(); }
+  /** "Bônus (80I82 IPRO)": o nome comercial (Mapas → Cadastros → Variedades) com o nome do PIMS; sem ele, só o do PIMS. */
+  function nomeExibido(nomePims, comercial) {
+    var c = String(comercial === null || comercial === undefined ? '' : comercial).trim();
+    return c ? c + ' (' + nomePims + ')' : nomePims;
+  }
+  /** chave da variedade → nome comercial, a partir de [{ chave, nome }] (só os preenchidos). */
+  function comerciaisDe(lista) {
+    var saida = {};
+    (lista || []).forEach(function (x) { if (x && x.chave && x.nome && String(x.nome).trim()) saida[chaveVariedade(x.chave)] = String(x.nome).trim(); });
+    return saida;
+  }
   /**
    * Cor de cada variedade: a cadastrada no módulo Mapas (Cores das variedades) ou, sem cadastro, a cor da paleta
    * menos usada até ali (sem gravar nada). `cadastro`: [{ chave, cor }]. Devolve { nome: cor }.
@@ -325,7 +336,7 @@
       p.push(t);
     }
     var vs = (e.variedades || []).filter(function (v) { return v.v !== SEM_VARIEDADE; });
-    if (vs.length) p.push(vs.length + ' ' + plural(vs.length, 'variedade', 'variedades') + ' na safra; a **' + vs[0].v + '** é a maior, com ' + fmtN(vs[0].prev) + ' ha (' + fmtPct(vs[0].pct) + ' plantada).');
+    if (vs.length) p.push(vs.length + ' ' + plural(vs.length, 'variedade', 'variedades') + ' na safra; a **' + (vs[0].nome || vs[0].v) + '** é a maior, com ' + fmtN(vs[0].prev) + ' ha (' + fmtPct(vs[0].pct) + ' plantada).');
     if (e.previsao && e.previsao.dias) p.push('Para os próximos dias, a previsão indica **' + fmtN(e.previsao.mm) + ' mm** entre ' + dataCurta(e.previsao.de) + ' e ' + dataCurta(e.previsao.ate) + '.');
     return p;
   }
@@ -335,6 +346,7 @@
     SEM_VARIEDADE: SEM_VARIEDADE, COR_SEM_VARIEDADE: COR_SEM_VARIEDADE, PALETA_VARIEDADES: PALETA_VARIEDADES, CORES_SEMANA: CORES_SEMANA,
     somarDias: somarDias, difDias: difDias, dataCurta: dataCurta, titulo: titulo,
     limparVariedade: limparVariedade, chaveVariedade: chaveVariedade, coresDasVariedades: coresDasVariedades,
+    nomeExibido: nomeExibido, comerciaisDe: comerciaisDe,
     talhoesDoPlantio: talhoesDoPlantio, destaquesDoRitmo: destaquesDoRitmo, variedadesDoPlantio: variedadesDoPlantio,
     equipesDoPlantio: equipesDoPlantio, semanasDePlantio: semanasDePlantio,
     chuvaDosTalhoes: chuvaDosTalhoes, resumoPosPlantio: resumoPosPlantio, serieChuva: serieChuva, resumoChuva: resumoChuva,
