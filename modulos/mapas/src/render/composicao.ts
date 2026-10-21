@@ -53,6 +53,8 @@ const VAO_QUADROS = 4;
 const ALTURA_MINIMA = 0.3;
 /** limite de quadros em qualquer modo */
 const MAX_QUADROS = 3;
+/** painel lateral mais largo aceito (`painelMm`, mm do A3) */
+export const PAINEL_MAX_MM = 160;
 
 /** Folhas A3 (mm) e retângulos do desenho em cada orientação. */
 const FOLHA = {
@@ -368,7 +370,7 @@ function aproveitamentoDe(c: Candidata, grupos: Grupo[]): number {
  */
 export function compor(
   talhoes: Talhao[],
-  config: Pick<LayoutConfig, 'orientacao' | 'quadros' | 'pagina'>,
+  config: Pick<LayoutConfig, 'orientacao' | 'quadros' | 'pagina' | 'painelMm'>,
 ): Composicao {
   const forcada = config.orientacao === 'paisagem' || config.orientacao === 'retrato' ? config.orientacao : null;
   const modo = config.quadros ?? 'auto';
@@ -388,11 +390,20 @@ export function compor(
 
   const folha = FOLHA[escolha.orientacao];
   const real = PAGINA_MM[config.pagina === 'A4' ? 'A4' : 'A3'];
+  const painel = { ...folha.painel };
+  let quadros = escolha.quadros;
+  // painel lateral mais largo (Mapa de CAR): cresce para a esquerda e o quadro do mapa perde a mesma largura
+  const extra = Math.min(config.painelMm ?? 0, PAINEL_MAX_MM) - painel.w;
+  if (escolha.orientacao === 'paisagem' && quadros.length === 1 && extra > 0) {
+    painel.x -= extra;
+    painel.w += extra;
+    quadros = [{ ...quadros[0], rect: { ...quadros[0].rect, w: quadros[0].rect.w - extra } }];
+  }
   return {
     orientacao: escolha.orientacao,
     pagina: escolha.orientacao === 'paisagem' ? { w: real.w, h: real.h } : { w: real.h, h: real.w },
-    quadros: escolha.quadros,
-    painel: { ...folha.painel },
+    quadros,
+    painel,
     painelPosicao: folha.painelPosicao,
   };
 }

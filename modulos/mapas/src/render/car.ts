@@ -6,8 +6,9 @@
 import type { Feature, Geometry, Position } from 'geojson';
 import polylabel from 'polylabel';
 import { categoriaDoTema, escurecer, type QuadroCar } from '../lib/car';
-import { lonLatToMerc } from '../lib/projection';
-import type { DadosCar } from '../lib/types';
+import { geomToXY, lonLatToMerc } from '../lib/projection';
+import type { DadosCar, Talhao } from '../lib/types';
+import { compor, PAINEL_MAX_MM } from './composicao';
 import { ALTURA_MAIUSC, fonte, textoComHalo, type Rect } from './labels';
 import { desenharPadrao } from './patterns';
 import type { TalhaoPx } from './rotulosMapa';
@@ -85,6 +86,47 @@ function caixa(polys: XY[][][]): Rect | null {
       y1 = Math.max(y1, y);
     }
   return x1 > x0 && y1 > y0 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+}
+
+/** Linhas no quadro de áreas acima das quais a faixa de baixo do retrato não comporta o quadro (fica na paisagem). */
+export const LINHAS_QUADRO_RETRATO = 16;
+/** O retrato só ganha da paisagem com o mapa pelo menos este tanto maior. */
+const GANHO_RETRATO = 1.05;
+
+/**
+ * Folha do Mapa de CAR: a orientação e, na paisagem, a largura do painel lateral. `itens` = o que o mapa enquadra
+ * (talhões e os CARs e matrículas da fazenda), não só os talhões como nos outros mapas.
+ * - Paisagem: o quadro do mapa estreita até a largura que a altura pede (sem branco dos lados) e o painel fica com
+ *   o resto, até PAINEL_MAX_MM; desenho mais largo que o quadro fica com o painel normal.
+ * - Automática: retrato quando o mapa sai maior nele e o quadro de áreas cabe na faixa de baixo; senão, paisagem.
+ */
+export function folhaDoMapaCar(
+  itens: Talhao[],
+  escolhida: 'auto' | 'paisagem' | 'retrato' | undefined,
+  linhasQuadro: number,
+): { orientacao: 'paisagem' | 'retrato'; painelMm?: number } {
+  if (escolhida === 'retrato') return { orientacao: 'retrato' };
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const t of itens) {
+    if (!t.geom || !Array.isArray((t.geom as { coordinates?: unknown }).coordinates)) continue;
+    for (const poly of geomToXY(t.geom, lonLatToMerc))
+      for (const [x, y] of poly[0] ?? []) {
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
+      }
+  }
+  if (!(x1 > x0 && y1 > y0)) return { orientacao: 'paisagem' };
+  const [bw, bh] = [x1 - x0, y1 - y0];
+  const paisagem = compor([], { orientacao: 'paisagem', quadros: 1, pagina: 'A3' });
+  const q = paisagem.quadros[0].rect;
+  // largura que o quadro perde: o que sobraria dos lados com o desenho na altura toda
+  const extra = Math.max(0, Math.min(q.w - (q.h * bw) / bh, PAINEL_MAX_MM - paisagem.painel.w));
+  const comPainel = { orientacao: 'paisagem' as const, painelMm: paisagem.painel.w + extra };
+  if (escolhida === 'paisagem') return comPainel;
+  const escala = (r: { w: number; h: number }) => Math.min(r.w / bw, r.h / bh);
+  const retrato = compor([], { orientacao: 'retrato', quadros: 1, pagina: 'A3' }).quadros[0].rect;
+  const melhorRetrato = escala(retrato) > GANHO_RETRATO * escala({ w: q.w - extra, h: q.h });
+  return melhorRetrato && linhasQuadro <= LINHAS_QUADRO_RETRATO ? { orientacao: 'retrato' } : comPainel;
 }
 
 /** Classes de estrada do OSM que saem como rodovia (traço cheio e mais grosso); o resto é estrada de terra/carreador. */

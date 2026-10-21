@@ -412,12 +412,14 @@ export function desenharPainel(ctx: CanvasRenderingContext2D, comp: Composicao, 
   if (lateral) {
     const larg = p.w - 2 * PAD_LATERAL;
     const hCab = cabecalho(ctx, inp, { x: 0, y: 0, w: larg, h: 0 }, s, true, false);
-    const hInfo = blocoInfo(ctx, info, { x: 0, y: 0, w: larg, h: 0 }, s, 2, false, false);
+    // painel largo (Mapa de CAR): 3 colunas de informações, para sobrar altura para a legenda
+    const colsInfo = larg >= 110 ? 3 : 2;
+    const hInfo = blocoInfo(ctx, info, { x: 0, y: 0, w: larg, h: 0 }, s, colsInfo, false, false);
     sec = planoLateral(p, { cabecalho: hCab, info: hInfo, rodape: hRodape });
     cabecalho(ctx, inp, sec.cabecalho, s, true, true);
     if (info.length) {
       filete(sec.info.x, sec.info.y - VAO_SECAO / 2, sec.info.w, 0);
-      blocoInfo(ctx, info, sec.info, s, 2, false, true);
+      blocoInfo(ctx, info, sec.info, s, colsInfo, false, true);
     }
     const leg = planejarLegenda(ctx, inp, presentes, sec.legenda, s, 'lateral');
     if (leg) {

@@ -1,6 +1,7 @@
 /**
  * Legenda do Mapa de CAR e Matrícula: as camadas (amostra + nome) e o quadro de áreas por CAR e por matrícula
- * (ha). No painel lateral, uma coluna (legenda em cima, quadro embaixo); na faixa inferior (retrato), lado a lado.
+ * (ha). Na faixa inferior (retrato), lado a lado; no painel lateral, uma coluna (legenda em cima, quadro embaixo) ou,
+ * no painel largo, lado a lado quando o texto fica maior assim.
  * O texto reduz até caber; se nem assim couber, o quadro mostra as maiores linhas e avisa quantas ficaram na tela.
  * Medidas em mm do A3; `s` = px por mm.
  */
@@ -193,29 +194,33 @@ export function planejarLegendaCar(ctx: CanvasRenderingContext2D, car: EntradaCa
     const wNota = linhas.length ? medir(NOTA, 400, FONTE_CAB * k) : 0;
     return { wItens, hItens, larg, wTab: Math.max(wTab, Math.min(wNota, wTab)), hTab, sobra };
   };
-  const total = (k: number, n: number) => {
+  /** 'pilha' = legenda em cima e quadro embaixo; 'lado' = lado a lado */
+  type Arranjo = 'pilha' | 'lado';
+  const total = (k: number, n: number, arranjo: Arranjo) => {
     const m = medidas(k, n);
-    return modo === 'lateral'
+    return arranjo === 'pilha'
       ? { ...m, w: Math.max(m.wItens, m.wTab), h: m.hItens + (m.hTab ? VAO_BLOCO * k + m.hTab : 0) }
       : { ...m, w: m.wItens + (m.hTab ? VAO_BLOCO * k + m.wTab : 0), h: Math.max(m.hItens, m.hTab) };
   };
-  let escolhido: { k: number; n: number } | null = null;
+  const cabe = (t: { w: number; h: number }) => t.w <= area.w + 1e-9 && t.h <= area.h + 1e-9;
+  // lado a lado primeiro: no painel largo deixa o texto maior; no estreito não cabe e fica a coluna
+  const arranjos: Arranjo[] = modo === 'lateral' ? ['lado', 'pilha'] : ['lado'];
+  let escolhido: { k: number; n: number; arranjo: Arranjo } | null = null;
   for (let k = 1; k >= K_MIN - 1e-9 && !escolhido; k = Math.round((k - 0.04) * 100) / 100) {
-    const t = total(k, linhas.length);
-    if (t.w <= area.w + 1e-9 && t.h <= area.h + 1e-9) escolhido = { k, n: linhas.length };
+    const arranjo = arranjos.find((a) => cabe(total(k, linhas.length, a)));
+    if (arranjo) escolhido = { k, n: linhas.length, arranjo };
   }
   if (!escolhido) {
     // nem com o texto menor: mostra as maiores linhas que cabem (CARs primeiro, na ordem do quadro)
-    let n = linhas.length;
-    while (n > 0) {
-      const t = total(K_MIN, n);
-      if (t.w <= area.w + 1e-9 && t.h <= area.h + 1e-9) break;
-      n--;
-    }
-    escolhido = { k: K_MIN, n };
+    const maisLinhas = (arranjo: Arranjo) => {
+      let n = linhas.length;
+      while (n > 0 && !cabe(total(K_MIN, n, arranjo))) n--;
+      return { k: K_MIN, n, arranjo };
+    };
+    escolhido = arranjos.map(maisLinhas).reduce((a, b) => (b.n > a.n ? b : a));
   }
-  const { k, n } = escolhido;
-  const m = total(k, n);
+  const { k, n, arranjo } = escolhido;
+  const m = total(k, n, arranjo);
 
   const desenhar = (x0: number, y0: number) => {
     const u = k * s;
@@ -244,8 +249,8 @@ export function planejarLegendaCar(ctx: CanvasRenderingContext2D, car: EntradaCa
       return;
     }
     // quadro de áreas
-    const tx = modo === 'lateral' ? x0 : x0 + (m.wItens + VAO_BLOCO * k) * s;
-    let ty = modo === 'lateral' ? y + VAO_BLOCO * u : y0;
+    const tx = arranjo === 'pilha' ? x0 : x0 + (m.wItens + VAO_BLOCO * k) * s;
+    let ty = arranjo === 'pilha' ? y + VAO_BLOCO * u : y0;
     ctx.font = fonte(700, FONTE_TITULO * u);
     ctx.fillStyle = COR_VERDE;
     ctx.textAlign = 'left';
@@ -292,7 +297,7 @@ export function planejarLegendaCar(ctx: CanvasRenderingContext2D, car: EntradaCa
       ty += LINHA_TAB * u;
     }
     // a nota quebra na largura do bloco (a legenda e o quadro, o que for mais largo)
-    const largNota = (modo === 'lateral' ? m.w : m.wTab) * s;
+    const largNota = (arranjo === 'pilha' ? m.w : m.wTab) * s;
     quebrarTexto(NOTA, largNota, (t) => ctx.measureText(t).width).forEach((l, i) => ctx.fillText(l, tx, base(ty + 0.4 * u + i * LINHA_TAB * u * 0.9, FONTE_CAB)));
     ctx.restore();
   };
