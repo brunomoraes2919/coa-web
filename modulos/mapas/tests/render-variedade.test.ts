@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { nomeArquivoMapa } from '../src/lib/exportar';
 import { IDW_PADRAO, type LayoutConfig, type ResumoVariedades, type Talhao } from '../src/lib/types';
 import { itensLegenda } from '../src/render/legend';
-import { CABECALHO_VARIEDADES, planejarTabelaVariedades } from '../src/render/legendaVariedades';
+import { CABECALHO_POPULACAO, CABECALHO_VARIEDADES, planejarTabelaVariedades } from '../src/render/legendaVariedades';
 import { colunasNomeVariedade } from '../src/lib/variedades';
 import { desenharTalhoes, type FeicaoPx } from '../src/render/mapFrame';
 import type { TalhaoPx } from '../src/render/rotulosMapa';
@@ -135,7 +135,10 @@ describe('legenda em tabela (nome comercial | nome do PIMS | ha | %)', () => {
     expect(plano.h).toBeLessThanOrEqual(area.h + 1e-9);
     plano.desenhar(0, 0);
     const ts = textos.map((x) => x.t);
-    expect(ts).toEqual(expect.arrayContaining(['Variedades', ...CABECALHO_VARIEDADES, '80I82 IPRO', 'STINE', '—', '60', '30']));
+    expect(ts).toEqual(expect.arrayContaining(['Variedades', 'ha', '%', '80I82 IPRO', 'STINE', '—', '60', '30']));
+    // os cabeçalhos das colunas de nome podem quebrar em 2 linhas
+    expect(ts.join(' ')).toContain('Nome');
+    expect(ts.join(' ')).toMatch(/Variedade\s*\(?/);
     expect(ts.join(' ')).toContain('Olimpo');
     expect(ts.join(' ')).toContain('Sem variedade');
     // nome comercial numa coluna à esquerda da do PIMS, na mesma linha
@@ -162,12 +165,66 @@ describe('legenda em tabela (nome comercial | nome do PIMS | ha | %)', () => {
     const plano = planejarTabelaVariedades(ctx, muitos, { w: 160, h: 40 }, 4, 'inferior')!;
     expect(plano.h).toBeLessThanOrEqual(40 + 1e-9);
     plano.desenhar(0, 0);
-    expect(textos.filter((x) => x.t === 'Nome comercial').length).toBeGreaterThan(1);
+    expect(textos.filter((x) => x.t === CABECALHO_VARIEDADES[2]).length).toBeGreaterThan(1);
   });
 
   it('tabela da tela e legenda pegam as duas colunas do mesmo jeito', () => {
     expect(colunasNomeVariedade(comNomes.itens[0])).toEqual({ comercial: 'Brasmax Olimpo IPRO', pims: '80I82 IPRO' });
     expect(colunasNomeVariedade(comNomes.itens[2])).toEqual({ comercial: '', pims: 'Sem variedade' });
     expect(colunasNomeVariedade(resumo.itens[0])).toEqual({ comercial: '', pims: '84KA92 CE' });
+  });
+});
+
+describe('legenda em tabela com sementes por metro e população', () => {
+  function ctxFalso() {
+    const textos: { t: string; x: number; y: number }[] = [];
+    let px = 10;
+    const ctx = {
+      save: () => undefined, restore: () => undefined, beginPath: () => undefined, rect: () => undefined, clip: () => undefined,
+      roundRect: () => undefined, fill: () => undefined, stroke: () => undefined, fillRect: () => undefined,
+      set font(f: string) { px = Number(/([\d.]+)px/.exec(f)?.[1] ?? 10); },
+      get font() { return `${px}px`; },
+      measureText: (t: string) => ({ width: t.length * px * 0.5 }),
+      fillText: (t: string, x: number, y: number) => { textos.push({ t, x, y }); },
+      fillStyle: '', strokeStyle: '', lineWidth: 1, textAlign: 'left', textBaseline: 'alphabetic',
+    };
+    return { ctx: ctx as unknown as CanvasRenderingContext2D, textos };
+  }
+  const base = (pop: boolean): ResumoVariedades => ({
+    totalHa: 100,
+    itens: [
+      { chave: '80I82 IPRO', nome: 'x', nomePims: '80I82 IPRO', comercial: 'BMX Olimpo IPRO', cor: '#1F77B4', areaHa: 60, pct: 60, talhoes: 2, sementesMetro: pop ? 12.2 : null, populacao: pop ? 244000 : null },
+      { chave: 'NEO700 I2X', nome: 'y', nomePims: 'NEO700 I2X', comercial: '', cor: '#FF7F0E', areaHa: 40, pct: 40, talhoes: 1, sementesMetro: null, populacao: null },
+    ],
+  });
+
+  it('cabeçalho de nome mais largo que a coluna quebra em linhas e não invade a coluna seguinte', () => {
+    const { ctx, textos } = ctxFalso();
+    planejarTabelaVariedades(ctx, base(true), { w: 61.4, h: 150 }, 4, 'lateral')!.desenhar(0, 0);
+    const cabs = textos.filter((x) => /^(Nome|comercial|Nome comercial|Variedade|\(PIMS\)|Variedade \(PIMS\)|Sem\.\/m)$/.test(x.t));
+    const xPims = Math.min(...cabs.filter((x) => /Variedade|PIMS/.test(x.t)).map((x) => x.x));
+    const xSem = cabs.find((x) => x.t === 'Sem./m')!.x;
+    for (const c of cabs.filter((x) => /Nome|comercial/.test(x.t))) expect(c.x + c.t.length * 2.4 * 4 * 0.5).toBeLessThanOrEqual(xPims + 1e-6);
+    expect(xPims).toBeLessThan(xSem);
+  });
+
+  it('com valores: colunas Sem./m e População antes de ha, "—" na variedade sem cadastro, dentro da largura do painel', () => {
+    const { ctx, textos } = ctxFalso();
+    const plano = planejarTabelaVariedades(ctx, base(true), { w: 61.4, h: 150 }, 4, 'lateral')!;
+    expect(plano.w).toBeLessThanOrEqual(61.4 + 1e-9);
+    plano.desenhar(0, 0);
+    const ts = textos.map((x) => x.t);
+    expect(ts).toEqual(expect.arrayContaining([...CABECALHO_POPULACAO, '12,2', '244.000']));
+    const x = (t: string) => textos.find((p) => p.t === t)!.x;
+    expect(x('Sem./m')).toBeLessThan(x('População'));
+    expect(x('População')).toBeLessThan(x('ha'));
+    // a NEO700 sem cadastro: "—" nas duas colunas (mais o "—" do nome comercial)
+    expect(ts.filter((t) => t === '—')).toHaveLength(3);
+  });
+
+  it('sem nenhum valor na fazenda: a tabela continua com 4 colunas de texto', () => {
+    const { ctx, textos } = ctxFalso();
+    planejarTabelaVariedades(ctx, base(false), { w: 61.4, h: 150 }, 4, 'lateral')!.desenhar(0, 0);
+    expect(textos.map((x) => x.t)).not.toContain('População');
   });
 });

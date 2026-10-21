@@ -640,25 +640,6 @@ button, input, select { font: inherit; color: inherit; }
 .rv-capa-btn:hover { background: rgba(255,255,255,.12); }
 .rv-capa-btn:focus-within, .rv-capa-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 .rv-capa-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.rv-capa-btn:disabled { opacity: .5; cursor: default; }
-.rv-capa-btn:disabled:hover { background: transparent; }
-/* cadastro de sementes por metro e população (aba Revista) */
-.dlg-populacao { width: min(640px, calc(100vw - 32px)); }
-.pop-ajuda { margin: 0 0 12px; font-size: 13px; color: var(--texto-suave); line-height: 1.45; }
-.pop-rolagem { max-height: min(56vh, 520px); overflow: auto; border: 1px solid var(--linha); border-radius: 10px; }
-.pop-tabela { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.pop-tabela th { position: sticky; top: 0; background: #F6F8F6; text-align: left; font-size: 11.5px; font-weight: 700; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; padding: 8px 10px; border-bottom: 1px solid var(--linha); }
-.pop-tabela td { padding: 6px 10px; border-bottom: 1px solid var(--linha-suave); vertical-align: middle; }
-.pop-tabela tr:last-child td { border-bottom: 0; }
-.pop-tabela .num { text-align: right; width: 150px; }
-.pop-var { display: flex; align-items: center; gap: 8px; }
-.pop-var i { flex: none; width: 12px; height: 12px; border-radius: 3px; }
-.pop-var b { display: block; font-weight: 600; color: var(--verde-escuro); }
-.pop-var small { display: block; font-size: 11.5px; color: var(--texto-suave); }
-.pop-tabela input { width: 120px; height: 32px; padding: 0 8px; border: 1px solid var(--linha); border-radius: 6px; font: inherit; text-align: right; font-variant-numeric: tabular-nums; }
-.pop-tabela input:focus { outline: 2px solid var(--verde-teal); outline-offset: 0; border-color: var(--verde-teal); }
-.pop-tabela input[aria-invalid="true"] { border-color: #C0392B; background: #FDF2F0; }
-@media (max-width: 560px) { .pop-tabela .num { width: auto; } .pop-tabela input { width: 92px; } }
 .rv-sobre { margin: 16px 0 0; padding: 16px 20px; background: var(--cartao, #fff); border: 1px solid var(--linha); border-radius: 10px; }
 .rv-sobre h2 { margin: 0 0 6px; font-size: 15px; color: var(--verde-escuro); }
 .rv-sobre p { margin: 6px 0 0; font-size: 13.5px; line-height: 1.55; color: var(--texto-suave); }

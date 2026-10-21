@@ -15,7 +15,8 @@ import { area, fazenda, mapa, plantio, safra, talhao } from './helpers/dominio';
 
 /**
  * Os scripts do módulo, na ordem em que rodam (0002: pedidos de "Atualizar plantio"; 0003: pedidos de chuva da ZEUS;
- * 0026 e 0027, na pasta supabase/ do COA WEB: mapa de variedade e nome comercial das variedades).
+ * 0026 e 0027, na pasta supabase/ do COA WEB: mapa de variedade e nome comercial das variedades; 0028 e 0029:
+ * sementes por metro e população, cadastradas no mapa de variedade e lidas também pela Revista do Operacional).
  */
 const SCRIPTS = [
   'supabase/coa-web/0001_mapas.sql',
@@ -24,6 +25,8 @@ const SCRIPTS = [
   'supabase/coa-web/0004_situacao_zeus.sql',
   '../../supabase/0026_mapa_variedade.sql',
   '../../supabase/0027_variedades_nome_comercial.sql',
+  '../../supabase/0028_variedades_populacao.sql',
+  '../../supabase/0029_populacao_no_mapas.sql',
 ];
 const sql = SCRIPTS.map((s) => readFileSync(s, 'utf8'))
   .join('\n')

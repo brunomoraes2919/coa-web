@@ -5,7 +5,7 @@
  */
 import { normalizarCodigo } from './codigoTalhao';
 import { fmtData } from './format';
-import type { AreaCultura, ItemVariedade, LayoutTextos, Plantio, PlantioPimsTalhao, ResumoChuva, ResumoVariedades, Safra, Talhao, VariedadePims } from './types';
+import type { AreaCultura, Fazenda, ItemVariedade, LayoutTextos, Plantio, PlantioPimsTalhao, PopulacaoVariedade, ResumoChuva, ResumoVariedades, Safra, Talhao, VariedadePims } from './types';
 
 export const SEM_VARIEDADE = 'Sem variedade';
 export const COR_SEM_VARIEDADE = '#B5B5B5';
@@ -171,7 +171,12 @@ export function semNomeNoMapa(resumo: ResumoVariedades, comerciais: ReadonlyMap<
  * Resumo da legenda: área e % por variedade, da maior para a menor, com "Sem variedade" (cinza) por último. Com
  * `comerciais`, o nome de cada variedade sai como "Nome comercial (nome do PIMS)" (nomeExibido).
  */
-export function resumoVariedades(feicoes: FeicaoVariedade[], cores: ReadonlyMap<string, string>, comerciais?: ReadonlyMap<string, string>): ResumoVariedades {
+export function resumoVariedades(
+  feicoes: FeicaoVariedade[],
+  cores: ReadonlyMap<string, string>,
+  comerciais?: ReadonlyMap<string, string>,
+  populacao?: ReadonlyMap<string, PopulacaoVariedade>,
+): ResumoVariedades {
   const grupos = new Map<string, ItemVariedade>();
   let totalHa = 0;
   for (const f of feicoes) {
@@ -182,6 +187,8 @@ export function resumoVariedades(feicoes: FeicaoVariedade[], cores: ReadonlyMap<
       nome: f.variedade ? nomeExibido(f.variedade, comerciais?.get(chave)) : SEM_VARIEDADE,
       nomePims: f.variedade || SEM_VARIEDADE,
       comercial: (f.variedade && comerciais?.get(chave)) || '',
+      sementesMetro: (chave ? populacao?.get(chave)?.sementesMetro : null) ?? null,
+      populacao: (chave ? populacao?.get(chave)?.populacao : null) ?? null,
       cor: chave ? (cores.get(chave) ?? COR_SEM_VARIEDADE) : COR_SEM_VARIEDADE,
       areaHa: 0,
       pct: 0,
@@ -209,6 +216,63 @@ export function coresDasFeicoes(feicoes: FeicaoVariedade[], resumo: ResumoVaried
  */
 export function colunasNomeVariedade(i: ItemVariedade): { comercial: string; pims: string } {
   return { comercial: (i.comercial ?? '').trim(), pims: i.nomePims ?? i.nome };
+}
+
+// ---------------------------------------------------------------- sementes por metro e população
+
+/**
+ * Unidade e safra do PIMS de uma fazenda e safra do Mapas, como o Operacional grava (acomp_pims): unidade do
+ * PIMS e nome da safra no PIMS (ou o próprio nome), em maiúsculas. null = fazenda sem vínculo com o PIMS.
+ */
+export function chavesPimsDoMapa(fazenda: Pick<Fazenda, 'unidadePims'> | null, safra: Pick<Safra, 'nome' | 'nomePims'> | null): { unidade: string; safra: string } | null {
+  const unidade = (fazenda?.unidadePims ?? '').trim().toUpperCase();
+  const nomeSafra = (safra?.nomePims || safra?.nome || '').trim().toUpperCase();
+  return unidade && nomeSafra ? { unidade, safra: nomeSafra } : null;
+}
+
+/** chave da variedade → valores (só as linhas com algum valor). */
+export function populacaoPorChave(linhas: readonly PopulacaoVariedade[]): Map<string, PopulacaoVariedade> {
+  const out = new Map<string, PopulacaoVariedade>();
+  for (const l of linhas) if (l.sementesMetro !== null || l.populacao !== null) out.set(chaveVariedade(l.variedade), l);
+  return out;
+}
+
+/**
+ * Número digitado em português: "12,2" → 12.2; "244.000" ou "244000" → 244000; vazio → null; texto que não é
+ * número → NaN. Ponto seguido de 3 dígitos é milhar ("244.000"); com 1 ou 2, decimal ("12.2").
+ */
+export function lerNumeroBr(texto: string | null | undefined): number | null {
+  let t = String(texto ?? '').replace(/\s+/g, '');
+  if (!t) return null;
+  if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(t)) t = t.replace(/\./g, '').replace(',', '.');
+  else if (/^\d+(,\d+)?$/.test(t)) t = t.replace(',', '.');
+  else if (!/^\d+(\.\d{1,2})?$/.test(t)) return NaN;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/** Confere os dois campos com os limites do banco: sementes/m entre 0 e 100; população de 1.000 a 2.000.000. */
+export function validarPopulacao(sementes: string, populacao: string): { sementesMetro: number | null; populacao: number | null; erro: null } | { erro: string; campo: 'sementes' | 'populacao' } {
+  const s = lerNumeroBr(sementes);
+  const p = lerNumeroBr(populacao);
+  if (s !== null && (Number.isNaN(s) || s <= 0 || s >= 100)) return { erro: 'Sementes por metro: use um número entre 0 e 100, como 12,2.', campo: 'sementes' };
+  if (p !== null && (Number.isNaN(p) || p < 1000 || p > 2_000_000)) return { erro: 'População: use plantas por hectare, entre 1.000 e 2.000.000, como 244.000.', campo: 'populacao' };
+  return { sementesMetro: s === null ? null : Math.round(s * 100) / 100, populacao: p === null ? null : Math.round(p), erro: null };
+}
+
+/** "12,2" (uma casa, ou duas quando há); '' sem valor. */
+export function fmtSementes(v: number | null | undefined): string {
+  return v === null || v === undefined ? '' : v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+}
+
+/** "244.000"; '' sem valor. */
+export function fmtPopulacao(v: number | null | undefined): string {
+  return v === null || v === undefined ? '' : Math.round(v).toLocaleString('pt-BR');
+}
+
+/** Algum item do resumo com sementes por metro ou população (a tabela do mapa ganha as duas colunas). */
+export function temPopulacao(resumo: ResumoVariedades): boolean {
+  return resumo.itens.some((i) => (i.sementesMetro ?? null) !== null || (i.populacao ?? null) !== null);
 }
 
 /** "24,3" (uma casa) ou "0,4"; o % das tabelas de variedades. */

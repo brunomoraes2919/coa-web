@@ -298,6 +298,10 @@ export interface ItemVariedade {
   nomePims?: string;
   /** nome comercial do cadastro de Variedades; '' = sem nome comercial */
   comercial?: string;
+  /** sementes por metro linear (cadastro "Sementes e população" do mapa de variedade); null/ausente = sem */
+  sementesMetro?: number | null;
+  /** população em plantas por hectare (mesmo cadastro); null/ausente = sem */
+  populacao?: number | null;
   cor: string;
   areaHa: number;
   /** % da área total pintada */
@@ -310,6 +314,16 @@ export interface ItemVariedade {
 export interface ResumoVariedades {
   totalHa: number;
   itens: ItemVariedade[];
+}
+
+/**
+ * Sementes por metro e população de uma variedade numa fazenda e safra (acomp_variedade_populacao, supabase/0028).
+ * `variedade` = chave da variedade (nome do PIMS limpo e em maiúsculas).
+ */
+export interface PopulacaoVariedade {
+  variedade: string;
+  sementesMetro: number | null;
+  populacao: number | null;
 }
 
 /** Um código do cadastro VARIEDADE do PIMS dentro de uma variedade (códigos com o mesmo nome limpo ficam juntos). */

@@ -1,7 +1,7 @@
 import type { PedidoChuva, SituacaoPedidoChuva } from '../lib/chuvaZeus';
 import type { SituacaoZeus } from '../lib/situacaoZeus';
 import type { SituacaoPedidoPlantio } from '../lib/pedidoPlantio';
-import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, Safra, Talhao, TipoMapa, VariedadePims } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, PopulacaoVariedade, Safra, Talhao, TipoMapa, VariedadePims } from '../lib/types';
 
 /** Contrato do repositório (implementado por localRepo.ts e supabaseRepo.ts). */
 
@@ -125,6 +125,14 @@ export interface Repositorio {
   listarVariedadesPims(): Promise<VariedadePims[]>;
   /** Grava (ou apaga, com null ou vazio) o nome comercial de uma variedade (administrador). */
   salvarNomeComercial(chave: string, nome: string | null): Promise<void>;
+
+  /**
+   * Sementes por metro e população das variedades de uma fazenda numa safra (acomp_variedade_populacao,
+   * supabase/0028 e 0029; local: no navegador). `unidade` e `safra` como o PIMS (chavesPimsDoMapa).
+   */
+  listarPopulacao(unidade: string, safra: string): Promise<PopulacaoVariedade[]>;
+  /** Grava as linhas com algum valor e apaga as sem nenhum (quem enxerga a fazenda). */
+  salvarPopulacao(unidade: string, safra: string, linhas: PopulacaoVariedade[]): Promise<void>;
 
   exportarBackup(): Promise<BackupJson>;
   /**

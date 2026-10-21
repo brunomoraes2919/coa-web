@@ -204,6 +204,18 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--laranja); widt
 .tabela-variedades th:first-child, .tabela-variedades td:first-child { padding-left: 10px; }
 .tabela-variedades td.nome { white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
 .tabela-variedades th { position: static; white-space: normal; vertical-align: bottom; line-height: 1.25; }
+/* cadastro de sementes por metro e população (seção 2 do mapa de variedade) */
+.cadastro-populacao { border: 1px solid var(--borda); border-radius: 8px; padding: 10px 12px; }
+.cadastro-populacao > summary { cursor: pointer; font-weight: 700; color: var(--verde); }
+.cadastro-populacao[open] > summary { margin-bottom: 10px; }
+.tabela-populacao { font-size: 0.82rem; table-layout: fixed; }
+.tabela-populacao th, .tabela-populacao td { padding: 5px 6px; }
+.tabela-populacao th { position: static; }
+.tabela-populacao th.num, .tabela-populacao td.num { width: 92px; }
+.tabela-populacao td.nome { white-space: normal; overflow-wrap: anywhere; line-height: 1.3; }
+.tabela-populacao td.nome small { display: block; font-size: 0.74rem; }
+.tabela-populacao input { width: 100%; padding: 4px 6px; text-align: right; font-variant-numeric: tabular-nums; }
+.tabela-populacao input[aria-invalid='true'] { border-color: var(--erro); background: #fbeceb; }
 .lista-alta { max-height: 520px; }
 
 /* ---------- Avisos ---------- */

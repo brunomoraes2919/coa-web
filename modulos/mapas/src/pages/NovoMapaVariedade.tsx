@@ -8,6 +8,8 @@ import PreviaLayout from '../components/editor/PreviaLayout';
 import PainelTextos from '../components/editor/PainelTextos';
 import SecaoFazenda from '../components/editor/SecaoFazenda';
 import TabelaVariedades from '../components/editor/TabelaVariedades';
+import CadastroPopulacao from '../components/editor/CadastroPopulacao';
+import { usePopulacao } from '../components/editor/usePopulacao';
 import { SecaoAparencia } from '../components/editor/SecaoAparencia';
 import { useCadastros, useLogo } from '../components/editor/hooks';
 import { useCoresVariedade } from '../components/editor/useCoresVariedade';
@@ -22,7 +24,7 @@ import { fazendasDoCoa } from '../lib/embed';
 import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarCopiaHistorico, gerarPng, nomeArquivoMapa } from '../lib/exportar';
 import { DPI_HISTORICO, identidadeMapa, type ModoSalvar } from '../lib/historico';
 import type { LayoutConfig, LayoutTextos, MapaSalvo, Palette } from '../lib/types';
-import { coresDasFeicoes, feicoesDoMapa, resumoDoMapaVariedade, resumoVariedades, semNomeNoMapa, textosAutomaticosVariedade } from '../lib/variedades';
+import { chavesPimsDoMapa, coresDasFeicoes, feicoesDoMapa, resumoDoMapaVariedade, resumoVariedades, semNomeNoMapa, textosAutomaticosVariedade } from '../lib/variedades';
 import { composicaoDe, extentsDosQuadros, TILES, type RenderInput } from '../render';
 
 type Aparencia = Omit<LayoutConfig, 'textos'>;
@@ -89,7 +91,10 @@ export default function NovoMapaVariedade() {
   // nome comercial do cadastro de Variedades: "Nome comercial (nome do PIMS)" na legenda, na tabela e no mapa salvo
   const { lista: variedadesPims, comerciais } = useNomesComerciais();
   const admin = usePerfil() === 'admin';
-  const resumo = useMemo(() => (cores ? resumoVariedades(feicoes, cores, comerciais) : null), [feicoes, cores, comerciais]);
+  // sementes por metro e população da fazenda e safra (cadastro na seção 2; saem na tabela da legenda)
+  const chavesPims = useMemo(() => chavesPimsDoMapa(fazenda, safra), [fazenda, safra]);
+  const { mapa: populacao, erro: erroPopulacao, recarregar: recarregarPopulacao } = usePopulacao(chavesPims);
+  const resumo = useMemo(() => (cores ? resumoVariedades(feicoes, cores, comerciais, populacao) : null), [feicoes, cores, comerciais, populacao]);
   // só avisa depois de ler o cadastro (sem ele, ou sem a tabela, o mapa segue com os nomes do PIMS)
   const semNome = useMemo(() => (resumo && variedadesPims && variedadesPims.length ? semNomeNoMapa(resumo, comerciais) : []), [resumo, variedadesPims, comerciais]);
 
@@ -287,7 +292,10 @@ export default function NovoMapaVariedade() {
           <section className="cartao pilha">
             <h2>2. Variedades</h2>
             {fazendaId && safraId && resumo ? (
-              <TabelaVariedades resumo={resumo} feicoes={feicoes} nomeArquivo={nomeArquivo.replace(/\.png$/, '_TALHOES.csv')} geradoEm={plantio.geradoEm} comerciais={comerciais} />
+              <>
+                <TabelaVariedades resumo={resumo} feicoes={feicoes} nomeArquivo={nomeArquivo.replace(/\.png$/, '_TALHOES.csv')} geradoEm={plantio.geradoEm} comerciais={comerciais} />
+                <CadastroPopulacao resumo={resumo} chaves={chavesPims} gravados={populacao} erroLeitura={erroPopulacao} onSalvo={recarregarPopulacao} />
+              </>
             ) : (
               <p className="suave">{fazendaId && safraId ? 'Lendo as cores das variedades…' : 'Escolha a fazenda e a safra.'}</p>
             )}

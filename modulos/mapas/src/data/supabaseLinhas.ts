@@ -30,6 +30,8 @@ export const TABELAS = {
   /** cor fixa de cada variedade (supabase/0026_mapa_variedade.sql) */
   coresVariedade: 'mapas_variedade_cores',
   variedades: 'mapas_variedades',
+  /** sementes por metro e população por fazenda e safra (supabase/0028 e 0029; lida também pela Revista) */
+  populacao: 'acomp_variedade_populacao',
 } as const;
 
 /** Bucket privado com a imagem e a miniatura dos mapas salvos. */

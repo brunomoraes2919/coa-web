@@ -379,7 +379,7 @@
     var cores = RL.coresDasVariedades(variedades.filter(function (v) { return v.v !== RL.SEM_VARIEDADE; }).map(function (v) { return v.v; }), extras.cores);
     cores[RL.SEM_VARIEDADE] = RL.COR_SEM_VARIEDADE;
     nomesComerciais(variedades, extras);
-    // sementes por metro e população (cadastro manual: botão "Sementes e população" desta aba)
+    // sementes por metro e população (cadastro do mapa de variedade, no módulo Mapas)
     var pop = RL.populacaoDe(extras.populacao, u, s);
     variedades.forEach(function (v) { var p = pop[RL.chaveVariedade(v.v)]; v.sementesMetro = p ? p.sementesMetro : null; v.populacao = p ? p.populacao : null; });
     var iniIso = iso(m.ini), hojeIso = iso(hoje);
@@ -738,7 +738,7 @@
       y += hM + 30;
     }
     y = subtitulo(c, 'Área por variedade', MX, y, ww);
-    // sementes por metro e população só entram quando a fazenda tem alguma cadastrada (botão "Sementes e população")
+    // sementes por metro e população só entram quando a fazenda tem alguma cadastrada (cadastro do mapa de variedade, no módulo Mapas)
     var comPop = !ed.grupo && vs.some(function (v) { return (v.sementesMetro !== null && v.sementesMetro !== undefined) || (v.populacao !== null && v.populacao !== undefined); });
     var ls = vs.slice(0, 12).map(function (v) {
       var l = [{ t: v.nome || v.v, bola: ed.cores[v.v], peso: 700 }, String(v.talhoes), n0(v.prev) + ' ha', n0(v.exec) + ' ha'];
@@ -749,7 +749,7 @@
       ? [{ t: 'Variedade', w: 0.25 }, { t: 'Talhões', w: 0.07, al: 'right' }, { t: 'Prevista', w: 0.1, al: 'right' }, { t: 'Plantada', w: 0.1, al: 'right' }, { t: 'Sementes/m', w: 0.09, al: 'right' }, { t: 'População', w: 0.11, al: 'right' }, { t: '% plantado', w: 0.15 }, { t: 'Janela', w: 0.13, al: 'right' }]
       : [{ t: 'Variedade', w: 0.27 }, { t: 'Talhões', w: 0.09, al: 'right' }, { t: 'Prevista', w: 0.12, al: 'right' }, { t: 'Plantada', w: 0.12, al: 'right' }, { t: '% plantado', w: 0.22 }, { t: 'Janela', w: 0.18, al: 'right' }];
     y = tabela(c, { x: MX, y: y, w: ww }, colsVar, ls, { lh: 30 });
-    if (comPop) { tx(c, 'Sementes por metro linear e população em plantas por hectare, cadastradas no COA WEB.', MX, y + 20, 11, 500, C.fraco, { max: ww }); y += 26; }
+    if (comPop) { tx(c, 'Sementes por metro linear e população em plantas por hectare, cadastradas no mapa de variedade do COA WEB.', MX, y + 20, 11, 500, C.fraco, { max: ww }); y += 26; }
     y += 30;
     var comIni = vs.filter(function (v) { return v.v !== RL.SEM_VARIEDADE; }).slice(0, 12);
     if (m.ini && comIni.length && y < H - 260) {
@@ -1153,9 +1153,6 @@
     estadoRv.pronto = estadoTela === 'pronto';
     $('rv-status').textContent = texto || '';
     $('rv-baixar').disabled = !estadoRv.pronto || estadoRv.baixando;
-    // o cadastro é por fazenda: some na revista do grupo e espera a revista da fazenda ficar pronta
-    $('rv-populacao').hidden = N.estado().u === N.TODAS || N.estado().o !== 'PLANTIO';
-    $('rv-populacao').disabled = !(estadoRv.pronto && estadoRv.ed && !estadoRv.ed.grupo && estadoRv.ed.u === N.estado().u);
   }
   function cabecalhoTela(ed, us) {
     N.aplicarFundo($('rv-cab'), N.estado().s);
@@ -1308,65 +1305,6 @@
   async function lerPopulacao(us, s) {
     try { return await N.populacoes(us, s); } catch (e) { console.warn('Revista: sementes e população', e && e.message ? e.message : e); return []; }
   }
-  function linhaPopulacao(v, comercial) {
-    var tr = document.createElement('tr'); tr.dataset.chave = RL.chaveVariedade(v.v);
-    var td = document.createElement('td'), d = document.createElement('div'); d.className = 'pop-var';
-    var cor = document.createElement('i'); cor.style.background = estadoRv.ed.cores[v.v] || RL.COR_SEM_VARIEDADE; d.appendChild(cor);
-    var nomes = document.createElement('span'), b = document.createElement('b'); b.textContent = comercial || v.v; nomes.appendChild(b);
-    if (comercial) { var sm = document.createElement('small'); sm.textContent = v.v; nomes.appendChild(sm); }
-    d.appendChild(nomes); td.appendChild(d); tr.appendChild(td);
-    [['sementes', RL.fmtSementes(v.sementesMetro), 'Ex.: 12,2', 'Sementes por metro de '], ['populacao', RL.fmtPopulacao(v.populacao), 'Ex.: 244.000', 'População de ']].forEach(function (k) {
-      var c = document.createElement('td'); c.className = 'num';
-      var inp = document.createElement('input'); inp.type = 'text'; inp.inputMode = 'decimal'; inp.name = k[0]; inp.value = k[1]; inp.placeholder = k[2];
-      inp.setAttribute('aria-label', k[3] + (comercial || v.v)); inp.autocomplete = 'off';
-      inp.addEventListener('input', function () { inp.removeAttribute('aria-invalid'); });
-      inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); salvarPopulacao(); } });
-      c.appendChild(inp); tr.appendChild(c);
-    });
-    return tr;
-  }
-  function abrirPopulacao() {
-    var ed = estadoRv.ed;
-    if (!ed || ed.grupo || ed.u !== N.estado().u) return;
-    var comerciais = estadoRv.extras.comerciaisMapa || {};
-    var vs = ed.variedades.filter(function (v) { return v.v !== RL.SEM_VARIEDADE; });
-    $('pop-sub').textContent = ed.nome + ' · ' + ed.safraNome;
-    var corpo = $('pop-linhas'); corpo.innerHTML = '';
-    vs.forEach(function (v) { corpo.appendChild(linhaPopulacao(v, comerciais[RL.chaveVariedade(v.v)])); });
-    if (!vs.length) { var tr = document.createElement('tr'), td = document.createElement('td'); td.colSpan = 3; td.textContent = 'O PIMS ainda não tem variedade no plantio desta fazenda nesta safra.'; tr.appendChild(td); corpo.appendChild(tr); }
-    $('pop-salvar').disabled = !vs.length;
-    $('pop-status').textContent = '';
-    $('dlg-populacao').showModal();
-  }
-  async function salvarPopulacao() {
-    var ed = estadoRv.ed, botao = $('pop-salvar');
-    if (!ed || ed.grupo || botao.disabled) return;
-    var linhas = [], erro = null;
-    $('pop-linhas').querySelectorAll('tr[data-chave]').forEach(function (tr) {
-      if (erro) return;
-      var s = tr.querySelector('input[name="sementes"]'), p = tr.querySelector('input[name="populacao"]');
-      var r = RL.validarPopulacao(s.value, p.value);
-      if (r.erro) {
-        erro = r.erro;
-        var campo = /^Sementes/.test(r.erro) ? s : p;
-        campo.setAttribute('aria-invalid', 'true'); campo.focus();
-        return;
-      }
-      linhas.push({ variedade: tr.dataset.chave, sementesMetro: r.sementesMetro, populacao: r.populacao });
-    });
-    if (erro) { $('pop-status').textContent = erro; return; }
-    botao.disabled = true; $('pop-status').textContent = 'Gravando…';
-    try {
-      await N.salvarPopulacoes(ed.u, ed.s, linhas);
-      estadoRv.extras.populacao = await lerPopulacao(N.unidadesDaSafra(ed.s), ed.s);
-      $('dlg-populacao').close();
-      estadoRv.chave = null; // monta a revista de novo com os valores gravados
-      gerar();
-    } catch (e) {
-      $('pop-status').textContent = 'Não foi possível gravar: ' + (e && e.message ? e.message : e);
-    } finally { botao.disabled = false; }
-  }
-
   function render(nucleo) {
     N = nucleo;
     gerar();
@@ -1376,9 +1314,6 @@
     $('rv-baixar').addEventListener('click', baixarPdf);
     $('rv-capa-arquivo').addEventListener('change', trocarFotoCapa);
     $('rv-capa-padrao').addEventListener('click', function () { voltarCapaPadrao(N.estado().s); estadoRv.chave = null; gerar(); });
-    $('rv-populacao').addEventListener('click', abrirPopulacao);
-    $('pop-salvar').addEventListener('click', salvarPopulacao);
-    $('pop-fechar').addEventListener('click', function () { $('dlg-populacao').close(); });
   });
 
   window.AcompRevista = { render: render };

@@ -24,10 +24,11 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
       situacaoZeus: 'mapas_zeus_situacao',
       coresVariedade: 'mapas_variedade_cores',
       variedades: 'mapas_variedades',
+      populacao: 'acomp_variedade_populacao',
     });
   });
 
-  it('usa só as tabelas mapas_* e o bucket mapas-chuva; fazendas e perfis do COA WEB só onde lê o COA WEB', async () => {
+  it('usa só as tabelas mapas_*, a de sementes e população (dividida com o Operacional) e o bucket mapas-chuva; fazendas e perfis do COA WEB só onde lê o COA WEB', async () => {
     const banco = new BancoFalso();
     banco.sessao = { user: { id: 'u1' } };
     const repo = criarSupabaseRepo(banco.cliente());
@@ -60,6 +61,8 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
     banco.inserir('mapas_variedades', [{ chave: 'TMG 2383', nome_pims: 'TMG 2383', grupo: null, pims: [], em_uso: true, talhoes: 3, ativo: true, visto_em: '2026-10-20T00:00:00Z', nome_comercial: null, comercial_em: null }]);
     await repo.listarVariedadesPims();
     await repo.salvarNomeComercial('TMG 2383', 'Bônus');
+    await repo.salvarPopulacao('SM3', 'SOJA 26/27', [{ variedade: 'TMG 2383', sementesMetro: 12.2, populacao: 244000 }]);
+    await repo.listarPopulacao('SM3', 'SOJA 26/27');
     await repo.importarBackup(await repo.exportarBackup());
     await repo.excluirMapa(salvo);
     await repo.excluirSafra(s.id);
@@ -72,7 +75,7 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
 
     await repo.listarFazendasCoa();
     await repo.acesso();
-    expect([...banco.tabelasUsadas].filter((n) => !n.startsWith('mapas_')).sort()).toEqual(['fazendas', 'perfis']);
+    expect([...banco.tabelasUsadas].filter((n) => !n.startsWith('mapas_')).sort()).toEqual(['acomp_variedade_populacao', 'fazendas', 'perfis']);
   });
 });
 
@@ -300,5 +303,34 @@ describe('supabaseRepo: importarBackup e o vínculo com o COA WEB', () => {
     expect(banco.tabelas[TABELAS.fazendas].map((l) => l.coa_fazenda_id)).toEqual(muitas.map((_, i) => i));
     const leituras = banco.requisicoes.filter((r) => r.tabela === TABELAS.fazendas && r.op === 'select');
     expect(Math.max(...leituras.flatMap((r) => r.listasIn))).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('supabaseRepo: sementes por metro e população (acomp_variedade_populacao)', () => {
+  it('grava as linhas com valor, apaga as sem nenhum e lê só a fazenda e a safra pedidas', async () => {
+    const banco = new BancoFalso();
+    banco.sessao = { user: { id: 'u1' } };
+    const repo = criarSupabaseRepo(banco.cliente());
+    await repo.salvarPopulacao('SM3', 'SOJA 26/27', [
+      { variedade: '80I82 IPRO', sementesMetro: 12.2, populacao: 244000 },
+      { variedade: 'NEO700 I2X', sementesMetro: 14.5, populacao: null },
+    ]);
+    await repo.salvarPopulacao('GLOBO', 'SOJA 26/27', [{ variedade: '80I82 IPRO', sementesMetro: 11, populacao: 220000 }]);
+    expect(await repo.listarPopulacao('SM3', 'SOJA 26/27')).toEqual([
+      { variedade: '80I82 IPRO', sementesMetro: 12.2, populacao: 244000 },
+      { variedade: 'NEO700 I2X', sementesMetro: 14.5, populacao: null },
+    ]);
+    // campo apagado na tela = linha apagada no banco
+    await repo.salvarPopulacao('SM3', 'SOJA 26/27', [{ variedade: 'NEO700 I2X', sementesMetro: null, populacao: null }]);
+    expect((await repo.listarPopulacao('SM3', 'SOJA 26/27')).map((l) => l.variedade)).toEqual(['80I82 IPRO']);
+    expect(await repo.listarPopulacao('GLOBO', 'SOJA 26/27')).toHaveLength(1);
+  });
+
+  it('a regra de acesso barra a gravação: mensagem de permissão', async () => {
+    const banco = new BancoFalso();
+    banco.sessao = { user: { id: 'u1' } };
+    banco.falhar = (r) => (r.tabela === 'acomp_variedade_populacao' && r.op === 'upsert' ? 'new row violates row-level security policy for table "acomp_variedade_populacao"' : null);
+    const repo = criarSupabaseRepo(banco.cliente());
+    await expect(repo.salvarPopulacao('SM3', 'SOJA 26/27', [{ variedade: '80I82 IPRO', sementesMetro: 12.2, populacao: 244000 }])).rejects.toThrow(/não pode cadastrar sementes e população/);
   });
 });

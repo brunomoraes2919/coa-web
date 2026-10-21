@@ -197,27 +197,6 @@ test('editorial e manchete sem boletins', () => {
   assert.match(L.editorial({ m: { ini: null }, rel: {} })[0], /Ainda não há boletins/)
 })
 
-test('sementes por metro e população: números digitados em português', () => {
-  assert.equal(L.lerNumeroBr('12,2'), 12.2)
-  assert.equal(L.lerNumeroBr(' 12.2 '), 12.2)
-  assert.equal(L.lerNumeroBr('244.000'), 244000)
-  assert.equal(L.lerNumeroBr('244000'), 244000)
-  assert.equal(L.lerNumeroBr('1.244.000'), 1244000)
-  assert.equal(L.lerNumeroBr(''), null)
-  assert.ok(Number.isNaN(L.lerNumeroBr('doze')))
-  assert.ok(Number.isNaN(L.lerNumeroBr('12,2,3')))
-})
-
-test('sementes por metro e população: limites e mensagens', () => {
-  assert.deepEqual(L.validarPopulacao('17,8', '355.000'), { sementesMetro: 17.8, populacao: 355000, erro: null })
-  assert.deepEqual(L.validarPopulacao('', ''), { sementesMetro: null, populacao: null, erro: null })
-  assert.deepEqual(L.validarPopulacao('11,1', ''), { sementesMetro: 11.1, populacao: null, erro: null })
-  assert.match(L.validarPopulacao('0', '').erro, /^Sementes/)
-  assert.match(L.validarPopulacao('150', '').erro, /^Sementes/)
-  assert.match(L.validarPopulacao('12', '244').erro, /^População/)
-  assert.match(L.validarPopulacao('12', 'muito').erro, /^População/)
-})
-
 test('sementes por metro e população: só as linhas da fazenda e da safra, pela chave da variedade', () => {
   const linhas = [
     { unidade: 'GLOBO', safra: 'SOJA 26/27', variedade: '80I82 IPRO', sementesMetro: 12.2, populacao: 244000 },

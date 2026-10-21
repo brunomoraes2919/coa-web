@@ -150,3 +150,41 @@ describe('nome comercial', () => {
     expect([...novasSemNome([])]).toEqual([]);
   });
 });
+
+describe('sementes por metro e população', () => {
+  it('lê números digitados em português', async () => {
+    const { lerNumeroBr } = await import('../src/lib/variedades');
+    expect(lerNumeroBr('12,2')).toBe(12.2);
+    expect(lerNumeroBr('12.2')).toBe(12.2);
+    expect(lerNumeroBr('244.000')).toBe(244000);
+    expect(lerNumeroBr('244000')).toBe(244000);
+    expect(lerNumeroBr('  ')).toBeNull();
+    expect(lerNumeroBr('doze')).toBeNaN();
+  });
+  it('confere os limites do banco e diz qual campo está errado', async () => {
+    const { validarPopulacao } = await import('../src/lib/variedades');
+    expect(validarPopulacao('17,8', '355.000')).toEqual({ sementesMetro: 17.8, populacao: 355000, erro: null });
+    expect(validarPopulacao('', '')).toEqual({ sementesMetro: null, populacao: null, erro: null });
+    expect(validarPopulacao('150', '')).toMatchObject({ campo: 'sementes' });
+    expect(validarPopulacao('12', '244')).toMatchObject({ campo: 'populacao' });
+  });
+  it('unidade e safra do PIMS como o Operacional grava (nome da safra no PIMS, ou o próprio nome)', async () => {
+    const { chavesPimsDoMapa } = await import('../src/lib/variedades');
+    expect(chavesPimsDoMapa({ unidadePims: ' sm3 ' }, { nome: 'Soja 26/27', nomePims: null })).toEqual({ unidade: 'SM3', safra: 'SOJA 26/27' });
+    expect(chavesPimsDoMapa({ unidadePims: 'SM3' }, { nome: 'Soja', nomePims: 'SOJA 26/27' })).toEqual({ unidade: 'SM3', safra: 'SOJA 26/27' });
+    expect(chavesPimsDoMapa({ unidadePims: null }, { nome: 'SOJA 26/27', nomePims: null })).toBeNull();
+    expect(chavesPimsDoMapa({ unidadePims: 'SM3' }, null)).toBeNull();
+  });
+  it('o resumo da legenda leva os valores pela chave da variedade; "Sem variedade" fica sem', async () => {
+    const { populacaoPorChave, temPopulacao } = await import('../src/lib/variedades');
+    const f = [
+      { id: 'a', nome: '001', setor: null, areaHa: 10, variedade: '80I82 IPRO' },
+      { id: 'b', nome: '002', setor: null, areaHa: 5, variedade: null },
+    ];
+    const pop = populacaoPorChave([{ variedade: '80I82 IPRO', sementesMetro: 12.2, populacao: 244000 }]);
+    const r = resumoVariedades(f as never, new Map([['80I82 IPRO', '#1F77B4']]), undefined, pop);
+    expect(r.itens.map((i) => [i.chave, i.sementesMetro, i.populacao])).toEqual([['80I82 IPRO', 12.2, 244000], ['', null, null]]);
+    expect(temPopulacao(r)).toBe(true);
+    expect(temPopulacao(resumoVariedades(f as never, new Map()))).toBe(false);
+  });
+});

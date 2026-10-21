@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { extensaoImagem, tipoImagem } from '../lib/historico';
 import { montarPlantioPims } from '../lib/plantioPims';
-import type { FazendaCoa, MapaSalvo } from '../lib/types';
+import type { FazendaCoa, MapaSalvo, PopulacaoVariedade } from '../lib/types';
 import type { BackupJson, Repositorio } from './repo';
 import {
   areaCulturaParaRow,
@@ -407,6 +407,35 @@ export function criarSupabaseRepo(client: SupabaseClient): Repositorio {
       if (error) falha('Não foi possível gravar o nome comercial', error);
       // a regra de acesso barra sem erro (nenhuma linha alterada): só o administrador grava
       if (!data || !data.length) throw new Error('Não foi possível gravar o nome comercial: só o administrador altera o cadastro de variedades.');
+    },
+
+    async listarPopulacao(unidade, safra) {
+      const { data, error } = await client
+        .from(TABELAS.populacao)
+        .select('variedade,sementes_metro,populacao')
+        .eq('unidade', unidade)
+        .eq('safra', safra);
+      if (error) falha('Não foi possível ler as sementes e a população', error);
+      return ((data ?? []) as { variedade: string; sementes_metro: number | string | null; populacao: number | null }[]).map(
+        (l): PopulacaoVariedade => ({ variedade: l.variedade, sementesMetro: l.sementes_metro === null ? null : Number(l.sementes_metro), populacao: l.populacao }),
+      );
+    },
+
+    async salvarPopulacao(unidade, safra, linhas) {
+      const recusa = 'Sua conta não pode cadastrar sementes e população desta fazenda.';
+      const gravar = linhas
+        .filter((l) => l.sementesMetro !== null || l.populacao !== null)
+        .map((l) => ({ unidade, safra, variedade: l.variedade, sementes_metro: l.sementesMetro, populacao: l.populacao }));
+      const apagar = linhas.filter((l) => l.sementesMetro === null && l.populacao === null).map((l) => l.variedade);
+      if (gravar.length) {
+        const { data, error } = await client.from(TABELAS.populacao).upsert(gravar, { onConflict: 'unidade,safra,variedade' }).select('variedade');
+        if (error) throw new Error(/row-level security|permission denied/i.test(error.message) ? recusa : `Não foi possível gravar as sementes e a população: ${error.message}`);
+        if (!data || data.length < gravar.length) throw new Error(recusa);
+      }
+      if (apagar.length) {
+        const { error } = await client.from(TABELAS.populacao).delete().eq('unidade', unidade).eq('safra', safra).in('variedade', apagar);
+        if (error) falha('Não foi possível apagar as sementes e a população', error);
+      }
     },
 
     async exportarBackup() {

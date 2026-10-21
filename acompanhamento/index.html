@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610201800">
+<link rel="stylesheet" href="estilo.css?v=202610211000">
 <script src="config.js?v=202610051700"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" integrity="sha384-Mx5lkUEQPM1pOJCwFtUICyX45KNojXbkWdYhkKUKsbv391mavbfoAmONbzkgYPzR" crossorigin="anonymous"></script>
@@ -298,9 +298,6 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-8 8"/></svg>Trocar foto da capa
         </label>
         <button class="rv-capa-btn" id="rv-capa-padrao" type="button" hidden>Foto padrão</button>
-        <button class="rv-capa-btn" id="rv-populacao" type="button" disabled title="Sementes por metro e população de cada variedade desta fazenda, para a página Variedades da revista">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V11"/><path d="M12 11c0-4 3-7 7-7 0 4-3 7-7 7Z"/><path d="M12 14c0-3-2.5-5.5-6-5.5 0 3.5 2.5 5.5 6 5.5Z"/></svg>Sementes e população
-        </button>
         <button class="botao rel-botao" id="rv-baixar" type="button" disabled>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Baixar PDF
         </button>
@@ -315,27 +312,11 @@
       Ela junta e cruza o que o COA WEB já tem: os boletins do PIMS (área, ritmo, metas, equipes, variedades e talhões), a chuva da ZEUS (da fazenda e por talhão), os mapas de chuva salvos no módulo Mapas e a previsão do tempo.</p>
     <p>Como usar: escolha a safra e a fazenda nas abas acima (em "Todas", a revista do grupo, só para administrador). As páginas são montadas na hora com os dados mais recentes e as que aparecem abaixo são exatamente as do PDF; o botão <b>Baixar PDF</b> gera o arquivo.
       A capa usa a foto padrão da safra; em <b>Trocar foto da capa</b> você põe uma foto sua, que fica guardada neste navegador para esta safra (<b>Foto padrão</b> volta à original).
-      Em <b>Sementes e população</b> você cadastra as sementes por metro e a população (plantas por hectare) de cada variedade da fazenda, que saem na página Variedades.</p>
+      As sementes por metro e a população de cada variedade, cadastradas no mapa de variedade do módulo Mapas, saem na página Variedades.</p>
   </section>
   <section class="rv-paginas" id="rv-paginas" aria-label="Páginas da revista"></section>
 </main>
 </div>
-
-<dialog class="dialogo dlg-populacao" id="dlg-populacao" aria-labelledby="pop-titulo">
-  <header class="cartao-cab">
-    <div><h2 id="pop-titulo">Sementes e população</h2><p class="cartao-sub" id="pop-sub"></p></div>
-    <button type="button" class="botao-icone" id="pop-fechar" aria-label="Fechar">×</button>
-  </header>
-  <p class="pop-ajuda">Digite as sementes por metro linear e a população (plantas por hectare) de cada variedade plantada nesta fazenda, nesta safra. Os valores saem na tabela da página Variedades da revista. Deixe em branco o que não quiser mostrar.</p>
-  <div class="pop-rolagem">
-    <table class="pop-tabela">
-      <thead><tr><th>Variedade</th><th class="num">Sementes/metro</th><th class="num">População (plantas/ha)</th></tr></thead>
-      <tbody id="pop-linhas"></tbody>
-    </table>
-  </div>
-  <p class="dica" id="pop-status" role="status" aria-live="polite"></p>
-  <div class="botoes"><button type="button" class="botao" id="pop-salvar">Salvar</button></div>
-</dialog>
 
 <dialog class="dialogo" id="dlg-rel" aria-labelledby="rel-exp-titulo">
   <header class="cartao-cab">
@@ -431,8 +412,8 @@
 <script src="relatorio-logica.js?v=202610131900"></script>
 <script src="relatorio.js?v=202610131900"></script>
 <script src="../chuva/logica.js?v=202610191200"></script>
-<script src="revista-logica.js?v=202610201800"></script>
-<script src="revista.js?v=202610201800"></script>
-<script src="app.js?v=202610201800"></script>
+<script src="revista-logica.js?v=202610211000"></script>
+<script src="revista.js?v=202610211000"></script>
+<script src="app.js?v=202610211000"></script>
 </body>
 </html>

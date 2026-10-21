@@ -46,6 +46,7 @@ const CHAVES: Record<string, string[]> = {
   mapas_zeus_situacao: ['fazenda'],
   mapas_variedade_cores: ['variedade'],
   mapas_variedades: ['chave'],
+  acomp_variedade_populacao: ['unidade', 'safra', 'variedade'],
   fazendas: ['id'],
   perfis: ['id'],
 };
@@ -258,12 +259,15 @@ class Consulta implements PromiseLike<{ data: unknown; error: Erro; count: numbe
 
     if (this.op === 'upsert') {
       const chave = CHAVES[this.tabela];
+      const gravadas: Linha[] = [];
       for (const nova of this.payload) {
         const i = tabela.findIndex((l) => chave.every((k) => l[k] === nova[k]));
         if (i >= 0) tabela[i] = { ...nova };
         else tabela.push({ ...nova });
+        gravadas.push({ ...nova });
       }
-      return { data: null, error: null, count: null };
+      // .select(...) depois do upsert: devolve as linhas gravadas (Prefer: return=representation)
+      return this.devolver ? responder(gravadas, null) : { data: null, error: null, count: null };
     }
     if (this.op === 'delete') {
       const apagadas = this.banco.recusarExclusao?.(this.tabela) ? [] : tabela.filter(passa);

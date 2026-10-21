@@ -1,7 +1,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { extensaoImagem } from '../lib/historico';
 import { carregarPlantioPims } from '../lib/plantioPims';
-import type { AreaCultura, CorVariedade, Fazenda, MapaSalvo, Plantio, Safra, Talhao, VariedadePims } from '../lib/types';
+import type { AreaCultura, CorVariedade, Fazenda, MapaSalvo, Plantio, PopulacaoVariedade, Safra, Talhao, VariedadePims } from '../lib/types';
 import { rowParaVariedadePims, type VariedadeRow } from './supabaseLinhas';
 import type { BackupJson, Repositorio } from './repo';
 import { completarFazenda, completarPlantio, completarSafra, completarTalhao, reviverPics } from './supabaseLinhas';
@@ -38,9 +38,10 @@ interface CoaChuvaDB extends DBSchema {
   };
   coresVariedade: { key: string; value: CorVariedade };
   nomesVariedade: { key: string; value: { chave: string; nome: string; em: string } };
+  populacao: { key: [string, string, string]; value: PopulacaoVariedade & { unidade: string; safra: string } };
 }
 
-const VERSAO_DB = 4;
+const VERSAO_DB = 5;
 
 const ERRO_BLOQUEADO =
   'O banco local está aberto em outra aba com uma versão anterior do app. Feche as outras abas do Mapa de Chuva COA e recarregue esta página.';
@@ -99,6 +100,10 @@ function atualizarEsquema(db: IDBPDatabase<CoaChuvaDB>, versaoAntiga: number): v
   if (versaoAntiga < 4) {
     // v4 (nome comercial das variedades): o nome digitado, pela chave da variedade
     db.createObjectStore('nomesVariedade', { keyPath: 'chave' });
+  }
+  if (versaoAntiga < 5) {
+    // v5 (sementes por metro e população): por fazenda (unidade do PIMS), safra e variedade
+    db.createObjectStore('populacao', { keyPath: ['unidade', 'safra', 'variedade'] });
   }
 }
 
@@ -394,6 +399,21 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
       const valor = nome && nome.trim() ? nome.trim() : null;
       if (valor) await db.put('nomesVariedade', { chave, nome: valor, em: new Date().toISOString() });
       else await db.delete('nomesVariedade', chave);
+    },
+
+    async listarPopulacao(unidade, safra) {
+      const db = await dbPromise;
+      return (await db.getAll('populacao'))
+        .filter((l) => l.unidade === unidade && l.safra === safra)
+        .map(({ variedade, sementesMetro, populacao }) => ({ variedade, sementesMetro, populacao }));
+    },
+
+    async salvarPopulacao(unidade, safra, linhas) {
+      const db = await dbPromise;
+      for (const l of linhas) {
+        if (l.sementesMetro === null && l.populacao === null) await db.delete('populacao', [unidade, safra, l.variedade]);
+        else await db.put('populacao', { unidade, safra, variedade: l.variedade, sementesMetro: l.sementesMetro, populacao: l.populacao });
+      }
     },
 
     async exportarBackup() {
