@@ -14,6 +14,7 @@ import { planejarRosa } from './northArrow';
 import { desenharPadrao } from './patterns';
 import { desenharRaster } from './raster';
 import { desenharRotulosEPics, type TalhaoPx } from './rotulosMapa';
+import { desenharCar, desenharRotulosCar } from './car';
 import { planejarEscala } from './scalebar';
 import { ESTILO_SITUACAO, situacaoDe } from './situacao';
 import { desenharTiles, type TileCarregado } from './tiles';
@@ -116,6 +117,7 @@ export function desenharVariedades(ctx: CanvasRenderingContext2D, v: Vista, geom
  * amarelos; a plantar = só contorno tracejado cinza (no modo sem áreas, no lugar do contorno preto).
  */
 export function desenharTalhoes(ctx: CanvasRenderingContext2D, v: Vista, geoms: TalhaoPx[], inp: RenderInput, areas: FeicaoPx[] = []): void {
+  if (inp.car) return desenharCar(ctx, v, geoms, inp.car);
   if (inp.variedades) return desenharVariedades(ctx, v, geoms, areas, inp.variedades.cores);
   const s = v.s;
   const comAreas = areas.length > 0;
@@ -322,6 +324,7 @@ export function desenharQuadro(
   const ocupadas = [rosa.area, escala.area, ...(titulo ? [titulo.area] : [])];
   const grade = inp.config.mostrarGrade ? desenharGrade(ctx, v, ocupadas) : [];
   desenharRotulosEPics(ctx, v, inp, geoms, [...ocupadas, ...grade]);
+  if (inp.car) desenharRotulosCar(ctx, v, inp.car, [...ocupadas, ...grade]);
   titulo?.desenhar();
   rosa.desenhar();
   escala.desenhar();

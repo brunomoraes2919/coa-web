@@ -13,12 +13,14 @@ export interface EstadoPerfil {
    * excluir fazendas de mapa. false enquanto o perfil carrega, sem perfil e para o administrador restrito.
    */
   adminSemRestricao: boolean;
+  /** ADMINISTRADOR+ (o único que usa o Mapa de CAR e Matrícula); false enquanto carrega e sem perfil */
+  super: boolean;
   /** falha ao ler o perfil (rede, banco): a tela avisa em vez de tratar como colaborador em silêncio */
   erro: string | null;
 }
 
 /** Fornecido pelo App (um único carregamento por usuário). */
-export const PerfilContexto = createContext<EstadoPerfil>({ perfil: undefined, adminSemRestricao: false, erro: null });
+export const PerfilContexto = createContext<EstadoPerfil>({ perfil: undefined, adminSemRestricao: false, super: false, erro: null });
 
 /**
  * Perfil do usuário no COA WEB (perfis.perfil). Só esconde o que o colaborador não usa (cadastros,
@@ -35,6 +37,11 @@ export function usePerfil(): PerfilCarregado {
  */
 export function useAdminSemRestricao(): boolean {
   return useContext(PerfilContexto).adminSemRestricao;
+}
+
+/** Se a conta é ADMINISTRADOR+ (Mapa de CAR e Matrícula). Quem garante é o RLS (is_super, supabase/0030). */
+export function useSuper(): boolean {
+  return useContext(PerfilContexto).super;
 }
 
 /** Mensagem da falha ao ler o perfil; null se leu (ou ainda está lendo). */
@@ -54,12 +61,12 @@ export interface LeituraPerfil {
  * sem restrição. Sessão carregando ou perfil ainda não lido para este usuário: perfil undefined.
  */
 export function estadoDoPerfil(modo: 'local' | 'supabase', usuarioId: string | null, carregandoSessao: boolean, lido: LeituraPerfil | null): EstadoPerfil {
-  if (modo === 'local') return { perfil: 'admin', adminSemRestricao: true, erro: null };
-  if (carregandoSessao) return { perfil: undefined, adminSemRestricao: false, erro: null };
-  if (!usuarioId) return { perfil: null, adminSemRestricao: false, erro: null };
+  if (modo === 'local') return { perfil: 'admin', adminSemRestricao: true, super: true, erro: null };
+  if (carregandoSessao) return { perfil: undefined, adminSemRestricao: false, super: false, erro: null };
+  if (!usuarioId) return { perfil: null, adminSemRestricao: false, super: false, erro: null };
   const atual = lido && lido.usuarioId === usuarioId ? lido : null;
-  if (!atual) return { perfil: undefined, adminSemRestricao: false, erro: null };
-  return { perfil: atual.acesso?.perfil ?? null, adminSemRestricao: atual.acesso?.adminSemRestricao === true, erro: atual.erro };
+  if (!atual) return { perfil: undefined, adminSemRestricao: false, super: false, erro: null };
+  return { perfil: atual.acesso?.perfil ?? null, adminSemRestricao: atual.acesso?.adminSemRestricao === true, super: atual.acesso?.super === true, erro: atual.erro };
 }
 
 /**
@@ -86,6 +93,6 @@ export function useCarregarPerfil(modo: 'local' | 'supabase', usuarioId: string 
     };
   }, [modo, usuarioId]);
 
-  const { perfil, adminSemRestricao, erro } = estadoDoPerfil(modo, usuarioId, carregandoSessao, lido);
-  return useMemo(() => ({ perfil, adminSemRestricao, erro }), [perfil, adminSemRestricao, erro]);
+  const { perfil, adminSemRestricao, super: ehSuper, erro } = estadoDoPerfil(modo, usuarioId, carregandoSessao, lido);
+  return useMemo(() => ({ perfil, adminSemRestricao, super: ehSuper, erro }), [perfil, adminSemRestricao, ehSuper, erro]);
 }

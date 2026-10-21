@@ -48,7 +48,7 @@ describe('localRepo: vínculo com a fazenda do COA WEB (coaFazendaId)', () => {
 describe('localRepo: perfil, fazendas do COA WEB e plantio do PIMS', () => {
   it("modo local: perfil 'admin' e nenhuma fazenda do COA WEB", async () => {
     const repo = criarLocalRepo(nomeNovo());
-    expect(await repo.acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true });
+    expect(await repo.acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true, super: true });
     expect(await repo.listarFazendasCoa()).toEqual([]);
   });
 

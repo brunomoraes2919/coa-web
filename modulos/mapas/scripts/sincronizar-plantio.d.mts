@@ -414,3 +414,60 @@ export function rodarBenchmarkPrevisao(opcoes: {
   fetchImpl?: typeof fetch;
   agora?: Date;
 }): Promise<string | null>;
+
+// ---------- Mapa de CAR e Matrícula ----------
+type Geometria = { type: string; coordinates: unknown };
+type Feicao = { type: 'Feature'; properties: Record<string, unknown>; geometry: Geometria };
+type Colecao = { type: 'FeatureCollection'; features: Feicao[] };
+export const CAR_BASES: { sicar: string; temas: string; sigef: string; ibge: string; osm: string[] };
+export const CAR_USER_AGENT: string;
+export const CAR_PRAZO_MS: number;
+export const CAR_MARGEM_GRAUS: number;
+export const CAR_MAX_IMOVEIS: number;
+export const CAR_MAX_PARCELAS: number;
+export const CAR_FRACAO_MINIMA: number;
+export const CAR_TEMAS: readonly string[];
+export const UF_RETANGULO: Readonly<Record<string, [number, number, number, number]>>;
+export function poligonosDe(geom: Geometria | null | undefined): number[][][][];
+export function verticesDe(geom: Geometria | null | undefined): [number, number][];
+export function retanguloDe(geoms: Geometria[]): [number, number, number, number] | null;
+export function pontoNoAnel(p: [number, number], anel: number[][]): boolean;
+export function pontoNaGeometria(p: [number, number], geom: Geometria): boolean;
+export function pontosDosTalhoes(talhoes: { geom: Geometria; ret: [number, number, number, number] | null }[], lado?: number): [number, number][];
+export function fracaoDosTalhoes(geom: Geometria, pontos: [number, number][]): number;
+export function arredondarGeometria(geom: Geometria, casas?: number): Geometria;
+export function simplificarGeometria(geom: Geometria, tol?: number): Geometria;
+export const CAR_TOLERANCIA_GRAUS: number;
+export function recortarNoRetangulo(geom: Geometria | null | undefined, ret: number[]): Geometria | null;
+export function lerGmlSigef(texto: string): Feicao[];
+export function ufsDoRecorte(bbox: number[], opcoes?: { fetchImpl?: typeof fetch }): Promise<string[]>;
+export function carDoRecorte(ufs: string[], bbox: number[], opcoes?: { fetchImpl?: typeof fetch }): Promise<Feicao[]>;
+export function temasDosCar(codigos: string[], opcoes?: { fetchImpl?: typeof fetch; temas?: readonly string[] }): Promise<Feicao[]>;
+export function sigefDoRecorte(ufs: string[], bbox: number[], opcoes?: { fetchImpl?: typeof fetch }): Promise<Feicao[]>;
+export function ibgeDoRecorte(bbox: number[], opcoes?: { fetchImpl?: typeof fetch }): Promise<Feicao[]>;
+export function osmDoRecorte(bbox: number[], opcoes?: { fetchImpl?: typeof fetch; esperaMs?: number }): Promise<Feicao[]>;
+export function montarSqlEucalipto(unidade: string): string;
+export function eucaliptoDoPims(opcoes: { url: string; token: string; unidade: string; fetchImpl?: typeof fetch }): Promise<{ talhao: string; areaHa: number }[]>;
+export interface FonteCar { ok: boolean; n: number; erro?: string }
+export interface RespostaCar {
+  dados: {
+    versao: 1;
+    geradoEm: string;
+    bbox: number[];
+    ufs: string[];
+    car: Colecao;
+    temas: Colecao;
+    matriculas: Colecao;
+    estradas: Colecao;
+    hidrografia: Colecao;
+    eucalipto: { talhao: string; areaHa: number }[];
+  };
+  fontes: Record<string, FonteCar>;
+}
+export function buscarCarMatricula(opcoes: {
+  talhoes: { geom: Geometria }[];
+  unidade?: string | null;
+  agrovex?: { url: string; token: string } | null;
+  fetchImpl?: typeof fetch;
+  agora?: Date;
+}): Promise<RespostaCar>;

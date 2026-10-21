@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import Aviso from './Aviso';
-import { useErroPerfil, usePerfil } from './usePerfil';
+import { useErroPerfil, usePerfil, useSuper } from './usePerfil';
 
 interface Props {
   modo: 'local' | 'supabase';
@@ -22,6 +22,8 @@ interface ItemNav {
   ativo(caminho: string): boolean;
   /** cadastro: só para admin */
   admin?: true;
+  /** só para o ADMINISTRADOR+ */
+  super?: true;
   /** tela de configuração: não existe no modo fixo */
   config?: true;
 }
@@ -119,6 +121,18 @@ const ITENS: ItemNav[] = [
     admin: true,
   },
   {
+    para: '/car',
+    texto: 'CAR e matrícula',
+    icone: svg(
+      <>
+        <path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20Z" />
+        <path d="m7 10 3 3 5-5" />
+      </>,
+    ),
+    ativo: (c) => c === '/car',
+    super: true,
+  },
+  {
     para: '/fazendas',
     texto: 'Fazendas',
     icone: svg(
@@ -197,7 +211,8 @@ export default function Shell({ modo, fixo, embed, email, onSair }: Props) {
   }
 
   // enquanto o perfil carrega, os cadastros ficam escondidos (evita mostrar e sumir)
-  const itens = ITENS.filter((i) => !(i.admin && perfil !== 'admin') && !(i.config && fixo));
+  const ehSuper = useSuper();
+  const itens = ITENS.filter((i) => !(i.admin && perfil !== 'admin') && !(i.super && !ehSuper) && !(i.config && fixo));
 
   return (
     <div className="app">

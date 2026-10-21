@@ -27,6 +27,7 @@ const SCRIPTS = [
   '../../supabase/0027_variedades_nome_comercial.sql',
   '../../supabase/0028_variedades_populacao.sql',
   '../../supabase/0029_populacao_no_mapas.sql',
+  '../../supabase/0030_mapa_car_matricula.sql',
 ];
 const sql = SCRIPTS.map((s) => readFileSync(s, 'utf8'))
   .join('\n')
@@ -89,8 +90,10 @@ describe('supabase/coa-web/0001_mapas.sql + 0002_pedidos_plantio.sql + 0003_pedi
   it.each(Object.values(TABELAS))('tabela %s: RLS ligado, nada para anon, acesso explícito para authenticated', (t) => {
     expect(sql).toMatch(new RegExp(`alter table public\\.${t}\\s+enable row level security;`));
     expect(sql).toMatch(new RegExp(`revoke all on table public\\.${t}\\s+from anon, authenticated;`));
-    const soLeitura = t === TABELAS.plantioPims || t === TABELAS.situacaoZeus || t === TABELAS.variedades;
-    const privilegios = soLeitura ? 'select' : t === TABELAS.pedidosPlantio || t === TABELAS.pedidosChuva ? 'select, insert' : 'select, insert, update, delete';
+    // só leitura no navegador (quem grava é o servidor): plantio do PIMS, situação da ZEUS, variedades e o CAR
+    const soLeitura = t === TABELAS.plantioPims || t === TABELAS.situacaoZeus || t === TABELAS.variedades || t === TABELAS.car;
+    const pedidos = t === TABELAS.pedidosPlantio || t === TABELAS.pedidosChuva || t === TABELAS.pedidosCar;
+    const privilegios = soLeitura ? 'select' : pedidos ? 'select, insert' : 'select, insert, update, delete';
     expect(sql).toMatch(new RegExp(`grant ${privilegios}\\s+on table public\\.${t}\\s+to authenticated;`));
   });
 

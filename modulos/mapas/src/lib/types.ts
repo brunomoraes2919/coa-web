@@ -1,4 +1,4 @@
-import type { MultiPolygon, Polygon } from 'geojson';
+import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 
 /** Contratos compartilhados por todo o app. Não redefina estes tipos em outros arquivos. */
 
@@ -60,6 +60,48 @@ export interface AcessoUsuario {
    * da cultura e plantio só nas fazendas que vê. Colaborador: sempre false.
    */
   adminSemRestricao: boolean;
+  /** ADMINISTRADOR+ (perfil admin com super): o único que usa o Mapa de CAR e Matrícula. Local: true. */
+  super: boolean;
+}
+
+// ---------------------------------------------------------------- Mapa de CAR e Matrícula
+
+/** Bases consultadas pelo servidor para o Mapa de CAR e Matrícula. */
+export type NomeFonteCar = 'sicar' | 'temas' | 'sigef' | 'ibge' | 'osm' | 'pims';
+
+/** Situação de uma base na última busca: respondeu? quantas feições? motivo curto da falha. */
+export interface FonteCar {
+  ok: boolean;
+  n: number;
+  erro?: string;
+}
+
+/**
+ * O que o servidor gravou em mapas_car (supabase/0030) para uma fazenda: as camadas em GeoJSON (lon/lat) e os
+ * talhões de eucalipto do PIMS. `car` = perímetro de cada CAR que cobre os talhões (cod_imovel, area, status…);
+ * `temas` = temas declarados nesses CARs (properties.tema = nome da camada do SICAR); `matriculas` = parcelas
+ * certificadas do SIGEF (matricula, parcela, status…); `estradas` e `hidrografia` = linhas e polígonos do IBGE e
+ * do OpenStreetMap (properties.fonte = 'ibge' | 'osm').
+ */
+export interface DadosCar {
+  versao: 1;
+  geradoEm: string;
+  bbox: number[];
+  ufs: string[];
+  car: FeatureCollection;
+  temas: FeatureCollection;
+  matriculas: FeatureCollection;
+  estradas: FeatureCollection;
+  hidrografia: FeatureCollection;
+  eucalipto: { talhao: string; areaHa: number }[];
+}
+
+/** Uma linha de mapas_car. */
+export interface RegistroCar {
+  fazendaId: string;
+  atualizadoEm: string;
+  dados: DadosCar;
+  fontes: Partial<Record<NomeFonteCar, FonteCar>>;
 }
 
 /** Fazenda do COA WEB (tabela fazendas), só leitura. */

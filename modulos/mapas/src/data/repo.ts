@@ -1,7 +1,7 @@
 import type { PedidoChuva, SituacaoPedidoChuva } from '../lib/chuvaZeus';
 import type { SituacaoZeus } from '../lib/situacaoZeus';
 import type { SituacaoPedidoPlantio } from '../lib/pedidoPlantio';
-import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, PopulacaoVariedade, Safra, Talhao, TipoMapa, VariedadePims } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, CorVariedade, Fazenda, FazendaCoa, MapaSalvo, Plantio, PlantioPimsArquivo, PopulacaoVariedade, RegistroCar, Safra, Talhao, TipoMapa, VariedadePims } from '../lib/types';
 
 /** Contrato do repositório (implementado por localRepo.ts e supabaseRepo.ts). */
 
@@ -60,6 +60,18 @@ export interface Repositorio {
    * servidor). É só um aviso na tela: sem a tabela, sem linhas ou com erro devolve [] (nunca lança). Local: [].
    */
   situacaoZeus(): Promise<SituacaoZeus[]>;
+
+  /** Se o botão "Buscar nas bases" do Mapa de CAR e Matrícula funciona aqui: só no Supabase (o servidor busca). */
+  podeBuscarCar: boolean;
+  /**
+   * Último resultado do Mapa de CAR e Matrícula da fazenda (mapas_car, supabase/0030; só ADMINISTRADOR+);
+   * null se nunca foi buscado. Local: public/dados/car/<NOME DA FAZENDA>.json, se existir.
+   */
+  obterCar(fazendaId: string): Promise<RegistroCar | null>;
+  /** Pede ao servidor a busca nas bases públicas para a fazenda; devolve o id do pedido. Local: lança erro. */
+  pedirBuscaCar(fazendaId: string): Promise<number>;
+  /** Situação do pedido de busca (atendido? 'ok' ou 'erro: ...'); não encontrado → null. Local: null. */
+  situacaoPedidoCar(id: number): Promise<SituacaoPedidoPlantio | null>;
 
   listarFazendas(): Promise<Fazenda[]>;
   obterTalhoes(fazendaId: string): Promise<Talhao[]>;

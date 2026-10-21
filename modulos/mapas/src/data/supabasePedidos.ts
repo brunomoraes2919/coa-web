@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { PedidoChuva } from '../lib/chuvaZeus';
 import type { SituacaoZeus } from '../lib/situacaoZeus';
 import type { Repositorio } from './repo';
-import { TABELAS } from './supabaseLinhas';
+import { rowParaRegistroCar, TABELAS, type CarRow } from './supabaseLinhas';
 
 /** tempo máximo de cada chamada (rede travada não pode deixar o botão preso) */
 const TEMPO_LIMITE_MS = 15000;
@@ -79,6 +79,61 @@ export function pedidosPlantioSupabase(
 }
 
 const SCRIPT_CHUVA = '0003_pedidos_chuva.sql';
+
+/**
+ * Pedidos do botão "Buscar nas bases" do Mapa de CAR e Matrícula (tabela mapas_car_pedidos, supabase/0030) e o
+ * resultado gravado pelo servidor (mapas_car). Só o ADMINISTRADOR+ lê e pede (RLS com is_super).
+ */
+export function pedidosCarSupabase(client: SupabaseClient): Pick<Repositorio, 'podeBuscarCar' | 'obterCar' | 'pedirBuscaCar' | 'situacaoPedidoCar'> {
+  const semPermissao = (e: ErroSupabase) => e.code === '42501' || /row-level security|permission denied/i.test(e.message ?? '');
+  const naoCriada = (e: ErroSupabase) => e.code === 'PGRST205' || e.code === '42P01';
+  return {
+    podeBuscarCar: true,
+
+    async obterCar(fazendaId) {
+      const { data, error } = await client
+        .from(TABELAS.car)
+        .select('fazenda_id, atualizado_em, dados, fontes')
+        .eq('fazenda_id', fazendaId)
+        .abortSignal(AbortSignal.timeout(60000))
+        .maybeSingle();
+      if (error) {
+        if (naoCriada(error)) throw new Error('O Mapa de CAR e Matrícula ainda não foi preparado no banco (rode supabase/0030_mapa_car_matricula.sql).');
+        if (semPermissao(error)) throw new Error('O Mapa de CAR e Matrícula é só do ADMINISTRADOR+.');
+        throw erroPedido('ler o Mapa de CAR e Matrícula', error);
+      }
+      return data ? rowParaRegistroCar(data as CarRow) : null;
+    },
+
+    async pedirBuscaCar(fazendaId) {
+      const { data, error } = await client
+        .from(TABELAS.pedidosCar)
+        .insert({ fazenda_id: fazendaId })
+        .select('id')
+        .abortSignal(AbortSignal.timeout(TEMPO_LIMITE_MS))
+        .single();
+      if (error) {
+        if (semPermissao(error)) throw new Error('Não foi possível buscar nas bases: o Mapa de CAR e Matrícula é só do ADMINISTRADOR+.');
+        if (naoCriada(error)) throw new Error('Não foi possível buscar nas bases: rode supabase/0030_mapa_car_matricula.sql no Supabase.');
+        throw erroPedido('buscar nas bases', error);
+      }
+      return Number((data as { id: number | string }).id);
+    },
+
+    async situacaoPedidoCar(id) {
+      const { data, error } = await client
+        .from(TABELAS.pedidosCar)
+        .select('atendido_em, resultado')
+        .eq('id', id)
+        .abortSignal(AbortSignal.timeout(TEMPO_LIMITE_MS))
+        .maybeSingle();
+      if (error) throw erroPedido('acompanhar a busca nas bases', error);
+      if (!data) return null;
+      const r = data as { atendido_em: string | null; resultado: string | null };
+      return { atendidoEm: r.atendido_em ?? null, resultado: r.resultado ?? null };
+    },
+  };
+}
 
 /**
  * Pedidos do botão "Inserir dados via integração" (tabela mapas_chuva_pedidos). O navegador grava o

@@ -382,3 +382,20 @@ ol.passos li { margin-bottom: 4px; }
 .inicio-card-seta { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--borda); transition: color 0.15s, transform 0.15s; }
 .inicio-card:hover .inicio-card-seta { color: var(--verde); transform: translateX(2px); }
 @media (prefers-reduced-motion: reduce) { .inicio-card, .inicio-card-seta { transition: none; } .inicio-card:hover .inicio-card-seta { transform: none; } }
+
+/* ---------- Mapa de CAR e Matrícula ---------- */
+.lista-fontes-car { list-style: none; margin: 0; padding: 0; border: 1px solid var(--borda); border-radius: 6px; }
+.lista-fontes-car li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; font-size: 0.84rem; border-bottom: 1px solid var(--borda); }
+.lista-fontes-car li:last-child { border-bottom: none; }
+.lista-fontes-car li b { font-variant-numeric: tabular-nums; }
+.lista-fontes-car li.ok b { color: var(--sucesso); }
+.lista-fontes-car li.falha b { color: var(--erro); }
+.lista-fontes-car li.sem { color: var(--texto-suave); }
+.tabela-car { font-size: 0.8rem; }
+.tabela-car th, .tabela-car td { padding: 5px 6px; }
+.tabela-car th { position: static; }
+.tabela-car td.rotulo-car { font-weight: 700; color: #c62828; }
+.tabela-car td.rotulo-matricula { font-weight: 700; color: #7b2cbf; max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; }
+.tabela-car td small { font-weight: 400; color: var(--texto-suave); }
+.tabela-car tr.inicio-grupo td { border-top: 2px solid var(--borda); }
+.notas-car { margin: 0; padding-left: 18px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 3px; }

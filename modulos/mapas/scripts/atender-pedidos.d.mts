@@ -95,3 +95,16 @@ export function atenderPedidosValidacao(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<boolean>;
+export const CAR_RECENTE_MINUTOS: number;
+export const RESULTADO_CAR_SO_SUPER: string;
+export interface PedidoCarPendente { id: number; pedido_por?: string | null; fazenda_id: string }
+export function pedidosCarPendentes(ctx: Ctx): Promise<PedidoCarPendente[]>;
+export function responderPedidosCar(ctx: Ctx, ids: number[], resultado: string, agora?: Date): Promise<void>;
+export function planejarCar(pendentes: PedidoCarPendente[]): { fazendaId: string; pedidos: PedidoCarPendente[] } | null;
+export function pedidoDeSuper(ctx: Ctx, pedidoPor: string | null | undefined): Promise<boolean>;
+export function atenderPedidosCar(opcoes: {
+  supabase: { url: string; chave: string };
+  agrovex: { url: string; token: string };
+  fetch?: FetchLike;
+  agora?: () => Date;
+}): Promise<number>;

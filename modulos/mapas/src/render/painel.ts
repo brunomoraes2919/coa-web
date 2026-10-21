@@ -8,6 +8,7 @@
 import { fmtChuva, fmtData } from '../lib/format';
 import { fmtDataHora } from '../lib/situacaoPlantio';
 import { fmtAreaHa } from '../lib/variedades';
+import { fmtHa } from '../lib/car';
 import type { Composicao } from './composicao';
 import { ALTURA_MAIUSC, comReticencias, fonte, limitarLinhas, quebrarTexto, type Rect } from './labels';
 import { planejarLegenda } from './legend';
@@ -32,6 +33,23 @@ export function itensInformacao(inp: RenderInput): ParInfo[] {
   const media = (v: number | null | undefined) => (v !== null && v !== undefined && Number.isFinite(v) ? fmtMm(v) : '');
   const pims = fmtDataHora(inp.plantioGeradoEm, true); // dd/MM HH:mm
   const r = inp.variedades?.resumo;
+  const car = inp.car;
+  if (car) {
+    const q = car.quadro;
+    const nCar = q.linhas.filter((l) => l.tipo === 'car').length;
+    const nMat = q.linhas.filter((l) => l.tipo === 'matricula').length;
+    const pares: ParInfo[] = [
+      { rotulo: 'Área dos talhões', valor: `${fmtHa(q.talhoesHa)} ha` },
+      { rotulo: 'CARs', valor: String(nCar) },
+      { rotulo: 'Matrículas (SIGEF)', valor: String(nMat) },
+      { rotulo: 'Talhões fora de CAR', valor: q.talhoesForaDeCarHa >= 1 ? `${fmtHa(q.talhoesForaDeCarHa)} ha` : '' },
+      { rotulo: 'Bases', valor: t.fonte },
+      { rotulo: 'Consulta', valor: fmtDataHora(car.dados.geradoEm, true) },
+      { rotulo: 'Data', valor: t.data },
+      { rotulo: 'Observação', valor: t.observacao },
+    ];
+    return pares.map((p) => ({ ...p, valor: (p.valor ?? '').trim() })).filter((p) => p.valor);
+  }
   const pares: ParInfo[] = r
     ? [
         { rotulo: 'Safra', valor: t.safra },
@@ -295,7 +313,8 @@ function blocoInfo(ctx: CanvasRenderingContext2D, itens: ParInfo[], r: Rect, s: 
     });
     ctx.save();
     ctx.beginPath();
-    ctx.rect(r.x * s, r.y * s, r.w * s, (limitar ? r.h : plano.total) * s + 1);
+    // 1,5 mm acima do bloco: o acento das maiúsculas ("Área") passa da altura das maiúsculas e era cortado
+    ctx.rect(r.x * s, (r.y - 1.5) * s, r.w * s, ((limitar ? r.h : plano.total) + 1.5) * s + 1);
     ctx.clip();
     ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
@@ -319,6 +338,7 @@ function blocoInfo(ctx: CanvasRenderingContext2D, itens: ParInfo[], r: Rect, s: 
 
 const ASSINATURA = 'Mapa de Chuva COA · Locks';
 const ASSINATURA_VARIEDADE = 'Mapa de Variedade COA · Locks';
+const ASSINATURA_CAR = 'Mapa de CAR COA · Locks';
 
 /** Altura do rodapé (mm): uma linha na faixa inferior; no painel lateral, duas com a atribuição. */
 function alturaRodape(lateral: boolean, atribuicao: string | null): number {
@@ -418,6 +438,6 @@ export function desenharPainel(ctx: CanvasRenderingContext2D, comp: Composicao, 
       leg.desenhar(sec.legenda.x * s, sec.legenda.y * s);
     }
   }
-  rodape(ctx, sec.rodape, s, lateral, atribuicao, inp.variedades ? ASSINATURA_VARIEDADE : ASSINATURA);
+  rodape(ctx, sec.rodape, s, lateral, atribuicao, inp.car ? ASSINATURA_CAR : inp.variedades ? ASSINATURA_VARIEDADE : ASSINATURA);
   ctx.restore();
 }

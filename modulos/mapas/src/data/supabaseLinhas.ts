@@ -1,3 +1,4 @@
+import type { FeatureCollection } from 'geojson';
 /**
  * Conversão entre o domínio (camelCase, src/lib/types.ts) e as linhas das tabelas do Supabase
  * (snake_case; geom/atributos/colunas/config/pics/resumo em colunas jsonb). Tudo puro.
@@ -5,7 +6,7 @@
  * os campos novos.
  */
 import { completarPlantio } from '../lib/plantioPims';
-import type { AcessoUsuario, AreaCultura, CodigoVariedadePims, CorVariedade, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, Safra, Talhao, VariedadePims } from '../lib/types';
+import type { AcessoUsuario, AreaCultura, CodigoVariedadePims, CorVariedade, DadosCar, Fazenda, LinhaPlantioPims, MapaSalvo, Pic, Plantio, PlantioPimsTalhao, RegistroCar, Safra, Talhao, VariedadePims } from '../lib/types';
 
 export { completarPlantio };
 
@@ -32,6 +33,9 @@ export const TABELAS = {
   variedades: 'mapas_variedades',
   /** sementes por metro e população por fazenda e safra (supabase/0028 e 0029; lida também pela Revista) */
   populacao: 'acomp_variedade_populacao',
+  /** Mapa de CAR e Matrícula: último resultado de cada fazenda e os pedidos de "Buscar nas bases" (supabase/0030) */
+  car: 'mapas_car',
+  pedidosCar: 'mapas_car_pedidos',
 } as const;
 
 /** Bucket privado com a imagem e a miniatura dos mapas salvos. */
@@ -359,7 +363,48 @@ export interface PerfilRow {
  */
 export function rowParaAcesso(r: PerfilRow): AcessoUsuario {
   const perfil = r.perfil === 'admin' ? 'admin' : 'colaborador';
-  return { perfil, adminSemRestricao: perfil === 'admin' && (r.super === true || r.todas_fazendas !== false) };
+  return { perfil, adminSemRestricao: perfil === 'admin' && (r.super === true || r.todas_fazendas !== false), super: perfil === 'admin' && r.super === true };
+}
+
+/** Linha de mapas_car (supabase/0030). */
+export interface CarRow {
+  fazenda_id: string;
+  atualizado_em: string;
+  dados: unknown;
+  fontes: unknown;
+}
+
+const colecao = (v: unknown): v is FeatureCollection =>
+  !!v && typeof v === 'object' && (v as { type?: unknown }).type === 'FeatureCollection' && Array.isArray((v as { features?: unknown }).features);
+
+/**
+ * Linha de mapas_car → RegistroCar, conferindo a forma (o jsonb vem do servidor, mas uma versão diferente ou um
+ * resultado cortado não pode derrubar a tela): sem as coleções esperadas → null.
+ */
+export function rowParaRegistroCar(r: CarRow): RegistroCar | null {
+  const d = r.dados as Partial<DadosCar> | null;
+  if (!d || typeof d !== 'object') return null;
+  const vazia: FeatureCollection = { type: 'FeatureCollection', features: [] };
+  if (![d.car, d.temas, d.matriculas].every(colecao)) return null;
+  return {
+    fazendaId: String(r.fazenda_id),
+    atualizadoEm: String(r.atualizado_em),
+    fontes: r.fontes && typeof r.fontes === 'object' ? (r.fontes as RegistroCar['fontes']) : {},
+    dados: {
+      versao: 1,
+      geradoEm: typeof d.geradoEm === 'string' ? d.geradoEm : String(r.atualizado_em),
+      bbox: Array.isArray(d.bbox) ? d.bbox.map(Number) : [],
+      ufs: Array.isArray(d.ufs) ? d.ufs.map(String) : [],
+      car: d.car as FeatureCollection,
+      temas: d.temas as FeatureCollection,
+      matriculas: d.matriculas as FeatureCollection,
+      estradas: colecao(d.estradas) ? d.estradas : vazia,
+      hidrografia: colecao(d.hidrografia) ? d.hidrografia : vazia,
+      eucalipto: Array.isArray(d.eucalipto)
+        ? d.eucalipto.filter((e) => e && typeof e.talhao === 'string').map((e) => ({ talhao: e.talhao, areaHa: Number(e.areaHa) || 0 }))
+        : [],
+    },
+  };
 }
 
 /** Linha de mapas_variedades (supabase/0027). */

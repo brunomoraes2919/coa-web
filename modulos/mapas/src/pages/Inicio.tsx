@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { repo } from '../data';
-import { usePerfil } from '../components/usePerfil';
+import { usePerfil, useSuper } from '../components/usePerfil';
 import { resumoHistorico, textoHistorico, textoVariedades } from '../lib/inicio';
 import type { MapaSalvo, VariedadePims } from '../lib/types';
 
@@ -38,6 +38,12 @@ const ICONES = {
       <circle cx="17.5" cy="10.5" r="1.5" />
       <circle cx="8.5" cy="7.5" r="1.5" />
       <path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.4A5.6 5.6 0 0 0 22 10c0-4.4-4.5-8-10-8Z" />
+    </>,
+  ),
+  car: icone(
+    <>
+      <path d="M3 6.5 9 4l6 2.5L21 4v13.5L15 20l-6-2.5L3 20Z" />
+      <path d="m7 10 3 3 5-5" />
     </>,
   ),
   etiqueta: icone(
@@ -89,6 +95,7 @@ function Grupo({ titulo, cards }: { titulo: string; cards: Card[] }) {
 /** Tela inicial do módulo: um card por página, agrupados como no menu, com a contagem do que já existe. */
 export default function Inicio() {
   const admin = usePerfil() === 'admin';
+  const ehSuper = useSuper();
   const [mapas, setMapas] = useState<MapaSalvo[] | null>(null);
   const [variedades, setVariedades] = useState<VariedadePims[] | null>(null);
 
@@ -148,6 +155,15 @@ export default function Inicio() {
       rodape: historico('variedade'),
     },
   ];
+  const car: Card[] = [
+    {
+      para: '/car',
+      titulo: 'Mapa de CAR e Matrícula',
+      texto: 'Limites do CAR e das matrículas sobre os talhões, com reserva legal, APP, água, estradas e as áreas de cada um.',
+      icone: ICONES.car,
+      rodape: null,
+    },
+  ];
   const cadastros: Card[] = [
     {
       para: '/fazendas',
@@ -189,6 +205,7 @@ export default function Inicio() {
       </div>
       <Grupo titulo="Mapa de chuva" cards={chuva} />
       <Grupo titulo="Mapa de variedade" cards={variedade} />
+      {ehSuper ? <Grupo titulo="CAR e matrícula" cards={car} /> : null}
       {admin ? <Grupo titulo="Cadastros" cards={cadastros} /> : null}
     </div>
   );

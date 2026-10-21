@@ -6,7 +6,7 @@ import { onAuthChange, sair, sessaoAtual } from './data/auth';
 import Shell from './components/Shell';
 import Carregando from './components/Carregando';
 import Aviso, { mensagemDeErro, type TipoAviso } from './components/Aviso';
-import { PerfilContexto, useAdminSemRestricao, useCarregarPerfil, useErroPerfil, usePerfil } from './components/usePerfil';
+import { PerfilContexto, useAdminSemRestricao, useCarregarPerfil, useErroPerfil, usePerfil, useSuper } from './components/usePerfil';
 import { repo } from './data';
 import { avisarRota, emEmbed } from './lib/embed';
 import { carregarSeed, seedJaCarregado } from './lib/seed';
@@ -15,6 +15,7 @@ import Login, { EntrePeloCoa } from './pages/Login';
 
 // Telas carregadas sob demanda (o mapa Leaflet, o leitor de shapes e o editor ficam fora do pacote inicial)
 const Inicio = lazy(() => import('./pages/Inicio'));
+const MapaCar = lazy(() => import('./pages/MapaCar'));
 const Mapas = lazy(() => import('./pages/Mapas'));
 const NovoMapa = lazy(() => import('./pages/NovoMapa'));
 const NovoMapaVariedade = lazy(() => import('./pages/NovoMapaVariedade'));
@@ -124,6 +125,20 @@ function SomenteAdminSemRestricao() {
   return <Outlet />;
 }
 
+/**
+ * Mapa de CAR e Matrícula: só o ADMINISTRADOR+ (o banco também recusa os demais: is_super no supabase/0030). Quem
+ * não é volta para a tela inicial.
+ */
+function SomenteSuper() {
+  const perfil = usePerfil();
+  const ehSuper = useSuper();
+  const erroPerfil = useErroPerfil();
+  if (perfil === undefined) return <Carregando texto="Verificando o perfil…" />;
+  if (erroPerfil) return null;
+  if (!ehSuper) return <Navigate to="/inicio" replace />;
+  return <Outlet />;
+}
+
 /** Em embed, avisa o COA WEB de cada troca de rota (título do topo e botão destacado no menu). */
 function AvisarRota() {
   const { pathname } = useLocation();
@@ -228,6 +243,9 @@ export default function App() {
               <Route path="/variedades" element={<Tela><Mapas key="variedade" tipo="variedade" /></Tela>} />
               <Route path="/variedades/novo" element={<Tela><NovoMapaVariedade key="novo" /></Tela>} />
               <Route path="/variedades/:id" element={<Tela><NovoMapaVariedade key="salvo" /></Tela>} />
+              <Route element={<SomenteSuper />}>
+                <Route path="/car" element={<Tela><MapaCar /></Tela>} />
+              </Route>
               <Route element={<SomenteAdmin />}>
                 <Route path="/fazendas" element={<Tela><Fazendas /></Tela>} />
                 <Route element={<SomenteAdminSemRestricao />}>

@@ -2,7 +2,7 @@ import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import { extensaoImagem } from '../lib/historico';
 import { carregarPlantioPims } from '../lib/plantioPims';
 import type { AreaCultura, CorVariedade, Fazenda, MapaSalvo, Plantio, PopulacaoVariedade, Safra, Talhao, VariedadePims } from '../lib/types';
-import { rowParaVariedadePims, type VariedadeRow } from './supabaseLinhas';
+import { rowParaRegistroCar, rowParaVariedadePims, type VariedadeRow } from './supabaseLinhas';
 import type { BackupJson, Repositorio } from './repo';
 import { completarFazenda, completarPlantio, completarSafra, completarTalhao, reviverPics } from './supabaseLinhas';
 
@@ -163,7 +163,7 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
     modo: 'local',
 
     async acesso() {
-      return { perfil: 'admin', adminSemRestricao: true };
+      return { perfil: 'admin', adminSemRestricao: true, super: true };
     },
 
     async listarFazendasCoa() {
@@ -197,6 +197,32 @@ export function criarLocalRepo(dbName = 'coa-chuva'): Repositorio {
 
     async situacaoZeus() {
       return [];
+    },
+
+    podeBuscarCar: false,
+
+    async obterCar(fazendaId) {
+      // teste local: public/dados/car/<NOME>.json (fora do repositório), gravado por quem desenvolve
+      const db = await dbPromise;
+      const f = await db.get('fazendas', fazendaId);
+      if (!f) return null;
+      const arquivo = f.nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase().replace(/\s+/g, '_');
+      try {
+        const r = await fetch(`./dados/car/${encodeURIComponent(arquivo)}.json`, { cache: 'no-store' });
+        if (!r.ok) return null;
+        const j = (await r.json()) as { atualizadoEm?: string; dados?: unknown; fontes?: unknown };
+        return rowParaRegistroCar({ fazenda_id: fazendaId, atualizado_em: j.atualizadoEm ?? new Date().toISOString(), dados: j.dados, fontes: j.fontes });
+      } catch {
+        return null;
+      }
+    },
+
+    async pedirBuscaCar() {
+      throw new Error('Buscar nas bases só funciona no COA WEB (quem consulta as bases é o servidor).');
+    },
+
+    async situacaoPedidoCar() {
+      return null;
     },
 
     async listarFazendas() {

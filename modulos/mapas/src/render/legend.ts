@@ -7,6 +7,7 @@ import type { StatusPlantio } from '../lib/types';
 import { textoItemVariedade, TITULO_VARIEDADES } from '../lib/variedades';
 import { ALTURA_MAIUSC, fonte, type Rect } from './labels';
 import { planejarTabelaVariedades } from './legendaVariedades';
+import { planejarLegendaCar } from './legendaCar';
 import { desenharGota, desenharPadrao, picSemChuva } from './patterns';
 import { ESTILO_SITUACAO, itensLegendaSituacao } from './situacao';
 import { COR_BORDA_AMOSTRA, COR_TEXTO, COR_VERDE, type RenderInput } from './types';
@@ -209,6 +210,8 @@ export function planejarLegenda(
   s: number,
   modo: 'lateral' | 'inferior',
 ): PlanoLegenda | null {
+  // mapa de CAR e matrícula: camadas e quadro de áreas
+  if (inp.car) return planejarLegendaCar(ctx, inp.car, area, s, modo);
   // mapa de variedade: tabela (nome comercial | nome do PIMS | ha | %)
   if (inp.variedades) return planejarTabelaVariedades(ctx, inp.variedades.resumo, area, s, modo);
   const itens = itensLegenda(inp, presentes);

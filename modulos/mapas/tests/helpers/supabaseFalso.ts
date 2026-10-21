@@ -47,6 +47,8 @@ const CHAVES: Record<string, string[]> = {
   mapas_variedade_cores: ['variedade'],
   mapas_variedades: ['chave'],
   acomp_variedade_populacao: ['unidade', 'safra', 'variedade'],
+  mapas_car: ['fazenda_id'],
+  mapas_car_pedidos: ['id'],
   fazendas: ['id'],
   perfis: ['id'],
 };

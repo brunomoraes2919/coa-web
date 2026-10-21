@@ -25,6 +25,8 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
       coresVariedade: 'mapas_variedade_cores',
       variedades: 'mapas_variedades',
       populacao: 'acomp_variedade_populacao',
+      car: 'mapas_car',
+      pedidosCar: 'mapas_car_pedidos',
     });
   });
 
@@ -63,6 +65,8 @@ describe('supabaseRepo: tabelas e bucket do Supabase do COA WEB', () => {
     await repo.salvarNomeComercial('TMG 2383', 'Bônus');
     await repo.salvarPopulacao('SM3', 'SOJA 26/27', [{ variedade: 'TMG 2383', sementesMetro: 12.2, populacao: 244000 }]);
     await repo.listarPopulacao('SM3', 'SOJA 26/27');
+    await repo.obterCar(f.id);
+    await repo.situacaoPedidoCar(await repo.pedirBuscaCar(f.id));
     await repo.importarBackup(await repo.exportarBackup());
     await repo.excluirMapa(salvo);
     await repo.excluirSafra(s.id);
@@ -103,8 +107,8 @@ describe('supabaseRepo: perfil do usuário no COA WEB', () => {
   });
 
   it("valor desconhecido (ou nulo) → 'colaborador'", async () => {
-    expect(await comPerfil('u1', [{ id: 'u1', perfil: 'gestor' }]).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false });
-    expect(await comPerfil('u1', [{ id: 'u1', perfil: null }]).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false });
+    expect(await comPerfil('u1', [{ id: 'u1', perfil: 'gestor' }]).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false, super: false });
+    expect(await comPerfil('u1', [{ id: 'u1', perfil: null }]).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false, super: false });
   });
 
   it('administrador restrito (todas_fazendas = false): admin, mas não cadastra fazendas de mapa', async () => {
@@ -114,16 +118,16 @@ describe('supabaseRepo: perfil do usuário no COA WEB', () => {
       { id: 'mais', perfil: 'admin', super: true, todas_fazendas: false },
       { id: 'colab', perfil: 'colaborador', super: false, todas_fazendas: true },
     ];
-    expect(await comPerfil('restrito', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: false });
-    expect(await comPerfil('geral', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true });
+    expect(await comPerfil('restrito', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: false, super: false });
+    expect(await comPerfil('geral', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true, super: false });
     // ADMINISTRADOR+ (super) vê tudo mesmo com todas_fazendas = false, como em admin_ve_tudo()
-    expect(await comPerfil('mais', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true });
+    expect(await comPerfil('mais', perfis).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true, super: true });
     // colaborador nunca, mesmo com o padrão todas_fazendas = true da coluna
-    expect(await comPerfil('colab', perfis).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false });
+    expect(await comPerfil('colab', perfis).acesso()).toEqual({ perfil: 'colaborador', adminSemRestricao: false, super: false });
   });
 
   it('banco sem as colunas super e todas_fazendas (anterior ao 0002): todo admin vale como sem restrição', async () => {
-    expect(await comPerfil('u1', [{ id: 'u1', perfil: 'admin' }]).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true });
+    expect(await comPerfil('u1', [{ id: 'u1', perfil: 'admin' }]).acesso()).toEqual({ perfil: 'admin', adminSemRestricao: true, super: false });
   });
 
   it('uma só consulta a perfis, pela linha do próprio usuário', async () => {

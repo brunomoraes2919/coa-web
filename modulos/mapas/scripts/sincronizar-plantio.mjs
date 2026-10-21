@@ -3109,3 +3109,560 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     process.exitCode = 1;
   });
 }
+
+// ---------- Mapa de CAR e Matrícula (aba só do ADMINISTRADOR+, pedidos de "Buscar nas bases") ----------
+// Tudo vem de serviços públicos, sem login e sem CAPTCHA, e é consultado só por este servidor (dois deles não
+// aceitam chamada do navegador): SICAR (perímetro do CAR e os temas declarados), INCRA/SIGEF (parcelas
+// certificadas, com a matrícula), IBGE (rodovias, rios e massas d'água da base 1:250 mil) e OpenStreetMap
+// (estradas e carreadores, rios). O PIMS diz quais talhões são eucalipto. Sem dependências: o recorte é por
+// ponto no polígono; as áreas (interseções) são calculadas no navegador.
+
+/** Endereços das bases (só leitura). O SICAR não lista as camadas no GetCapabilities, mas responde por nome. */
+export const CAR_BASES = Object.freeze({
+  sicar: 'https://geoserver.car.gov.br/geoserver/sicar/ows',
+  temas: 'https://consulta.car.gov.br/geoserver/ows',
+  sigef: 'https://acervofundiario.incra.gov.br/i3geo/ogc.php',
+  ibge: 'https://geoservicos.ibge.gov.br/geoserver/wfs',
+  // Overpass: o servidor principal e os espelhos públicos listados no wiki do OpenStreetMap, um depois do outro
+  osm: ['https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.private.coffee/api/interpreter'],
+});
+/** Identificação pedida pelas bases públicas (o Overpass recusa agente genérico e também agente com endereço http). */
+export const CAR_USER_AGENT = 'COA-WEB-Mapas/1.0 (Locks COA WEB)';
+/** prazo de cada chamada às bases públicas */
+export const CAR_PRAZO_MS = 90_000;
+/** margem em volta dos talhões (graus, ~2,2 km) */
+export const CAR_MARGEM_GRAUS = 0.02;
+/** no máximo tantos CARs e parcelas que tocam os talhões (freio: uma fazenda grande tem uma dezena) */
+export const CAR_MAX_IMOVEIS = 40;
+export const CAR_MAX_PARCELAS = 120;
+
+/** Temas declarados no CAR que o mapa usa (consulta_publica do SICAR; sem as "APP a recompor", que estão dentro da APP). */
+export const CAR_TEMAS = Object.freeze([
+  'vegetacao_nativa', 'area_consolidada', 'area_pousio',
+  'arl_averbada', 'arl_proposta', 'arl_aprovada_nao_averbada',
+  'area_servidao_administrativa_total', 'area_uso_restrito_declividade_25_a_45', 'area_uso_restrito_pantaneira',
+  'rio_ate_10', 'app_rio_ate_10', 'rio_10_a_50', 'app_rio_10_a_50', 'rio_50_a_200', 'app_rio_50_a_200',
+  'rio_200_a_600', 'app_rio_200_a_600', 'rio_acima_600', 'app_rio_acima_600',
+  'nascente_olho_dagua', 'app_nascente_olho_dagua', 'lago_natural', 'app_lago_natural', 'vereda', 'app_vereda',
+  'banhado', 'app_banhado', 'reservatorio_artificial_decorrente_barramento', 'app_reservatorio_artificial_decorrente_barramento',
+  'reservatorio_geracao_energia_ate_24_08_2001', 'app_reservatorio_geracao_energia_ate_24_08_2001',
+  'area_topo_morro', 'app_area_topo_morro', 'borda_chapada', 'app_borda_chapada',
+  'area_declividade_maior_45', 'app_area_declividade_maior_45',
+]);
+
+/** Retângulo aproximado de cada UF (lon/lat), para achar a UF quando a consulta do SICAR falha. */
+export const UF_RETANGULO = Object.freeze({
+  AC: [-73.99, -11.15, -66.62, -7.11], AL: [-38.24, -10.5, -35.15, -8.81], AM: [-73.81, -9.82, -56.09, 2.25], AP: [-54.88, -1.24, -49.88, 4.44],
+  BA: [-46.62, -18.35, -37.34, -8.53], CE: [-41.43, -7.86, -37.25, -2.78], DF: [-48.29, -16.05, -47.31, -15.5], ES: [-41.88, -21.3, -39.66, -17.89],
+  GO: [-53.25, -19.5, -45.9, -12.39], MA: [-48.76, -10.26, -41.8, -1.05], MG: [-51.05, -22.92, -39.86, -14.23], MS: [-58.17, -24.07, -50.92, -17.17],
+  MT: [-61.63, -18.04, -50.22, -7.35], PA: [-58.9, -9.84, -46.07, 2.59], PB: [-38.77, -8.3, -34.79, -6.03], PE: [-41.36, -9.48, -32.39, -3.83],
+  PI: [-45.99, -10.93, -40.37, -2.75], PR: [-54.62, -26.72, -48.02, -22.52], RJ: [-44.89, -23.37, -40.96, -20.76], RN: [-38.58, -6.98, -34.97, -4.83],
+  RO: [-66.81, -13.69, -59.77, -7.97], RR: [-64.81, -1.58, -58.89, 5.27], RS: [-57.64, -33.75, -49.69, -27.08], SC: [-53.84, -29.35, -48.35, -25.96],
+  SE: [-38.24, -11.57, -36.39, -9.52], SP: [-53.11, -25.31, -44.16, -19.78], TO: [-50.74, -13.47, -45.7, -5.17],
+});
+const UF_POR_IBGE = { 11: 'RO', 12: 'AC', 13: 'AM', 14: 'RR', 15: 'PA', 16: 'AP', 17: 'TO', 21: 'MA', 22: 'PI', 23: 'CE', 24: 'RN', 25: 'PB', 26: 'PE', 27: 'AL', 28: 'SE', 29: 'BA', 31: 'MG', 32: 'ES', 33: 'RJ', 35: 'SP', 41: 'PR', 42: 'SC', 43: 'RS', 50: 'MS', 51: 'MT', 52: 'GO', 53: 'DF' };
+
+// ---- geometria sem dependências (lon/lat) ----
+
+/** Os polígonos de uma geometria GeoJSON (Polygon ou MultiPolygon) como lista de [anéis]; outra coisa → []. */
+export function poligonosDe(geom) {
+  if (!geom || !Array.isArray(geom.coordinates)) return [];
+  if (geom.type === 'Polygon') return [geom.coordinates];
+  if (geom.type === 'MultiPolygon') return geom.coordinates;
+  return [];
+}
+
+/** Todos os vértices de uma geometria (qualquer tipo). */
+export function verticesDe(geom) {
+  const out = [];
+  const andar = (c) => {
+    if (!Array.isArray(c)) return;
+    if (typeof c[0] === 'number' && typeof c[1] === 'number') out.push([c[0], c[1]]);
+    else c.forEach(andar);
+  };
+  andar(geom?.coordinates);
+  return out;
+}
+
+/** [x0, y0, x1, y1] de uma lista de geometrias; null sem vértice. */
+export function retanguloDe(geoms) {
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const g of geoms)
+    for (const [x, y] of verticesDe(g)) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+      if (x < x0) x0 = x;
+      if (y < y0) y0 = y;
+      if (x > x1) x1 = x;
+      if (y > y1) y1 = y;
+    }
+  return x1 >= x0 && y1 >= y0 ? [x0, y0, x1, y1] : null;
+}
+
+function retangulosSeTocam(a, b) {
+  return a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+}
+
+/** Ponto dentro do anel (raio horizontal; borda conta como fora, sem importância aqui). */
+export function pontoNoAnel([x, y], anel) {
+  let dentro = false;
+  for (let i = 0, j = anel.length - 1; i < anel.length; j = i++) {
+    const [xi, yi] = anel[i];
+    const [xj, yj] = anel[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) dentro = !dentro;
+  }
+  return dentro;
+}
+
+/** Ponto dentro da geometria (Polygon/MultiPolygon, com furos). */
+export function pontoNaGeometria(p, geom) {
+  return poligonosDe(geom).some((aneis) => aneis.length && pontoNoAnel(p, aneis[0]) && !aneis.slice(1).some((furo) => pontoNoAnel(p, furo)));
+}
+
+/**
+ * Pontos de uma grade regular (até `lado` × `lado`) sobre o retângulo dos talhões que caem dentro de algum talhão:
+ * a amostra da área plantável usada para decidir quais CARs e parcelas importam. Cada ponto representa a mesma
+ * área, então a fração de pontos dentro de um polígono é a fração da área dos talhões dentro dele.
+ */
+export function pontosDosTalhoes(talhoes, lado = 90) {
+  const ret = retanguloDe(talhoes.map((t) => t.geom));
+  if (!ret) return [];
+  const [x0, y0, x1, y1] = ret;
+  const passo = Math.max((x1 - x0) / lado, (y1 - y0) / lado, 1e-6);
+  const out = [];
+  for (let x = x0 + passo / 2; x < x1; x += passo)
+    for (let y = y0 + passo / 2; y < y1; y += passo) {
+      const p = [x, y];
+      if (talhoes.some((t) => t.ret && x >= t.ret[0] && x <= t.ret[2] && y >= t.ret[1] && y <= t.ret[3] && pontoNaGeometria(p, t.geom))) out.push(p);
+    }
+  return out;
+}
+
+/**
+ * Fração dos pontos dos talhões (pontosDosTalhoes) que caem dentro da geometria. Vizinho que só encosta na
+ * divisa dá 0; o CAR da fazenda dá a fatia dos talhões que ele cobre.
+ */
+export function fracaoDosTalhoes(geom, pontos) {
+  if (!pontos.length) return 0;
+  const ret = retanguloDe([geom]);
+  if (!ret) return 0;
+  let dentro = 0;
+  for (const p of pontos) if (p[0] >= ret[0] && p[0] <= ret[2] && p[1] >= ret[1] && p[1] <= ret[3] && pontoNaGeometria(p, geom)) dentro++;
+  return dentro / pontos.length;
+}
+
+/** fatia mínima dos talhões dentro de um CAR ou parcela para ele entrar no mapa (0,3%) */
+export const CAR_FRACAO_MINIMA = 0.003;
+
+/** Arredonda as coordenadas (6 casas ≈ 0,1 m) para a resposta caber no banco. */
+export function arredondarGeometria(geom, casas = 6) {
+  if (!geom) return geom;
+  const f = 10 ** casas;
+  const r = (c) => (typeof c[0] === 'number' ? [Math.round(c[0] * f) / f, Math.round(c[1] * f) / f] : c.map(r));
+  return { type: geom.type, coordinates: r(geom.coordinates) };
+}
+
+/** tolerância da simplificação (graus, ~3 m): some com vértices que não mudam o desenho na escala do mapa nem a área */
+export const CAR_TOLERANCIA_GRAUS = 0.00003;
+
+/** Douglas–Peucker de uma linha (lista de [x, y]). */
+function simplificarLinha(pts, tol) {
+  if (pts.length <= 2) return pts;
+  const manter = new Uint8Array(pts.length);
+  manter[0] = 1;
+  manter[pts.length - 1] = 1;
+  const pilha = [[0, pts.length - 1]];
+  const t2 = tol * tol;
+  while (pilha.length) {
+    const [i, j] = pilha.pop();
+    const [ax, ay] = pts[i];
+    const [bx, by] = pts[j];
+    const dx = bx - ax;
+    const dy = by - ay;
+    const l2 = dx * dx + dy * dy;
+    let maior = -1;
+    let k = -1;
+    for (let m = i + 1; m < j; m++) {
+      const [px, py] = pts[m];
+      let d2;
+      if (l2 === 0) d2 = (px - ax) ** 2 + (py - ay) ** 2;
+      else {
+        const u = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2));
+        d2 = (px - ax - u * dx) ** 2 + (py - ay - u * dy) ** 2;
+      }
+      if (d2 > maior) {
+        maior = d2;
+        k = m;
+      }
+    }
+    if (k >= 0 && maior > t2) {
+      manter[k] = 1;
+      pilha.push([i, k], [k, j]);
+    }
+  }
+  return pts.filter((_, i) => manter[i]);
+}
+
+/** Anel simplificado; se ficaria com menos de 4 pontos, fica como estava. */
+function simplificarAnel(anel, tol) {
+  const s = simplificarLinha(anel, tol);
+  return s.length >= 4 ? s : anel;
+}
+
+/** Simplifica linhas e polígonos (Douglas–Peucker por linha/anel); outros tipos passam como vieram. */
+export function simplificarGeometria(geom, tol = CAR_TOLERANCIA_GRAUS) {
+  if (!geom) return geom;
+  switch (geom.type) {
+    case 'LineString':
+      return { type: geom.type, coordinates: simplificarLinha(geom.coordinates, tol) };
+    case 'MultiLineString':
+      return { type: geom.type, coordinates: geom.coordinates.map((l) => simplificarLinha(l, tol)) };
+    case 'Polygon':
+      return { type: geom.type, coordinates: geom.coordinates.map((a) => simplificarAnel(a, tol)) };
+    case 'MultiPolygon':
+      return { type: geom.type, coordinates: geom.coordinates.map((p) => p.map((a) => simplificarAnel(a, tol))) };
+    default:
+      return geom;
+  }
+}
+
+const feicao = (geometry, properties) => ({ type: 'Feature', properties, geometry: arredondarGeometria(simplificarGeometria(geometry)) });
+
+/** Recorta um segmento no retângulo (Liang–Barsky); null se fica todo fora. */
+function recortarSegmento([ax, ay], [bx, by], [x0, y0, x1, y1]) {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = bx - ax;
+  const dy = by - ay;
+  for (const [p, q] of [[-dx, ax - x0], [dx, x1 - ax], [-dy, ay - y0], [dy, y1 - ay]]) {
+    if (p === 0) {
+      if (q < 0) return null;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return null;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return null;
+      if (r < t1) t1 = r;
+    }
+  }
+  return [[ax + t0 * dx, ay + t0 * dy], [ax + t1 * dx, ay + t1 * dy]];
+}
+
+/** Partes de uma linha dentro do retângulo. */
+function recortarLinha(coords, ret) {
+  const partes = [];
+  let atual = null;
+  for (let i = 1; i < coords.length; i++) {
+    const s = recortarSegmento(coords[i - 1], coords[i], ret);
+    if (!s) {
+      atual = null;
+      continue;
+    }
+    const ultimo = atual?.[atual.length - 1];
+    if (atual && ultimo[0] === s[0][0] && ultimo[1] === s[0][1]) atual.push(s[1]);
+    else {
+      atual = [s[0], s[1]];
+      partes.push(atual);
+    }
+  }
+  return partes;
+}
+
+/** Anel recortado no retângulo (Sutherland–Hodgman); [] se fica todo fora. */
+function recortarAnel(anel, [x0, y0, x1, y1]) {
+  let pts = anel.slice(0, anel.length > 1 && anel[0][0] === anel[anel.length - 1][0] && anel[0][1] === anel[anel.length - 1][1] ? -1 : anel.length);
+  const lados = [
+    [(p) => p[0] >= x0, (a, b) => [x0, a[1] + ((b[1] - a[1]) * (x0 - a[0])) / (b[0] - a[0])]],
+    [(p) => p[0] <= x1, (a, b) => [x1, a[1] + ((b[1] - a[1]) * (x1 - a[0])) / (b[0] - a[0])]],
+    [(p) => p[1] >= y0, (a, b) => [a[0] + ((b[0] - a[0]) * (y0 - a[1])) / (b[1] - a[1]), y0]],
+    [(p) => p[1] <= y1, (a, b) => [a[0] + ((b[0] - a[0]) * (y1 - a[1])) / (b[1] - a[1]), y1]],
+  ];
+  for (const [dentro, corte] of lados) {
+    if (!pts.length) break;
+    const saida = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[(i + pts.length - 1) % pts.length];
+      const b = pts[i];
+      if (dentro(b)) {
+        if (!dentro(a)) saida.push(corte(a, b));
+        saida.push(b);
+      } else if (dentro(a)) saida.push(corte(a, b));
+    }
+    pts = saida;
+  }
+  return pts.length >= 3 ? [...pts, pts[0]] : [];
+}
+
+/**
+ * Recorta linhas e polígonos no retângulo [x0, y0, x1, y1] (rios e estradas do IBGE e do OSM passam muito da
+ * fazenda; um lago grande sozinho pesava 1,7 MB). null se nada fica dentro.
+ */
+export function recortarNoRetangulo(geom, ret) {
+  if (!geom) return null;
+  const linhas = geom.type === 'LineString' ? [geom.coordinates] : geom.type === 'MultiLineString' ? geom.coordinates : null;
+  if (linhas) {
+    const partes = linhas.flatMap((l) => recortarLinha(l, ret));
+    return partes.length ? (partes.length === 1 ? { type: 'LineString', coordinates: partes[0] } : { type: 'MultiLineString', coordinates: partes }) : null;
+  }
+  const polys = poligonosDe(geom)
+    .map((aneis) => {
+      const fora = recortarAnel(aneis[0] ?? [], ret);
+      return fora.length ? [fora, ...aneis.slice(1).map((f) => recortarAnel(f, ret)).filter((f) => f.length)] : null;
+    })
+    .filter(Boolean);
+  return polys.length ? { type: 'MultiPolygon', coordinates: polys } : null;
+}
+
+// ---- leitura das bases ----
+
+/** GET (ou POST de formulário) a uma base pública, com prazo, tentativas e espera crescente entre elas. */
+async function buscarBase(url, { fetchImpl, corpo = null, tentativas = 1, esperaMs = 4000, json = true, aceitar = null } = {}) {
+  let ultimo = null;
+  for (let i = 0; i < tentativas; i++) {
+    if (i) await new Promise((ok) => setTimeout(ok, esperaMs * 2 ** (i - 1)));
+    try {
+      const init = { headers: { 'User-Agent': CAR_USER_AGENT, Accept: aceitar ?? (json ? 'application/json' : '*/*') }, signal: AbortSignal.timeout(CAR_PRAZO_MS) };
+      if (corpo) Object.assign(init, { method: 'POST', body: corpo, headers: { ...init.headers, 'Content-Type': 'application/x-www-form-urlencoded' } });
+      const resp = await fetchImpl(url, init);
+      const texto = await resp.text();
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!json) return texto;
+      try {
+        return JSON.parse(texto);
+      } catch {
+        throw new Error(`resposta inesperada: ${texto.replace(/\s+/g, ' ').slice(0, 120)}`);
+      }
+    } catch (e) {
+      ultimo = e;
+    }
+  }
+  throw ultimo;
+}
+
+const wfs = (base, params) => `${base}?${new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', ...params })}`;
+
+/** UFs que o recorte toca: pela camada de estados do SICAR; se ela falhar, pelos retângulos aproximados. */
+export async function ufsDoRecorte(bbox, { fetchImpl = fetch } = {}) {
+  try {
+    const d = await buscarBase(wfs(CAR_BASES.temas, { typeName: 'consulta_publica:estado', outputFormat: 'application/json', srsName: 'EPSG:4674', bbox: bbox.join(','), maxFeatures: '10' }), { fetchImpl });
+    const ufs = [...new Set((d?.features ?? []).map((f) => UF_POR_IBGE[Number(f?.properties?.cod_estado_ibge)] ?? null).filter(Boolean))];
+    if (ufs.length) return ufs;
+  } catch {
+    /* segue com os retângulos */
+  }
+  return Object.entries(UF_RETANGULO).filter(([, r]) => retangulosSeTocam(r, bbox)).map(([uf]) => uf);
+}
+
+/** Imóveis do CAR (perímetro) no recorte, de cada UF. */
+export async function carDoRecorte(ufs, bbox, { fetchImpl = fetch } = {}) {
+  const out = [];
+  for (const uf of ufs) {
+    const d = await buscarBase(wfs(CAR_BASES.sicar, { typeName: `sicar:sicar_imoveis_${uf.toLowerCase()}`, outputFormat: 'application/json', srsName: 'EPSG:4674', bbox: bbox.join(','), maxFeatures: '3000' }), { fetchImpl, tentativas: 2 });
+    for (const f of d?.features ?? []) if (f?.geometry && f?.properties?.cod_imovel) out.push(f);
+  }
+  return out;
+}
+
+/** Temas declarados nos CARs (6 camadas por chamada, 8 códigos por filtro). Cada feição leva `tema`. */
+export async function temasDosCar(codigos, { fetchImpl = fetch, temas = CAR_TEMAS } = {}) {
+  const out = [];
+  const lotesTemas = [];
+  for (let i = 0; i < temas.length; i += 6) lotesTemas.push(temas.slice(i, i + 6));
+  for (let c = 0; c < codigos.length; c += 8) {
+    const lista = codigos.slice(c, c + 8).map((x) => `'${String(x).replace(/'/g, '')}'`).join(',');
+    for (const lote of lotesTemas) {
+      const d = await buscarBase(wfs(CAR_BASES.temas, {
+        typeName: lote.map((t) => `consulta_publica:${t}`).join(','),
+        outputFormat: 'application/json',
+        srsName: 'EPSG:4674',
+        CQL_FILTER: lote.map(() => `cod_imovel IN (${lista})`).join(';'),
+      }), { fetchImpl, tentativas: 2 });
+      for (const f of d?.features ?? []) {
+        const tema = String(f?.id ?? '').split('.')[0];
+        if (f?.geometry && tema) out.push(feicao(f.geometry, { tema, cod_imovel: f.properties?.cod_imovel ?? null }));
+      }
+    }
+  }
+  return out;
+}
+
+/** Lê o GML 2 do MapServer do INCRA: cada featureMember vira { properties (campos ms:*), geometry MultiPolygon }. */
+export function lerGmlSigef(texto) {
+  const out = [];
+  for (const [, membro] of String(texto).matchAll(/<gml:featureMember>([\s\S]*?)<\/gml:featureMember>/g)) {
+    const props = {};
+    for (const [, k, v] of membro.matchAll(/<ms:([A-Za-z0-9_]+)>([^<]*)<\/ms:\1>/g)) props[k] = v.trim();
+    const polys = [];
+    for (const [, poly] of membro.matchAll(/<gml:Polygon[^>]*>([\s\S]*?)<\/gml:Polygon>/g)) {
+      const anel = (bloco) => {
+        const m = /<gml:coordinates[^>]*>([^<]+)<\/gml:coordinates>/.exec(bloco);
+        return m ? m[1].trim().split(/\s+/).map((par) => par.split(',').slice(0, 2).map(Number)).filter((p) => p.every(Number.isFinite)) : [];
+      };
+      const fora = /<gml:outerBoundaryIs>([\s\S]*?)<\/gml:outerBoundaryIs>/.exec(poly);
+      if (!fora) continue;
+      const aneis = [anel(fora[1]), ...[...poly.matchAll(/<gml:innerBoundaryIs>([\s\S]*?)<\/gml:innerBoundaryIs>/g)].map((m) => anel(m[1]))].filter((a) => a.length >= 4);
+      if (aneis.length) polys.push(aneis);
+    }
+    if (polys.length) out.push({ type: 'Feature', properties: props, geometry: { type: 'MultiPolygon', coordinates: polys } });
+  }
+  return out;
+}
+
+/** Parcelas certificadas no SIGEF (particulares) no recorte, de cada UF. */
+export async function sigefDoRecorte(ufs, bbox, { fetchImpl = fetch } = {}) {
+  const out = [];
+  for (const uf of ufs) {
+    const tema = `certificada_sigef_particular_${uf.toLowerCase()}`;
+    const url = `${CAR_BASES.sigef}?${new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', tema, typeName: tema, BBOX: bbox.join(','), maxFeatures: '2000' })}`;
+    out.push(...lerGmlSigef(await buscarBase(url, { fetchImpl, json: false, tentativas: 2 })));
+  }
+  return out;
+}
+
+/** Linhas e polígonos do IBGE (BC250): rodovias, trechos de drenagem e massas d'água. */
+export async function ibgeDoRecorte(bbox, { fetchImpl = fetch } = {}) {
+  const camadas = [
+    ['CCAR:BC250_2021_Trecho_Rodoviario_L', 'estrada'],
+    ['CCAR:BC250_2021_Trecho_Drenagem_L', 'rio'],
+    ['CCAR:BC250_2023_Massa_Dagua_A', 'massa_dagua'],
+  ];
+  const out = [];
+  for (const [typeName, tipo] of camadas) {
+    const d = await buscarBase(wfs(CAR_BASES.ibge, { typeName, bbox: `${bbox.join(',')},EPSG:4326`, outputFormat: 'application/json', maxFeatures: '3000' }), { fetchImpl, tentativas: 2 });
+    for (const f of d?.features ?? []) {
+      const g = recortarNoRetangulo(f?.geometry, bbox);
+      if (!g) continue;
+      const p = f.properties ?? {};
+      const nome = p.nome ?? p.nomeabrev ?? p.codtrechorod ?? null;
+      out.push(feicao(g, { fonte: 'ibge', tipo, nome: nome ? String(nome) : null, sigla: p.sigla ?? p.codtrechorod ?? null }));
+    }
+  }
+  return out;
+}
+
+/** Estradas e cursos d'água do OpenStreetMap (Overpass). O servidor público às vezes está lotado: 3 tentativas. */
+export async function osmDoRecorte(bbox, { fetchImpl = fetch, esperaMs = 6000 } = {}) {
+  const [x0, y0, x1, y1] = bbox;
+  const q = `[out:json][timeout:80];(way[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|track)(_link)?$"](${y0},${x0},${y1},${x1});way[waterway~"^(river|stream|canal|ditch|drain)$"](${y0},${x0},${y1},${x1}););out tags geom;`;
+  // o Overpass responde 406 a "Accept: application/json"; servidor lotado → o próximo espelho
+  let d = null;
+  let erro = null;
+  for (const url of CAR_BASES.osm) {
+    try {
+      d = await buscarBase(url, { fetchImpl, corpo: new URLSearchParams({ data: q }).toString(), tentativas: 1, esperaMs, aceitar: '*/*' });
+      break;
+    } catch (e) {
+      erro = e;
+    }
+  }
+  if (!d) throw erro;
+  const out = [];
+  for (const e of d?.elements ?? []) {
+    if (e?.type !== 'way' || !Array.isArray(e.geometry) || e.geometry.length < 2) continue;
+    const tags = e.tags ?? {};
+    const tipo = tags.highway ? 'estrada' : 'rio';
+    const g = recortarNoRetangulo({ type: 'LineString', coordinates: e.geometry.map((p) => [p.lon, p.lat]) }, bbox);
+    if (!g) continue;
+    out.push(feicao(g, {
+      fonte: 'osm', tipo, classe: tags.highway ?? tags.waterway ?? null, nome: tags.name ?? tags.ref ?? null,
+    }));
+  }
+  return out;
+}
+
+/** Talhões de eucalipto da unidade: a ocupação do período de safra MAIS RECENTE de cada talhão é EUCALIPTO. */
+export function montarSqlEucalipto(unidade) {
+  return `WITH x AS (
+  SELECT up.CD_UPNIVEL3 AS talhao, up.QT_AREA_PROD AS area, oc.DE_OCUPACAO AS ocupacao,
+    ROW_NUMBER() OVER (PARTITION BY up.CD_UPNIVEL3 ORDER BY ps.DT_INI_PER DESC, up.ID_UPNIVEL3 DESC) AS n
+  FROM ${PIMS}UPNIVEL3 up
+  JOIN ${PIMS}UPNIVEL2 u2 ON u2.ID_UPNIVEL2 = up.ID_UPNIVEL2
+  JOIN ${PIMS}UPNIVEL1 u1 ON u1.ID_UPNIVEL1 = u2.ID_UPNIVEL1
+  JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = u1.ID_UNIDADEADM
+  JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
+  JOIN ${PIMS}OCUPACAO oc ON oc.ID_OCUPACAO = ps.ID_OCUPACAO
+  WHERE u.DE_UNI_ADM = ${listaSql([String(unidade ?? '').trim().toUpperCase()])} AND up.CD_UPNIVEL3 <> '9999'
+)
+SELECT TOP 1000 talhao, area FROM x WHERE n = 1 AND ocupacao = 'EUCALIPTO' ORDER BY talhao`;
+}
+
+/** [{ talhao, areaHa }] de eucalipto da unidade no PIMS. */
+export async function eucaliptoDoPims({ url, token, unidade, fetchImpl = fetch }) {
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    const { columns, rows } = await cliente.consultar(montarSqlEucalipto(unidade), 'talhões de eucalipto da unidade (mapa de CAR e matrícula)', 'eucalipto', FONTES.pims);
+    const idx = new Map(columns.map((c, i) => [String(c).toLowerCase(), i]));
+    return rows.map((r) => ({ talhao: txt(r[idx.get('talhao')]), areaHa: num(r[idx.get('area')]) })).filter((l) => l.talhao);
+  } finally {
+    await cliente.fechar();
+  }
+}
+
+/**
+ * Consulta todas as bases para os talhões de uma fazenda (geometrias GeoJSON lon/lat) e monta a resposta gravada
+ * em mapas_car. Uma base que falha não derruba as outras: a falha vai para `fontes.<base>.erro` (texto curto
+ * nosso) e a camada fica vazia. Sem nenhum talhão desenhado → erro do tipo 'invalido'.
+ */
+export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = null, fetchImpl = fetch, agora = new Date() }) {
+  const geoms = talhoes.map((t) => t?.geom).filter((g) => poligonosDe(g).length);
+  if (!geoms.length) throw erroDoTipo('invalido', 'A fazenda não tem talhões desenhados: cadastre o shape em Fazendas e shapes.');
+  const ret = retanguloDe(geoms);
+  const bbox = [ret[0] - CAR_MARGEM_GRAUS, ret[1] - CAR_MARGEM_GRAUS, ret[2] + CAR_MARGEM_GRAUS, ret[3] + CAR_MARGEM_GRAUS].map((v) => Math.round(v * 1e5) / 1e5);
+  const pontos = pontosDosTalhoes(geoms.map((geom) => ({ geom, ret: retanguloDe([geom]) })));
+  const relevante = (g) => fracaoDosTalhoes(g, pontos) >= CAR_FRACAO_MINIMA;
+  const fontes = {};
+  const tentar = async (nome, fn) => {
+    try {
+      const r = await fn();
+      fontes[nome] = { ok: true, n: Array.isArray(r) ? r.length : 0 };
+      return r;
+    } catch (e) {
+      const motivo = e?.name === 'TimeoutError' || e?.name === 'AbortError' ? 'não respondeu a tempo' : 'indisponível no momento';
+      fontes[nome] = { ok: false, n: 0, erro: motivo };
+      console.warn(`CAR: ${nome} falhou: ${String(e?.message ?? e).slice(0, 200)}`);
+      return [];
+    }
+  };
+  const ufs = await ufsDoRecorte(bbox, { fetchImpl });
+  const imoveis = (await tentar('sicar', () => carDoRecorte(ufs, bbox, { fetchImpl })))
+    .filter((f) => relevante(f.geometry))
+    .slice(0, CAR_MAX_IMOVEIS)
+    .map((f) => feicao(f.geometry, {
+      cod_imovel: f.properties.cod_imovel, area: num(f.properties.area), status: f.properties.status_imovel ?? null, tipo: f.properties.tipo_imovel ?? null,
+      condicao: f.properties.condicao ?? null, municipio: f.properties.municipio ?? null, uf: f.properties.uf ?? null, atualizado: f.properties.data_atualizacao ?? null,
+    }));
+  if (fontes.sicar?.ok) fontes.sicar.n = imoveis.length;
+  const temas = imoveis.length ? await tentar('temas', () => temasDosCar(imoveis.map((f) => f.properties.cod_imovel), { fetchImpl })) : (fontes.temas = { ok: true, n: 0 }, []);
+  const parcelas = (await tentar('sigef', () => sigefDoRecorte(ufs, bbox, { fetchImpl })))
+    .filter((f) => relevante(f.geometry))
+    .slice(0, CAR_MAX_PARCELAS)
+    .map((f) => feicao(f.geometry, {
+      matricula: f.properties.registro_matricula || null, parcela: f.properties.parcela_codigo || null, codigo_imovel: f.properties.codigo_imovel || null,
+      status: f.properties.status || null, situacao: f.properties.situacao_informada || null, municipio: f.properties.codigo_municipio || null,
+    }));
+  if (fontes.sigef?.ok) fontes.sigef.n = parcelas.length;
+  const ibge = await tentar('ibge', () => ibgeDoRecorte(bbox, { fetchImpl }));
+  const osm = await tentar('osm', () => osmDoRecorte(bbox, { fetchImpl }));
+  const eucalipto = agrovex && unidade
+    ? await tentar('pims', () => eucaliptoDoPims({ url: agrovex.url, token: agrovex.token, unidade, fetchImpl }))
+    : ((fontes.pims = { ok: false, n: 0, erro: 'fazenda sem unidade do PIMS' }), []);
+  const linhas = [...ibge, ...osm];
+  const fc = (features) => ({ type: 'FeatureCollection', features });
+  return {
+    dados: {
+      versao: 1,
+      geradoEm: agora.toISOString(),
+      bbox,
+      ufs,
+      car: fc(imoveis),
+      temas: fc(temas),
+      matriculas: fc(parcelas),
+      estradas: fc(linhas.filter((f) => f.properties.tipo === 'estrada')),
+      hidrografia: fc(linhas.filter((f) => f.properties.tipo !== 'estrada')),
+      eucalipto,
+    },
+    fontes,
+  };
+}

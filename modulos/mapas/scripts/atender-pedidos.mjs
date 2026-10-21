@@ -6,6 +6,8 @@
 // mapas_chuva_pedidos): busca na ZEUS a chuva de cada PIC da fazenda no período e grava no pedido.
 // E os pedidos de "Buscar direto no PIMS" de Mecanizadas (tabela mec_pims_pedidos): os boletins de
 // atividades mecanizadas da unidade no período, no formato do relatório exportado do PIMS.
+// E os pedidos de "Buscar nas bases" do Mapa de CAR e Matrícula (tabela mapas_car_pedidos, só ADMINISTRADOR+):
+// consulta SICAR, INCRA/SIGEF, IBGE, OpenStreetMap e o PIMS (eucalipto) e grava o resultado em mapas_car.
 // Variáveis: AGROVEX_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (as mesmas da rotina horária).
 //
 // Freios (um usuário não pode fazer o servidor martelar o PIMS, o SAP ou a ZEUS):
@@ -21,7 +23,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { boletinsMecanizadas, cabecalhosSupabase, chamarSupabase, chuvaPorPicZeus, conferirUrlAgrovex, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, sincronizarLimitesZeus, ultimoDiaZeus, validarPedidoMec, validarPeriodoChuva } from './sincronizar-plantio.mjs';
+import { boletinsMecanizadas, buscarCarMatricula, cabecalhosSupabase, chamarSupabase, chuvaPorPicZeus, conferirUrlAgrovex, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, sincronizarLimitesZeus, ultimoDiaZeus, validarPedidoMec, validarPeriodoChuva } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -780,6 +782,147 @@ export async function atenderPedidosValidacao({ supabase, agrovex, fetch: fetchI
   return true;
 }
 
+// ---------- Mapa de CAR e Matrícula ("Buscar nas bases", só ADMINISTRADOR+) ----------
+
+const TABELA_CAR = 'mapas_car';
+const TABELA_CAR_PEDIDOS = 'mapas_car_pedidos';
+/** uma fazenda por verificação: a busca leva de 30 s a 2 min (bases públicas lentas) */
+const MAX_CAR_POR_RODADA = 1;
+/** resultado mais novo que isto: o pedido é respondido com o que está gravado, sem consultar de novo */
+export const CAR_RECENTE_MINUTOS = 10;
+const GUARDAR_CAR_PEDIDOS_DIAS = 7;
+export const RESULTADO_CAR_SO_SUPER = 'erro: Pedido recusado: o Mapa de CAR e Matrícula é só do ADMINISTRADOR+.';
+
+/** Pedidos pendentes ({ id, pedido_por, fazenda_id }), do mais antigo para o mais novo; sem a tabela → []. */
+export async function pedidosCarPendentes({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_CAR_PEDIDOS}?select=id,pedido_por,fazenda_id&atendido_em=is.null&order=id.asc&limit=${FILA_LIDA}`, {
+    headers: cabecalhosSupabase(chave),
+  }, 'a leitura dos pedidos de CAR');
+  if (!resp.ok) {
+    if (await semTabela(resp)) return [];
+    await erroRest(resp, chave, 'a leitura dos pedidos de CAR');
+  }
+  const linhas = await resp.json();
+  return Array.isArray(linhas) ? linhas.filter((l) => Number.isFinite(Number(l?.id))) : [];
+}
+
+/** Responde os pedidos `ids` (pendentes) com 'ok' ou 'erro: ...'. */
+export async function responderPedidosCar({ url, chave, fetch: fetchImpl = globalThis.fetch }, ids, resultado, agora = new Date()) {
+  const lista = ids.map(Number).filter(Number.isFinite);
+  if (!lista.length) return;
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_CAR_PEDIDOS}?atendido_em=is.null&id=in.(${lista.join(',')})`, {
+    method: 'PATCH',
+    headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ atendido_em: agora.toISOString(), resultado: String(resultado).slice(0, 400) }),
+  }, 'a resposta dos pedidos de CAR');
+  if (!resp.ok) await erroRest(resp, chave, 'a resposta dos pedidos de CAR');
+}
+
+/**
+ * Plano de uma verificação: a fazenda do pedido mais antigo e TODOS os pedidos pendentes dela (respondidos de uma
+ * vez, com uma busca só); os pedidos de outras fazendas ficam para as próximas verificações.
+ */
+export function planejarCar(pendentes) {
+  if (!pendentes.length) return null;
+  const fazendaId = String(pendentes[0].fazenda_id ?? '');
+  return { fazendaId, pedidos: pendentes.filter((p) => String(p.fazenda_id ?? '') === fazendaId) };
+}
+
+async function lerRest({ url, chave, fetch: fetchImpl }, caminho, acao) {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${caminho}`, { headers: cabecalhosSupabase(chave) }, acao);
+  if (!resp.ok) await erroRest(resp, chave, acao);
+  const linhas = await resp.json();
+  if (!Array.isArray(linhas)) throw new Error(`Supabase devolveu resposta fora do formato (${acao}).`);
+  return linhas;
+}
+
+/** Quem pediu é ADMINISTRADOR+ (perfil admin com super)? Falha na leitura → false (não atende sem saber). */
+export async function pedidoDeSuper(ctx, pedidoPor) {
+  if (!ehUuid(pedidoPor)) return false;
+  try {
+    const perfis = await lerRest(ctx, `perfis?select=perfil,super&id=eq.${String(pedidoPor).toLowerCase()}&limit=1`, 'a leitura do perfil de quem pediu o CAR');
+    return perfis[0]?.perfil === 'admin' && perfis[0]?.super === true;
+  } catch (e) {
+    console.error(`CAR: não foi possível conferir o perfil (pedido recusado): ${semChave(e instanceof Error ? e.message : String(e), ctx.chave)}`);
+    return false;
+  }
+}
+
+/** Talhões (geometria) e unidade do PIMS de uma fazenda de mapa. */
+async function talhoesParaCar(ctx, fazendaId) {
+  const fazendas = await lerRest(ctx, `mapas_fazendas?select=id,unidade_pims&id=eq.${fazendaId}&limit=1`, 'a leitura da fazenda do CAR');
+  if (!fazendas.length) throw Object.assign(new Error('Fazenda de mapa não encontrada.'), { tipo: 'invalido' });
+  const talhoes = [];
+  for (let de = 0; ; de += 1000) {
+    const pagina = await lerRest(ctx, `mapas_talhoes?select=geom&fazenda_id=eq.${fazendaId}&order=id.asc&offset=${de}&limit=1000`, 'a leitura dos talhões do CAR');
+    talhoes.push(...pagina);
+    if (pagina.length < 1000) break;
+  }
+  return { talhoes, unidade: fazendas[0].unidade_pims ?? null };
+}
+
+/** Grava (substitui) o resultado da fazenda em mapas_car. */
+async function gravarCar({ url, chave, fetch: fetchImpl }, fazendaId, { dados, fontes }, agora) {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_CAR}?on_conflict=fazenda_id`, {
+    method: 'POST',
+    headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{ fazenda_id: fazendaId, atualizado_em: agora.toISOString(), dados, fontes }]),
+  }, 'a gravação do mapa de CAR');
+  if (!resp.ok) await erroRest(resp, chave, 'a gravação do mapa de CAR');
+}
+
+/**
+ * Uma verificação dos pedidos de "Buscar nas bases": a fazenda do pedido mais antigo. Só atende quem é
+ * ADMINISTRADOR+; resultado gravado há menos de CAR_RECENTE_MINUTOS responde 'ok' sem consultar de novo.
+ * Devolve quantos pedidos foram respondidos.
+ */
+export async function atenderPedidosCar({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+  const ctx = { ...supabase, fetch: fetchImpl };
+  const pendentes = await pedidosCarPendentes(ctx);
+  let respondidos = 0;
+  for (let rodada = 0; rodada < MAX_CAR_POR_RODADA; rodada++) {
+    const restantes = pendentes.filter((p) => !p.respondido);
+    const plano = planejarCar(restantes);
+    if (!plano) break;
+    plano.pedidos.forEach((p) => (p.respondido = true));
+    // quem não é ADMINISTRADOR+ é recusado pedido a pedido (o RLS já barra, isto é a segunda trava)
+    const deSuper = [];
+    for (const p of plano.pedidos) {
+      if (await pedidoDeSuper(ctx, p.pedido_por)) deSuper.push(p);
+      else await responderPedidosCar(ctx, [p.id], RESULTADO_CAR_SO_SUPER, agora());
+    }
+    const ids = deSuper.map((p) => p.id);
+    respondidos += plano.pedidos.length;
+    if (!ids.length) continue;
+    try {
+      if (!ehUuid(plano.fazendaId)) throw Object.assign(new Error('Pedido inválido.'), { tipo: 'invalido' });
+      const ultimo = await lerRest(ctx, `${TABELA_CAR}?select=atualizado_em&fazenda_id=eq.${plano.fazendaId}&limit=1`, 'a leitura do último mapa de CAR').catch(() => []);
+      const idade = agora().getTime() - Date.parse(ultimo[0]?.atualizado_em ?? '');
+      if (Number.isFinite(idade) && idade > -60_000 && idade < CAR_RECENTE_MINUTOS * 60_000) {
+        await responderPedidosCar(ctx, ids, 'ok', agora());
+        continue;
+      }
+      const { talhoes, unidade } = await talhoesParaCar(ctx, plano.fazendaId);
+      const resposta = await buscarCarMatricula({ talhoes, unidade, agrovex, fetchImpl, agora: agora() });
+      await gravarCar(ctx, plano.fazendaId, resposta, agora());
+      await responderPedidosCar(ctx, ids, 'ok', agora());
+      const f = resposta.fontes;
+      console.log(`== ${agora().toISOString()} CAR e matrícula: fazenda ${plano.fazendaId}, ${resposta.dados.car.features.length} CAR, ${resposta.dados.matriculas.features.length} matrículas; fontes com falha: ${Object.keys(f).filter((k) => !f[k].ok).join(', ') || 'nenhuma'}.`);
+    } catch (e) {
+      console.error(`Erro no pedido de CAR (fazenda ${plano.fazendaId}): ${detalheParaLog(e, supabase, agrovex)}`);
+      await responderPedidosCar(ctx, ids, `erro: ${mensagemPublica(e)}`, agora()).catch(() => undefined);
+    }
+  }
+  const limite = new Date(agora().getTime() - GUARDAR_CAR_PEDIDOS_DIAS * 86_400_000).toISOString();
+  if (pendentes.length) {
+    await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CAR_PEDIDOS}?atendido_em=lt.${encodeURIComponent(limite)}`, {
+      method: 'DELETE',
+      headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
+    }, 'a limpeza dos pedidos de CAR').catch(() => undefined);
+  }
+  return respondidos;
+}
+
 async function main() {
   const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const config = JSON.parse(readFileSync(join(raiz, 'scripts', 'plantio.config.json'), 'utf8'));
@@ -797,7 +940,7 @@ async function main() {
   };
   // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
   let erroConsulta = null;
-  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus, atualizarChuvaTalhao, atualizarLimitesZeus]) {
+  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atenderPedidosCar, atualizarSituacaoZeus, atualizarChuvaTalhao, atualizarLimitesZeus]) {
     try {
       await atender({ supabase, agrovex });
     } catch (e) {
