@@ -6,12 +6,15 @@ import { normalizarCodigo } from '../lib/codigoTalhao';
 import { casarPlantio } from '../lib/plantioPims';
 import { plantadosSemArea } from '../lib/mascaraCultura';
 import { linhasDasAreas } from '../lib/plantioAreas';
-import { fmtDataHora, resumoContagem, resumoPlantioPagina } from '../lib/situacaoPlantio';
+import { fmtDataHora, resumoContagem, resumoPlantioPagina, ROTULO_STATUS } from '../lib/situacaoPlantio';
+import { nomeBaseArquivo } from '../lib/exportar';
+import { ha2, type FeicaoExportada } from '../lib/exportarLimites';
 import MapaLeaflet from '../components/MapaLeaflet';
 import TabelaPlantio from '../components/TabelaPlantio';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
 import { lerPlantioPims } from '../components/usePlantioPims';
+import ExportarLimites from '../components/ExportarLimites';
 
 const fmtHa = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const semAcento = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -182,6 +185,31 @@ export default function Plantio() {
   );
   const filtrando = busca.trim() !== '';
 
+  /** cada linha da tela (área da cultura ou talhão) com a situação: do PIMS ou da marcação manual (ainda que não salva) */
+  function feicoesDoPlantio(): FeicaoExportada[] {
+    if (!safra || !fazenda) return [];
+    return linhas.map((l) => {
+      const p = pimsDe(l);
+      const manual = l.id in marcadosLinhas;
+      return {
+        geom: l.geom,
+        props: {
+          FAZENDA: fazenda.nome,
+          SAFRA: safra.nome,
+          TALHAO: l.nome,
+          SETOR: l.setor,
+          CODIGO: l.codigo,
+          AREA_HA: ha2(l.areaHa),
+          SITUACAO: p ? ROTULO_STATUS[p.status] : manual ? 'Plantado (manual)' : ROTULO_STATUS.a_plantar,
+          VARIEDADE: p?.variedade ?? null,
+          AREA_PLANT: p ? ha2(p.areaPlantada) : null,
+          INICIO: p?.inicio ?? (manual ? marcadosLinhas[l.id] || null : null),
+          FIM: p?.fim ?? null,
+        },
+      };
+    });
+  }
+
   function marcarTodos() {
     mudar((m) => {
       const n = { ...m };
@@ -317,6 +345,13 @@ export default function Plantio() {
           plantados
         </span>
         <div className="linha">
+          <ExportarLimites
+            quantidade={linhas.length}
+            nome={nomeBaseArquivo('PLANTIO', fazenda.nome, safra.nome)}
+            titulo={`Plantio · ${fazenda.nome} · ${safra.nome}`}
+            campoNome="TALHAO"
+            montar={feicoesDoPlantio}
+          />
           {alterado && <span className="suave">Alterações não salvas</span>}
           <button type="button" className="botao botao-primario" onClick={salvar} disabled={salvando || !alterado}>
             {salvando ? 'Salvando…' : 'Salvar plantio manual'}

@@ -11,6 +11,9 @@ import MapaLeaflet from '../components/MapaLeaflet';
 import Modal from '../components/Modal';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
+import ExportarLimites from '../components/ExportarLimites';
+import { nomeBaseArquivo } from '../lib/exportar';
+import { ha2 } from '../lib/exportarLimites';
 import { exemplosColuna } from './FazendaNova';
 
 const fmtHa = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -214,6 +217,20 @@ export default function AreasCultura() {
           </div>
           <MapaLeaflet talhoes={talhoes} sobrepor={geoms} altura={480} />
           <small className="suave">Em laranja, as áreas da cultura; em branco, o limite base dos talhões.</small>
+          {/* exporta só as áreas salvas (a prévia ainda não foi gravada) */}
+          {!novas && salvas.length > 0 && (
+            <ExportarLimites
+              quantidade={salvas.length}
+              nome={nomeBaseArquivo('AREAS_CULTURA', fazenda.nome, safra.nome)}
+              titulo={`Áreas da cultura · ${fazenda.nome} · ${safra.nome}`}
+              campoNome="CODIGO"
+              montar={() =>
+                [...salvas]
+                  .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true }))
+                  .map((a) => ({ geom: a.geom, props: { FAZENDA: fazenda.nome, SAFRA: safra.nome, CODIGO: a.codigo || null, AREA_HA: ha2(a.areaHa) } }))
+              }
+            />
+          )}
         </div>
 
         <div className="cartao pilha">

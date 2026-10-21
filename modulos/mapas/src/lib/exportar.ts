@@ -151,6 +151,11 @@ export async function baixarDeUrl(url: string, nome: string | ((blob: Blob) => s
 
 /** "MAPA_CHUVA_GUAPIRAMA_01-02-2025_a_15-02-2025.png"; mapa de variedade: prefixo "MAPA_VARIEDADE". */
 export function nomeArquivoMapa(fazenda: string, periodo: string, ext = 'png', prefixo = 'MAPA_CHUVA'): string {
+  return `${nomeBaseArquivo(prefixo, fazenda, periodo)}.${ext}`;
+}
+
+/** "TALHOES_DOURADO", "AREAS_CULTURA_DOURADO_SOJA_26-27": sem acento, "/" vira "-", o resto vira "_". */
+export function nomeBaseArquivo(prefixo: string, ...partes: string[]): string {
   const limpo = (s: string) =>
     s
       .normalize('NFD')
@@ -159,6 +164,5 @@ export function nomeArquivoMapa(fazenda: string, periodo: string, ext = 'png', p
       .replace(/[^A-Za-z0-9-]+/g, '_')
       .replace(/^_+|_+$/g, '')
       .toUpperCase();
-  const partes = [prefixo, limpo(fazenda), limpo(periodo)].filter(Boolean);
-  return `${partes.join('_')}.${ext}`;
+  return [prefixo, ...partes.map(limpo)].filter(Boolean).join('_');
 }

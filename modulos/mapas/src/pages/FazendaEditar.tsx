@@ -9,6 +9,9 @@ import CampoFazendaCoa from '../components/CampoFazendaCoa';
 import Aviso, { mensagemDeErro } from '../components/Aviso';
 import Carregando from '../components/Carregando';
 import Modal from '../components/Modal';
+import ExportarLimites from '../components/ExportarLimites';
+import { nomeBaseArquivo } from '../lib/exportar';
+import { ha2 } from '../lib/exportarLimites';
 import { exemplosColuna, nomeDoTalhao, nomesRepetidos, setorDoTalhao } from './FazendaNova';
 
 const fmtHa = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -284,6 +287,19 @@ export default function FazendaEditar() {
               <h2>Talhões</h2>
               <span className="suave">{talhoes.length}</span>
             </div>
+            {/* exporta o que a tabela mostra (nome, setor e código pelas colunas escolhidas) */}
+            <ExportarLimites
+              quantidade={ordenados.length}
+              nome={nomeBaseArquivo('TALHOES', fazenda.nome)}
+              titulo={`Talhões · ${fazenda.nome}`}
+              campoNome="TALHAO"
+              montar={() =>
+                ordenados.map((t) => ({
+                  geom: t.geom,
+                  props: { FAZENDA: fazenda.nome, TALHAO: t.nome, SETOR: t.setor, CODIGO: t.codigo, AREA_HA: ha2(t.areaHa) },
+                }))
+              }
+            />
             <div className="tabela-rolagem lista-alta">
               <table className="tabela">
                 <thead>
