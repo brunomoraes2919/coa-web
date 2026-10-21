@@ -360,3 +360,25 @@ ol.passos li { margin-bottom: 4px; }
   .tabela-safra .acoes { text-align: left; width: 100%; }
   .tabela-safra td.acoes .linha { justify-content: flex-start; flex-wrap: wrap; }
 }
+
+/* ---------- Tela inicial (cards das páginas) ---------- */
+.inicio { gap: 26px; }
+.inicio-grupo { display: flex; flex-direction: column; gap: 10px; }
+.inicio-grupo-titulo { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--texto-suave); }
+.inicio-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+.inicio-card {
+  display: flex; align-items: flex-start; gap: 14px; padding: 16px 16px 16px 18px;
+  background: var(--branco); border: 1px solid var(--borda); border-radius: var(--raio);
+  color: var(--texto); text-decoration: none; transition: border-color 0.15s, background-color 0.15s;
+}
+.inicio-card:hover { border-color: var(--verde); background: #fbfdfc; }
+.inicio-card:focus-visible { outline: 2px solid var(--laranja); outline-offset: 2px; }
+.inicio-card-icone { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 6px; background: var(--verde-claro); color: var(--verde); }
+.inicio-card-icone svg { width: 20px; height: 20px; }
+.inicio-card-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.inicio-card-titulo { font-size: 0.98rem; font-weight: 600; color: var(--verde-escuro); }
+.inicio-card-texto { font-size: 0.85rem; color: var(--texto-suave); line-height: 1.45; }
+.inicio-card-rodape { margin-top: 6px; font-size: 0.78rem; color: var(--texto-suave); font-variant-numeric: tabular-nums; min-height: 1.1em; }
+.inicio-card-seta { flex: none; width: 16px; height: 16px; margin-top: 2px; color: var(--borda); transition: color 0.15s, transform 0.15s; }
+.inicio-card:hover .inicio-card-seta { color: var(--verde); transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) { .inicio-card, .inicio-card-seta { transition: none; } .inicio-card:hover .inicio-card-seta { transform: none; } }

@@ -34,6 +34,17 @@ const svg = (conteudo: ReactNode) => (
 
 const ITENS: ItemNav[] = [
   {
+    para: '/inicio',
+    texto: 'Início',
+    icone: svg(
+      <>
+        <path d="M3 10.5 12 3l9 7.5" />
+        <path d="M5 9.5V21h14V9.5" />
+      </>,
+    ),
+    ativo: (c) => c === '/inicio',
+  },
+  {
     para: '/mapas',
     texto: 'Mapas',
     icone: svg(

@@ -1110,6 +1110,9 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       </nav>
     </div>
     <div id="nav-mapas" style="display:none">
+      <nav>
+        <button class="nav-btn" data-page="mapas" data-rota="/inicio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>Início</button>
+      </nav>
       <div class="nav-eyebrow">Mapa de Chuva</div>
       <nav>
         <button class="nav-btn" data-page="mapas" data-rota="/mapas/novo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/></svg>Novo mapa</button>
@@ -1788,7 +1791,7 @@ function nomeDoPerfil(perfil, ehSuper){
   return state.adminMaisDisponivel && ehSuper ? 'Administrador+' : 'Administrador';
 }
 /* ---- categoria MAPAS: estado do iframe do módulo (ver a seção MAPAS mais abaixo) ---- */
-const MAPAS_ROTA_INICIAL = '/mapas/novo';
+const MAPAS_ROTA_INICIAL = '/inicio';
 let mapasFrame = null;         // iframe #mapas-frame (criado na primeira entrada; removido ao sair)
 let mapasCarregado = false;    // o módulo já terminou de carregar no iframe
 let mapasRotaAtual = MAPAS_ROTA_INICIAL; // última rota pedida/recebida do módulo

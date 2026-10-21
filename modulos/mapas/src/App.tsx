@@ -14,6 +14,7 @@ import Configuracoes from './pages/Configuracoes';
 import Login, { EntrePeloCoa } from './pages/Login';
 
 // Telas carregadas sob demanda (o mapa Leaflet, o leitor de shapes e o editor ficam fora do pacote inicial)
+const Inicio = lazy(() => import('./pages/Inicio'));
 const Mapas = lazy(() => import('./pages/Mapas'));
 const NovoMapa = lazy(() => import('./pages/NovoMapa'));
 const NovoMapaVariedade = lazy(() => import('./pages/NovoMapaVariedade'));
@@ -217,9 +218,10 @@ export default function App() {
           />
           {/* no modo fixo a sessão é do COA WEB: sem "Sair" */}
           <Route element={<Shell modo={modo} fixo={fixo} embed={embed} email={sessao?.user.email ?? null} onSair={fixo ? undefined : aoSair} />}>
-            <Route path="/config" element={fixo ? <Navigate to="/mapas" replace /> : <Configuracoes acessoDados={permitido} />} />
+            <Route path="/config" element={fixo ? <Navigate to="/inicio" replace /> : <Configuracoes acessoDados={permitido} />} />
             <Route element={<RequerSessao permitido={permitido} carregando={carregando} />}>
-              <Route path="/" element={<Navigate to="/mapas" replace />} />
+              <Route path="/" element={<Navigate to="/inicio" replace />} />
+              <Route path="/inicio" element={<Tela><Inicio /></Tela>} />
               <Route path="/mapas" element={<Tela><Mapas key="chuva" tipo="chuva" /></Tela>} />
               <Route path="/mapas/novo" element={<Tela><NovoMapa key="novo" /></Tela>} />
               <Route path="/mapas/:id" element={<Tela><NovoMapa key="salvo" /></Tela>} />
@@ -238,7 +240,7 @@ export default function App() {
                 <Route path="/variedades/cores" element={<Tela><CoresVariedades /></Tela>} />
                 <Route path="/variedades/nomes" element={<Tela><VariedadesPims /></Tela>} />
               </Route>
-              <Route path="*" element={<Navigate to="/mapas" replace />} />
+              <Route path="*" element={<Navigate to="/inicio" replace />} />
             </Route>
           </Route>
         </Routes>
