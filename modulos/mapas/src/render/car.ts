@@ -229,13 +229,18 @@ export function desenharRotulosCar(ctx: CanvasRenderingContext2D, v: Vista, car:
     ctx.font = fonte(700, px);
     const w = ctx.measureText(txt).width;
     const h = px * ALTURA_MAIUSC;
-    const r: Rect = { x: ponto[0] - w / 2 - 0.6 * s, y: ponto[1] - h / 2 - 0.6 * s, w: w + 1.2 * s, h: h + 1.2 * s };
-    if (r.x < v.x || r.y < v.y || r.x + r.w > v.x + v.w || r.y + r.h > v.y + v.h) return;
-    if (ocupadas.some((o) => o.x < r.x + r.w && r.x < o.x + o.w && o.y < r.y + r.h && r.y < o.y + o.h)) return;
-    ocupadas.push(r);
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    textoComHalo(ctx, txt, ponto[0], ponto[1] + h / 2, cor, 'rgba(255,255,255,0.92)', 0.5 * s);
+    // no ponto do rótulo; se estiver ocupado (ex.: a matrícula que cobre quase o CAR inteiro), logo abaixo ou acima
+    for (const dy of [0, 2.2 * h, -2.2 * h, 4.4 * h, -4.4 * h]) {
+      const cy = ponto[1] + dy;
+      const r: Rect = { x: ponto[0] - w / 2 - 0.6 * s, y: cy - h / 2 - 0.6 * s, w: w + 1.2 * s, h: h + 1.2 * s };
+      if (r.x < v.x || r.y < v.y || r.x + r.w > v.x + v.w || r.y + r.h > v.y + v.h) continue;
+      if (ocupadas.some((o) => o.x < r.x + r.w && r.x < o.x + o.w && o.y < r.y + r.h && r.y < o.y + o.h)) continue;
+      ocupadas.push(r);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      textoComHalo(ctx, txt, ponto[0], cy + h / 2, cor, 'rgba(255,255,255,0.92)', 0.5 * s);
+      return;
+    }
   };
   ctx.save();
   for (const l of car.quadro.linhas.filter((x) => x.tipo === 'car')) {
