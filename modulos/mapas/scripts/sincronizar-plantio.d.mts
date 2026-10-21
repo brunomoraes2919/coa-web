@@ -446,7 +446,9 @@ export function lerGmlSigef(texto: string): Feicao[];
 export function ufsDoRecorte(bbox: number[], opcoes?: { fetchImpl?: typeof fetch }): Promise<string[]>;
 export function carDoRecorte(ufs: string[], bbox: number[], opcoes?: { fetchImpl?: typeof fetch }): Promise<Feicao[]>;
 export function temasDosCar(codigos: string[], opcoes?: { fetchImpl?: typeof fetch; temas?: readonly string[] }): Promise<Feicao[]>;
-export function sigefDoRecorte(ufs: string[], bbox: number[], opcoes?: { fetchImpl?: typeof fetch }): Promise<Feicao[]>;
+export const SIGEF_FUNCAO: string;
+export const SIGEF_REGIAO: string;
+export function sigefDoRecorte(ufs: string[], bbox: number[], opcoes?: { fetchImpl?: typeof fetch; ate?: number; supabase?: { url: string; chave: string } | null }): Promise<Feicao[]>;
 export function ibgeDoRecorte(bbox: number[], opcoes?: { fetchImpl?: typeof fetch }): Promise<Feicao[]>;
 export function osmDoRecorte(bbox: number[], opcoes?: { fetchImpl?: typeof fetch; esperaMs?: number }): Promise<Feicao[]>;
 export function montarSqlEucalipto(unidade: string): string;
@@ -471,6 +473,8 @@ export function buscarCarMatricula(opcoes: {
   talhoes: { geom: Geometria }[];
   unidade?: string | null;
   agrovex?: { url: string; token: string } | null;
+  /** com a URL e a chave de serviço, o SIGEF vai pela função do Supabase em São Paulo */
+  supabase?: { url: string; chave: string } | null;
   fetchImpl?: typeof fetch;
   agora?: Date;
   /** prazo da busca inteira nas bases públicas (ms); padrão CAR_PRAZO_TOTAL_MS */

@@ -10,6 +10,7 @@ import {
   pontosDosTalhoes,
   recortarNoRetangulo,
   retanguloDe,
+  sigefDoRecorte,
 } from '../scripts/sincronizar-plantio.mjs';
 import { atenderPedidosCar, planejarCar, RESULTADO_CAR_SO_SUPER, RESULTADO_CAR_VELHO, RESULTADOS } from '../scripts/atender-pedidos.mjs';
 
@@ -301,5 +302,36 @@ describe('correções da revisão (pedidos)', () => {
     await rodar(comFalha);
     expect(comFalha.pedidos[0].resultado).toBe('ok');
     expect(comFalha.basesChamadas ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe('SIGEF pela função do Supabase em São Paulo', () => {
+  it('com a chave de serviço, pede à função (x-region sa-east-1) e não chama o INCRA direto', async () => {
+    const chamadas: { host: string; path: string; headers: Record<string, string>; corpo?: string }[] = [];
+    const f = (async (url: string | URL, init?: RequestInit) => {
+      const u = new URL(String(url));
+      chamadas.push({ host: u.host, path: u.pathname, headers: (init?.headers ?? {}) as Record<string, string>, corpo: init?.body as string | undefined });
+      if (u.host === 'sb.test' && u.pathname === '/functions/v1/sigef-parcelas') return new Response(GML([{ matricula: '777', x0: -54.7, y0: -17.3, l: 0.005 }]), { status: 200 });
+      return new Response('não esperado', { status: 500 });
+    }) as typeof fetch;
+    const fs = await sigefDoRecorte(['MT'], [-54.8, -17.4, -54.6, -17.2], { fetchImpl: f, supabase: { url: 'https://sb.test', chave: 'sb_secret_falsa' } });
+    expect(fs.map((x) => x.properties.registro_matricula)).toEqual(['777']);
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0].headers['x-region']).toBe('sa-east-1');
+    expect(chamadas[0].headers.apikey).toBe('sb_secret_falsa');
+    expect(JSON.parse(chamadas[0].corpo!)).toEqual({ uf: 'MT', bbox: [-54.8, -17.4, -54.6, -17.2] });
+  });
+
+  it('função não publicada (404): tenta o INCRA direto', async () => {
+    const hosts: string[] = [];
+    const f = (async (url: string | URL) => {
+      const u = new URL(String(url));
+      hosts.push(u.host);
+      if (u.host === 'sb.test') return new Response('{"message":"Function not found"}', { status: 404 });
+      return new Response(GML([{ matricula: '888', x0: -54.7, y0: -17.3, l: 0.005 }]), { status: 200 });
+    }) as typeof fetch;
+    const fs = await sigefDoRecorte(['MT'], [-54.8, -17.4, -54.6, -17.2], { fetchImpl: f, supabase: { url: 'https://sb.test', chave: 'k' } });
+    expect(fs.map((x) => x.properties.registro_matricula)).toEqual(['888']);
+    expect(hosts).toEqual(['sb.test', 'acervofundiario.incra.gov.br']);
   });
 });

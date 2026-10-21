@@ -41,7 +41,7 @@ export function itensInformacao(inp: RenderInput): ParInfo[] {
     const pares: ParInfo[] = [
       { rotulo: 'Área dos talhões', valor: `${fmtHa(q.talhoesHa)} ha` },
       { rotulo: 'CARs', valor: String(nCar) },
-      { rotulo: 'Matrículas (SIGEF)', valor: String(nMat) },
+      { rotulo: 'Matrículas (SIGEF)', valor: car.sigefOk === false ? 'não consultadas' : String(nMat) },
       { rotulo: 'Talhões fora de CAR', valor: q.talhoesForaDeCarHa >= 1 ? `${fmtHa(q.talhoesForaDeCarHa)} ha` : '' },
       { rotulo: 'Bases', valor: t.fonte },
       { rotulo: 'Consulta', valor: fmtDataHora(car.dados.geradoEm, true) },

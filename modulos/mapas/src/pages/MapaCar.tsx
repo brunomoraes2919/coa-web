@@ -129,7 +129,7 @@ export default function MapaCar() {
       pics: [],
       logo,
       tiles: aparencia.mapaBase === 'nenhum' ? null : TILES[aparencia.mapaBase],
-      car: { dados: validos.dados, quadro, usoTalhao },
+      car: { dados: validos.dados, quadro, usoTalhao, sigefOk: registro?.fontes.sigef?.ok !== false },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aparencia, automaticos, editados, talhoes, validos, quadro, usoTalhao, logo, extentAuto]);
@@ -360,7 +360,10 @@ export default function MapaCar() {
                   </table>
                 </div>
                 <ul className="notas-car suave">
-                  <li>Áreas em hectares. Talhões: {fmtHa(quadro.talhoesHa)} ha; fora de CAR: {fmtHa(quadro.talhoesForaDeCarHa)} ha; fora de matrícula certificada: {fmtHa(quadro.talhoesForaDeMatriculaHa)} ha.</li>
+                  <li>
+                    Áreas em hectares. Talhões: {fmtHa(quadro.talhoesHa)} ha; fora de CAR: {fmtHa(quadro.talhoesForaDeCarHa)} ha;{' '}
+                    {fontes.sigef?.ok === false ? 'matrículas não consultadas (o SIGEF não respondeu).' : `fora de matrícula certificada: ${fmtHa(quadro.talhoesForaDeMatriculaHa)} ha.`}
+                  </li>
                   <li>* Pecuária estimada: área consolidada declarada no CAR, fora dos talhões. Nenhuma base tem o desenho dos pastos.</li>
                   <li>Matrículas: só as parcelas certificadas no SIGEF. Matrícula sem georreferenciamento certificado não aparece.</li>
                   {quadro.eucaliptoSemDesenhoHa >= 1 && <li>Eucalipto no PIMS sem talhão desenhado: {fmtHa(quadro.eucaliptoSemDesenhoHa)} ha (fora do recorte por CAR e matrícula).</li>}

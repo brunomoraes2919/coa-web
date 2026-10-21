@@ -19,6 +19,8 @@ export interface EntradaCar {
   quadro: QuadroCar;
   /** id do talhão → uso (eucalipto pelo PIMS; o resto é agrícola) */
   usoTalhao: Map<string, 'agricola' | 'eucalipto'>;
+  /** o SIGEF respondeu na última busca? (false: as matrículas não foram consultadas, não "zero matrículas") */
+  sigefOk?: boolean;
 }
 
 /** Cores e traços (mm do A3) do mapa e da legenda. */

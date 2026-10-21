@@ -3549,13 +3549,46 @@ export function lerGmlSigef(texto) {
 }
 
 /** Parcelas certificadas no SIGEF (particulares) no recorte, de cada UF. */
-export async function sigefDoRecorte(ufs, bbox, { fetchImpl = fetch, ate = Infinity } = {}) {
+/** Função do Supabase que consulta o INCRA a partir de São Paulo (supabase/functions/sigef-parcelas). */
+export const SIGEF_FUNCAO = 'sigef-parcelas';
+/** Região onde a função roda (o INCRA recusa o servidor do COA, que fica fora do Brasil). */
+export const SIGEF_REGIAO = 'sa-east-1';
+
+/**
+ * GML do SIGEF de uma UF pela função do Supabase em São Paulo; null quando a função não está publicada ou falhou
+ * (quem chama tenta o INCRA direto). Passa por chamarSupabase, com a chave de serviço nos cabeçalhos.
+ */
+async function sigefPelaFuncao(uf, bbox, { url, chave, fetchImpl }) {
+  try {
+    const resp = await chamarSupabase(fetchImpl, `${url}/functions/v1/${SIGEF_FUNCAO}`, {
+      method: 'POST',
+      headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', 'x-region': SIGEF_REGIAO },
+      body: JSON.stringify({ uf, bbox }),
+    }, `a busca do SIGEF (${uf}) pela função de São Paulo`);
+    const texto = await resp.text();
+    if (!resp.ok || texto.length > CAR_MAX_BYTES) {
+      console.warn(`CAR: função ${SIGEF_FUNCAO} respondeu HTTP ${resp.status} (${uf}); tentando o INCRA direto.`);
+      return null;
+    }
+    return texto;
+  } catch (e) {
+    console.warn(`CAR: função ${SIGEF_FUNCAO} falhou (${uf}): ${semChave(String(e?.message ?? e), chave).slice(0, 200)}; tentando o INCRA direto.`);
+    return null;
+  }
+}
+
+/**
+ * Parcelas certificadas no SIGEF (particulares) no recorte, de cada UF. Com `supabase` ({ url, chave }), pede
+ * primeiro à função de São Paulo; sem ela (ou se falhar), consulta o INCRA direto.
+ */
+export async function sigefDoRecorte(ufs, bbox, { fetchImpl = fetch, ate = Infinity, supabase = null } = {}) {
   const out = [];
   let cortado = false;
   for (const uf of ufs) {
     const tema = `certificada_sigef_particular_${uf.toLowerCase()}`;
     const url = `${CAR_BASES.sigef}?${new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', tema, typeName: tema, BBOX: bbox.join(','), maxFeatures: String(CAR_MAX_FEICOES) })}`;
-    const fs = lerGmlSigef(await buscarBase(url, { fetchImpl, json: false, tentativas: 2, ate }));
+    const pelaFuncao = supabase?.url && supabase?.chave && Date.now() < ate ? await sigefPelaFuncao(uf, bbox, { ...supabase, fetchImpl }) : null;
+    const fs = lerGmlSigef(pelaFuncao ?? (await buscarBase(url, { fetchImpl, json: false, tentativas: 2, ate })));
     if (fs.length >= CAR_MAX_FEICOES) cortado = true;
     out.push(...fs);
   }
@@ -3646,7 +3679,7 @@ export async function eucaliptoDoPims({ url, token, unidade, fetchImpl = fetch }
  * em mapas_car. Uma base que falha não derruba as outras: a falha vai para `fontes.<base>.erro` (texto curto
  * nosso) e a camada fica vazia. Sem nenhum talhão desenhado → erro do tipo 'invalido'.
  */
-export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = null, fetchImpl = fetch, agora = new Date(), prazoMs = CAR_PRAZO_TOTAL_MS }) {
+export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = null, supabase = null, fetchImpl = fetch, agora = new Date(), prazoMs = CAR_PRAZO_TOTAL_MS }) {
   const geoms = talhoes.map((t) => t?.geom).filter((g) => poligonosDe(g).length);
   if (!geoms.length) throw erroDoTipo('invalido', 'A fazenda não tem talhões desenhados: cadastre o shape em Fazendas e shapes.');
   const ret = retanguloDe(geoms);
@@ -3686,7 +3719,7 @@ export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = nu
   const temas = imoveis.length
     ? await tentar('temas', () => temasDosCar(imoveis.map((f) => f.properties.cod_imovel), { fetchImpl, ate }))
     : ((fontes.temas = fontes.sicar?.ok ? { ok: true, n: 0 } : { ok: false, n: 0, erro: 'sem o limite do CAR para consultar' }), []);
-  const parcelas = (await tentar('sigef', () => sigefDoRecorte(ufs, bbox, { fetchImpl, ate })))
+  const parcelas = (await tentar('sigef', () => sigefDoRecorte(ufs, bbox, { fetchImpl, ate, supabase })))
     .filter((f) => relevante(f.geometry))
     .slice(0, CAR_MAX_PARCELAS)
     .map((f) => feicao(f.geometry, {

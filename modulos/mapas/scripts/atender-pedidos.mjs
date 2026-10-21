@@ -918,7 +918,8 @@ export async function atenderPedidosCar({ supabase, agrovex, fetch: fetchImpl = 
         continue;
       }
       const { talhoes, unidade } = await talhoesParaCar(ctx, plano.fazendaId);
-      const resposta = await buscarCarMatricula({ talhoes, unidade, agrovex, fetchImpl, agora: agora() });
+      // o SIGEF vai pela função do Supabase em São Paulo (o INCRA recusa este servidor, fora do Brasil)
+      const resposta = await buscarCarMatricula({ talhoes, unidade, agrovex, supabase: { url: supabase.url, chave: supabase.chave }, fetchImpl, agora: agora() });
       await gravarCar(ctx, plano.fazendaId, resposta, agora());
       await responderPedidosCar(ctx, ids, 'ok', agora());
       const f = resposta.fontes;
