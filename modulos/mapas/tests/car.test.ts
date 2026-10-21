@@ -98,6 +98,12 @@ describe('quadro de áreas por CAR e matrícula', () => {
     expect(v.dados.temas.features.some((f) => f.properties?.cod_imovel === 'MT-VELHO')).toBe(false);
   });
 
+  it('CSV: texto das bases que começa com = + - @ não vira fórmula no Excel', () => {
+    const comFormula: DadosCar = { ...dados, matriculas: fc([feicao(quadrado(0, 0, 0.01), { matricula: '=HYPERLINK("x")' })]) };
+    const csv = csvQuadroCar(quadroDoCar(comFormula, talhoes));
+    expect(csv).toContain(`"'=HYPERLINK(""x"")"`);
+  });
+
   it('CSV com vírgula decimal e o código completo', () => {
     const csv = csvQuadroCar(quadroDoCar(dados, talhoes));
     const [cab, l1] = csv.split('\r\n');

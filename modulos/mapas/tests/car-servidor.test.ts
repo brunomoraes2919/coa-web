@@ -11,7 +11,7 @@ import {
   recortarNoRetangulo,
   retanguloDe,
 } from '../scripts/sincronizar-plantio.mjs';
-import { atenderPedidosCar, planejarCar, RESULTADO_CAR_SO_SUPER } from '../scripts/atender-pedidos.mjs';
+import { atenderPedidosCar, planejarCar, RESULTADO_CAR_SO_SUPER, RESULTADO_CAR_VELHO, RESULTADOS } from '../scripts/atender-pedidos.mjs';
 
 const quadrado = (x0: number, y0: number, l: number) => ({
   type: 'Polygon',
@@ -218,5 +218,88 @@ describe('simplificação (o resultado tem de caber no banco)', () => {
     // triângulo pequeno: continua com 4 pontos
     const tri = [[0, 0], [0.00001, 0], [0, 0.00001], [0, 0]];
     expect((simplificarGeometria({ type: 'Polygon', coordinates: [tri] }) as { coordinates: number[][][] }).coordinates[0]).toHaveLength(4);
+  });
+});
+
+describe('correções da revisão (servidor)', () => {
+  it('prazo total: base que não coube no prazo sai como falha, sem travar a busca', async () => {
+    const lento = (async (url: string | URL, init?: RequestInit) => {
+      const host = new URL(String(url)).host;
+      if (host === 'geoserver.car.gov.br') {
+        // responde só quando o prazo da chamada estoura
+        return await new Promise<Response>((_ok, falha) => init?.signal?.addEventListener('abort', () => falha(Object.assign(new Error('abortou'), { name: 'TimeoutError' }))));
+      }
+      return basesFalsas()(url, init);
+    }) as typeof fetch;
+    const t0 = Date.now();
+    const r = await buscarCarMatricula({ talhoes: [{ geom: TALHAO }], fetchImpl: lento, prazoMs: 300 });
+    expect(Date.now() - t0).toBeLessThan(15_000);
+    expect(r.fontes.sicar).toMatchObject({ ok: false });
+    // sem o limite do CAR não há tema a consultar: falha também (o rodapé não diz "SICAR")
+    expect(r.fontes.temas).toEqual({ ok: false, n: 0, erro: 'sem o limite do CAR para consultar' });
+    expect(Object.values(r.fontes).filter((f) => f.erro?.startsWith('não houve tempo')).length).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('GML do SIGEF: entidades XML convertidas', () => {
+    const t = GML([{ matricula: 'S&#227;o 12 &amp; 13', x0: 0, y0: 0, l: 1 }]);
+    expect(lerGmlSigef(t)[0].properties.registro_matricula).toBe('São 12 & 13');
+  });
+});
+
+describe('correções da revisão (pedidos)', () => {
+  const FAZ = '11111111-1111-4111-8111-111111111111';
+  const SUPER = '22222222-2222-4222-8222-222222222222';
+  const json = (d: unknown) => new Response(JSON.stringify(d), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  function sb(estado: { pedidos: { id: number; pedido_por: string; fazenda_id: string; pedido_em: string; resultado?: string }[]; perfisFalham?: boolean; ultimo?: unknown[]; basesChamadas?: number }) {
+    const bases = basesFalsas();
+    return (async (url: string | URL, init?: RequestInit) => {
+      const u = new URL(String(url));
+      if (u.host !== 'sb.test') {
+        estado.basesChamadas = (estado.basesChamadas ?? 0) + 1;
+        return bases(url, init);
+      }
+      const caminho = u.pathname.replace('/rest/v1/', '');
+      const metodo = init?.method ?? 'GET';
+      if (caminho === 'mapas_car_pedidos' && metodo === 'GET') return json(estado.pedidos.filter((p) => !p.resultado));
+      if (caminho === 'mapas_car_pedidos' && metodo === 'PATCH') {
+        const ids = /id=in\.\(([^)]*)\)/.exec(decodeURIComponent(u.search))![1].split(',').map(Number);
+        const corpo = JSON.parse(String(init!.body));
+        estado.pedidos.filter((p) => ids.includes(p.id)).forEach((p) => (p.resultado = corpo.resultado));
+        return new Response(null, { status: 204 });
+      }
+      if (metodo === 'DELETE') return new Response(null, { status: 204 });
+      if (caminho === 'perfis') return estado.perfisFalham ? new Response('{"message":"x"}', { status: 500 }) : json([{ perfil: 'admin', super: true }]);
+      if (caminho === 'mapas_car' && metodo === 'GET') return json(estado.ultimo ?? []);
+      if (caminho === 'mapas_car' && metodo === 'POST') return new Response(null, { status: 201 });
+      if (caminho === 'mapas_fazendas') return json([{ id: FAZ, unidade_pims: null }]);
+      if (caminho === 'mapas_talhoes') return json([{ geom: TALHAO }]);
+      return new Response('{}', { status: 404 });
+    }) as typeof fetch;
+  }
+  const rodar = (estado: Parameters<typeof sb>[0], agora = '2026-10-21T12:00:00Z') =>
+    atenderPedidosCar({ supabase: { url: 'https://sb.test', chave: 'k' }, agrovex: { url: 'https://agrovex.test/mcp', token: 'tk' }, fetch: sb(estado), agora: () => new Date(agora) });
+
+  it('pedido pendente há mais de 30 min: respondido com erro, sem buscar de novo', async () => {
+    const estado: Parameters<typeof sb>[0] = { pedidos: [{ id: 1, pedido_por: SUPER, fazenda_id: FAZ, pedido_em: '2026-10-21T11:00:00Z' }] };
+    await rodar(estado);
+    expect(estado.pedidos[0].resultado).toBe(RESULTADO_CAR_VELHO);
+    expect(estado.basesChamadas ?? 0).toBe(0);
+  });
+
+  it('falha ao ler o perfil: "não foi possível conferir", não "só do ADMINISTRADOR+"', async () => {
+    const estado: Parameters<typeof sb>[0] = { perfisFalham: true, pedidos: [{ id: 1, pedido_por: SUPER, fazenda_id: FAZ, pedido_em: '2026-10-21T11:59:00Z' }] };
+    await rodar(estado);
+    expect(estado.pedidos[0].resultado).toBe(RESULTADOS.permissaoIndisponivel);
+  });
+
+  it('resultado recente e completo é reaproveitado; recente com base falha, busca de novo', async () => {
+    const completo: Parameters<typeof sb>[0] = { ultimo: [{ atualizado_em: '2026-10-21T11:55:00Z', fontes: { sicar: { ok: true }, osm: { ok: true } } }], pedidos: [{ id: 1, pedido_por: SUPER, fazenda_id: FAZ, pedido_em: '2026-10-21T11:59:00Z' }] };
+    await rodar(completo);
+    expect(completo.pedidos[0].resultado).toBe('ok');
+    expect(completo.basesChamadas ?? 0).toBe(0);
+    const comFalha: Parameters<typeof sb>[0] = { ultimo: [{ atualizado_em: '2026-10-21T11:55:00Z', fontes: { sicar: { ok: true }, osm: { ok: false } } }], pedidos: [{ id: 2, pedido_por: SUPER, fazenda_id: FAZ, pedido_em: '2026-10-21T11:59:00Z' }] };
+    await rodar(comFalha);
+    expect(comFalha.pedidos[0].resultado).toBe('ok');
+    expect(comFalha.basesChamadas ?? 0).toBeGreaterThan(0);
   });
 });

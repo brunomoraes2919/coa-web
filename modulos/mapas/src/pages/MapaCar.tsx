@@ -52,6 +52,14 @@ export default function MapaCar() {
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [avisosRender, setAvisosRender] = useState<string[]>([]);
   const versao = useRef(0);
+  // a tela saiu: a consulta da situação do pedido para
+  const montada = useRef(true);
+  useEffect(() => {
+    montada.current = true;
+    return () => {
+      montada.current = false;
+    };
+  }, []);
   const logo = useLogo();
   const fazenda = fazendas?.find((f) => f.id === fazendaId) ?? null;
 
@@ -131,14 +139,20 @@ export default function MapaCar() {
 
   const buscar = async () => {
     if (!fazendaId) return;
+    // a fazenda desta busca: se a tela trocar de fazenda no meio, o resultado não é aplicado (era de outra)
+    const alvo = fazendaId;
+    const v = versao.current;
+    const vigente = () => montada.current && versao.current === v;
+    const antes = registro?.atualizadoEm ?? null;
     setErro(null);
     setSucesso(null);
     setBuscando('Pedido enviado ao servidor…');
     try {
-      const id = await repo().pedirBuscaCar(fazendaId);
+      const id = await repo().pedirBuscaCar(alvo);
       const inicio = Date.now();
       for (;;) {
         await new Promise((ok) => setTimeout(ok, INTERVALO_MS));
+        if (!vigente()) return;
         const s = await repo().situacaoPedidoCar(id);
         const seg = Math.round((Date.now() - inicio) / 1000);
         if (s?.atendidoEm) {
@@ -148,14 +162,19 @@ export default function MapaCar() {
         if (Date.now() - inicio > PRAZO_MS) throw new Error('O servidor não terminou a busca em 6 minutos. As bases públicas podem estar lentas: tente de novo mais tarde.');
         setBuscando(`Consultando SICAR, SIGEF, IBGE e OpenStreetMap… ${seg} s`);
       }
-      const r = await repo().obterCar(fazendaId);
+      const r = await repo().obterCar(alvo);
+      if (!vigente()) return;
       setRegistro(r);
       setAparencia((a) => ({ ...a, extent: null }));
-      setSucesso('Bases consultadas. O mapa e o quadro de áreas foram atualizados.');
+      setSucesso(
+        r && r.atualizadoEm === antes
+          ? 'As bases foram consultadas há menos de 10 minutos e todas responderam: o mapa continua com aquele resultado.'
+          : 'Bases consultadas. O mapa e o quadro de áreas foram atualizados.',
+      );
     } catch (e) {
-      setErro(`Não foi possível buscar nas bases: ${mensagemDeErro(e)}`);
+      if (vigente()) setErro(`Não foi possível buscar nas bases: ${mensagemDeErro(e)}`);
     } finally {
-      setBuscando(null);
+      if (montada.current) setBuscando(null);
     }
   };
 
@@ -183,6 +202,7 @@ export default function MapaCar() {
   const pronto = !!renderInput && !ocupado && !buscando;
   const fontes = registro?.fontes ?? {};
   const comFalha = (Object.keys(NOME_FONTE) as NomeFonteCar[]).filter((k) => fontes[k] && !fontes[k]!.ok);
+  const comAviso = (Object.keys(NOME_FONTE) as NomeFonteCar[]).filter((k) => fontes[k]?.ok && fontes[k]!.aviso);
   const linhasCar = quadro?.linhas.filter((l) => l.tipo === 'car') ?? [];
   const linhasMat = quadro?.linhas.filter((l) => l.tipo === 'matricula') ?? [];
   const temEuc = !!quadro?.linhas.some((l) => l.eucaliptoHa >= 0.05);
@@ -227,6 +247,11 @@ export default function MapaCar() {
           </p>
         </Aviso>
       )}
+      {comAviso.length > 0 && (
+        <Aviso tipo="alerta" titulo="Resultado pode estar incompleto">
+          <p>{comAviso.map((k) => `${NOME_FONTE[k]}: ${fontes[k]!.aviso}`).join('; ')}.</p>
+        </Aviso>
+      )}
       {avisosRender.length > 0 && (
         <Aviso tipo="alerta" titulo="Atenção">
           <ul>
@@ -243,7 +268,7 @@ export default function MapaCar() {
             <h2>1. Fazenda</h2>
             <label className="campo">
               <span>Fazenda</span>
-              <select value={fazendaId} onChange={(e) => trocarFazenda(e.target.value)}>
+              <select value={fazendaId} onChange={(e) => trocarFazenda(e.target.value)} disabled={!!buscando} title={buscando ? 'Aguarde a busca terminar' : undefined}>
                 <option value="">Escolha…</option>
                 {fazendasDoCoa(fazendas, coa, fazendaId).map((f) => (
                   <option key={f.id} value={f.id}>

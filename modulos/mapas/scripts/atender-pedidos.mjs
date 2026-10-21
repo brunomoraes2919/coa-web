@@ -788,14 +788,17 @@ const TABELA_CAR = 'mapas_car';
 const TABELA_CAR_PEDIDOS = 'mapas_car_pedidos';
 /** uma fazenda por verificação: a busca leva de 30 s a 2 min (bases públicas lentas) */
 const MAX_CAR_POR_RODADA = 1;
-/** resultado mais novo que isto: o pedido é respondido com o que está gravado, sem consultar de novo */
+/** resultado mais novo que isto (e sem base com falha): o pedido é respondido com o que está gravado */
 export const CAR_RECENTE_MINUTOS = 10;
+/** pedido pendente há mais que isto (a verificação caiu no meio, várias vezes): respondido com erro, sem nova busca */
+export const CAR_PEDIDO_VELHO_MINUTOS = 30;
+export const RESULTADO_CAR_VELHO = 'erro: A busca não terminou a tempo (as bases públicas estão lentas). Tente de novo mais tarde.';
 const GUARDAR_CAR_PEDIDOS_DIAS = 7;
 export const RESULTADO_CAR_SO_SUPER = 'erro: Pedido recusado: o Mapa de CAR e Matrícula é só do ADMINISTRADOR+.';
 
-/** Pedidos pendentes ({ id, pedido_por, fazenda_id }), do mais antigo para o mais novo; sem a tabela → []. */
+/** Pedidos pendentes ({ id, pedido_por, fazenda_id, pedido_em }), do mais antigo para o mais novo; sem a tabela → []. */
 export async function pedidosCarPendentes({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
-  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_CAR_PEDIDOS}?select=id,pedido_por,fazenda_id&atendido_em=is.null&order=id.asc&limit=${FILA_LIDA}`, {
+  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_CAR_PEDIDOS}?select=id,pedido_por,fazenda_id,pedido_em&atendido_em=is.null&order=id.asc&limit=${FILA_LIDA}`, {
     headers: cabecalhosSupabase(chave),
   }, 'a leitura dos pedidos de CAR');
   if (!resp.ok) {
@@ -836,7 +839,10 @@ async function lerRest({ url, chave, fetch: fetchImpl }, caminho, acao) {
   return linhas;
 }
 
-/** Quem pediu é ADMINISTRADOR+ (perfil admin com super)? Falha na leitura → false (não atende sem saber). */
+/**
+ * Quem pediu é ADMINISTRADOR+ (perfil admin com super)? true/false; null quando a leitura falhou (o pedido é
+ * recusado com "não foi possível conferir", não com "só do ADMINISTRADOR+").
+ */
 export async function pedidoDeSuper(ctx, pedidoPor) {
   if (!ehUuid(pedidoPor)) return false;
   try {
@@ -844,7 +850,7 @@ export async function pedidoDeSuper(ctx, pedidoPor) {
     return perfis[0]?.perfil === 'admin' && perfis[0]?.super === true;
   } catch (e) {
     console.error(`CAR: não foi possível conferir o perfil (pedido recusado): ${semChave(e instanceof Error ? e.message : String(e), ctx.chave)}`);
-    return false;
+    return null;
   }
 }
 
@@ -885,20 +891,29 @@ export async function atenderPedidosCar({ supabase, agrovex, fetch: fetchImpl = 
     const plano = planejarCar(restantes);
     if (!plano) break;
     plano.pedidos.forEach((p) => (p.respondido = true));
-    // quem não é ADMINISTRADOR+ é recusado pedido a pedido (o RLS já barra, isto é a segunda trava)
+    // quem não é ADMINISTRADOR+ é recusado pedido a pedido (o RLS já barra, isto é a segunda trava); pedido pendente
+    // há muito tempo (a verificação caiu no meio da busca) é respondido com erro, para não travar a fila
     const deSuper = [];
     for (const p of plano.pedidos) {
-      if (await pedidoDeSuper(ctx, p.pedido_por)) deSuper.push(p);
-      else await responderPedidosCar(ctx, [p.id], RESULTADO_CAR_SO_SUPER, agora());
+      const idade = agora().getTime() - Date.parse(p.pedido_em ?? '');
+      if (Number.isFinite(idade) && idade > CAR_PEDIDO_VELHO_MINUTOS * 60_000) {
+        await responderPedidosCar(ctx, [p.id], RESULTADO_CAR_VELHO, agora());
+        continue;
+      }
+      const ehSuper = await pedidoDeSuper(ctx, p.pedido_por);
+      if (ehSuper) deSuper.push(p);
+      else await responderPedidosCar(ctx, [p.id], ehSuper === null ? RESULTADOS.permissaoIndisponivel : RESULTADO_CAR_SO_SUPER, agora());
     }
     const ids = deSuper.map((p) => p.id);
     respondidos += plano.pedidos.length;
     if (!ids.length) continue;
     try {
       if (!ehUuid(plano.fazendaId)) throw Object.assign(new Error('Pedido inválido.'), { tipo: 'invalido' });
-      const ultimo = await lerRest(ctx, `${TABELA_CAR}?select=atualizado_em&fazenda_id=eq.${plano.fazendaId}&limit=1`, 'a leitura do último mapa de CAR').catch(() => []);
+      // resultado recente e completo (todas as bases responderam) é reaproveitado; com falha, busca de novo
+      const ultimo = await lerRest(ctx, `${TABELA_CAR}?select=atualizado_em,fontes&fazenda_id=eq.${plano.fazendaId}&limit=1`, 'a leitura do último mapa de CAR').catch(() => []);
       const idade = agora().getTime() - Date.parse(ultimo[0]?.atualizado_em ?? '');
-      if (Number.isFinite(idade) && idade > -60_000 && idade < CAR_RECENTE_MINUTOS * 60_000) {
+      const completo = Object.values(ultimo[0]?.fontes ?? { x: { ok: false } }).every((f) => f?.ok === true);
+      if (completo && Number.isFinite(idade) && idade > -60_000 && idade < CAR_RECENTE_MINUTOS * 60_000) {
         await responderPedidosCar(ctx, ids, 'ok', agora());
         continue;
       }
@@ -940,14 +955,26 @@ async function main() {
   };
   // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
   let erroConsulta = null;
-  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atenderPedidosCar, atualizarSituacaoZeus, atualizarChuvaTalhao, atualizarLimitesZeus]) {
+  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus, atualizarChuvaTalhao, atualizarLimitesZeus]) {
     try {
       await atender({ supabase, agrovex });
     } catch (e) {
       erroConsulta = erroConsulta ?? e;
     }
   }
-  await atenderPedidos({ supabase, acompanhamento: config.acompanhamento !== false, agrovex });
+  let erroPlantio = null;
+  try {
+    await atenderPedidos({ supabase, acompanhamento: config.acompanhamento !== false, agrovex });
+  } catch (e) {
+    erroPlantio = e;
+  }
+  // por último o Mapa de CAR e Matrícula: a busca nas bases públicas é a mais demorada (até ~9 min)
+  try {
+    await atenderPedidosCar({ supabase, agrovex });
+  } catch (e) {
+    erroConsulta = erroConsulta ?? e;
+  }
+  if (erroPlantio) throw erroPlantio;
   if (erroConsulta) throw erroConsulta;
 }
 

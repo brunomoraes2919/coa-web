@@ -3130,6 +3130,13 @@ export const CAR_BASES = Object.freeze({
 export const CAR_USER_AGENT = 'COA-WEB-Mapas/1.0 (Locks COA WEB)';
 /** prazo de cada chamada às bases públicas */
 export const CAR_PRAZO_MS = 90_000;
+/**
+ * prazo da busca inteira nas bases públicas (o PIMS vem depois, com o prazo dele): a verificação dos pedidos roda
+ * com limite de 20 min no systemd e ainda atende o resto depois; base que não coube no prazo sai como "não houve tempo"
+ */
+export const CAR_PRAZO_TOTAL_MS = 7 * 60_000;
+/** resposta maior que isto é recusada (uma resposta enorme derrubaria o processo) */
+export const CAR_MAX_BYTES = 60 * 1024 * 1024;
 /** margem em volta dos talhões (graus, ~2,2 km) */
 export const CAR_MARGEM_GRAUS = 0.02;
 /** no máximo tantos CARs e parcelas que tocam os talhões (freio: uma fazenda grande tem uma dezena) */
@@ -3418,15 +3425,28 @@ export function recortarNoRetangulo(geom, ret) {
 // ---- leitura das bases ----
 
 /** GET (ou POST de formulário) a uma base pública, com prazo, tentativas e espera crescente entre elas. */
-async function buscarBase(url, { fetchImpl, corpo = null, tentativas = 1, esperaMs = 4000, json = true, aceitar = null } = {}) {
+/** Erro de prazo (o mesmo nome do AbortSignal.timeout: vira "não respondeu a tempo"). */
+function erroDePrazo() {
+  return Object.assign(new Error('prazo da busca esgotado'), { name: 'TimeoutError' });
+}
+
+/**
+ * GET (ou POST de formulário) a uma base pública, com prazo, tentativas e espera crescente entre elas. `ate` = fim
+ * do prazo da busca inteira (ms): cada chamada usa o que sobra dele, e sem tempo nem começa.
+ */
+async function buscarBase(url, { fetchImpl, corpo = null, tentativas = 1, esperaMs = 4000, json = true, aceitar = null, ate = Infinity } = {}) {
   let ultimo = null;
   for (let i = 0; i < tentativas; i++) {
     if (i) await new Promise((ok) => setTimeout(ok, esperaMs * 2 ** (i - 1)));
+    const resta = Math.min(CAR_PRAZO_MS, ate - Date.now());
+    if (resta <= 0) throw ultimo ?? erroDePrazo();
     try {
-      const init = { headers: { 'User-Agent': CAR_USER_AGENT, Accept: aceitar ?? (json ? 'application/json' : '*/*') }, signal: AbortSignal.timeout(CAR_PRAZO_MS) };
+      const init = { headers: { 'User-Agent': CAR_USER_AGENT, Accept: aceitar ?? (json ? 'application/json' : '*/*') }, signal: AbortSignal.timeout(resta) };
       if (corpo) Object.assign(init, { method: 'POST', body: corpo, headers: { ...init.headers, 'Content-Type': 'application/x-www-form-urlencoded' } });
       const resp = await fetchImpl(url, init);
+      if (Number(resp.headers?.get?.('content-length') ?? 0) > CAR_MAX_BYTES) throw new Error('resposta grande demais');
       const texto = await resp.text();
+      if (texto.length > CAR_MAX_BYTES) throw new Error('resposta grande demais');
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       if (!json) return texto;
       try {
@@ -3444,9 +3464,9 @@ async function buscarBase(url, { fetchImpl, corpo = null, tentativas = 1, espera
 const wfs = (base, params) => `${base}?${new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', ...params })}`;
 
 /** UFs que o recorte toca: pela camada de estados do SICAR; se ela falhar, pelos retângulos aproximados. */
-export async function ufsDoRecorte(bbox, { fetchImpl = fetch } = {}) {
+export async function ufsDoRecorte(bbox, { fetchImpl = fetch, ate = Infinity } = {}) {
   try {
-    const d = await buscarBase(wfs(CAR_BASES.temas, { typeName: 'consulta_publica:estado', outputFormat: 'application/json', srsName: 'EPSG:4674', bbox: bbox.join(','), maxFeatures: '10' }), { fetchImpl });
+    const d = await buscarBase(wfs(CAR_BASES.temas, { typeName: 'consulta_publica:estado', outputFormat: 'application/json', srsName: 'EPSG:4674', bbox: bbox.join(','), maxFeatures: '10' }), { fetchImpl, ate });
     const ufs = [...new Set((d?.features ?? []).map((f) => UF_POR_IBGE[Number(f?.properties?.cod_estado_ibge)] ?? null).filter(Boolean))];
     if (ufs.length) return ufs;
   } catch {
@@ -3455,18 +3475,24 @@ export async function ufsDoRecorte(bbox, { fetchImpl = fetch } = {}) {
   return Object.entries(UF_RETANGULO).filter(([, r]) => retangulosSeTocam(r, bbox)).map(([uf]) => uf);
 }
 
-/** Imóveis do CAR (perímetro) no recorte, de cada UF. */
-export async function carDoRecorte(ufs, bbox, { fetchImpl = fetch } = {}) {
+/** limite de feições por chamada; resposta que bate no limite pode ter ficado incompleta (aviso na tela) */
+export const CAR_MAX_FEICOES = 3000;
+
+/** Imóveis do CAR (perímetro) no recorte, de cada UF. `cortado` = alguma UF bateu no limite de feições. */
+export async function carDoRecorte(ufs, bbox, { fetchImpl = fetch, ate = Infinity } = {}) {
   const out = [];
+  let cortado = false;
   for (const uf of ufs) {
-    const d = await buscarBase(wfs(CAR_BASES.sicar, { typeName: `sicar:sicar_imoveis_${uf.toLowerCase()}`, outputFormat: 'application/json', srsName: 'EPSG:4674', bbox: bbox.join(','), maxFeatures: '3000' }), { fetchImpl, tentativas: 2 });
-    for (const f of d?.features ?? []) if (f?.geometry && f?.properties?.cod_imovel) out.push(f);
+    const d = await buscarBase(wfs(CAR_BASES.sicar, { typeName: `sicar:sicar_imoveis_${uf.toLowerCase()}`, outputFormat: 'application/json', srsName: 'EPSG:4674', bbox: bbox.join(','), maxFeatures: String(CAR_MAX_FEICOES) }), { fetchImpl, tentativas: 2, ate });
+    const fs = d?.features ?? [];
+    if (fs.length >= CAR_MAX_FEICOES) cortado = true;
+    for (const f of fs) if (f?.geometry && f?.properties?.cod_imovel) out.push(f);
   }
-  return out;
+  return Object.assign(out, { cortado });
 }
 
 /** Temas declarados nos CARs (6 camadas por chamada, 8 códigos por filtro). Cada feição leva `tema`. */
-export async function temasDosCar(codigos, { fetchImpl = fetch, temas = CAR_TEMAS } = {}) {
+export async function temasDosCar(codigos, { fetchImpl = fetch, temas = CAR_TEMAS, ate = Infinity } = {}) {
   const out = [];
   const lotesTemas = [];
   for (let i = 0; i < temas.length; i += 6) lotesTemas.push(temas.slice(i, i + 6));
@@ -3478,7 +3504,7 @@ export async function temasDosCar(codigos, { fetchImpl = fetch, temas = CAR_TEMA
         outputFormat: 'application/json',
         srsName: 'EPSG:4674',
         CQL_FILTER: lote.map(() => `cod_imovel IN (${lista})`).join(';'),
-      }), { fetchImpl, tentativas: 2 });
+      }), { fetchImpl, tentativas: 2, ate });
       for (const f of d?.features ?? []) {
         const tema = String(f?.id ?? '').split('.')[0];
         if (f?.geometry && tema) out.push(feicao(f.geometry, { tema, cod_imovel: f.properties?.cod_imovel ?? null }));
@@ -3488,12 +3514,24 @@ export async function temasDosCar(codigos, { fetchImpl = fetch, temas = CAR_TEMA
   return out;
 }
 
+/** Texto de XML com as entidades (&amp; &lt; &gt; &quot; &apos; &#227; &#xE3;) já convertidas. */
+function textoXml(s) {
+  return String(s).replace(/&(#x[0-9a-f]+|#\d+|amp|lt|gt|quot|apos);/gi, (_, e) => {
+    const k = e.toLowerCase();
+    if (k[0] === '#') {
+      const n = k[1] === 'x' ? parseInt(k.slice(2), 16) : parseInt(k.slice(1), 10);
+      return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : '';
+    }
+    return { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }[k];
+  });
+}
+
 /** Lê o GML 2 do MapServer do INCRA: cada featureMember vira { properties (campos ms:*), geometry MultiPolygon }. */
 export function lerGmlSigef(texto) {
   const out = [];
   for (const [, membro] of String(texto).matchAll(/<gml:featureMember>([\s\S]*?)<\/gml:featureMember>/g)) {
     const props = {};
-    for (const [, k, v] of membro.matchAll(/<ms:([A-Za-z0-9_]+)>([^<]*)<\/ms:\1>/g)) props[k] = v.trim();
+    for (const [, k, v] of membro.matchAll(/<ms:([A-Za-z0-9_]+)>([^<]*)<\/ms:\1>/g)) props[k] = textoXml(v).trim();
     const polys = [];
     for (const [, poly] of membro.matchAll(/<gml:Polygon[^>]*>([\s\S]*?)<\/gml:Polygon>/g)) {
       const anel = (bloco) => {
@@ -3511,18 +3549,21 @@ export function lerGmlSigef(texto) {
 }
 
 /** Parcelas certificadas no SIGEF (particulares) no recorte, de cada UF. */
-export async function sigefDoRecorte(ufs, bbox, { fetchImpl = fetch } = {}) {
+export async function sigefDoRecorte(ufs, bbox, { fetchImpl = fetch, ate = Infinity } = {}) {
   const out = [];
+  let cortado = false;
   for (const uf of ufs) {
     const tema = `certificada_sigef_particular_${uf.toLowerCase()}`;
-    const url = `${CAR_BASES.sigef}?${new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', tema, typeName: tema, BBOX: bbox.join(','), maxFeatures: '2000' })}`;
-    out.push(...lerGmlSigef(await buscarBase(url, { fetchImpl, json: false, tentativas: 2 })));
+    const url = `${CAR_BASES.sigef}?${new URLSearchParams({ service: 'WFS', version: '1.0.0', request: 'GetFeature', tema, typeName: tema, BBOX: bbox.join(','), maxFeatures: String(CAR_MAX_FEICOES) })}`;
+    const fs = lerGmlSigef(await buscarBase(url, { fetchImpl, json: false, tentativas: 2, ate }));
+    if (fs.length >= CAR_MAX_FEICOES) cortado = true;
+    out.push(...fs);
   }
-  return out;
+  return Object.assign(out, { cortado });
 }
 
 /** Linhas e polígonos do IBGE (BC250): rodovias, trechos de drenagem e massas d'água. */
-export async function ibgeDoRecorte(bbox, { fetchImpl = fetch } = {}) {
+export async function ibgeDoRecorte(bbox, { fetchImpl = fetch, ate = Infinity } = {}) {
   const camadas = [
     ['CCAR:BC250_2021_Trecho_Rodoviario_L', 'estrada'],
     ['CCAR:BC250_2021_Trecho_Drenagem_L', 'rio'],
@@ -3530,7 +3571,7 @@ export async function ibgeDoRecorte(bbox, { fetchImpl = fetch } = {}) {
   ];
   const out = [];
   for (const [typeName, tipo] of camadas) {
-    const d = await buscarBase(wfs(CAR_BASES.ibge, { typeName, bbox: `${bbox.join(',')},EPSG:4326`, outputFormat: 'application/json', maxFeatures: '3000' }), { fetchImpl, tentativas: 2 });
+    const d = await buscarBase(wfs(CAR_BASES.ibge, { typeName, bbox: `${bbox.join(',')},EPSG:4326`, outputFormat: 'application/json', maxFeatures: '3000' }), { fetchImpl, tentativas: 2, ate });
     for (const f of d?.features ?? []) {
       const g = recortarNoRetangulo(f?.geometry, bbox);
       if (!g) continue;
@@ -3543,7 +3584,7 @@ export async function ibgeDoRecorte(bbox, { fetchImpl = fetch } = {}) {
 }
 
 /** Estradas e cursos d'água do OpenStreetMap (Overpass). O servidor público às vezes está lotado: 3 tentativas. */
-export async function osmDoRecorte(bbox, { fetchImpl = fetch, esperaMs = 6000 } = {}) {
+export async function osmDoRecorte(bbox, { fetchImpl = fetch, esperaMs = 6000, ate = Infinity } = {}) {
   const [x0, y0, x1, y1] = bbox;
   const q = `[out:json][timeout:80];(way[highway~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|service|track)(_link)?$"](${y0},${x0},${y1},${x1});way[waterway~"^(river|stream|canal|ditch|drain)$"](${y0},${x0},${y1},${x1}););out tags geom;`;
   // o Overpass responde 406 a "Accept: application/json"; servidor lotado → o próximo espelho
@@ -3551,7 +3592,7 @@ export async function osmDoRecorte(bbox, { fetchImpl = fetch, esperaMs = 6000 } 
   let erro = null;
   for (const url of CAR_BASES.osm) {
     try {
-      d = await buscarBase(url, { fetchImpl, corpo: new URLSearchParams({ data: q }).toString(), tentativas: 1, esperaMs, aceitar: '*/*' });
+      d = await buscarBase(url, { fetchImpl, corpo: new URLSearchParams({ data: q }).toString(), tentativas: 1, esperaMs, aceitar: '*/*', ate });
       break;
     } catch (e) {
       erro = e;
@@ -3605,7 +3646,7 @@ export async function eucaliptoDoPims({ url, token, unidade, fetchImpl = fetch }
  * em mapas_car. Uma base que falha não derruba as outras: a falha vai para `fontes.<base>.erro` (texto curto
  * nosso) e a camada fica vazia. Sem nenhum talhão desenhado → erro do tipo 'invalido'.
  */
-export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = null, fetchImpl = fetch, agora = new Date() }) {
+export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = null, fetchImpl = fetch, agora = new Date(), prazoMs = CAR_PRAZO_TOTAL_MS }) {
   const geoms = talhoes.map((t) => t?.geom).filter((g) => poligonosDe(g).length);
   if (!geoms.length) throw erroDoTipo('invalido', 'A fazenda não tem talhões desenhados: cadastre o shape em Fazendas e shapes.');
   const ret = retanguloDe(geoms);
@@ -3613,20 +3654,27 @@ export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = nu
   const pontos = pontosDosTalhoes(geoms.map((geom) => ({ geom, ret: retanguloDe([geom]) })));
   const relevante = (g) => fracaoDosTalhoes(g, pontos) >= CAR_FRACAO_MINIMA;
   const fontes = {};
+  const ate = Date.now() + prazoMs;
+  const semToken = (s) => (agrovex?.token ? String(s).split(agrovex.token).join('[REDACTED]') : String(s));
   const tentar = async (nome, fn) => {
+    if (Date.now() >= ate && nome !== 'pims') {
+      fontes[nome] = { ok: false, n: 0, erro: 'não houve tempo (as outras bases demoraram)' };
+      return [];
+    }
     try {
       const r = await fn();
       fontes[nome] = { ok: true, n: Array.isArray(r) ? r.length : 0 };
+      if (r?.cortado) fontes[nome].aviso = 'a base devolveu o máximo de feições: alguma pode ter ficado de fora';
       return r;
     } catch (e) {
       const motivo = e?.name === 'TimeoutError' || e?.name === 'AbortError' ? 'não respondeu a tempo' : 'indisponível no momento';
       fontes[nome] = { ok: false, n: 0, erro: motivo };
-      console.warn(`CAR: ${nome} falhou: ${String(e?.message ?? e).slice(0, 200)}`);
+      console.warn(`CAR: ${nome} falhou: ${semToken(e?.message ?? e).slice(0, 200)}`);
       return [];
     }
   };
-  const ufs = await ufsDoRecorte(bbox, { fetchImpl });
-  const imoveis = (await tentar('sicar', () => carDoRecorte(ufs, bbox, { fetchImpl })))
+  const ufs = await ufsDoRecorte(bbox, { fetchImpl, ate });
+  const imoveis = (await tentar('sicar', () => carDoRecorte(ufs, bbox, { fetchImpl, ate })))
     .filter((f) => relevante(f.geometry))
     .slice(0, CAR_MAX_IMOVEIS)
     .map((f) => feicao(f.geometry, {
@@ -3634,8 +3682,11 @@ export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = nu
       condicao: f.properties.condicao ?? null, municipio: f.properties.municipio ?? null, uf: f.properties.uf ?? null, atualizado: f.properties.data_atualizacao ?? null,
     }));
   if (fontes.sicar?.ok) fontes.sicar.n = imoveis.length;
-  const temas = imoveis.length ? await tentar('temas', () => temasDosCar(imoveis.map((f) => f.properties.cod_imovel), { fetchImpl })) : (fontes.temas = { ok: true, n: 0 }, []);
-  const parcelas = (await tentar('sigef', () => sigefDoRecorte(ufs, bbox, { fetchImpl })))
+  // sem CAR não há tema a consultar: SICAR fora do ar → temas também falha; SICAR sem imóvel → nada a consultar
+  const temas = imoveis.length
+    ? await tentar('temas', () => temasDosCar(imoveis.map((f) => f.properties.cod_imovel), { fetchImpl, ate }))
+    : ((fontes.temas = fontes.sicar?.ok ? { ok: true, n: 0 } : { ok: false, n: 0, erro: 'sem o limite do CAR para consultar' }), []);
+  const parcelas = (await tentar('sigef', () => sigefDoRecorte(ufs, bbox, { fetchImpl, ate })))
     .filter((f) => relevante(f.geometry))
     .slice(0, CAR_MAX_PARCELAS)
     .map((f) => feicao(f.geometry, {
@@ -3643,8 +3694,8 @@ export async function buscarCarMatricula({ talhoes, unidade = null, agrovex = nu
       status: f.properties.status || null, situacao: f.properties.situacao_informada || null, municipio: f.properties.codigo_municipio || null,
     }));
   if (fontes.sigef?.ok) fontes.sigef.n = parcelas.length;
-  const ibge = await tentar('ibge', () => ibgeDoRecorte(bbox, { fetchImpl }));
-  const osm = await tentar('osm', () => osmDoRecorte(bbox, { fetchImpl }));
+  const ibge = await tentar('ibge', () => ibgeDoRecorte(bbox, { fetchImpl, ate }));
+  const osm = await tentar('osm', () => osmDoRecorte(bbox, { fetchImpl, ate }));
   const eucalipto = agrovex && unidade
     ? await tentar('pims', () => eucaliptoDoPims({ url: agrovex.url, token: agrovex.token, unidade, fetchImpl }))
     : ((fontes.pims = { ok: false, n: 0, erro: 'fazenda sem unidade do PIMS' }), []);

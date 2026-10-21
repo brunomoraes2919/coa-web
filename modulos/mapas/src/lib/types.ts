@@ -74,6 +74,8 @@ export interface FonteCar {
   ok: boolean;
   n: number;
   erro?: string;
+  /** respondeu, mas com ressalva (ex.: bateu no máximo de feições e alguma pode ter ficado de fora) */
+  aviso?: string;
 }
 
 /**

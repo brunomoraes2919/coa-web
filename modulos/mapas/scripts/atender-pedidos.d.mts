@@ -97,11 +97,13 @@ export function atenderPedidosValidacao(opcoes: {
 }): Promise<boolean>;
 export const CAR_RECENTE_MINUTOS: number;
 export const RESULTADO_CAR_SO_SUPER: string;
-export interface PedidoCarPendente { id: number; pedido_por?: string | null; fazenda_id: string }
+export const CAR_PEDIDO_VELHO_MINUTOS: number;
+export const RESULTADO_CAR_VELHO: string;
+export interface PedidoCarPendente { id: number; pedido_por?: string | null; fazenda_id: string; pedido_em?: string }
 export function pedidosCarPendentes(ctx: Ctx): Promise<PedidoCarPendente[]>;
 export function responderPedidosCar(ctx: Ctx, ids: number[], resultado: string, agora?: Date): Promise<void>;
 export function planejarCar(pendentes: PedidoCarPendente[]): { fazendaId: string; pedidos: PedidoCarPendente[] } | null;
-export function pedidoDeSuper(ctx: Ctx, pedidoPor: string | null | undefined): Promise<boolean>;
+export function pedidoDeSuper(ctx: Ctx, pedidoPor: string | null | undefined): Promise<boolean | null>;
 export function atenderPedidosCar(opcoes: {
   supabase: { url: string; chave: string };
   agrovex: { url: string; token: string };

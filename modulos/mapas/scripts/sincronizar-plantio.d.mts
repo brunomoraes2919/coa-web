@@ -422,6 +422,9 @@ type Colecao = { type: 'FeatureCollection'; features: Feicao[] };
 export const CAR_BASES: { sicar: string; temas: string; sigef: string; ibge: string; osm: string[] };
 export const CAR_USER_AGENT: string;
 export const CAR_PRAZO_MS: number;
+export const CAR_PRAZO_TOTAL_MS: number;
+export const CAR_MAX_BYTES: number;
+export const CAR_MAX_FEICOES: number;
 export const CAR_MARGEM_GRAUS: number;
 export const CAR_MAX_IMOVEIS: number;
 export const CAR_MAX_PARCELAS: number;
@@ -448,7 +451,7 @@ export function ibgeDoRecorte(bbox: number[], opcoes?: { fetchImpl?: typeof fetc
 export function osmDoRecorte(bbox: number[], opcoes?: { fetchImpl?: typeof fetch; esperaMs?: number }): Promise<Feicao[]>;
 export function montarSqlEucalipto(unidade: string): string;
 export function eucaliptoDoPims(opcoes: { url: string; token: string; unidade: string; fetchImpl?: typeof fetch }): Promise<{ talhao: string; areaHa: number }[]>;
-export interface FonteCar { ok: boolean; n: number; erro?: string }
+export interface FonteCar { ok: boolean; n: number; erro?: string; aviso?: string }
 export interface RespostaCar {
   dados: {
     versao: 1;
@@ -470,4 +473,6 @@ export function buscarCarMatricula(opcoes: {
   agrovex?: { url: string; token: string } | null;
   fetchImpl?: typeof fetch;
   agora?: Date;
+  /** prazo da busca inteira nas bases públicas (ms); padrão CAR_PRAZO_TOTAL_MS */
+  prazoMs?: number;
 }): Promise<RespostaCar>;

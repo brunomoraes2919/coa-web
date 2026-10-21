@@ -97,7 +97,7 @@ function amostra(ctx: CanvasRenderingContext2D, tipo: Amostra, r: Rect, s: numbe
       caixa(ESTILO_CAR.eucalipto.fill, ESTILO_CAR.eucalipto.contorno, 0.15);
       break;
     case 'vegetacaoNativa':
-      caixa(ESTILO_CAR.vegetacaoNativa.fill, null);
+      caixa(ESTILO_CAR.vegetacaoNativa.fill, '#9DBF93', 0.12);
       break;
     case 'app':
       caixa(ESTILO_CAR.app.fill, ESTILO_CAR.app.contorno, 0.12);

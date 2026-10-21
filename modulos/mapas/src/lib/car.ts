@@ -330,7 +330,11 @@ export function fmtHa(v: number | null | undefined): string {
 /** CSV (Excel em português) do quadro de áreas. */
 export function csvQuadroCar(q: QuadroCar): string {
   const n = (v: number | null) => (v === null ? '' : v.toFixed(2).replace('.', ','));
-  const esc = (s: string) => (/[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  // texto que vem das bases: começo com = + - @ viraria fórmula no Excel (apóstrofo na frente desarma)
+  const esc = (bruto: string) => {
+    const s = /^[=+\-@\t\r]/.test(bruto) ? `'${bruto}` : bruto;
+    return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   const cab = 'Tipo;Rótulo;Código ou matrícula;Situação;Área (ha);Área declarada no CAR (ha);Agrícola (ha);Eucalipto (ha);Pecuária estimada (ha);Reserva legal (ha);APP (ha);Vegetação nativa (ha)';
   const linhas = q.linhas.map((l) =>
     [l.tipo === 'car' ? 'CAR' : 'Matrícula', esc(l.rotulo), esc(l.id), esc(l.status ?? ''), n(l.areaHa), n(l.areaDeclaradaHa), n(l.agricolaHa), n(l.eucaliptoHa), n(l.pecuariaHa), n(l.reservaLegalHa), n(l.appHa), n(l.vegetacaoNativaHa)].join(';'),
@@ -341,7 +345,7 @@ export function csvQuadroCar(q: QuadroCar): string {
 /** Bases que entram no rodapé "Bases" do painel (as que responderam na última busca). */
 export function textoBasesCar(fontes: Partial<Record<string, { ok: boolean }>>): string {
   const ok = (k: string) => fontes[k]?.ok === true;
-  const nomes = [ok('sicar') || ok('temas') ? 'SICAR' : '', ok('sigef') ? 'SIGEF' : '', ok('ibge') ? 'IBGE' : '', ok('osm') ? 'OpenStreetMap' : '', ok('pims') ? 'PIMS' : ''].filter(Boolean);
+  const nomes = [ok('sicar') ? 'SICAR' : '', ok('sigef') ? 'SIGEF' : '', ok('ibge') ? 'IBGE' : '', ok('osm') ? 'OpenStreetMap' : '', ok('pims') ? 'PIMS' : ''].filter(Boolean);
   return nomes.join(' · ');
 }
 

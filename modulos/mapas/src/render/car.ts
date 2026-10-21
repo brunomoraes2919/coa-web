@@ -25,8 +25,9 @@ export interface EntradaCar {
 export const ESTILO_CAR = {
   agricola: { fill: '#FAF5E6', contorno: '#8C7B52' },
   eucalipto: { fill: '#7FA77A', contorno: '#3D5C38' },
-  vegetacaoNativa: { fill: 'rgba(76, 145, 72, 0.32)' },
-  app: { fill: 'rgba(245, 190, 0, 0.62)', contorno: '#B98A00' },
+  // cores sólidas: cada feição é pintada sozinha e a sobreposição de duas não clareia nem some
+  vegetacaoNativa: { fill: '#CFE3C8' },
+  app: { fill: '#F7D560', contorno: '#B98A00' },
   reservaLegal: { hachura: '#1F6B2A', contorno: '#1F6B2A' },
   agua: { fill: '#A9D3F2', linha: '#2E7CC4' },
   estrada: { cor: '#8A6A55' },
@@ -97,12 +98,17 @@ export function desenharCar(ctx: CanvasRenderingContext2D, v: Vista, geoms: Talh
   const p = (lon: number, lat: number) => v.paraPx(...lonLatToMerc(lon, lat)) as XY;
   const temas = car.dados.temas.features.map((f) => ({ cat: categoriaDoTema(String(f.properties?.tema ?? '')), polys: poligonosPx(f.geometry, p) }));
   const quadro: Rect = { x: v.x, y: v.y, w: v.w, h: v.h };
+  /**
+   * Pinta cada polígono sozinho (par-ímpar só dentro dele, para os furos): num caminho único, a área onde duas
+   * feições se sobrepõem ficaria sem cor.
+   */
   const preencher = (polys: XY[][][], cor: string) => {
-    if (!polys.length) return;
-    ctx.beginPath();
-    tracarPolys(ctx, polys);
     ctx.fillStyle = cor;
-    ctx.fill('evenodd');
+    for (const poly of polys) {
+      ctx.beginPath();
+      tracarPolys(ctx, [poly]);
+      ctx.fill('evenodd');
+    }
   };
   const contornar = (polys: XY[][][], cor: string, mm: number, traco: number[] | null = null) => {
     if (!polys.length) return;
