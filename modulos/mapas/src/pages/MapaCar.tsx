@@ -9,7 +9,7 @@ import { SecaoAparencia } from '../components/editor/SecaoAparencia';
 import { useCadastros, useLogo } from '../components/editor/hooks';
 import { usePreSelecaoCoa } from '../components/editor/usePreSelecaoCoa';
 import '../components/editor/editor.css';
-import { codigosEucalipto, csvQuadroCar, dadosValidos, fmtHa, quadroDoCar, textosAutomaticosCar, usoDoTalhao } from '../lib/car';
+import { codigosEucalipto, csvQuadroCar, dadosValidos, escurecer, fmtHa, quadroDoCar, textosAutomaticosCar, usoDoTalhao } from '../lib/car';
 import { layoutPadrao } from '../lib/editor';
 import { editarTexto } from '../lib/editorRegras';
 import { fazendasDoCoa } from '../lib/embed';
@@ -342,7 +342,13 @@ export default function MapaCar() {
                       {[linhasCar, linhasMat].map((grupo, g) =>
                         grupo.map((l, i) => (
                           <tr key={`${l.tipo}-${l.indice}`} className={g === 1 && i === 0 ? 'inicio-grupo' : undefined}>
-                            <td className={`rotulo-${l.tipo}`} title={l.id}>
+                            <td className={`rotulo-${l.tipo}`} title={l.id} style={{ color: l.tipo === 'car' ? l.cor : escurecer(l.cor, 0.45) }}>
+                              {/* a mesma cor do CAR / da matrícula no mapa */}
+                              <span
+                                className={`cor-${l.tipo}`}
+                                style={l.tipo === 'car' ? { borderColor: l.cor, background: `${l.cor}40` } : { borderColor: escurecer(l.cor), background: `${l.cor}9e` }}
+                                aria-hidden="true"
+                              />
                               {l.rotulo}
                               {l.status && l.tipo === 'car' && l.status !== 'AT' ? <small> {l.status === 'PE' ? 'pendente' : l.status === 'SU' ? 'suspenso' : l.status}</small> : null}
                             </td>

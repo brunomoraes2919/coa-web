@@ -4,7 +4,7 @@
  * O texto reduz até caber; se nem assim couber, o quadro mostra as maiores linhas e avisa quantas ficaram na tela.
  * Medidas em mm do A3; `s` = px por mm.
  */
-import { fmtHa, type LinhaQuadroCar } from '../lib/car';
+import { CORES_CAR, CORES_MATRICULA, escurecer, fmtHa, type LinhaQuadroCar } from '../lib/car';
 import { ALTURA_MAIUSC, fonte, quebrarTexto, type Rect } from './labels';
 import type { PlanoLegenda } from './legend';
 import { ehRodovia, ESTILO_CAR, type EntradaCar } from './car';
@@ -23,6 +23,9 @@ const LINHA_TAB = 3.6;
 const VAO_COL = 1.6;
 const VAO_BLOCO = 6;
 const K_MIN = 0.62;
+/** quadradinho da cor de cada CAR e matrícula antes do rótulo, no quadro */
+const COR_LINHA = 2.4;
+const VAO_COR_LINHA = 1;
 const NOTA = '* Pecuária estimada: área consolidada declarada no CAR, fora dos talhões.';
 
 type Amostra = 'car' | 'matricula' | 'agricola' | 'eucalipto' | 'reservaLegal' | 'app' | 'vegetacaoNativa' | 'agua' | 'estrada' | 'rodovia';
@@ -32,8 +35,8 @@ export function itensLegendaCar(car: EntradaCar): { amostra: Amostra; texto: str
   const d = car.dados;
   const temTema = (prefixo: RegExp) => d.temas.features.some((f) => prefixo.test(String(f.properties?.tema ?? '')));
   const itens: { amostra: Amostra; texto: string }[] = [];
-  if (d.car.features.length) itens.push({ amostra: 'car', texto: 'Limite do CAR (SICAR)' });
-  if (d.matriculas.features.length) itens.push({ amostra: 'matricula', texto: 'Matrícula certificada (SIGEF)' });
+  if (d.car.features.length) itens.push({ amostra: 'car', texto: 'CAR (SICAR), cor de cada um no quadro' });
+  if (d.matriculas.features.length) itens.push({ amostra: 'matricula', texto: 'Matrícula (SIGEF), cor de cada uma' });
   itens.push({ amostra: 'agricola', texto: 'Talhão agrícola' });
   if ([...car.usoTalhao.values()].includes('eucalipto')) itens.push({ amostra: 'eucalipto', texto: 'Eucalipto (PIMS)' });
   if (temTema(/^arl_/)) itens.push({ amostra: 'reservaLegal', texto: 'Reserva legal' });
@@ -57,7 +60,27 @@ export function colunasQuadroCar(linhas: LinhaQuadroCar[]): { cab: string; valor
   return cols;
 }
 
-function amostra(ctx: CanvasRenderingContext2D, tipo: Amostra, r: Rect, s: number, u: number): void {
+/** Quadradinho de um CAR (tom claro + contorno na cor dele) ou de uma matrícula (preenchida, contorno mais escuro). */
+function corDe(ctx: CanvasRenderingContext2D, tipo: 'car' | 'matricula', cor: string, r: Rect, u: number): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = cor;
+  ctx.globalAlpha = tipo === 'car' ? 0.25 : ESTILO_CAR.matricula.alfa;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = (tipo === 'car' ? 0.45 : 0.2) * u;
+  ctx.strokeStyle = tipo === 'car' ? cor : escurecer(cor);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Cor do rótulo de cada linha: a do CAR; a da matrícula, escurecida para ler no branco. */
+export function corDoRotulo(l: LinhaQuadroCar): string {
+  return l.tipo === 'car' ? l.cor : escurecer(l.cor, 0.45);
+}
+
+function amostra(ctx: CanvasRenderingContext2D, tipo: Amostra, r: Rect, s: number, u: number, cores: { car: string[]; matricula: string[] }): void {
   ctx.save();
   const meioY = r.y + r.h / 2;
   const linha = (cor: string, mm: number, traco: number[] | null) => {
@@ -83,21 +106,39 @@ function amostra(ctx: CanvasRenderingContext2D, tipo: Amostra, r: Rect, s: numbe
       ctx.stroke();
     }
   };
+  /** amostra com padrão (grade, pontos) recortado na caixa */
+  const comPadrao = (estilo: 'quadriculado' | 'pontilhado', cor: string, alfa: number, mm: number) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.clip();
+    desenharPadrao(ctx, estilo, r, s, [r.x, r.y], { cor, alfa, larguraMm: mm });
+    ctx.restore();
+  };
+  /** as cores de verdade do mapa (até 3), lado a lado: cada CAR e cada matrícula tem a sua */
+  const variasCores = (t: 'car' | 'matricula', lista: string[]) => {
+    const cs = lista.slice(0, 3);
+    const vao = 0.5 * u;
+    const w = (r.w - vao * (cs.length - 1)) / cs.length;
+    cs.forEach((c, i) => corDe(ctx, t, c, { x: r.x + i * (w + vao), y: r.y, w, h: r.h }, u));
+  };
   switch (tipo) {
     case 'car':
-      caixa(null, ESTILO_CAR.car.cor, 0.75);
+      variasCores('car', cores.car.length ? cores.car : [...CORES_CAR]);
       break;
     case 'matricula':
-      caixa(null, ESTILO_CAR.matricula.cor, 0.45, [1.2, 0.7]);
+      variasCores('matricula', cores.matricula.length ? cores.matricula : [...CORES_MATRICULA]);
       break;
     case 'agricola':
-      caixa(ESTILO_CAR.agricola.fill, ESTILO_CAR.agricola.contorno, 0.15);
+      caixa(null, ESTILO_CAR.agricola.contorno, 0.2);
       break;
     case 'eucalipto':
-      caixa(ESTILO_CAR.eucalipto.fill, ESTILO_CAR.eucalipto.contorno, 0.15);
+      comPadrao('quadriculado', ESTILO_CAR.eucalipto.padrao, 0.6, 0.2);
+      caixa(null, ESTILO_CAR.eucalipto.contorno, 0.2);
       break;
     case 'vegetacaoNativa':
-      caixa(ESTILO_CAR.vegetacaoNativa.fill, '#9DBF93', 0.12);
+      comPadrao('pontilhado', ESTILO_CAR.vegetacaoNativa.padrao, 0.7, 0.25);
+      caixa(null, '#9DBF93', 0.12);
       break;
     case 'app':
       caixa(ESTILO_CAR.app.fill, ESTILO_CAR.app.contorno, 0.12);
@@ -132,6 +173,8 @@ export function planejarLegendaCar(ctx: CanvasRenderingContext2D, car: EntradaCa
   const itens = itensLegendaCar(car);
   const linhas = car.quadro.linhas;
   const cols = colunasQuadroCar(linhas);
+  // cores na ordem do quadro (a amostra da legenda mostra as primeiras)
+  const cores = { car: linhas.filter((l) => l.tipo === 'car').map((l) => l.cor), matricula: linhas.filter((l) => l.tipo === 'matricula').map((l) => l.cor) };
   const medir = (t: string, peso: 400 | 700, mm: number) => {
     ctx.font = fonte(peso, mm * s);
     return ctx.measureText(t).width / s;
@@ -142,7 +185,7 @@ export function planejarLegendaCar(ctx: CanvasRenderingContext2D, car: EntradaCa
     const wItens = Math.max(...itens.map((it) => AMOSTRA_W * k + 2 * k + medir(it.texto, 400, FONTE_ITEM * k)), medir('Legenda', 700, FONTE_TITULO * k));
     const hItens = ALTURA_TITULO * k + itens.length * LINHA_ITEM * k;
     const mostradas = linhas.slice(0, n);
-    const larg = cols.map((c, j) => Math.max(medir(c.cab, 700, FONTE_CAB * k), ...mostradas.map((l) => medir(c.valor(l), j === 0 ? 700 : 400, FONTE_TAB * k))));
+    const larg = cols.map((c, j) => Math.max(medir(c.cab, 700, FONTE_CAB * k), ...mostradas.map((l) => medir(c.valor(l), j === 0 ? 700 : 400, FONTE_TAB * k) + (j === 0 ? (COR_LINHA + VAO_COR_LINHA) * k : 0))));
     const wTab = larg.reduce((a, b) => a + b, 0) + VAO_COL * k * (cols.length - 1);
     const sobra = linhas.length - n;
     // título, cabeçalho, linhas, aviso das que sobraram e a nota (até 2 linhas)
@@ -189,7 +232,7 @@ export function planejarLegendaCar(ctx: CanvasRenderingContext2D, car: EntradaCa
     let y = y0 + ALTURA_TITULO * u;
     for (const it of itens) {
       const cy = y + (LINHA_ITEM * u) / 2;
-      amostra(ctx, it.amostra, { x: x0, y: cy - (AMOSTRA_H * u) / 2, w: AMOSTRA_W * u, h: AMOSTRA_H * u }, s, u);
+      amostra(ctx, it.amostra, { x: x0, y: cy - (AMOSTRA_H * u) / 2, w: AMOSTRA_W * u, h: AMOSTRA_H * u }, s, u, cores);
       ctx.font = fonte(400, FONTE_ITEM * u);
       ctx.fillStyle = COR_TEXTO;
       ctx.textAlign = 'left';
@@ -232,11 +275,12 @@ export function planejarLegendaCar(ctx: CanvasRenderingContext2D, car: EntradaCa
         ctx.fillRect(tx, ty, (acc - tx) - VAO_COL * u, Math.max(1, 0.25 * s));
       }
       anterior = l.tipo;
+      corDe(ctx, l.tipo, l.cor, { x: xs[0], y: ty + ((LINHA_TAB - COR_LINHA) * u) / 2, w: COR_LINHA * u, h: COR_LINHA * u }, u);
       cols.forEach((c, j) => {
         ctx.font = fonte(j === 0 ? 700 : 400, FONTE_TAB * u);
-        ctx.fillStyle = j === 0 ? (l.tipo === 'car' ? ESTILO_CAR.car.cor : ESTILO_CAR.matricula.cor) : COR_TEXTO;
+        ctx.fillStyle = j === 0 ? corDoRotulo(l) : COR_TEXTO;
         ctx.textAlign = j === 0 ? 'left' : 'right';
-        ctx.fillText(c.valor(l), j === 0 ? xs[j] : fimCol(j), base(ty, FONTE_TAB));
+        ctx.fillText(c.valor(l), j === 0 ? xs[j] + (COR_LINHA + VAO_COR_LINHA) * u : fimCol(j), base(ty, FONTE_TAB));
       });
       ty += LINHA_TAB * u;
     }

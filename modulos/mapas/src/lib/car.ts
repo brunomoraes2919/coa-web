@@ -173,6 +173,8 @@ export function usoDoTalhao(t: Pick<Talhao, 'codigo' | 'nome'>, eucalipto: Reado
 
 export interface LinhaQuadroCar {
   tipo: 'car' | 'matricula';
+  /** cor do CAR (contorno) ou da matrícula (preenchimento) no mapa e no quadro; vizinhos nunca repetem */
+  cor: string;
   /** código do CAR ou número da matrícula (ou o código da parcela, sem matrícula) */
   id: string;
   /** rótulo curto do mapa: "CAR 1", "Mat. 12.345" */
@@ -212,6 +214,44 @@ export function rotuloMatricula(matricula: unknown, parcela: unknown, i: number)
   if (lista.length) return lista.length > 1 ? `Mat. ${lista[0]} +${lista.length - 1}` : `Mat. ${lista[0]}`;
   const p = String(parcela ?? '').trim();
   return p ? `Parcela ${p.slice(0, 8)}` : `Parcela ${i + 1}`;
+}
+
+// ---------------------------------------------------------------- cores de cada CAR e matrícula
+
+/** Contorno de cada CAR: cores fortes, sem verde (reserva legal) e sem amarelo (APP). */
+export const CORES_CAR: readonly string[] = ['#D32F2F', '#1565C0', '#EF6C00', '#6A1B9A', '#00838F', '#AD1457', '#4E342E', '#283593', '#827717', '#37474F'];
+/** Preenchimento de cada matrícula: tons claros e bem diferentes entre si, sem amarelo (APP) e sem cinza. */
+export const CORES_MATRICULA: readonly string[] = ['#8DD3C7', '#BEBADA', '#FB8072', '#80B1D3', '#FDB462', '#B3DE69', '#FCCDE5', '#BC80BD', '#9ECAE1', '#F4A582', '#C2A5CF', '#CCEBC5'];
+
+/**
+ * Uma cor da paleta para cada polígono (na ordem dada: os maiores primeiro). Enquanto a paleta der, ninguém repete;
+ * depois, repete a menos usada que nenhum vizinho (retângulos que se tocam) tenha. Com mais vizinhos que cores,
+ * repete a menos usada entre os vizinhos.
+ */
+export function coresSemVizinhoIgual(polys: Multi[], paleta: readonly string[]): string[] {
+  const rets = polys.map((m) => retanguloDe([m]));
+  const tocam = (a: number[] | null, b: number[] | null) => !!a && !!b && a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+  const cores: string[] = [];
+  polys.forEach((_, i) => {
+    const dosVizinhos = cores.filter((_c, j) => tocam(rets[i], rets[j]));
+    const usadas = (c: string) => cores.filter((x) => x === c).length;
+    // a primeira menos usada no mapa todo entre as que os vizinhos não têm (sort é estável: segue a paleta)
+    const livre = paleta.filter((c) => !dosVizinhos.includes(c)).sort((a, b) => usadas(a) - usadas(b))[0];
+    if (livre) cores.push(livre);
+    else {
+      // todas usadas por vizinhos: a menos repetida entre eles
+      const uso = (c: string) => dosVizinhos.filter((x) => x === c).length;
+      cores.push([...paleta].sort((a, b) => uso(a) - uso(b))[0]);
+    }
+  });
+  return cores;
+}
+
+/** Cor mais escura (fator 0..1 do brilho mantido), para o contorno das matrículas. */
+export function escurecer(hex: string, fator = 0.55): string {
+  const n = parseInt(hex.slice(1), 16);
+  const c = (v: number) => Math.round(v * fator).toString(16).padStart(2, '0');
+  return `#${c((n >> 16) & 255)}${c((n >> 8) & 255)}${c(n & 255)}`;
 }
 
 const BIT = { agricola: 1, eucalipto: 2, reservaLegal: 4, app: 8, vegetacaoNativa: 16, consolidada: 32, car: 64, matricula: 128 } as const;
@@ -277,7 +317,7 @@ export function quadroDoCar(dados: DadosCar, talhoes: Talhao[], opcoes: { maxCel
     });
     return s;
   };
-  const linha = (tipo: 'car' | 'matricula', f: Feature, m: Multi, indice: number): Omit<LinhaQuadroCar, 'rotulo'> => {
+  const linha = (tipo: 'car' | 'matricula', f: Feature, m: Multi, indice: number): Omit<LinhaQuadroCar, 'rotulo' | 'cor'> => {
     const s = contar(m);
     const props = f.properties ?? {};
     return {
@@ -295,13 +335,14 @@ export function quadroDoCar(dados: DadosCar, talhoes: Talhao[], opcoes: { maxCel
       indice,
     };
   };
-  const linhasCar = dados.car.features
-    .map((f, i) => linha('car', f, cars[i], i))
-    .sort((a, b) => b.areaHa - a.areaHa)
-    .map((l, i) => ({ ...l, rotulo: `CAR ${i + 1}` }));
-  const linhasMat = dados.matriculas.features
+  const ordenadasCar = dados.car.features.map((f, i) => linha('car', f, cars[i], i)).sort((a, b) => b.areaHa - a.areaHa);
+  const coresDosCar = coresSemVizinhoIgual(ordenadasCar.map((l) => cars[l.indice]), CORES_CAR);
+  const linhasCar = ordenadasCar.map((l, i) => ({ ...l, rotulo: `CAR ${i + 1}`, cor: coresDosCar[i] }));
+  const ordenadasMat = dados.matriculas.features
     .map((f, i) => ({ ...linha('matricula', f, mats[i], i), rotulo: rotuloMatricula(f.properties?.matricula, f.properties?.parcela, i) }))
     .sort((a, b) => b.areaHa - a.areaHa);
+  const coresDasMat = coresSemVizinhoIgual(ordenadasMat.map((l) => mats[l.indice]), CORES_MATRICULA);
+  const linhasMat = ordenadasMat.map((l, i) => ({ ...l, cor: coresDasMat[i] }));
 
   let talhoesHa = 0;
   let foraCar = 0;

@@ -2,7 +2,7 @@
 // equador, onde 0,01° ≈ 1,113 km, então 0,01° × 0,01° ≈ 123,9 ha).
 import type { Feature, FeatureCollection, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { areaHa, categoriaDoTema, csvQuadroCar, dadosValidos, fmtHa, gradeDe, quadroDoCar, rotuloMatricula, usoDoTalhao, varrer } from '../src/lib/car';
+import { areaHa, categoriaDoTema, CORES_CAR, CORES_MATRICULA, coresSemVizinhoIgual, csvQuadroCar, dadosValidos, escurecer, fmtHa, gradeDe, quadroDoCar, rotuloMatricula, usoDoTalhao, varrer } from '../src/lib/car';
 import type { DadosCar, Talhao } from '../src/lib/types';
 
 const quadrado = (x0: number, y0: number, lx: number, ly = lx): Polygon => ({
@@ -141,5 +141,57 @@ describe('ajudas', () => {
     expect(fmtHa(12.34)).toBe('12,3');
     expect(fmtHa(0.01)).toBe('0');
     expect(fmtHa(null)).toBe('—');
+  });
+});
+
+describe('cores de cada CAR e matrícula', () => {
+  const m = (x0: number, y0: number, l: number) => [quadrado(x0, y0, l).coordinates];
+
+  it('enquanto a paleta der, cada um com uma cor diferente, mesmo longe um do outro', () => {
+    const cores = coresSemVizinhoIgual([m(0, 0, 1), m(5, 5, 1), m(10, 10, 1)], ['#111111', '#222222', '#333333', '#444444']);
+    expect(cores).toEqual(['#111111', '#222222', '#333333']);
+  });
+
+  it('sem cor sobrando: vizinhos (que se tocam) nunca repetem; repete a menos usada', () => {
+    // A e B se tocam, B e C se tocam, D longe de todos
+    const cores = coresSemVizinhoIgual([m(0, 0, 1), m(1, 0, 1), m(2, 0, 1), m(10, 10, 1)], ['#111111', '#222222']);
+    expect(cores[0]).not.toBe(cores[1]);
+    expect(cores[1]).not.toBe(cores[2]);
+    expect(cores).toEqual(['#111111', '#222222', '#111111', '#222222']);
+  });
+
+  it('com mais vizinhos que cores, repete a menos usada entre eles', () => {
+    // o último toca os outros três, que já usaram as três cores (uma vez cada): fica com a primeira
+    const cores = coresSemVizinhoIgual([m(0, 0, 3), m(0, 0, 1), m(1, 1, 1), m(0.5, 0.5, 1)], ['#111111', '#222222', '#333333']);
+    expect(cores.slice(0, 3)).toEqual(['#111111', '#222222', '#333333']);
+    expect(cores[3]).toBe('#111111');
+  });
+
+  it('no quadro: cada CAR e cada matrícula com a sua cor, das paletas certas', () => {
+    const dados: DadosCar = {
+      versao: 1,
+      geradoEm: '2026-10-21T00:00:00Z',
+      bbox: [],
+      ufs: ['MT'],
+      car: fc([feicao(quadrado(0, 0, 0.01), { cod_imovel: 'MT-A', status: 'AT' }), feicao(quadrado(0.01, 0, 0.01), { cod_imovel: 'MT-B', status: 'AT' })]),
+      temas: fc([]),
+      matriculas: fc([feicao(quadrado(0, 0, 0.01), { matricula: '1' }), feicao(quadrado(0.01, 0, 0.01), { matricula: '2' })]),
+      estradas: fc([]),
+      hidrografia: fc([]),
+      eucalipto: [],
+    };
+    const q = quadroDoCar(dados, [talhao('t1', '001', quadrado(0, 0, 0.02, 0.01))]);
+    const car = q.linhas.filter((l) => l.tipo === 'car').map((l) => l.cor);
+    const mat = q.linhas.filter((l) => l.tipo === 'matricula').map((l) => l.cor);
+    expect(new Set(car).size).toBe(2);
+    expect(new Set(mat).size).toBe(2);
+    car.forEach((c) => expect(CORES_CAR).toContain(c));
+    mat.forEach((c) => expect(CORES_MATRICULA).toContain(c));
+  });
+
+  it('escurecer mantém o tom e baixa o brilho', () => {
+    expect(escurecer('#FFFFFF', 0.5)).toBe('#808080');
+    expect(escurecer('#8DD3C7', 1)).toBe('#8dd3c7');
+    expect(escurecer('#000000')).toBe('#000000');
   });
 });

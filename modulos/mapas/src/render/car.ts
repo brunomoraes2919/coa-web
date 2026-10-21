@@ -5,7 +5,7 @@
  */
 import type { Feature, Geometry, Position } from 'geojson';
 import polylabel from 'polylabel';
-import { categoriaDoTema, type QuadroCar } from '../lib/car';
+import { categoriaDoTema, escurecer, type QuadroCar } from '../lib/car';
 import { lonLatToMerc } from '../lib/projection';
 import type { DadosCar } from '../lib/types';
 import { ALTURA_MAIUSC, fonte, textoComHalo, type Rect } from './labels';
@@ -25,17 +25,19 @@ export interface EntradaCar {
 
 /** Cores e traços (mm do A3) do mapa e da legenda. */
 export const ESTILO_CAR = {
-  agricola: { fill: '#FAF5E6', contorno: '#8C7B52' },
-  eucalipto: { fill: '#7FA77A', contorno: '#3D5C38' },
-  // cores sólidas: cada feição é pintada sozinha e a sobreposição de duas não clareia nem some
-  vegetacaoNativa: { fill: '#CFE3C8' },
+  // o talhão é só contorno: o fundo é a cor da matrícula (ou o tom do CAR), que é o que o mapa quer diferenciar
+  agricola: { contorno: '#6F6450' },
+  // eucalipto e vegetação nativa em padrão (grade e pontos), para a cor da matrícula aparecer por baixo
+  eucalipto: { padrao: '#24502A', contorno: '#24502A' },
+  vegetacaoNativa: { padrao: '#2F7A34' },
   app: { fill: '#F7D560', contorno: '#B98A00' },
   reservaLegal: { hachura: '#1F6B2A', contorno: '#1F6B2A' },
   agua: { fill: '#A9D3F2', linha: '#2E7CC4' },
   estrada: { cor: '#8A6A55' },
   rodovia: { cor: '#5B4033' },
-  matricula: { cor: '#7B2CBF' },
-  car: { cor: '#C62828' },
+  /** opacidade do preenchimento de cada matrícula e do tom de dentro de cada CAR */
+  matricula: { alfa: 0.62 },
+  car: { tom: 0.13 },
 } as const;
 
 type XY = [number, number];
@@ -124,19 +126,51 @@ export function desenharCar(ctx: CanvasRenderingContext2D, v: Vista, geoms: Talh
     ctx.restore();
   };
   const dos = (cat: string) => temas.filter((t) => t.cat === cat).flatMap((t) => t.polys);
+  /** padrão (grade, pontos, hachura) recortado em cada polígono, ancorado no canto do quadro */
+  const padrao = (polys: XY[][][], estilo: 'quadriculado' | 'pontilhado' | 'diagonal', cor: string, alfa: number, mm: number) => {
+    for (const poly of polys) {
+      const c = caixa([poly]);
+      if (!c) continue;
+      const x0 = Math.max(c.x, quadro.x);
+      const y0 = Math.max(c.y, quadro.y);
+      const x1 = Math.min(c.x + c.w, quadro.x + quadro.w);
+      const y1 = Math.min(c.y + c.h, quadro.y + quadro.h);
+      if (x1 <= x0 || y1 <= y0) continue;
+      ctx.save();
+      ctx.beginPath();
+      tracarPolys(ctx, [poly]);
+      ctx.clip('evenodd');
+      desenharPadrao(ctx, estilo, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, s, [v.x, v.y], { cor, alfa, larguraMm: mm });
+      ctx.restore();
+    }
+  };
+  // cor de cada CAR e matrícula (do quadro: vizinhos não repetem)
+  const corCar = new Map(car.quadro.linhas.filter((l) => l.tipo === 'car').map((l) => [l.indice, l.cor]));
+  const corMat = new Map(car.quadro.linhas.filter((l) => l.tipo === 'matricula').map((l) => [l.indice, l.cor]));
+  const cars = car.dados.car.features.map((f, i) => ({ polys: poligonosPx(f.geometry, p), cor: corCar.get(i) ?? '#C62828' }));
+  const mats = car.dados.matriculas.features.map((f, i) => ({ polys: poligonosPx(f.geometry, p), cor: corMat.get(i) ?? '#BEBADA' }));
   ctx.save();
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
-  // 1. vegetação nativa (fundo verde claro)
-  preencher(dos('vegetacao_nativa'), ESTILO_CAR.vegetacaoNativa.fill);
-  // 2. talhões: agrícola e eucalipto, com contorno fino
+  // 1. tom de cada CAR (a parte do CAR fora de matrícula fica com a cor dele, bem clara)
+  ctx.save();
+  ctx.globalAlpha = ESTILO_CAR.car.tom;
+  for (const c of cars) preencher(c.polys, c.cor);
+  ctx.restore();
+  // 2. cada matrícula pintada com a sua cor
+  ctx.save();
+  ctx.globalAlpha = ESTILO_CAR.matricula.alfa;
+  for (const m of mats) preencher(m.polys, m.cor);
+  ctx.restore();
+  // 3. vegetação nativa em pontos verdes
+  padrao(dos('vegetacao_nativa'), 'pontilhado', ESTILO_CAR.vegetacaoNativa.padrao, 0.7, 0.25);
+  // 4. talhões: só o contorno; eucalipto em grade verde-escura
   const agr = geoms.filter((g) => car.usoTalhao.get(g.t.id) !== 'eucalipto').flatMap((g) => g.xy as XY[][][]);
   const euc = geoms.filter((g) => car.usoTalhao.get(g.t.id) === 'eucalipto').flatMap((g) => g.xy as XY[][][]);
-  preencher(agr, ESTILO_CAR.agricola.fill);
-  preencher(euc, ESTILO_CAR.eucalipto.fill);
+  padrao(euc, 'quadriculado', ESTILO_CAR.eucalipto.padrao, 0.6, 0.2);
   contornar(agr, ESTILO_CAR.agricola.contorno, 0.15);
-  contornar(euc, ESTILO_CAR.eucalipto.contorno, 0.15);
+  contornar(euc, ESTILO_CAR.eucalipto.contorno, 0.2);
   // 3. água (polígonos do CAR e do IBGE/OSM)
   const aguaPolys = [...dos('hidrografia'), ...car.dados.hidrografia.features.flatMap((f) => poligonosPx(f.geometry, p))];
   preencher(aguaPolys, ESTILO_CAR.agua.fill);
@@ -190,9 +224,9 @@ export function desenharCar(ctx: CanvasRenderingContext2D, v: Vista, geoms: Talh
     ctx.strokeStyle = ESTILO_CAR.rodovia.cor;
     ctx.stroke();
   }
-  // 7. matrículas (tracejado roxo) e CARs (vermelho), por cima de tudo
-  contornar(car.dados.matriculas.features.flatMap((f) => poligonosPx(f.geometry, p)), ESTILO_CAR.matricula.cor, 0.45, [1.6, 0.9]);
-  contornar(car.dados.car.features.flatMap((f) => poligonosPx(f.geometry, p)), ESTILO_CAR.car.cor, 0.75);
+  // 7. por cima de tudo: o contorno de cada matrícula (tracejado, na cor dela mais escura) e de cada CAR (na cor dele)
+  for (const m of mats) contornar(m.polys, escurecer(m.cor), 0.45, [1.6, 0.9]);
+  for (const c of cars) contornar(c.polys, c.cor, 0.8);
   ctx.restore();
 }
 
@@ -245,11 +279,11 @@ export function desenharRotulosCar(ctx: CanvasRenderingContext2D, v: Vista, car:
   ctx.save();
   for (const l of car.quadro.linhas.filter((x) => x.tipo === 'car')) {
     const f = car.dados.car.features[l.indice];
-    if (f) escrever(l.rotulo, pontoDoRotulo(poligonosPx(f.geometry, p)), ESTILO_CAR.car.cor, 3.4);
+    if (f) escrever(l.rotulo, pontoDoRotulo(poligonosPx(f.geometry, p)), l.cor, 3.4);
   }
   for (const l of car.quadro.linhas.filter((x) => x.tipo === 'matricula')) {
     const f = car.dados.matriculas.features[l.indice];
-    if (f) escrever(l.rotulo, pontoDoRotulo(poligonosPx(f.geometry, p)), ESTILO_CAR.matricula.cor, 2.6);
+    if (f) escrever(l.rotulo, pontoDoRotulo(poligonosPx(f.geometry, p)), escurecer(l.cor, 0.45), 2.6);
   }
   ctx.restore();
 }

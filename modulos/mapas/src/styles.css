@@ -394,8 +394,10 @@ ol.passos li { margin-bottom: 4px; }
 .tabela-car { font-size: 0.8rem; }
 .tabela-car th, .tabela-car td { padding: 5px 6px; }
 .tabela-car th { position: static; }
-.tabela-car td.rotulo-car { font-weight: 700; color: #c62828; }
-.tabela-car td.rotulo-matricula { font-weight: 700; color: #7b2cbf; max-width: 9.5em; overflow: hidden; text-overflow: ellipsis; }
+.tabela-car td.rotulo-car { font-weight: 700; }
+.tabela-car td.rotulo-matricula { font-weight: 700; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
+.tabela-car .cor-car, .tabela-car .cor-matricula { display: inline-block; width: 0.8em; height: 0.8em; margin-right: 0.4em; vertical-align: -0.05em; border: 2px solid; box-sizing: border-box; }
+.tabela-car .cor-matricula { border-width: 1px; }
 .tabela-car td small { font-weight: 400; color: var(--texto-suave); }
 .tabela-car tr.inicio-grupo td { border-top: 2px solid var(--borda); }
 .notas-car { margin: 0; padding-left: 18px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 3px; }
