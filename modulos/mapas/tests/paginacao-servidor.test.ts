@@ -411,7 +411,7 @@ describe('paginação: as consultas do Acompanhamento (sincronizarAcompanhamento
 // ---------- validação ----------
 
 describe('paginação: as consultas da Validação (sincronizarValidacao)', () => {
-  const N = { evolucao: 9000, falhas: 4500, pendentes: 4400, necessidade: 5500, dose: 4100, coletor: 6000, log: 4300, itens: 4200, estoque: 4500 };
+  const N = { evolucao: 9000, falhas: 4500, pendentes: 4400, necessidade: 5500, dose: 4100, coletor: 6000, log: 4300, itens: 4200, estoque: 4500, saldos: 4300 };
   const TABELAS: Record<string, Tabela> = {
     ordens: {
       columns: ['unidade', 'os', 'equipe', 'operacao', 'operacao_de', 'situacao', 'abertura', 'encerramento', 'planejado', 'talhoes', 'executado', 'ultimo', 'sem_area'],
@@ -445,15 +445,20 @@ describe('paginação: as consultas da Validação (sincronizarValidacao)', () =
       columns: ['deposito', 'item', 'nome', 'saldo', 'unidade', 'origem', 'origem_nome', 'saldo_origem', 'transferido_em'],
       rows: serie(N.estoque, (i) => ['1001', `E${i}`, 'PRODUTO', i + 1, 'KG', null, null, null, null]),
     },
+    // aba "Consultar depósitos": o saldo de todos os depósitos da fazenda (cadastro do PIMS)
+    depositos: { columns: ['unidade', 'codigo', 'nome'], rows: [['DOURADO', '1001', 'ALMOXARIFADO'], ['DOURADO', '1002', 'PULVERIZADOR']] },
+    saldos: { columns: ['deposito', 'item', 'nome', 'saldo', 'unidade'], rows: serie(N.saldos, (i) => [i % 2 ? '1002' : '1001', `S${i}`, 'PRODUTO', i + 1, 'KG']) },
   };
   const MARCAS: [string, string][] = [
     ['AS sem_area', 'ordens'], ['GROUP BY u.DE_UNI_ADM, os.NO_BOLETIM', 'evolucao'], ['BRG_BXMATERIAL_EMS', 'falhas'], ["a.FG_STATUS_EAI = '0'", 'pendentes'],
     ['APORDSERVICO_CO', 'necessidade'], ['QT_DOSE_PROG', 'dose'], ['APAPLINSUMO_TMP', 'coletor'],
   ];
-  const MARCAS_SAP: [string, string][] = [['"@GA_PIMS_LOG" l', 'log'], ['FROM OITM i LEFT JOIN OITW w', 'itens'], ['FROM OITW t JOIN OITM i', 'estoque']];
+  const MARCAS_SAP: [string, string][] = [['"@GA_PIMS_LOG" l', 'log'], ['FROM OITM i LEFT JOIN OITW w', 'itens'], ['FROM OITW t JOIN OITM i', 'estoque'], ['FROM OITW s JOIN OITM i', 'saldos']];
+  // cadastros do PIMS (numa consulta só, sem paginar)
+  const CADASTROS: [string, string][] = [['FROM PIMSMCPRD.dbo.DEPOSITO d', 'depositos']];
   const VINCULOS = [{ unidade: 'DOURADO', deposito: '1001' }];
   const tabelaDe = (sql: string, source: string): Tabela => {
-    const marca = (source === 'hana' ? MARCAS_SAP : source === 'sqlserver' ? MARCAS : []).find(([m]) => sql.includes(m));
+    const marca = (source === 'hana' ? MARCAS_SAP : source === 'sqlserver' ? [...MARCAS, ...CADASTROS] : []).find(([m]) => sql.includes(m));
     return marca ? TABELAS[marca[1]] : VAZIA;
   };
 
@@ -488,6 +493,11 @@ describe('paginação: as consultas da Validação (sincronizarValidacao)', () =
     // …o cadastro chegou para os 4.200 materiais que existem no SAP: só os outros 200 saem como "item inexistente"…
     const semCadastro = d.boletins.filter((b) => b.sit === 'P' && b.it[0].pr?.includes('item-inexistente'));
     expect(semCadastro).toHaveLength(N.pendentes - N.itens);
+    // …o saldo de todos os depósitos (Consultar depósitos) veio inteiro, cada item no seu depósito…
+    const sd = (d.extras as unknown as { sd: Record<string, [string, number][]> }).sd;
+    expect(Object.keys(sd).sort()).toEqual(['1001', '1002']);
+    expect(sd['1001'].length + sd['1002'].length).toBe(N.saldos);
+    expect(semRepeticao([...sd['1001'], ...sd['1002']].map((x) => x[0]))).toBe(true);
     // …e o saldo do depósito vinculado veio inteiro, sem item repetido
     expect(d.estoque['1001']).toHaveLength(N.estoque);
     expect(semRepeticao(d.estoque['1001'].map((x) => x.c))).toBe(true);
@@ -519,10 +529,12 @@ describe('paginação: as consultas da Validação (sincronizarValidacao)', () =
     expect(d.boletins).toHaveLength(6);
     expect([extras.nec.length, extras.dose.length, extras.col.length]).toEqual([3, 3, 3]);
     for (const [marca, nome] of marcasNovas) expect(paginasDe(feitas, marca), nome).toEqual([0, null]);
-    expect(avisos.match(/em páginas foi recusada/g)).toHaveLength(9);
+    expect(avisos.match(/em páginas foi recusada/g)).toHaveLength(10);
     // o SAP respondeu pela consulta inteira: nenhum aviso de "SAP indisponível" gravado na linha
     expect(dados.avisos).toEqual([]);
     expect(d.estoque['1001']).toHaveLength(3);
+    const sd = (d.extras as unknown as { sd: Record<string, [string, number][]> }).sd;
+    expect(sd['1001'].length + sd['1002'].length).toBe(3);
   });
 
   it('as consultas que já eram paginadas não têm reserva (não existe consulta inteira delas): a recusa derruba a etapa, como antes', async () => {

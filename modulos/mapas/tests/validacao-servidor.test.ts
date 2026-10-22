@@ -4,7 +4,7 @@ import {
   depositosVinculados, diaAnterior, inicioSafraValidacao, itemDoSaldoSap, linhasBoletins, linhasExtras, linhasValidacao, montarSqlApontamentosRecentes,
   montarSqlApontamentosValidacao, montarSqlBoletinsFalha, montarSqlColetorValidacao, montarSqlDoseValidacao, montarSqlNecessidadeValidacao,
   montarSqlBoletinsPendentes, montarSqlLogIntegracaoSap, montarSqlSaldoItensSap, montarSqlCoordenadoresValidacao, montarSqlEstoqueSap,
-  montarSqlOrdensValidacao, montarSqlTalhoesValidacao,
+  montarSqlOrdensValidacao, montarSqlSaldoDepositosSap, montarSqlTalhoesValidacao, saldosPorUnidade,
 } from '../scripts/sincronizar-plantio.mjs';
 
 // Todos os dados daqui são FICTÍCIOS.
@@ -253,6 +253,43 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
     // e entram na linha da unidade, ao lado das ordens
     const linhas = linhasValidacao({ ordens: [], evolucao: [], coordenadores: [], depositos: [], extras: r }, '2026-10-06T12:00:00.000Z');
     expect(linhas.map((l) => [l.unidade, Object.keys(l.extras)])).toEqual([['DOURADO', ['ap', 'nec', 'dose', 'col']], ['SM3', ['ap', 'nec', 'dose', 'col']]]);
+  });
+
+  it('consultar depósitos: saldo de todos os depósitos, paginado por depósito e item, só códigos válidos', () => {
+    const sql = montarSqlSaldoDepositosSap(['1001', '1002', "x' OR 1=1 --", '1001'], 4000, 4000);
+    expect(sql).toContain(`s."WhsCode" IN ('1001', '1002')`);
+    expect(sql).toContain('s."OnHand" <> 0');
+    expect(sql).toContain('ORDER BY 1, 2');
+    expect(sql).toContain('LIMIT 4000 OFFSET 4000');
+    expect(sql).not.toContain('OR 1=1');
+    expect(montarSqlSaldoDepositosSap(['1001'])).not.toContain('LIMIT');
+    expect(() => montarSqlSaldoDepositosSap(["'; drop"])).toThrow();
+  });
+
+  it('consultar depósitos: saldo por unidade, nome do produto uma vez só, depósito sem saldo com lista vazia', () => {
+    const r = saldosPorUnidade(
+      [
+        { unidade: 'DOURADO', codigo: '1001', nome: 'ALMOX' },
+        { unidade: 'DOURADO', codigo: '1002', nome: 'PULVERIZADOR' },
+        { unidade: 'DOURADO', codigo: '1003', nome: 'VAZIO' },
+        { unidade: 'SM3', codigo: '2001', nome: 'ALMOX SM3' },
+        { unidade: 'SM3', codigo: "x'", nome: 'inválido' },
+      ],
+      [
+        { deposito: '1001', item: '000040', nome: 'DUAL HERBICIDA', saldo: 259.99941, unidade: 'LT' },
+        { deposito: '1002', item: '000040', nome: 'DUAL HERBICIDA', saldo: -3, unidade: 'LT' },
+        { deposito: '2001', item: '075908', nome: 'CARTAGO', saldo: 12, unidade: 'KG' },
+        { deposito: '9999', item: '000001', nome: 'OUTRA FAZENDA', saldo: 1, unidade: 'KG' },
+      ],
+    );
+    expect(Object.keys(r)).toEqual(['DOURADO', 'SM3']);
+    expect(r.DOURADO.sd).toEqual({ 1001: [['000040', 259.999]], 1002: [['000040', -3]], 1003: [] });
+    expect(r.DOURADO.sdi).toEqual({ '000040': ['DUAL HERBICIDA', 'LT'] });
+    expect(r.SM3.sd).toEqual({ 2001: [['075908', 12]] });
+    // e entram nos extras da unidade, ao lado das outras páginas
+    const extras = linhasExtras({ saldos: r });
+    expect(Object.keys(extras.DOURADO)).toEqual(['ap', 'nec', 'dose', 'col', 'sd', 'sdi']);
+    expect(extras.SM3.sd).toEqual(r.SM3.sd);
   });
 
   it('sem pedido pendente (ou sem a tabela) não consulta o PIMS', async () => {

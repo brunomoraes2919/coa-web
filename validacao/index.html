@@ -9,10 +9,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610071400">
+<link rel="stylesheet" href="estilo.css?v=202610221000">
 <script src="config.js?v=202610071400"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
-<script src="logica.js?v=202610131900"></script>
+<script src="logica.js?v=202610221000"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -45,6 +45,7 @@
       <button role="tab" data-vista="estoque" aria-selected="false">Estoque x necessidade <span class="conta" id="conta-estoque"></span></button>
       <button role="tab" data-vista="doses" aria-selected="false">Dose real x programada <span class="conta" id="conta-doses"></span></button>
       <button role="tab" data-vista="coletor" aria-selected="false">Boletins em Validação PIMS <span class="conta" id="conta-coletor"></span></button>
+      <button role="tab" data-vista="saldos" aria-selected="false">Consultar depósitos</button>
       <button role="tab" data-vista="depositos" aria-selected="false">Vínculo de depósitos</button>
     </nav>
   </header>
@@ -128,6 +129,19 @@
     </section>
   </main>
 
+  <!-- ============================ CONSULTAR DEPÓSITOS ============================ -->
+  <main class="vista" id="vista-saldos" hidden>
+    <p class="explica" id="explica-saldos"></p>
+    <div class="linha-opcoes saldos-opcoes">
+      <label class="busca-produto"><span class="sr">Buscar produto</span><input type="search" id="busca-saldos" placeholder="Buscar produto pelo código ou nome" autocomplete="off"></label>
+      <button class="botao-acao" id="btn-comparar" type="button" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 4 4 7M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3"/></svg><span>Comparar depósitos</span>
+      </button>
+    </div>
+    <section class="cartao comparar" id="comparar" hidden aria-label="Comparar depósitos"></section>
+    <div id="saldos" class="saldos"></div>
+  </main>
+
   <!-- ============================ DEPÓSITOS ============================ -->
   <main class="vista" id="vista-depositos" hidden>
     <p class="explica" id="explica-depositos"></p>
@@ -137,6 +151,6 @@
 </div>
 
 <div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Carregando as ordens</span><i>.</i><i>.</i><i>.</i></p></div></div>
-<script src="app.js?v=202610131900"></script>
+<script src="app.js?v=202610221000"></script>
 </body>
 </html>

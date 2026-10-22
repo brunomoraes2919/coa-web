@@ -297,6 +297,34 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
 .tabela-saldo .cod { display: inline-block; min-width: 62px; color: var(--texto-fraco); font-variant-numeric: tabular-nums; font-size: 12px; }
 .link { border: 0; background: none; padding: 0; color: var(--verde-teal); font-weight: 600; cursor: pointer; text-decoration: underline; }
 
+/* ---- consultar depósitos ---- */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.saldos-opcoes { justify-content: flex-start; }
+.busca-produto { flex: 1 1 320px; max-width: 480px; }
+.busca-produto input {
+  width: 100%; height: 36px; padding: 0 12px; border: 1px solid #CBD5CE; border-radius: var(--raio-p); background: #fff;
+  font: inherit; font-size: 13.5px; color: var(--texto);
+}
+.busca-produto input:hover { border-color: #AAB8AE; }
+.busca-produto input:focus-visible, .comparar select:focus-visible { outline: 2px solid var(--verde-teal); outline-offset: 1px; }
+.saldos { display: flex; flex-direction: column; gap: 10px; }
+.deposito > .saldo-cab { padding: 12px 18px; }
+.dep-cod { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--texto-suave); min-width: 44px; }
+.deposito[open] > summary.saldo-cab { border-bottom: 1px solid var(--linha); }
+.tabela .neg, .saldo-qtd .neg { color: var(--ruim); }
+.saldo-qtd .neg { font-weight: 600; }
+.comparar { border-color: #BFD6CB; box-shadow: 0 2px 8px rgba(16, 54, 50, .08); }
+.comparar .cartao-cab { align-items: center; }
+.comparar-escolha { display: flex; align-items: flex-end; gap: 10px 12px; flex-wrap: wrap; padding: 0 18px 14px; }
+.comparar-escolha .campo-select select { min-width: 240px; }
+.comparar-escolha .chave { margin-left: 4px; height: 36px; }
+.botao-acao.trocar { padding: 0 10px; }
+.tabela-comparar th.n { white-space: nowrap; }
+.dif-dep { font-weight: 600; }
+.dif-dep.mais { color: var(--bom); }
+.dif-dep.menos { color: var(--ruim); }
+.dif-dep.igual { color: var(--texto-fraco); font-weight: 400; }
+
 /* ---- vínculos ---- */
 .tabela-vinculos select { width: 100%; min-width: 220px; max-width: 360px; }
 .tabela-vinculos select:disabled { background: #F6F8F6; color: var(--texto-suave); cursor: default; }
@@ -330,6 +358,9 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
   .campo-data input { min-width: 0; width: 100%; font-size: 16px; padding: 0 6px; }
   /* 16px: o iPhone não dá zoom sozinho ao focar o campo */
   .campo-select select, .tabela-vinculos select { min-width: 0; width: 100%; font-size: 16px; padding: 0 6px; }
+  .busca-produto input { font-size: 16px; }
+  .comparar-escolha .campo-select { flex: 1 1 100%; }
+  .comparar-escolha .campo-select select { min-width: 0; }
   .barra-acoes { margin-left: 0; }
   .marca { flex: 1 1 auto; }
   .resumo { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }

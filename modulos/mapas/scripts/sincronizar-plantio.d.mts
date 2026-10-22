@@ -308,12 +308,21 @@ export function montarSqlApontamentosRecentes(desdeDia: string, pular?: number, 
 export function montarSqlNecessidadeValidacao(desde: string, pular?: number | null, tamanho?: number): string;
 export function montarSqlDoseValidacao(desdeDia: string, pular?: number | null, tamanho?: number): string;
 export function montarSqlColetorValidacao(desde: string, pular?: number | null, tamanho?: number): string;
+export interface SaldosDaUnidade {
+  /** depósito → [[item, saldo]] */
+  sd: Record<string, [string, number][]>;
+  /** item → [nome, unidade de medida] */
+  sdi: Record<string, [string, string]>;
+}
+export function montarSqlSaldoDepositosSap(codigos: unknown[], pular?: number | null, tamanho?: number): string;
+export function saldosPorUnidade(depositos: Record<string, unknown>[], linhasSap: Record<string, unknown>[]): Record<string, SaldosDaUnidade>;
 export function linhasExtras(dados: {
   apontamentos?: Record<string, unknown>[];
   necessidade?: Record<string, unknown>[];
   dose?: Record<string, unknown>[];
   coletor?: Record<string, unknown>[];
-}): Record<string, Record<string, Record<string, unknown>[]>>;
+  saldos?: Record<string, SaldosDaUnidade>;
+}): Record<string, Record<string, unknown>>;
 export const VALID_TOLERANCIA_HA: number;
 export const SAP_EMPRESA_DA_UNIDADE: Record<string, string>;
 /** a evolução inteira, sem paginar (= montarSqlEvolucaoValidacao()) */
@@ -338,7 +347,7 @@ export function linhasValidacao(
     depositosSap?: Record<string, Map<string, { nome: string | null; inativo: boolean }>>;
     estoque?: Record<string, Record<string, ItemSaldoScript[]>>;
     boletins?: Record<string, BoletimValidScript[]>;
-    extras?: Record<string, Record<string, Record<string, unknown>[]>>;
+    extras?: Record<string, Record<string, unknown>>;
     avisos?: string[];
   },
   geradoEm: string,

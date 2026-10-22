@@ -70,6 +70,17 @@ function dadosFicticios() {
         coordenadores: [{ eq: 'COORDENADOR UM', ab: 3, n: 20 }, { eq: 'COORDENADOR DOIS', ab: 2, n: 14 }, { eq: 'COORDENADOR TRES', ab: 0, n: 5 }],
         depositos: [{ c: '9001', n: 'APLICACAO TERRESTRE' }, { c: '9002', n: 'PLANTIO EQUIPE 1' }, { c: '9003', n: 'DEFENSIVOS - TESTE NORTE' }, { c: '9004', n: 'DEPOSITO ANTIGO', i: 1 }],
         extras: {
+          // Consultar depósitos: saldo de todos os depósitos da fazenda (FICTÍCIO)
+          sd: {
+            9001: [['000001', 40], ['000002', 12.5], ['000003', 3]],
+            9002: [['000011', 450], ['000012', 20], ['000001', -2]],
+            9003: [['000001', 1200], ['000011', 1200], ['000012', 300], ['000014', 90], ['000020', 75.25]],
+            9004: [],
+          },
+          sdi: {
+            '000001': ['HERBICIDA TESTE', 'LT'], '000002': ['ADJUVANTE TESTE', 'LT'], '000003': ['PRODUTO SEM TRANSFERENCIA', 'KG'],
+            '000011': ['SEMENTE TESTE', 'KG'], '000012': ['INOCULANTE TESTE', 'LT'], '000014': ['TRATAMENTO TESTE', 'LT'], '000020': ['FUNGICIDA TESTE', 'LT'],
+          },
           ap: [
             { os: 102, s: 'A', ab: dia(4), enc: null, eq: 'COORDENADOR UM', opn: 'PLANTIO DB', t: 'P', b: 900010, d: dia(1), tl: 'T02', ha: 97.5, la: `${dia(0)} 07:10`, por: 'usuario.teste', pt: 58.7, xt: 97.5 },
             { os: 102, s: 'A', ab: dia(4), enc: null, eq: 'COORDENADOR UM', opn: 'PLANTIO DB', t: 'P', b: 900011, d: dia(1), tl: 'T09', ha: 12, la: `${dia(0)} 07:12`, por: 'usuario.teste', pt: null, xt: 12 },

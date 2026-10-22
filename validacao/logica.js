@@ -571,6 +571,77 @@
     };
   }
 
+  /* ------------------------------ consultar depósitos ------------------------------ */
+
+  /** O produto casa com a busca? (código ou nome, sem acento; busca vazia = todos) */
+  function produtoNaBusca(p, busca) {
+    const b = semAcento(busca);
+    return !b || semAcento(p.c).indexOf(b) >= 0 || semAcento(p.n).indexOf(b) >= 0;
+  }
+  const porNome = function (a, b) { return a.n.localeCompare(b.n, 'pt-BR') || a.c.localeCompare(b.c, 'pt-BR'); };
+  /** Produto do saldo (extras.sd = { depósito: [[item, saldo]] }, extras.sdi = { item: [nome, unidade] }). */
+  function produtoDoSaldo(par, nomes) {
+    const n = nomes[par[0]] || [];
+    return { c: String(par[0]), n: n[0] || '', u: n[1] || '', q: Number(par[1]) || 0 };
+  }
+
+  /**
+   * Aba Consultar depósitos: todos os depósitos da unidade (cadastro do PIMS) com o saldo de cada produto no SAP.
+   * { pendente, depositos: [{ c, n, inativo, total (produtos com saldo), negativos, itens: [{ c, n, u, q }] por nome }] }.
+   * `pendente`: o servidor ainda não mandou o saldo de todos os depósitos (retrato de antes desta aba). Com `busca`,
+   * cada depósito traz só os produtos que casam, e os depósitos sem nenhum ficam de fora.
+   */
+  function saldosDosDepositos(linha, busca) {
+    const ex = (linha && linha.extras) || {};
+    if (!ex.sd || typeof ex.sd !== 'object') return { pendente: true, depositos: [] };
+    const nomes = ex.sdi || {};
+    const cadastro = new Map(((linha && linha.depositos) || []).map(function (d) { return [d.c, d]; }));
+    const filtrando = !!semAcento(busca);
+    const depositos = Object.keys(ex.sd).map(function (c) {
+      const d = cadastro.get(c) || {};
+      const todos = (ex.sd[c] || []).map(function (par) { return produtoDoSaldo(par, nomes); }).sort(porNome);
+      return {
+        c: c, n: d.n || c, inativo: !!d.i, total: todos.length,
+        negativos: todos.filter(function (i) { return i.q < 0; }).length,
+        itens: filtrando ? todos.filter(function (i) { return produtoNaBusca(i, busca); }) : todos,
+      };
+    }).sort(function (a, b) { return a.c.localeCompare(b.c, 'pt-BR', { numeric: true }); });
+    return { pendente: false, depositos: filtrando ? depositos.filter(function (d) { return d.itens.length; }) : depositos };
+  }
+
+  /**
+   * Compara o saldo de dois depósitos da unidade, produto a produto (por nome): [{ c, n, u, a, b, dif = a − b }].
+   * O produto que só tem saldo num deles vem com 0 no outro. Com `busca`, só os que casam. Também conta quantos
+   * estão só em A, só em B e nos dois (do total, sem a busca).
+   */
+  function compararDepositos(linha, depA, depB, busca) {
+    const ex = (linha && linha.extras) || {};
+    const sd = ex.sd || {};
+    const nomes = ex.sdi || {};
+    const mapa = new Map();
+    const juntar = function (lista, lado) {
+      (lista || []).forEach(function (par) {
+        const p = produtoDoSaldo(par, nomes);
+        if (!mapa.has(p.c)) mapa.set(p.c, { c: p.c, n: p.n, u: p.u, a: 0, b: 0, emA: false, emB: false });
+        const x = mapa.get(p.c);
+        x[lado] = p.q;
+        x[lado === 'a' ? 'emA' : 'emB'] = true;
+      });
+    };
+    juntar(sd[depA], 'a');
+    juntar(sd[depB], 'b');
+    const todos = Array.from(mapa.values());
+    const itens = todos.filter(function (p) { return produtoNaBusca(p, busca); }).map(function (p) {
+      return { c: p.c, n: p.n, u: p.u, a: p.a, b: p.b, dif: Math.round((p.a - p.b) * 1000) / 1000 };
+    }).sort(porNome);
+    return {
+      itens: itens,
+      soA: todos.filter(function (p) { return p.emA && !p.emB; }).length,
+      soB: todos.filter(function (p) { return p.emB && !p.emA; }).length,
+      nosDois: todos.filter(function (p) { return p.emA && p.emB; }).length,
+    };
+  }
+
   /** Unidade do PIMS de uma fazenda do COA WEB pelo nome ("Fazenda Três Flechas" → "TRES FLECHAS"); sem igual → null. */
   function unidadeDaFazenda(nomeFazenda, unidades) {
     const alvo = semAcento(nomeFazenda).replace(/^(FAZENDA|FAZ\.?)\s+/, '');
@@ -592,7 +663,7 @@
     fechadasComDiferenca: fechadasComDiferenca, coordenadoresComVinculo: coordenadoresComVinculo, saldoDoCoordenador: saldoDoCoordenador,
     detalheDaOrdem: detalheDaOrdem, explicarFalha: explicarFalha, boletinsComProblema: boletinsComProblema, PROBLEMAS_ITEM: PROBLEMAS_ITEM,
     ALERTAS_APONT: ALERTAS_APONT, conferirApontamentos: conferirApontamentos, necessidadePorCoordenador: necessidadePorCoordenador, dosesFora: dosesFora,
-    coletorTravados: coletorTravados, pendencias: pendencias,
+    coletorTravados: coletorTravados, pendencias: pendencias, saldosDosDepositos: saldosDosDepositos, compararDepositos: compararDepositos,
     unidadeDaFazenda: unidadeDaFazenda, titulo: titulo,
   };
 });

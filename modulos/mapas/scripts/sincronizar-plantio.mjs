@@ -1164,6 +1164,50 @@ LEFT JOIN OITW o ON o."WhsCode" = u."FromWhsCod" AND o."ItemCode" = t."ItemCode"
 WHERE t."WhsCode" IN (${lista}) AND t."OnHand" <> 0${fimDaConsulta(pular, tamanho, '1, 3', '1, 3, 2', paginaSqlSap)}`;
 }
 
+/**
+ * Saldo (≠ 0) de cada item em todos os depósitos pedidos, numa empresa do SAP: a aba "Consultar depósitos" da
+ * validação mostra todos os depósitos da fazenda. Sem a origem de cada item (essa só vem para os depósitos dos
+ * coordenadores, em montarSqlEstoqueSap). Com `pular`, paginada por depósito e item: a chave do saldo (OITW).
+ */
+export function montarSqlSaldoDepositosSap(codigos, pular = null, tamanho = PAGINA_CONSULTA) {
+  const lista = listaSap(codigos, ehCodigoSap);
+  if (!lista) throw new Error('Nenhum depósito válido para consultar o saldo.');
+  return `SELECT s."WhsCode" AS deposito, s."ItemCode" AS item, i."ItemName" AS nome, s."OnHand" AS saldo, i."InvntryUom" AS unidade
+FROM OITW s JOIN OITM i ON i."ItemCode" = s."ItemCode"
+WHERE s."WhsCode" IN (${lista}) AND s."OnHand" <> 0${fimDaConsulta(pular, tamanho, '1, 2', '1, 2', paginaSqlSap)}`;
+}
+
+/**
+ * Saldo de todos os depósitos de cada unidade, em chaves curtas (o nome do produto vai uma vez só por unidade):
+ *   { unidade: { sd: { depósito: [[item, saldo]] }, sdi: { item: [nome, unidade de medida] } } }
+ * `depositos` = depósitos do PIMS de cada unidade (SQL_DEPOSITOS_PIMS): depósito sem saldo fica com lista vazia.
+ * `linhasSap` = linhas de montarSqlSaldoDepositosSap.
+ */
+export function saldosPorUnidade(depositos, linhasSap) {
+  const out = Object.create(null); // as chaves são unidades e códigos de depósito: nada herdado
+  const unidadesDoDeposito = new Map();
+  for (const r of depositos) {
+    const u = txt(r.unidade);
+    const c = txt(r.codigo);
+    if (!u || !c || !ehCodigoSap(c)) continue;
+    const x = (out[u] ??= { sd: Object.create(null), sdi: Object.create(null) });
+    x.sd[c] ??= [];
+    const us = unidadesDoDeposito.get(c) ?? [];
+    if (!us.includes(u)) us.push(u);
+    unidadesDoDeposito.set(c, us);
+  }
+  for (const r of linhasSap) {
+    const c = txt(r.deposito);
+    const item = txt(r.item);
+    if (!c || !item) continue;
+    for (const u of unidadesDoDeposito.get(c) ?? []) {
+      out[u].sd[c].push([item, arred(r.saldo, 3)]);
+      out[u].sdi[item] ??= [txt(r.nome) ?? '', txt(r.unidade) ?? ''];
+    }
+  }
+  return out;
+}
+
 /** Item do saldo como a tela lê: { c, n, q, u } e, quando há transferência, { o origem, on nome, oq saldo lá, od data }. */
 export function itemDoSaldoSap(r) {
   const item = { c: txt(r.item), n: txt(r.nome) ?? '', q: arred(r.saldo, 3), u: txt(r.unidade) ?? '' };
@@ -1574,8 +1618,10 @@ const numOuNulo = (v) => (v === null || v === undefined || v === '' ? null : Num
  *   dose [{ b, d, os, eq, tl, c, nm, pg programada, re real, ha, q total, ju justificativa (Observação do boletim) }]
  *   col  [{ t, b, d, os, eq, opn, st, m mensagem do PIMS, la, por, tl talhão, ha, oss situação da ordem (null = não existe),
  *           oab/oenc abertura e encerramento da ordem, pt planejado no talhão (null = fora da ordem), xt já apontado, dup 1 = nº já usado }]
+ *   sd/sdi  saldo de todos os depósitos da unidade (saldosPorUnidade), só da Validação PIMS: o Controle Técnico lê
+ *           do banco apenas ap, nec, dose e col (funções controle_*), e o coordenador não vê os outros depósitos.
  */
-export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], coletor = [] }) {
+export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], coletor = [], saldos = {} }) {
   const porUnidade = new Map();
   const de = (unidade) => {
     const u = txt(unidade);
@@ -1619,6 +1665,12 @@ export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], c
     }
     if (Number(r.ja_no_pims) > 0) c.dup = 1;
     x.col.push(c);
+  }
+  for (const [unidade, s] of Object.entries(saldos)) {
+    const x = de(unidade);
+    if (!x) continue;
+    x.sd = s.sd;
+    x.sdi = s.sdi;
   }
   return Object.fromEntries(porUnidade);
 }
@@ -1685,6 +1737,7 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
     const avisos = [];
     const depositosSap = Object.create(null);
     const estoque = Object.create(null);
+    const saldos = Object.create(null); // saldo de todos os depósitos de cada unidade (aba "Consultar depósitos")
     const vinculados = depositosVinculados(vinculos);
     for (const empresa of new Set(Object.values(SAP_EMPRESA_DA_UNIDADE))) {
       const fonte = { nome: 'SAP', source: 'hana', database: empresa, schema: empresa };
@@ -1694,6 +1747,18 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
           if (txt(r.codigo)) mapa.set(txt(r.codigo), { nome: txt(r.nome), inativo: txt(r.inativo) === 'Y' });
         }
         depositosSap[empresa] = mapa;
+        // saldo de todos os depósitos das unidades desta empresa: se falhar, o resto do SAP segue
+        const depsDaEmpresa = depositos.filter((r) => empresaDa(r.unidade) === empresa && ehCodigoSap(r.codigo));
+        if (depsDaEmpresa.length) {
+          try {
+            const res = objetosDe(await consultarPaginas(cliente, (pular, tamanho) => montarSqlSaldoDepositosSap(depsDaEmpresa.map((r) => r.codigo), pular, tamanho), 'saldo de todos os depósitos das fazendas (validação)', `saldos ${empresa}`, { fonte, reserva: true }));
+            Object.assign(saldos, saldosPorUnidade(depsDaEmpresa, res));
+          } catch (e) {
+            const msg = `Saldo de todos os depósitos indisponível (${empresa}): ${String(e instanceof Error ? e.message : e).slice(0, 160)}`;
+            console.warn(`Validação: ${semChave(msg, token)}`);
+            avisos.push(`sap:${empresa}`);
+          }
+        }
         // boletins desta empresa: o motivo da recusa (log do SAP) e o saldo dos itens nos depósitos de saída
         const daEmpresa = (r) => empresaDa(r.unidade) === empresa;
         const numeros = falhas.filter(daEmpresa).map((r) => String(r.boletim ?? ''));
@@ -1732,7 +1797,7 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
     }
     const geradoEm = agora.toISOString();
     const boletins = linhasBoletins({ falhas, pendentes, logs, sap: sapItens, depositosSap });
-    const extras = linhasExtras({ apontamentos: apontRecentes, necessidade, dose, coletor });
+    const extras = linhasExtras({ apontamentos: apontRecentes, necessidade, dose, coletor, saldos });
     return { geradoEm, linhas: linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes, apontamentos, depositosSap, estoque, boletins, extras, avisos }, geradoEm), avisos };
   } finally {
     await cliente.fechar();

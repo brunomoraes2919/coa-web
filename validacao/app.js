@@ -8,8 +8,9 @@
    - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'validacao-vista', vista }
    - módulo → COA: { tipo:'validacao-rota', vista, coaFazenda }
    No Controle Técnico as mensagens são 'controle-vista' e 'controle-rota', e a fazenda do menu não vale.
-   O endereço guarda a tela aberta, uma das nove: #pendencias (a inicial), #abertas, #fechadas, #apontamentos,
-   #boletins, #estoque, #doses, #coletor e #depositos (esta só na Validação PIMS).
+   O endereço guarda a tela aberta, uma das dez: #pendencias (a inicial), #abertas, #fechadas, #apontamentos,
+   #boletins, #estoque, #doses, #coletor, #saldos (Consultar depósitos) e #depositos (Vínculo de depósitos). As
+   duas últimas são só da Validação PIMS: o coordenador do Controle Técnico não vê os outros depósitos.
 ===================================================================== */
 (function () {
   'use strict';
@@ -23,8 +24,8 @@
   const PREFIXO = MODO_CONTROLE ? 'controle' : 'validacao'; // das mensagens trocadas com o COA WEB
   const VISTAS = MODO_CONTROLE
     ? ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor']
-    : ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor', 'depositos'];
-  const TODAS_AS_VISTAS = ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor', 'depositos'];
+    : ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor', 'saldos', 'depositos'];
+  const TODAS_AS_VISTAS = ['pendencias', 'abertas', 'fechadas', 'apontamentos', 'boletins', 'estoque', 'doses', 'coletor', 'saldos', 'depositos'];
   const TODAS = '';
   /** A fazenda do menu lateral não tem unidade no PIMS: nada a mostrar (em vez de mostrar todas). */
   const SEM_UNIDADE = '\u0001';
@@ -539,6 +540,84 @@
       '</tbody></table>';
   }
 
+  /* ------------------------------ consultar depósitos ------------------------------ */
+  const depAbertos = new Set();                 // depósitos abertos na lista: sobrevivem ao redesenho
+  const comparacao = { aberta: false, a: '', b: '', soDiferentes: false };
+  const linhaDaFazenda = () => (estado.unidade && estado.unidade !== SEM_UNIDADE ? linhaDa(estado.unidade) : null);
+  const fmtLido = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const qtdCom = (q, u) => '<b>' + fmtQtd(q) + '</b> ' + esc(u);
+
+  function cartaoDeposito(d, buscando) {
+    const cab = '<span class="dep-cod">' + esc(d.c) + '</span><span class="saldo-dep">' + esc(L.titulo(d.n)) + '</span>' +
+      (d.inativo ? '<span class="selo atencao">inativo no SAP</span>' : '') +
+      '<span class="saldo-qtd">' + (buscando ? d.itens.length + ' de ' : '') + d.total + (d.total === 1 ? ' produto com saldo' : ' produtos com saldo') +
+      (d.negativos ? ' · <span class="neg">' + d.negativos + (d.negativos === 1 ? ' com saldo negativo' : ' com saldo negativo') + '</span>' : '') + '</span>';
+    if (!d.total) return '<section class="cartao deposito"><div class="saldo-cab">' + cab + '</div></section>';
+    return '<details class="cartao deposito" data-dep="' + esc(d.c) + '"' + (buscando || depAbertos.has(d.c) ? ' open' : '') + '><summary class="saldo-cab">' + cab + '</summary>' +
+      '<div class="tabela-rolagem"><table class="tabela tabela-saldo"><thead><tr><th>Produto</th><th class="n">Saldo</th></tr></thead><tbody>' +
+      d.itens.map((i) => '<tr><td><span class="cod">' + esc(i.c) + '</span>' + esc(L.titulo(i.n)) + '</td><td class="n' + (i.q < 0 ? ' neg' : '') + '">' + qtdCom(i.q, i.u) + '</td></tr>').join('') +
+      '</tbody></table></div></details>';
+  }
+
+  /** Quadro "Comparar depósitos": dois depósitos da fazenda, produto a produto, e a diferença A − B. */
+  function desenharComparacao(linha, todos, busca) {
+    const painel = $('comparar');
+    if (!comparacao.aberta || todos.length < 2) { painel.hidden = true; painel.innerHTML = ''; return; }
+    const cods = todos.map((d) => d.c);
+    if (cods.indexOf(comparacao.a) < 0) comparacao.a = cods[0];
+    if (cods.indexOf(comparacao.b) < 0 || comparacao.b === comparacao.a) comparacao.b = cods.find((c) => c !== comparacao.a);
+    const dep = (c) => todos.find((d) => d.c === c) || { c: c, n: c };
+    const opcoes = (escolhido) => todos.map((d) => '<option value="' + esc(d.c) + '"' + (d.c === escolhido ? ' selected' : '') + '>' + esc(d.c) + ' · ' + esc(L.titulo(d.n)) + (d.inativo ? ' (inativo)' : '') + '</option>').join('');
+    const r = L.compararDepositos(linha, comparacao.a, comparacao.b, busca);
+    const itens = comparacao.soDiferentes ? r.itens.filter((i) => i.dif !== 0) : r.itens;
+    const A = dep(comparacao.a), B = dep(comparacao.b);
+    const tabela = !itens.length
+      ? '<p class="saldo-nota">' + (r.itens.length ? 'Os dois depósitos têm o mesmo saldo em todos os produtos' + (busca ? ' da busca' : '') + '.' : 'Nenhum dos dois depósitos tem saldo' + (busca ? ' de produto da busca' : '') + '.') + '</p>'
+      : '<div class="tabela-rolagem"><table class="tabela tabela-saldo tabela-comparar"><thead><tr><th>Produto</th>' +
+        '<th class="n" title="' + esc(L.titulo(A.n)) + '">A · ' + esc(A.c) + '</th><th class="n" title="' + esc(L.titulo(B.n)) + '">B · ' + esc(B.c) + '</th><th class="n">Diferença (A − B)</th></tr></thead><tbody>' +
+        itens.map((i) => '<tr><td><span class="cod">' + esc(i.c) + '</span>' + esc(L.titulo(i.n)) + '</td>' +
+          '<td class="n' + (i.a < 0 ? ' neg' : '') + '">' + qtdCom(i.a, i.u) + '</td><td class="n' + (i.b < 0 ? ' neg' : '') + '">' + qtdCom(i.b, i.u) + '</td>' +
+          '<td class="n dif-dep ' + (i.dif > 0 ? 'mais' : i.dif < 0 ? 'menos' : 'igual') + '">' + (i.dif > 0 ? '+' : i.dif < 0 ? '−' : '') + fmtQtd(Math.abs(i.dif)) + ' ' + esc(i.u) + '</td></tr>').join('') +
+        '</tbody></table></div>';
+    painel.hidden = false;
+    painel.innerHTML = '<header class="cartao-cab"><div><h2>Comparar depósitos</h2><p>Saldo de cada produto nos dois depósitos e a diferença (A menos B). ' +
+        r.nosDois + (r.nosDois === 1 ? ' produto' : ' produtos') + ' nos dois, ' + r.soA + ' só no A e ' + r.soB + ' só no B.</p></div>' +
+        '<button type="button" class="link" data-acao="fechar">Fechar</button></header>' +
+      '<div class="comparar-escolha">' +
+        '<label class="campo-select"><span>Depósito A</span><select data-lado="a">' + opcoes(comparacao.a) + '</select></label>' +
+        '<button type="button" class="botao-acao trocar" data-acao="trocar" title="Trocar o A com o B" aria-label="Trocar o A com o B"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h14l-3-3M20 16H6l3 3"/></svg></button>' +
+        '<label class="campo-select"><span>Depósito B</span><select data-lado="b">' + opcoes(comparacao.b) + '</select></label>' +
+        '<label class="chave"><input type="checkbox" data-acao="diferentes"' + (comparacao.soDiferentes ? ' checked' : '') + '><span>Só os produtos com saldo diferente</span></label>' +
+      '</div>' + tabela;
+  }
+
+  function desenharSaldos() {
+    const linha = linhaDaFazenda();
+    const busca = $('busca-saldos').value;
+    $('btn-comparar').hidden = true;
+    if (!linha) {
+      $('explica-saldos').innerHTML = 'Saldo de cada depósito da fazenda no SAP.';
+      desenharComparacao(null, [], '');
+      $('saldos').innerHTML = '<p class="vazio">Escolha uma fazenda para ver os depósitos dela.</p>';
+      return;
+    }
+    $('explica-saldos').innerHTML = 'Todos os <b>depósitos de ' + esc(L.titulo(linha.unidade)) + '</b> no SAP e o saldo de cada produto' +
+      (linha.gerado_em ? ', lido em <b>' + fmtLido(linha.gerado_em) + '</b>' : '') + '. O botão <b>Atualizar</b> lê o SAP de novo agora. Saldo negativo fica em vermelho.';
+    const r = L.saldosDosDepositos(linha, busca);
+    if (r.pendente) {
+      desenharComparacao(null, [], '');
+      $('saldos').innerHTML = '<p class="vazio">O saldo de todos os depósitos chega na próxima atualização do servidor (a cada hora). Clique em <b>Atualizar</b> para buscar agora.</p>';
+      return;
+    }
+    const todos = L.saldosDosDepositos(linha, '').depositos;
+    $('btn-comparar').hidden = todos.length < 2;
+    $('btn-comparar').setAttribute('aria-expanded', String(comparacao.aberta));
+    desenharComparacao(linha, todos, busca);
+    $('saldos').innerHTML = r.depositos.length
+      ? r.depositos.map((d) => cartaoDeposito(d, !!busca.trim())).join('')
+      : '<p class="vazio">' + (busca.trim() ? 'Nenhum depósito desta fazenda tem produto com “' + esc(busca.trim()) + '”.' : 'Esta fazenda não tem depósito com código do SAP no PIMS.') + '</p>';
+  }
+
   /* ------------------------------ depósitos dos coordenadores ------------------------------ */
   function opcoesDeposito(linha, escolhido) {
     const lista = (linha.depositos || []).filter((d) => !d.i || d.c === escolhido);
@@ -616,6 +695,7 @@
     else if (estado.vista === 'estoque') desenharEstoque();
     else if (estado.vista === 'doses') desenharDoses();
     else if (estado.vista === 'coletor') desenharColetor();
+    else if (estado.vista === 'saldos') desenharSaldos();
     else desenharDepositos();
     const mais = linhas.reduce((m, l) => (l.gerado_em > m ? l.gerado_em : m), '');
     $('atualizado').innerHTML = mais ? 'PIMS · <b>' + new Date(mais).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</b>' : '';
@@ -756,6 +836,30 @@
     if (b) irPara('depositos');
   });
   $('chk-so-alertas').addEventListener('change', (e) => { estado.soAlertas = e.target.checked; desenhar(); });
+  // Consultar depósitos: a busca filtra a lista e o quadro de comparação; o "Comparar" abre e fecha o quadro
+  $('busca-saldos').addEventListener('input', desenharSaldos);
+  $('btn-comparar').addEventListener('click', () => { comparacao.aberta = !comparacao.aberta; desenharSaldos(); });
+  $('saldos').addEventListener('toggle', (e) => {
+    const d = e.target.closest && e.target.closest('details[data-dep]');
+    if (!d || $('busca-saldos').value.trim()) return; // com busca, todos abrem: não muda o que o usuário deixou aberto
+    if (d.open) depAbertos.add(d.dataset.dep); else depAbertos.delete(d.dataset.dep);
+  }, true);
+  $('comparar').addEventListener('change', (e) => {
+    if (e.target.matches('select[data-lado]')) {
+      const outro = e.target.dataset.lado === 'a' ? 'b' : 'a';
+      // escolher no A o depósito que estava no B (ou o contrário) troca os dois de lugar
+      if (comparacao[outro] === e.target.value) comparacao[outro] = comparacao[e.target.dataset.lado];
+      comparacao[e.target.dataset.lado] = e.target.value;
+    } else if (e.target.matches('[data-acao="diferentes"]')) comparacao.soDiferentes = e.target.checked;
+    desenharSaldos();
+  });
+  $('comparar').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-acao]');
+    if (!b) return;
+    if (b.dataset.acao === 'trocar') { const a = comparacao.a; comparacao.a = comparacao.b; comparacao.b = a; }
+    else if (b.dataset.acao === 'fechar') comparacao.aberta = false;
+    desenharSaldos();
+  });
   $('sel-deposito').addEventListener('change', async (e) => {
     equipeControle = e.target.value;
     $('carregando').classList.remove('fora');

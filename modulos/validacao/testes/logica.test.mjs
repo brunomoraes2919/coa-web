@@ -407,3 +407,46 @@ test('início da safra, unidade da fazenda e título', () => {
   assert.equal(L.titulo('TRES FLECHAS'), 'Tres Flechas');
   assert.equal(L.titulo('SM3'), 'SM3');
 });
+
+// ------------------------------ consultar depósitos ------------------------------
+const linhaSaldos = {
+  unidade: 'DOURADO',
+  depositos: [{ c: '1001', n: 'ALMOXARIFADO' }, { c: '1002', n: 'PULVERIZADOR' }, { c: '1003', n: 'ANTIGO', i: 1 }],
+  extras: {
+    sd: { 1002: [['000040', -3], ['075908', 12]], 1001: [['000040', 260], ['000001', 5]], 1003: [] },
+    sdi: { '000040': ['DUAL HERBICIDA', 'LT'], '075908': ['CARTAGO', 'KG'], '000001': ['ÁCIDO BÓRICO', 'KG'] },
+  },
+};
+
+test('consultar depósitos: todos os depósitos da unidade, por código, com os produtos por nome', () => {
+  const r = L.saldosDosDepositos(linhaSaldos, '');
+  assert.equal(r.pendente, false);
+  assert.deepEqual(r.depositos.map((d) => [d.c, d.n, d.inativo, d.total, d.negativos]), [
+    ['1001', 'ALMOXARIFADO', false, 2, 0],
+    ['1002', 'PULVERIZADOR', false, 2, 1],
+    ['1003', 'ANTIGO', true, 0, 0],
+  ]);
+  assert.deepEqual(r.depositos[0].itens, [{ c: '000001', n: 'ÁCIDO BÓRICO', u: 'KG', q: 5 }, { c: '000040', n: 'DUAL HERBICIDA', u: 'LT', q: 260 }]);
+});
+
+test('consultar depósitos: a busca (código ou nome, sem acento) deixa só os depósitos que têm o produto', () => {
+  const r = L.saldosDosDepositos(linhaSaldos, 'acido');
+  assert.deepEqual(r.depositos.map((d) => [d.c, d.itens.map((i) => i.c), d.total]), [['1001', ['000001'], 2]]);
+  assert.deepEqual(L.saldosDosDepositos(linhaSaldos, '0759').depositos.map((d) => d.c), ['1002']);
+  // retrato de antes desta aba: o saldo de todos os depósitos ainda não veio
+  assert.deepEqual(L.saldosDosDepositos({ unidade: 'X', extras: { ap: [] } }, ''), { pendente: true, depositos: [] });
+  assert.deepEqual(L.saldosDosDepositos(null, ''), { pendente: true, depositos: [] });
+});
+
+test('comparar depósitos: produto a produto, com 0 onde não tem saldo e a diferença A − B', () => {
+  const r = L.compararDepositos(linhaSaldos, '1001', '1002', '');
+  assert.deepEqual(r.itens, [
+    { c: '000001', n: 'ÁCIDO BÓRICO', u: 'KG', a: 5, b: 0, dif: 5 },
+    { c: '075908', n: 'CARTAGO', u: 'KG', a: 0, b: 12, dif: -12 },
+    { c: '000040', n: 'DUAL HERBICIDA', u: 'LT', a: 260, b: -3, dif: 263 },
+  ]);
+  assert.deepEqual([r.soA, r.soB, r.nosDois], [1, 1, 1]);
+  assert.deepEqual(L.compararDepositos(linhaSaldos, '1001', '1002', 'dual').itens.map((i) => i.c), ['000040']);
+  // depósito sem saldo: tudo do outro lado
+  assert.deepEqual(L.compararDepositos(linhaSaldos, '1003', '1002', '').itens.map((i) => [i.c, i.a, i.b]), [['075908', 0, 12], ['000040', 0, -3]]);
+});
