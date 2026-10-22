@@ -434,8 +434,10 @@ test('consultar depósitos: a busca (código ou nome, sem acento) deixa só os d
   assert.deepEqual(r.depositos.map((d) => [d.c, d.itens.map((i) => i.c), d.total]), [['1001', ['000001'], 2]]);
   assert.deepEqual(L.saldosDosDepositos(linhaSaldos, '0759').depositos.map((d) => d.c), ['1002']);
   // retrato de antes desta aba: o saldo de todos os depósitos ainda não veio
-  assert.deepEqual(L.saldosDosDepositos({ unidade: 'X', extras: { ap: [] } }, ''), { pendente: true, depositos: [] });
-  assert.deepEqual(L.saldosDosDepositos(null, ''), { pendente: true, depositos: [] });
+  assert.deepEqual(L.saldosDosDepositos({ unidade: 'X', depositos: [{ c: '1' }], extras: { ap: [] } }, ''), { pendente: true, depositos: [] });
+  // fazenda sem depósito com código do SAP: nada a esperar
+  assert.deepEqual(L.saldosDosDepositos({ unidade: 'X', depositos: [], extras: { ap: [] } }, ''), { pendente: false, depositos: [] });
+  assert.deepEqual(L.saldosDosDepositos(null, ''), { pendente: false, depositos: [] });
 });
 
 test('comparar depósitos: produto a produto, com 0 onde não tem saldo e a diferença A − B', () => {

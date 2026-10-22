@@ -309,6 +309,8 @@ details[open] > summary.saldo-cab::before { transform: rotate(45deg); }
 .busca-produto input:focus-visible, .comparar select:focus-visible { outline: 2px solid var(--verde-teal); outline-offset: 1px; }
 .saldos { display: flex; flex-direction: column; gap: 10px; }
 .deposito > .saldo-cab { padding: 12px 18px; }
+/* depósito sem saldo não abre: sem a setinha, o código fica alinhado com o dos outros */
+section.deposito > .saldo-cab { padding-left: 42px; }
 .dep-cod { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--texto-suave); min-width: 44px; }
 .deposito[open] > summary.saldo-cab { border-bottom: 1px solid var(--linha); }
 .tabela .neg, .saldo-qtd .neg { color: var(--ruim); }

@@ -593,7 +593,8 @@
    */
   function saldosDosDepositos(linha, busca) {
     const ex = (linha && linha.extras) || {};
-    if (!ex.sd || typeof ex.sd !== 'object') return { pendente: true, depositos: [] };
+    // sem o saldo: fazenda sem depósito com código do SAP no PIMS (nada a esperar) ou retrato de antes desta aba
+    if (!ex.sd || typeof ex.sd !== 'object') return { pendente: !!(linha && (linha.depositos || []).length), depositos: [] };
     const nomes = ex.sdi || {};
     const cadastro = new Map(((linha && linha.depositos) || []).map(function (d) { return [d.c, d]; }));
     const filtrando = !!semAcento(busca);

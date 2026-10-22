@@ -564,8 +564,11 @@
     const painel = $('comparar');
     if (!comparacao.aberta || todos.length < 2) { painel.hidden = true; painel.innerHTML = ''; return; }
     const cods = todos.map((d) => d.c);
-    if (cods.indexOf(comparacao.a) < 0) comparacao.a = cods[0];
-    if (cods.indexOf(comparacao.b) < 0 || comparacao.b === comparacao.a) comparacao.b = cods.find((c) => c !== comparacao.a);
+    // ao abrir, os dois primeiros depósitos com saldo (sem dois com saldo, os dois primeiros da lista)
+    const comSaldo = todos.filter((d) => d.total).map((d) => d.c);
+    const sugestao = comSaldo.length >= 2 ? comSaldo : cods;
+    if (cods.indexOf(comparacao.a) < 0) comparacao.a = sugestao[0];
+    if (cods.indexOf(comparacao.b) < 0 || comparacao.b === comparacao.a) comparacao.b = sugestao.find((c) => c !== comparacao.a);
     const dep = (c) => todos.find((d) => d.c === c) || { c: c, n: c };
     const opcoes = (escolhido) => todos.map((d) => '<option value="' + esc(d.c) + '"' + (d.c === escolhido ? ' selected' : '') + '>' + esc(d.c) + ' · ' + esc(L.titulo(d.n)) + (d.inativo ? ' (inativo)' : '') + '</option>').join('');
     const r = L.compararDepositos(linha, comparacao.a, comparacao.b, busca);
