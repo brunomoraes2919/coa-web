@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { repo } from '../../data';
 import { mensagemDeErro } from '../Aviso';
-import { colunasNomeVariedade, fmtPopulacao, fmtSementes, validarPopulacao } from '../../lib/variedades';
+import { colunasNomeVariedade, fmtPopulacao, fmtSementes, soNumeroDigitado, validarPopulacao } from '../../lib/variedades';
 import type { PopulacaoVariedade, ResumoVariedades } from '../../lib/types';
 
 interface Props {
@@ -40,7 +40,9 @@ export default function CadastroPopulacao({ resumo, chaves, gravados, erroLeitur
   }, [itens, gravados]);
 
   const cadastradas = itens.filter((i) => gravados.has(i.chave)).length;
-  const mudar = (chave: string, campo: 'sementes' | 'populacao', valor: string) => {
+  const mudar = (chave: string, campo: 'sementes' | 'populacao', digitado: string) => {
+    // só algarismos, vírgula e ponto: letra ou outro sinal digitado (ou colado) não entra no campo
+    const valor = soNumeroDigitado(digitado);
     setCampos((c) => ({ ...c, [chave]: { ...c[chave], [campo]: valor } }));
     if (invalido?.startsWith(`${chave}|`)) setInvalido(null);
     setStatus(null);

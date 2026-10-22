@@ -251,6 +251,11 @@ export function lerNumeroBr(texto: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : NaN;
 }
 
+/** O que pode ser digitado nos campos de sementes e população: só algarismos, vírgula e ponto (o resto some). */
+export function soNumeroDigitado(texto: string): string {
+  return texto.replace(/[^\d.,]/g, '');
+}
+
 /** Confere os dois campos com os limites do banco: sementes/m entre 0 e 100; população de 1.000 a 2.000.000. */
 export function validarPopulacao(sementes: string, populacao: string): { sementesMetro: number | null; populacao: number | null; erro: null } | { erro: string; campo: 'sementes' | 'populacao' } {
   const s = lerNumeroBr(sementes);

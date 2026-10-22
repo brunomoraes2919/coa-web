@@ -153,7 +153,12 @@ describe('nome comercial', () => {
 
 describe('sementes por metro e população', () => {
   it('lê números digitados em português', async () => {
-    const { lerNumeroBr } = await import('../src/lib/variedades');
+    const { lerNumeroBr, soNumeroDigitado } = await import('../src/lib/variedades');
+    expect(soNumeroDigitado('12,2')).toBe('12,2');
+    expect(soNumeroDigitado('244.000')).toBe('244.000');
+    expect(soNumeroDigitado('12a,2 kg')).toBe('12,2');
+    expect(soNumeroDigitado('abc')).toBe('');
+    expect(soNumeroDigitado('-5 %')).toBe('5');
     expect(lerNumeroBr('12,2')).toBe(12.2);
     expect(lerNumeroBr('12.2')).toBe(12.2);
     expect(lerNumeroBr('244.000')).toBe(244000);
