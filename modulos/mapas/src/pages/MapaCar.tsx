@@ -45,7 +45,8 @@ export default function MapaCar() {
   const [sucesso, setSucesso] = useState<string | null>(null);
   const [aparencia, setAparencia] = useState<Aparencia>(() => {
     const { textos: _t, ...resto } = layoutPadrao();
-    return { ...resto, quadros: 1, mostrarValoresPics: false, mostrarGrade: false, mapaBase: 'nenhum' };
+    // satélite por padrão: preenche o quadro do mapa onde não há talhão nem CAR (sem mapa base, ficava branco)
+    return { ...resto, quadros: 1, mostrarValoresPics: false, mostrarGrade: false, mapaBase: 'satelite' };
   });
   const [editados, setEditados] = useState<Partial<LayoutTextos>>({});
   const [dpi, setDpi] = useState<number>(DPI_PADRAO);
