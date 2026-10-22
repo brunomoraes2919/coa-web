@@ -65,8 +65,8 @@ const cacheComposicao = new WeakMap<Talhao[], Map<string, Composicao>>();
 
 /** Composição da folha para a entrada (orientação, quadros, painel), com cache por lista de talhões. */
 export function composicaoDe(inp: Pick<RenderInput, 'talhoes' | 'config'>): Composicao {
-  const { orientacao, quadros, pagina, painelMm } = inp.config;
-  const chave = `${orientacao ?? 'auto'}|${quadros ?? 'auto'}|${pagina}|${painelMm ?? ''}`;
+  const { orientacao, quadros, pagina } = inp.config;
+  const chave = `${orientacao ?? 'auto'}|${quadros ?? 'auto'}|${pagina}`;
   let porChave = cacheComposicao.get(inp.talhoes);
   if (!porChave) {
     porChave = new Map();
@@ -74,7 +74,7 @@ export function composicaoDe(inp: Pick<RenderInput, 'talhoes' | 'config'>): Comp
   }
   let c = porChave.get(chave);
   if (!c) {
-    c = compor(inp.talhoes, { orientacao, quadros, pagina, painelMm });
+    c = compor(inp.talhoes, { orientacao, quadros, pagina });
     porChave.set(chave, c);
   }
   return c;

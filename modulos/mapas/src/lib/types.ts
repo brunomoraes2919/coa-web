@@ -458,11 +458,6 @@ export interface LayoutConfig {
   orientacao?: 'auto' | 'paisagem' | 'retrato';
   /** 'auto' (padrão) = quadros separados quando compensa; 1 = quadro único; 'setor' = um quadro por setor */
   quadros?: 'auto' | 1 | 'setor';
-  /**
-   * Largura do painel lateral na paisagem com um quadro (mm do A3; ausente = 71,4). O quadro do mapa perde a mesma
-   * largura. Só o Mapa de CAR e Matrícula usa: desenho mais alto que largo não deixa branco dos lados do mapa.
-   */
-  painelMm?: number;
   /** mapa de variedade: cores usadas (chave da variedade → cor), guardadas com o mapa salvo */
   coresVariedade?: Record<string, string>;
 }

@@ -16,7 +16,6 @@ import { fazendasDoCoa } from '../lib/embed';
 import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarPng, nomeArquivoMapa } from '../lib/exportar';
 import { fmtDataHora } from '../lib/situacaoPlantio';
 import type { LayoutConfig, LayoutTextos, NomeFonteCar, Palette, RegistroCar, Talhao } from '../lib/types';
-import { folhaDoMapaCar } from '../render/car';
 import { autoExtent, composicaoDe, extentsDosQuadros, TILES, type RenderInput } from '../render';
 
 type Aparencia = Omit<LayoutConfig, 'textos'>;
@@ -100,8 +99,8 @@ export default function MapaCar() {
   const automaticos = useMemo(() => textosAutomaticosCar({ fazenda: fazenda?.nome ?? '', fontes: registro?.fontes ?? {}, hoje: new Date() }), [fazenda, registro]);
   const textos: LayoutTextos = { ...automaticos, ...editados };
 
-  // o que o enquadramento automático mostra: os talhões e os CARs e matrículas que são da fazenda (≥ 10% da área em talhões)
-  const conteudo = useMemo(() => {
+  // enquadramento automático: os talhões e os CARs e matrículas que são da fazenda (≥ 10% da área em talhões)
+  const extentAuto = useMemo(() => {
     if (!validos || !quadro || !talhoes.length) return null;
     const daFazenda = (tipo: 'car' | 'matricula') =>
       quadro.linhas
@@ -109,25 +108,16 @@ export default function MapaCar() {
         .map((l) => (tipo === 'car' ? validos.dados.car : validos.dados.matriculas).features[l.indice])
         .filter((f): f is Feature => !!f && (f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'));
     const extras = [...daFazenda('car'), ...daFazenda('matricula')].map((f, i) => ({ ...talhoes[0], id: `extra-${i}`, geom: f.geometry as Polygon | MultiPolygon }));
-    return [...talhoes, ...extras];
-  }, [validos, quadro, talhoes]);
-  // orientação e largura do painel pelo desenho todo (não só pelos talhões): sem branco dos lados do mapa
-  const folha = useMemo(
-    () => (conteudo && quadro ? folhaDoMapaCar(conteudo, aparencia.orientacao, quadro.linhas.length) : null),
-    [conteudo, quadro, aparencia.orientacao],
-  );
-  const extentAuto = useMemo(() => {
-    if (!conteudo || !folha) return null;
-    const comp = composicaoDe({ talhoes, config: { ...aparencia, ...folha, quadros: 1, textos } as LayoutConfig });
-    return autoExtent(conteudo, comp.quadros[0]?.rect);
+    const comp = composicaoDe({ talhoes, config: { ...aparencia, textos } as LayoutConfig });
+    return autoExtent([...talhoes, ...extras], comp.quadros[0]?.rect);
     // textos não mudam a composição
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conteudo, folha, talhoes, aparencia.pagina]);
+  }, [validos, quadro, talhoes, aparencia.orientacao, aparencia.pagina]);
 
   const renderInput: RenderInput | null = useMemo(() => {
     if (!validos || !quadro || !talhoes.length) return null;
     return {
-      config: { ...aparencia, ...folha, quadros: 1, extent: aparencia.extent ?? extentAuto, textos },
+      config: { ...aparencia, quadros: 1, extent: aparencia.extent ?? extentAuto, textos },
       palette: PALETA_VAZIA,
       grid: null,
       talhoes,
@@ -142,7 +132,7 @@ export default function MapaCar() {
       car: { dados: validos.dados, quadro, usoTalhao, sigefOk: registro?.fontes.sigef?.ok !== false },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aparencia, automaticos, editados, talhoes, validos, quadro, usoTalhao, logo, extentAuto, folha]);
+  }, [aparencia, automaticos, editados, talhoes, validos, quadro, usoTalhao, logo, extentAuto]);
 
   const extentEfetivo = useMemo(() => (renderInput ? extentsDosQuadros(renderInput, composicaoDe(renderInput))[0] : null), [renderInput]);
   const nomeArquivo = nomeArquivoMapa(textos.fazenda || 'fazenda', '', 'png', 'MAPA_CAR_MATRICULA');
