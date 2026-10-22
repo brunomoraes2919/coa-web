@@ -327,7 +327,8 @@ export interface Palette {
 export type EstiloPlantado = 'quadriculado' | 'diagonal' | 'pontilhado' | 'contorno';
 /** Destaque do valor de chuva escrito ao lado de cada PIC */
 export type DestaquePics = 'escuro' | 'vermelho' | 'verde' | 'etiqueta';
-export type MapaBase = 'topo' | 'satelite' | 'nenhum';
+/** 'topoCompleto' (topográfico da Esri sem o véu branco) só é oferecido no Mapa de CAR e Matrícula. */
+export type MapaBase = 'topo' | 'topoCompleto' | 'satelite' | 'nenhum';
 
 /** Tipo do mapa salvo: 'chuva' (padrão; mapas antigos não têm o campo) ou 'variedade'. */
 export type TipoMapa = 'chuva' | 'variedade';

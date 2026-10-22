@@ -7,7 +7,7 @@
 import { CORES_CAR, CORES_MATRICULA, escurecer, fmtHa, type LinhaQuadroCar } from '../lib/car';
 import { ALTURA_MAIUSC, fonte, quebrarTexto, type Rect } from './labels';
 import type { PlanoLegenda } from './legend';
-import { ehRodovia, ESTILO_CAR, type EntradaCar } from './car';
+import { camadaVisivel, ehRodovia, ESTILO_CAR, type CamadaCar, type EntradaCar } from './car';
 import { desenharPadrao } from './patterns';
 import { COR_CINZA, COR_SEPARADOR, COR_TEXTO, COR_VERDE } from './types';
 
@@ -30,7 +30,21 @@ const NOTA = '* Pecuária estimada: área consolidada declarada no CAR, fora dos
 
 type Amostra = 'car' | 'matricula' | 'agricola' | 'eucalipto' | 'reservaLegal' | 'app' | 'vegetacaoNativa' | 'agua' | 'estrada' | 'rodovia';
 
-/** Camadas da legenda presentes no mapa, na ordem de leitura. */
+/** Camada de cada amostra da legenda (camada desligada sai da legenda). */
+const CAMADA_DA_AMOSTRA: Record<Amostra, CamadaCar> = {
+  car: 'car',
+  matricula: 'matriculas',
+  agricola: 'talhoes',
+  eucalipto: 'talhoes',
+  reservaLegal: 'reservaLegal',
+  app: 'app',
+  vegetacaoNativa: 'vegetacaoNativa',
+  agua: 'agua',
+  rodovia: 'rodovias',
+  estrada: 'estradas',
+};
+
+/** Camadas da legenda presentes (e ligadas) no mapa, na ordem de leitura. */
 export function itensLegendaCar(car: EntradaCar): { amostra: Amostra; texto: string }[] {
   const d = car.dados;
   const temTema = (prefixo: RegExp) => d.temas.features.some((f) => prefixo.test(String(f.properties?.tema ?? '')));
@@ -45,7 +59,7 @@ export function itensLegendaCar(car: EntradaCar): { amostra: Amostra; texto: str
   if (d.hidrografia.features.length || temTema(/^(rio_|nascente|lago_natural|vereda|reservatorio_)/)) itens.push({ amostra: 'agua', texto: "Rios, córregos e lagos" });
   if (d.estradas.features.some((f) => ehRodovia(f))) itens.push({ amostra: 'rodovia', texto: 'Rodovia' });
   if (d.estradas.features.some((f) => !ehRodovia(f))) itens.push({ amostra: 'estrada', texto: 'Estrada e carreador' });
-  return itens;
+  return itens.filter((it) => camadaVisivel(car, CAMADA_DA_AMOSTRA[it.amostra]));
 }
 
 /** Colunas do quadro: rótulo e áreas; eucalipto só quando há. */

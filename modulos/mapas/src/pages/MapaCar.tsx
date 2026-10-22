@@ -6,10 +6,12 @@ import Carregando from '../components/Carregando';
 import PreviaLayout from '../components/editor/PreviaLayout';
 import PainelTextos from '../components/editor/PainelTextos';
 import { SecaoAparencia } from '../components/editor/SecaoAparencia';
+import CamadasCar from '../components/editor/CamadasCar';
 import { useCadastros, useLogo } from '../components/editor/hooks';
 import { usePreSelecaoCoa } from '../components/editor/usePreSelecaoCoa';
 import '../components/editor/editor.css';
-import { codigosEucalipto, csvQuadroCar, dadosValidos, escurecer, fmtHa, quadroDoCar, textosAutomaticosCar, usoDoTalhao } from '../lib/car';
+import { categoriaDoTema, codigosEucalipto, csvQuadroCar, dadosValidos, escurecer, fmtHa, quadroDoCar, textosAutomaticosCar, usoDoTalhao } from '../lib/car';
+import { camadasParaExportar } from '../lib/camadasCar';
 import { layoutPadrao } from '../lib/editor';
 import { editarTexto } from '../lib/editorRegras';
 import { fazendasDoCoa } from '../lib/embed';
@@ -17,6 +19,7 @@ import { baixarArquivo, DPI_OPCOES, DPI_PADRAO, gerarPng, nomeArquivoMapa } from
 import { fmtDataHora } from '../lib/situacaoPlantio';
 import type { LayoutConfig, LayoutTextos, NomeFonteCar, Palette, RegistroCar, Talhao } from '../lib/types';
 import { autoExtent, composicaoDe, extentsDosQuadros, TILES, type RenderInput } from '../render';
+import { ehRodovia, type CamadaCar } from '../render/car';
 
 type Aparencia = Omit<LayoutConfig, 'textos'>;
 const PALETA_VAZIA: Palette = { id: 'car', nome: 'CAR', classes: [] };
@@ -49,6 +52,8 @@ export default function MapaCar() {
     return { ...resto, quadros: 1, mostrarValoresPics: false, mostrarGrade: false, mapaBase: 'satelite' };
   });
   const [editados, setEditados] = useState<Partial<LayoutTextos>>({});
+  /** camadas desligadas pelo usuário (vale para todas as fazendas desta visita) */
+  const [ocultas, setOcultas] = useState<Set<CamadaCar>>(() => new Set());
   const [dpi, setDpi] = useState<number>(DPI_PADRAO);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [avisosRender, setAvisosRender] = useState<string[]>([]);
@@ -97,6 +102,25 @@ export default function MapaCar() {
     return new Map(talhoes.map((t) => [t.id, usoDoTalhao(t, euc)] as const));
   }, [registro, talhoes]);
 
+  // camadas que existem nesta fazenda (para ligar e desligar) e as camadas para exportar
+  const presentes = useMemo(() => {
+    const p = new Set<CamadaCar>();
+    if (!validos) return p;
+    const d = validos.dados;
+    const cats = new Set(d.temas.features.map((f) => categoriaDoTema(String(f.properties?.tema ?? ''))));
+    if (d.car.features.length) p.add('car');
+    if (d.matriculas.features.length) p.add('matriculas');
+    if (talhoes.length) p.add('talhoes');
+    if (cats.has('reserva_legal')) p.add('reservaLegal');
+    if (cats.has('app')) p.add('app');
+    if (cats.has('vegetacao_nativa')) p.add('vegetacaoNativa');
+    if (cats.has('hidrografia') || d.hidrografia.features.length) p.add('agua');
+    if (d.estradas.features.some((f) => ehRodovia(f))) p.add('rodovias');
+    if (d.estradas.features.some((f) => !ehRodovia(f))) p.add('estradas');
+    return p;
+  }, [validos, talhoes]);
+  const exportaveis = useMemo(() => (validos && quadro ? camadasParaExportar(validos.dados, quadro, talhoes, usoTalhao) : []), [validos, quadro, talhoes, usoTalhao]);
+
   const automaticos = useMemo(() => textosAutomaticosCar({ fazenda: fazenda?.nome ?? '', fontes: registro?.fontes ?? {}, hoje: new Date() }), [fazenda, registro]);
   const textos: LayoutTextos = { ...automaticos, ...editados };
 
@@ -118,7 +142,8 @@ export default function MapaCar() {
   const renderInput: RenderInput | null = useMemo(() => {
     if (!validos || !quadro || !talhoes.length) return null;
     return {
-      config: { ...aparencia, quadros: 1, extent: aparencia.extent ?? extentAuto, textos },
+      // talhão desligado também tira o nome dos talhões
+      config: { ...aparencia, quadros: 1, extent: aparencia.extent ?? extentAuto, textos, mostrarRotulosTalhoes: aparencia.mostrarRotulosTalhoes && !ocultas.has('talhoes') },
       palette: PALETA_VAZIA,
       grid: null,
       talhoes,
@@ -130,10 +155,10 @@ export default function MapaCar() {
       pics: [],
       logo,
       tiles: aparencia.mapaBase === 'nenhum' ? null : TILES[aparencia.mapaBase],
-      car: { dados: validos.dados, quadro, usoTalhao, sigefOk: registro?.fontes.sigef?.ok !== false },
+      car: { dados: validos.dados, quadro, usoTalhao, sigefOk: registro?.fontes.sigef?.ok !== false, ocultas },
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aparencia, automaticos, editados, talhoes, validos, quadro, usoTalhao, logo, extentAuto]);
+  }, [aparencia, automaticos, editados, talhoes, validos, quadro, usoTalhao, logo, extentAuto, ocultas]);
 
   const extentEfetivo = useMemo(() => (renderInput ? extentsDosQuadros(renderInput, composicaoDe(renderInput))[0] : null), [renderInput]);
   const nomeArquivo = nomeArquivoMapa(textos.fazenda || 'fazenda', '', 'png', 'MAPA_CAR_MATRICULA');
@@ -385,13 +410,30 @@ export default function MapaCar() {
           </section>
 
           <section className="cartao pilha">
-            <h2>4. Textos do layout</h2>
+            <h2>4. Imagem de fundo e camadas</h2>
+            {!validos ? (
+              <p className="suave">{fazendaId ? 'As camadas aparecem depois da busca nas bases.' : 'Escolha a fazenda.'}</p>
+            ) : (
+              <CamadasCar
+                mapaBase={aparencia.mapaBase}
+                onMapaBase={(b) => setAparencia((a) => ({ ...a, mapaBase: b }))}
+                presentes={presentes}
+                ocultas={ocultas}
+                onOcultas={setOcultas}
+                exportaveis={exportaveis}
+                fazenda={fazenda?.nome ?? 'fazenda'}
+              />
+            )}
+          </section>
+
+          <section className="cartao pilha">
+            <h2>5. Textos do layout</h2>
             <PainelTextos textos={textos} editados={editados} onChange={(campo, valor) => setEditados((e) => editarTexto(e, automaticos, campo, valor))} onRestaurar={() => setEditados({})} />
           </section>
 
           <section className="cartao pilha">
-            <h2>5. Aparência</h2>
-            <SecaoAparencia modo="variedade" config={aparencia} onChange={(p) => setAparencia((a) => ({ ...a, ...p, quadros: 1 }))} paletaAutomatica={null} />
+            <h2>6. Aparência</h2>
+            <SecaoAparencia modo="variedade" semMapaBase config={aparencia} onChange={(p) => setAparencia((a) => ({ ...a, ...p, quadros: 1 }))} paletaAutomatica={null} />
           </section>
         </div>
 

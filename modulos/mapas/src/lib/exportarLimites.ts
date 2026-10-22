@@ -1,6 +1,7 @@
 /**
- * Exporta os limites cadastrados (talhões da fazenda, áreas da cultura, plantio) em shapefile e em KML, em WGS84
- * (lon, lat), com os atributos de cada feição. Sem dependência nova: o shapefile (polígonos, formato da ESRI) é
+ * Exporta os limites cadastrados (talhões da fazenda, áreas da cultura, plantio) e as camadas do Mapa de CAR em
+ * shapefile e em KML, em WGS84 (lon, lat), com os atributos de cada feição. Shapefile de polígonos ou de linhas
+ * (rios, estradas). Sem dependência nova: o shapefile (polígonos, formato da ESRI) é
  * escrito aqui e o zip sai do fflate, carregado só quando o usuário exporta.
  *
  * Shapefile: .zip com .shp, .shx, .dbf (atributos), .prj (WGS84) e .cpg (UTF-8, para os acentos).
@@ -44,6 +45,17 @@ export function poligonosDe(g: Geometry | null): Anel[][] {
   }
   return out;
 }
+
+/** Linhas (2+ pontos) de um LineString ou MultiLineString; o resto fica de fora. */
+export function linhasDe(g: Geometry | null): Anel[] {
+  if (!g) return [];
+  const linhas: Position[][] = g.type === 'LineString' ? [g.coordinates] : g.type === 'MultiLineString' ? g.coordinates : [];
+  return linhas.map((l) => l.filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]))).filter((l) => l.length >= 2);
+}
+
+/** Tipo de geometria de um shapefile: polígono (5) ou linha (3). */
+export type GeometriaShp = 'poligono' | 'linha';
+const TIPO_SHP: Record<GeometriaShp, number> = { poligono: 5, linha: 3 };
 
 /** Área com sinal (fórmula do laço): positiva = anti-horário. */
 function areaComSinal(anel: Anel): number {
@@ -180,18 +192,20 @@ function caixaDe(aneis: Anel[]): Caixa {
       if (x > c[2]) c[2] = x;
       if (y > c[3]) c[3] = y;
     }
-  return c;
+  // camada sem nenhum ponto: caixa zerada (o formato não aceita infinito)
+  return c.every(Number.isFinite) ? c : [0, 0, 0, 0];
 }
 
-function cabecalhoShp(dv: DataView, tamanhoBytes: number, caixa: Caixa): void {
+function cabecalhoShp(dv: DataView, tamanhoBytes: number, caixa: Caixa, tipo: number): void {
   dv.setInt32(0, 9994, false);
   dv.setInt32(24, tamanhoBytes / 2, false);
   dv.setInt32(28, 1000, true);
-  dv.setInt32(32, 5, true); // polígono
+  dv.setInt32(32, tipo, true);
   caixa.forEach((v, i) => dv.setFloat64(36 + 8 * i, v, true));
 }
 
-function escreverShp(registros: Anel[][]): { shp: Uint8Array; shx: Uint8Array } {
+/** Polígono e linha têm o mesmo registro (partes + pontos); muda só o tipo. */
+function escreverShp(registros: Anel[][], tipo: number): { shp: Uint8Array; shx: Uint8Array } {
   const conteudos = registros.map((aneis) => 44 + 4 * aneis.length + 16 * aneis.reduce((a, r) => a + r.length, 0));
   const total = 100 + conteudos.reduce((a, c) => a + 8 + c, 0);
   const shp = new Uint8Array(total);
@@ -199,8 +213,8 @@ function escreverShp(registros: Anel[][]): { shp: Uint8Array; shx: Uint8Array } 
   const dv = new DataView(shp.buffer);
   const dx = new DataView(shx.buffer);
   const geral = caixaDe(registros.flat());
-  cabecalhoShp(dv, total, geral);
-  cabecalhoShp(dx, shx.length, geral);
+  cabecalhoShp(dv, total, geral, tipo);
+  cabecalhoShp(dx, shx.length, geral, tipo);
   let o = 100;
   registros.forEach((aneis, i) => {
     dx.setInt32(100 + 8 * i, o / 2, false);
@@ -208,7 +222,7 @@ function escreverShp(registros: Anel[][]): { shp: Uint8Array; shx: Uint8Array } 
     dv.setInt32(o, i + 1, false);
     dv.setInt32(o + 4, conteudos[i] / 2, false);
     const c = o + 8;
-    dv.setInt32(c, 5, true);
+    dv.setInt32(c, tipo, true);
     caixaDe(aneis).forEach((v, j) => dv.setFloat64(c + 4 + 8 * j, v, true));
     dv.setInt32(c + 36, aneis.length, true);
     dv.setInt32(c + 40, aneis.reduce((a, r) => a + r.length, 0), true);
@@ -230,16 +244,26 @@ function escreverShp(registros: Anel[][]): { shp: Uint8Array; shx: Uint8Array } 
 }
 
 /**
- * Arquivos do shapefile (nome → conteúdo) das feições com polígono; as sem polígono ficam de fora (`ignoradas`).
- * `base` é o nome dos arquivos dentro do zip.
+ * Arquivos do shapefile (nome → conteúdo) das feições com polígono (ou com linha, em `geometria` 'linha'); as
+ * outras ficam de fora (`ignoradas`). `base` é o nome dos arquivos dentro do zip.
  */
-export function arquivosShapefile(feicoes: FeicaoExportada[], base: string, hoje = new Date()): { arquivos: Record<string, Uint8Array>; ignoradas: number } {
+export function arquivosShapefile(
+  feicoes: FeicaoExportada[],
+  base: string,
+  hoje = new Date(),
+  geometria: GeometriaShp = 'poligono',
+): { arquivos: Record<string, Uint8Array>; ignoradas: number } {
   const validas: { f: FeicaoExportada; aneis: Anel[] }[] = [];
   for (const f of feicoes) {
+    if (geometria === 'linha') {
+      const linhas = linhasDe(f.geom);
+      if (linhas.length) validas.push({ f, aneis: linhas });
+      continue;
+    }
     const polys = poligonosDe(f.geom);
     if (polys.length) validas.push({ f, aneis: polys.flatMap((p) => p.map((anel, j) => orientarParaShp(anel, j === 0))) });
   }
-  const { shp, shx } = escreverShp(validas.map((v) => v.aneis));
+  const { shp, shx } = escreverShp(validas.map((v) => v.aneis), TIPO_SHP[geometria]);
   return {
     arquivos: {
       [`${base}.shp`]: shp,
@@ -253,11 +277,23 @@ export function arquivosShapefile(feicoes: FeicaoExportada[], base: string, hoje
 }
 
 /** Shapefile zipado (.shp, .shx, .dbf, .prj, .cpg com o mesmo nome do zip). */
-export async function shapefileZip(feicoes: FeicaoExportada[], base: string): Promise<{ blob: Blob; ignoradas: number }> {
-  const { arquivos, ignoradas } = arquivosShapefile(feicoes, base);
+export async function shapefileZip(feicoes: FeicaoExportada[], base: string, geometria: GeometriaShp = 'poligono'): Promise<{ blob: Blob; ignoradas: number }> {
+  const { arquivos, ignoradas } = arquivosShapefile(feicoes, base, new Date(), geometria);
+  return { blob: await zipar(arquivos), ignoradas };
+}
+
+/** Várias camadas num zip só: cada uma com o seu shapefile (.shp, .shx, .dbf, .prj, .cpg) com o nome `base`. */
+export async function camadasZip(camadas: readonly { base: string; feicoes: FeicaoExportada[]; geometria: GeometriaShp }[]): Promise<Blob> {
+  const hoje = new Date();
+  const arquivos: Record<string, Uint8Array> = {};
+  for (const c of camadas) Object.assign(arquivos, arquivosShapefile(c.feicoes, c.base, hoje, c.geometria).arquivos);
+  return zipar(arquivos);
+}
+
+async function zipar(arquivos: Record<string, Uint8Array>): Promise<Blob> {
   const { zipSync } = await import('fflate');
   const zip = zipSync(arquivos, { level: 6 });
-  return { blob: new Blob([zip.slice().buffer], { type: 'application/zip' }), ignoradas };
+  return new Blob([zip.slice().buffer], { type: 'application/zip' });
 }
 
 // ---------------------------------------------------------------- KML

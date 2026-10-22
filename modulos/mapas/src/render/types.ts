@@ -1,5 +1,5 @@
 /** Tipos e constantes da renderização do layout (a mesma função gera a prévia e o PNG). */
-import type { AreaCultura, Grid, LayoutConfig, MapExtent, Palette, Pic, ResumoChuva, ResumoVariedades, StatusPlantio, Talhao } from '../lib/types';
+import type { AreaCultura, Grid, LayoutConfig, MapaBase, MapExtent, Palette, Pic, ResumoChuva, ResumoVariedades, StatusPlantio, Talhao } from '../lib/types';
 import type { EntradaCar } from './car';
 
 export interface TileSource {
@@ -44,12 +44,19 @@ export interface RenderInput {
 const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services';
 
 /** Mapas base Esri (respondem com Access-Control-Allow-Origin: *, o canvas continua exportável). */
-export const TILES: Record<'topo' | 'satelite', TileSource> = {
+export const TILES: Record<Exclude<MapaBase, 'nenhum'>, TileSource> = {
   topo: {
     url: (z, x, y) => `${ESRI}/World_Topo_Map/MapServer/tile/${z}/${y}/${x}`,
     maxZoom: 19,
     atribuicao: 'Mapa base: Esri, HERE, Garmin, © OpenStreetMap',
     clarear: 0.35,
+  },
+  // o mesmo topográfico, com as cores originais (só no Mapa de CAR e Matrícula)
+  topoCompleto: {
+    url: (z, x, y) => `${ESRI}/World_Topo_Map/MapServer/tile/${z}/${y}/${x}`,
+    maxZoom: 19,
+    atribuicao: 'Mapa base: Esri, HERE, Garmin, © OpenStreetMap',
+    clarear: 0,
   },
   satelite: {
     url: (z, x, y) => `${ESRI}/World_Imagery/MapServer/tile/${z}/${y}/${x}`,

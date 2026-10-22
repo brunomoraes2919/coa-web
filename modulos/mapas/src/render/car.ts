@@ -13,6 +13,22 @@ import { desenharPadrao } from './patterns';
 import type { TalhaoPx } from './rotulosMapa';
 import type { Vista } from './types';
 
+/** Camadas do Mapa de CAR que o usuário liga e desliga (no mapa, nos rótulos e na legenda). */
+export type CamadaCar = 'car' | 'matriculas' | 'talhoes' | 'reservaLegal' | 'app' | 'vegetacaoNativa' | 'agua' | 'rodovias' | 'estradas';
+
+/** As camadas na ordem da tela, com o nome que o usuário vê. */
+export const CAMADAS_CAR: readonly { id: CamadaCar; nome: string }[] = [
+  { id: 'car', nome: 'Limite do CAR (SICAR)' },
+  { id: 'matriculas', nome: 'Matrículas (SIGEF)' },
+  { id: 'talhoes', nome: 'Talhões e eucalipto' },
+  { id: 'reservaLegal', nome: 'Reserva legal' },
+  { id: 'app', nome: 'APP' },
+  { id: 'vegetacaoNativa', nome: 'Vegetação nativa' },
+  { id: 'agua', nome: 'Rios, córregos e lagos' },
+  { id: 'rodovias', nome: 'Rodovias' },
+  { id: 'estradas', nome: 'Estradas e carreadores' },
+];
+
 /** Entrada do Mapa de CAR e Matrícula (RenderInput.car). `dados` já sem os CARs cancelados (dadosValidos). */
 export interface EntradaCar {
   dados: DadosCar;
@@ -21,6 +37,13 @@ export interface EntradaCar {
   usoTalhao: Map<string, 'agricola' | 'eucalipto'>;
   /** o SIGEF respondeu na última busca? (false: as matrículas não foram consultadas, não "zero matrículas") */
   sigefOk?: boolean;
+  /** camadas desligadas pelo usuário (ausente = todas aparecem) */
+  ocultas?: ReadonlySet<CamadaCar>;
+}
+
+/** A camada aparece no mapa? */
+export function camadaVisivel(car: Pick<EntradaCar, 'ocultas'>, camada: CamadaCar): boolean {
+  return !car.ocultas?.has(camada);
 }
 
 /** Cores e traços (mm do A3) do mapa e da legenda. */
@@ -153,32 +176,44 @@ export function desenharCar(ctx: CanvasRenderingContext2D, v: Vista, geoms: Talh
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
 
+  // camada desligada pelo usuário não é desenhada
+  const ver = (c: CamadaCar) => camadaVisivel(car, c);
   // 1. tom de cada CAR (a parte do CAR fora de matrícula fica com a cor dele, bem clara)
-  ctx.save();
-  ctx.globalAlpha = ESTILO_CAR.car.tom;
-  for (const c of cars) preencher(c.polys, c.cor);
-  ctx.restore();
+  if (ver('car')) {
+    ctx.save();
+    ctx.globalAlpha = ESTILO_CAR.car.tom;
+    for (const c of cars) preencher(c.polys, c.cor);
+    ctx.restore();
+  }
   // 2. cada matrícula pintada com a sua cor
-  ctx.save();
-  ctx.globalAlpha = ESTILO_CAR.matricula.alfa;
-  for (const m of mats) preencher(m.polys, m.cor);
-  ctx.restore();
+  if (ver('matriculas')) {
+    ctx.save();
+    ctx.globalAlpha = ESTILO_CAR.matricula.alfa;
+    for (const m of mats) preencher(m.polys, m.cor);
+    ctx.restore();
+  }
   // 3. vegetação nativa em pontos verdes
-  padrao(dos('vegetacao_nativa'), 'pontilhado', ESTILO_CAR.vegetacaoNativa.padrao, 0.7, 0.25);
+  if (ver('vegetacaoNativa')) padrao(dos('vegetacao_nativa'), 'pontilhado', ESTILO_CAR.vegetacaoNativa.padrao, 0.7, 0.25);
   // 4. talhões: só o contorno; eucalipto em grade verde-escura
-  const agr = geoms.filter((g) => car.usoTalhao.get(g.t.id) !== 'eucalipto').flatMap((g) => g.xy as XY[][][]);
-  const euc = geoms.filter((g) => car.usoTalhao.get(g.t.id) === 'eucalipto').flatMap((g) => g.xy as XY[][][]);
-  padrao(euc, 'quadriculado', ESTILO_CAR.eucalipto.padrao, 0.6, 0.2);
-  contornar(agr, ESTILO_CAR.agricola.contorno, 0.15);
-  contornar(euc, ESTILO_CAR.eucalipto.contorno, 0.2);
+  if (ver('talhoes')) {
+    const agr = geoms.filter((g) => car.usoTalhao.get(g.t.id) !== 'eucalipto').flatMap((g) => g.xy as XY[][][]);
+    const euc = geoms.filter((g) => car.usoTalhao.get(g.t.id) === 'eucalipto').flatMap((g) => g.xy as XY[][][]);
+    padrao(euc, 'quadriculado', ESTILO_CAR.eucalipto.padrao, 0.6, 0.2);
+    contornar(agr, ESTILO_CAR.agricola.contorno, 0.15);
+    contornar(euc, ESTILO_CAR.eucalipto.contorno, 0.2);
+  }
   // 3. água (polígonos do CAR e do IBGE/OSM)
-  const aguaPolys = [...dos('hidrografia'), ...car.dados.hidrografia.features.flatMap((f) => poligonosPx(f.geometry, p))];
-  preencher(aguaPolys, ESTILO_CAR.agua.fill);
+  if (ver('agua')) {
+    const aguaPolys = [...dos('hidrografia'), ...car.dados.hidrografia.features.flatMap((f) => poligonosPx(f.geometry, p))];
+    preencher(aguaPolys, ESTILO_CAR.agua.fill);
+  }
   // 4. APP (amarelo translúcido) e reserva legal (hachura verde, uma por feição para o padrão não falhar na sobreposição)
-  const app = dos('app');
-  preencher(app, ESTILO_CAR.app.fill);
-  contornar(app, ESTILO_CAR.app.contorno, 0.12);
-  for (const rl of temas.filter((t) => t.cat === 'reserva_legal')) {
+  if (ver('app')) {
+    const app = dos('app');
+    preencher(app, ESTILO_CAR.app.fill);
+    contornar(app, ESTILO_CAR.app.contorno, 0.12);
+  }
+  for (const rl of ver('reservaLegal') ? temas.filter((t) => t.cat === 'reserva_legal') : []) {
     const c = caixa(rl.polys);
     if (!c) continue;
     const x0 = Math.max(c.x, quadro.x);
@@ -195,7 +230,7 @@ export function desenharCar(ctx: CanvasRenderingContext2D, v: Vista, geoms: Talh
     contornar(rl.polys, ESTILO_CAR.reservaLegal.contorno, 0.25);
   }
   // 5. rios e córregos (linhas)
-  const rios = car.dados.hidrografia.features.flatMap((f) => linhasPx(f.geometry, p));
+  const rios = ver('agua') ? car.dados.hidrografia.features.flatMap((f) => linhasPx(f.geometry, p)) : [];
   if (rios.length) {
     ctx.beginPath();
     tracarLinhas(ctx, rios);
@@ -205,8 +240,8 @@ export function desenharCar(ctx: CanvasRenderingContext2D, v: Vista, geoms: Talh
   }
   // 6. estradas: de terra/carreador tracejada, rodovia cheia
   const estradas = car.dados.estradas.features;
-  const terra = estradas.filter((f) => !ehRodovia(f)).flatMap((f) => linhasPx(f.geometry, p));
-  const rodovias = estradas.filter(ehRodovia).flatMap((f) => linhasPx(f.geometry, p));
+  const terra = ver('estradas') ? estradas.filter((f) => !ehRodovia(f)).flatMap((f) => linhasPx(f.geometry, p)) : [];
+  const rodovias = ver('rodovias') ? estradas.filter(ehRodovia).flatMap((f) => linhasPx(f.geometry, p)) : [];
   if (terra.length) {
     ctx.save();
     ctx.beginPath();
@@ -225,8 +260,8 @@ export function desenharCar(ctx: CanvasRenderingContext2D, v: Vista, geoms: Talh
     ctx.stroke();
   }
   // 7. por cima de tudo: o contorno de cada matrícula (tracejado, na cor dela mais escura) e de cada CAR (na cor dele)
-  for (const m of mats) contornar(m.polys, escurecer(m.cor), 0.45, [1.6, 0.9]);
-  for (const c of cars) contornar(c.polys, c.cor, 0.8);
+  if (ver('matriculas')) for (const m of mats) contornar(m.polys, escurecer(m.cor), 0.45, [1.6, 0.9]);
+  if (ver('car')) for (const c of cars) contornar(c.polys, c.cor, 0.8);
   ctx.restore();
 }
 
@@ -277,11 +312,11 @@ export function desenharRotulosCar(ctx: CanvasRenderingContext2D, v: Vista, car:
     }
   };
   ctx.save();
-  for (const l of car.quadro.linhas.filter((x) => x.tipo === 'car')) {
+  for (const l of car.quadro.linhas.filter((x) => x.tipo === 'car' && camadaVisivel(car, 'car'))) {
     const f = car.dados.car.features[l.indice];
     if (f) escrever(l.rotulo, pontoDoRotulo(poligonosPx(f.geometry, p)), l.cor, 3.4);
   }
-  for (const l of car.quadro.linhas.filter((x) => x.tipo === 'matricula')) {
+  for (const l of car.quadro.linhas.filter((x) => x.tipo === 'matricula' && camadaVisivel(car, 'matriculas'))) {
     const f = car.dados.matriculas.features[l.indice];
     if (f) escrever(l.rotulo, pontoDoRotulo(poligonosPx(f.geometry, p)), escurecer(l.cor, 0.45), 2.6);
   }

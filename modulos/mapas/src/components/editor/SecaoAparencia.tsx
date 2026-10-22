@@ -13,6 +13,8 @@ interface Props {
   paletaAutomatica: string | null;
   /** 'variedade' esconde as opções que só valem para a chuva (escala de cores, plantados, PICs, legenda compacta) */
   modo?: 'chuva' | 'variedade';
+  /** sem o seletor de mapa base (o Mapa de CAR escolhe a imagem de fundo na seção das camadas) */
+  semMapaBase?: boolean;
 }
 
 const ESTILOS: { id: EstiloPlantado; nome: string }[] = [
@@ -46,7 +48,7 @@ const QUADROS: { id: string; nome: string }[] = [
 /** valor do seletor "Quadros" → LayoutConfig.quadros (o 1 é número) */
 const lerQuadros = (v: string): Quadros => (v === '1' ? 1 : v === 'setor' ? 'setor' : 'auto');
 
-export function SecaoAparencia({ config, onChange, paletaAutomatica, modo = 'chuva' }: Props) {
+export function SecaoAparencia({ config, onChange, paletaAutomatica, modo = 'chuva', semMapaBase = false }: Props) {
   const chuva = modo === 'chuva';
   const marca = (campo: 'mostrarRotulosTalhoes' | 'mostrarValoresPics' | 'mostrarGrade' | 'legendaCompacta', rotulo: string) => (
     <label className="linha">
@@ -88,16 +90,18 @@ export function SecaoAparencia({ config, onChange, paletaAutomatica, modo = 'chu
             ))}
           </select>
         </label>
-        <label className="campo">
-          <span>Mapa base</span>
-          <select value={config.mapaBase} onChange={(e) => onChange({ mapaBase: e.target.value as MapaBase })}>
-            {BASES.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.nome}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!semMapaBase && (
+          <label className="campo">
+            <span>Mapa base</span>
+            <select value={config.mapaBase} onChange={(e) => onChange({ mapaBase: e.target.value as MapaBase })}>
+              {BASES.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.nome}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
       {chuva && (
         <>

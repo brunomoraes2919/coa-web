@@ -398,6 +398,10 @@ ol.passos li { margin-bottom: 4px; }
 .tabela-car td.rotulo-matricula { font-weight: 700; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
 .tabela-car .cor-car, .tabela-car .cor-matricula { display: inline-block; width: 0.8em; height: 0.8em; margin-right: 0.4em; vertical-align: -0.05em; border: 2px solid; box-sizing: border-box; }
 .tabela-car .cor-matricula { border-width: 1px; }
+.camadas-car { border: 1px solid var(--borda); border-radius: 8px; padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 6px; }
+.camadas-car legend { padding: 0 4px; font-weight: 600; }
+.lista-camadas-exportar { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.lista-camadas-exportar li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--borda); }
 .tabela-car td small { font-weight: 400; color: var(--texto-suave); }
 .tabela-car tr.inicio-grupo td { border-top: 2px solid var(--borda); }
 .notas-car { margin: 0; padding-left: 18px; font-size: 0.8rem; display: flex; flex-direction: column; gap: 3px; }

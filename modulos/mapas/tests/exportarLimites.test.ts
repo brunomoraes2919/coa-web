@@ -4,7 +4,7 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { unzipSync } from 'fflate';
 import { describe, expect, it } from 'vitest';
-import { arquivosShapefile, kmlDe, nomesDeColunaDbf, poligonosDe, shapefileZip, type FeicaoExportada } from '../src/lib/exportarLimites';
+import { arquivosShapefile, camadasZip, kmlDe, nomesDeColunaDbf, poligonosDe, shapefileZip, type FeicaoExportada } from '../src/lib/exportarLimites';
 import { importarShape } from '../src/lib/shapes';
 
 /** quadrado no sentido do GeoJSON (anti-horário) */
@@ -109,5 +109,45 @@ describe('polígonos', () => {
     expect(poligonosDe(aberto)[0][0]).toHaveLength(5);
     expect(poligonosDe({ type: 'Polygon', coordinates: [[[0, 0], [1, 1]]] })).toEqual([]);
     expect(poligonosDe(null)).toEqual([]);
+  });
+});
+
+describe('shapefile de linhas (rios e estradas)', () => {
+  const linhas: FeicaoExportada[] = [
+    { geom: { type: 'LineString', coordinates: [[-57, -14], [-56.99, -13.99], [-56.98, -13.995]] }, props: { NOME: 'Córrego Água Fria', CLASSE: 'stream' } },
+    { geom: { type: 'MultiLineString', coordinates: [[[-57, -14.01], [-56.99, -14.02]], [[-56.98, -14.01], [-56.97, -14]]] }, props: { NOME: 'Estrada', CLASSE: 'track' } },
+    { geom: comFuro, props: { NOME: 'polígono não entra', CLASSE: null } },
+  ];
+
+  it('tipo 3 (linha), volta pelo shpjs com as partes e os atributos', async () => {
+    const { arquivos, ignoradas } = arquivosShapefile(linhas, 'RIOS', new Date(2026, 9, 22), 'linha');
+    expect(ignoradas).toBe(1);
+    expect(new DataView(arquivos['RIOS.shp'].buffer).getInt32(32, true)).toBe(3);
+    expect(new DataView(arquivos['RIOS.shp'].buffer).getInt32(108, true)).toBe(3);
+    const { default: shp } = await import('shpjs');
+    const fc = (await shp({ shp: arquivos['RIOS.shp'], dbf: arquivos['RIOS.dbf'], cpg: 'UTF-8', prj: new TextDecoder().decode(arquivos['RIOS.prj']) })) as unknown as {
+      features: { geometry: { type: string; coordinates: unknown[] }; properties: Record<string, unknown> }[];
+    };
+    expect(fc.features.map((f) => f.geometry.type)).toEqual(['LineString', 'MultiLineString']);
+    expect(fc.features[0].geometry.coordinates).toHaveLength(3);
+    expect(fc.features[0].properties).toMatchObject({ NOME: 'Córrego Água Fria', CLASSE: 'stream' });
+    expect(fc.features[1].geometry.coordinates).toHaveLength(2);
+  });
+
+  it('polígono não sai como linha e camada vazia sai sem quebrar o cabeçalho', () => {
+    const { arquivos, ignoradas } = arquivosShapefile([linhas[2]], 'VAZIA', new Date(2026, 9, 22), 'linha');
+    expect(ignoradas).toBe(1);
+    const dv = new DataView(arquivos['VAZIA.shp'].buffer);
+    expect(arquivos['VAZIA.shp'].length).toBe(100);
+    expect([36, 44, 52, 60].map((o) => dv.getFloat64(o, true))).toEqual([0, 0, 0, 0]);
+  });
+
+  it('todas as camadas num zip só, cada uma com os seus cinco arquivos', async () => {
+    const blob = await camadasZip([
+      { base: 'TALHOES', feicoes: feicoes.slice(0, 2), geometria: 'poligono' },
+      { base: 'RIOS', feicoes: linhas, geometria: 'linha' },
+    ]);
+    const nomes = Object.keys(unzipSync(new Uint8Array(await blob.arrayBuffer()))).sort();
+    expect(nomes).toEqual(['RIOS.cpg', 'RIOS.dbf', 'RIOS.prj', 'RIOS.shp', 'RIOS.shx', 'TALHOES.cpg', 'TALHOES.dbf', 'TALHOES.prj', 'TALHOES.shp', 'TALHOES.shx']);
   });
 });
