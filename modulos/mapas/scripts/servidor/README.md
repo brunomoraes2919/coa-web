@@ -11,6 +11,8 @@ Esta pasta guarda **cópias de referência** do que está instalado na VM do Goo
 
 O que a VM **baixa sozinha**, a cada hora, são outros três arquivos, da pasta `modulos/mapas/scripts` do `main`: `sincronizar-plantio.mjs`, `atender-pedidos.mjs` e `plantio.config.json`. Isso continua igual.
 
+**Código sempre novo nos botões (desde 22/10/2026).** Quando há algum pedido pendente ("Atualizar" da Validação, "Atualizar plantio", chuva, boletins ou CAR), o próprio `atender-pedidos.mjs` baixa esses três arquivos antes de atender, com as mesmas conferências da rotina horária (nenhum vazio, `node --check`, JSON legível, os três trocados juntos e só se algum mudou; o arquivo `versao` vale do mesmo jeito) e atende o pedido com o código novo. Assim, quem clica não espera o minuto 17. Sem pedido pendente, nada é baixado. Isso só acontece na pasta das rotinas (a que tem o arquivo `.trava`); não precisa mudar nada na VM.
+
 As chaves ficam só na VM, no arquivo `~/.plantio-pims.env`. **Nenhum comando deste guia mostra chave na tela**, e nenhuma chave deve ser colada em conversa, e-mail ou no repositório.
 
 Os comandos são rodados no terminal SSH da VM (botão **SSH** no console do Google Cloud; para colar, **Ctrl + Shift + V**). Cada bloco cinza é **um passo**: cole o bloco inteiro, aperte Enter e confira o que apareceu. Se aparecer algo diferente do que está escrito, pare e avise antes de seguir.

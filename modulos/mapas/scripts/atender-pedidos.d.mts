@@ -110,3 +110,12 @@ export function atenderPedidosCar(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<number>;
+/** Tabelas de pedidos dos botões das telas. */
+export const TABELAS_DE_PEDIDOS: string[];
+/** Os três arquivos que o servidor baixa do repositório (trocados juntos). */
+export const ARQUIVOS_DOS_SCRIPTS: string[];
+export function haPedidoPendente(opcoes: { url: string; chave: string; fetch?: typeof fetch }): Promise<boolean>;
+/** 'main', o commit de 40 caracteres do arquivo versao, ou null (versao inválido: não baixa). */
+export function refDosScripts(raiz: string): string | null;
+/** 'trocou' | 'igual' | 'falhou: <motivo>' */
+export function atualizarScripts(opcoes: { raiz: string; fetch?: typeof fetch; conferirSintaxe?: (arquivo: string) => boolean }): Promise<string>;

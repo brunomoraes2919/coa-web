@@ -227,27 +227,17 @@ describe('"Atualizar plantio": rodada recente responde com os dados já gravados
   });
 });
 
-describe('"Atualizar" da Validação: rodada recente responde com os dados já gravados', () => {
+describe('"Atualizar" da Validação: cada clique lê de novo o PIMS e o SAP', () => {
   const rodar = async (tabelas: Record<string, TabelaFalsa>) => {
     const s = servidoresFalsos({ valid_pedidos: [{ id: 3 }, { id: 4 }], ...tabelas }, [], { agrovexStatus: 403, agrovexCorpo: '{"error":"Forbidden"}' });
     return { r: await atenderPedidosValidacao(opcoes(s.impl)), s };
   };
 
-  it(`valid_pims gravada há menos de ${RECENTE_MINUTOS} min e nenhum vínculo novo: 'ok' sem consultar o PIMS nem o SAP`, async () => {
-    for (const vinculos of [{ valid_vinculos: [{ atualizado_em: haMinutos(60) }] }, { valid_vinculos: [] }, {}] as Record<string, TabelaFalsa>[]) {
-      const { r, s } = await rodar({ valid_pims: [{ gerado_em: haMinutos(3) }], ...vinculos });
-      expect(r).toBe(true);
-      expect(s.aoAgrovex(), JSON.stringify(vinculos)).toHaveLength(0);
-      expect(s.respostas('valid_pedidos')).toEqual([
-        { url: `${URL_SB}/rest/v1/valid_pedidos?atendido_em=is.null&id=lte.4`, corpo: { atendido_em: AGORA.toISOString(), resultado: 'ok' } },
-      ]);
-    }
-  });
-
-  it('vínculo de depósito salvo depois da rodada ("O saldo entra na próxima atualização"): roda de novo', async () => {
-    const { s } = await rodar({ valid_pims: [{ gerado_em: haMinutos(3) }], valid_vinculos: [{ atualizado_em: haMinutos(1), unidade: 'GLOBO', deposito: 'D01' }] });
-    expect(s.leituras('valid_vinculos')[0]).toBe(`${URL_SB}/rest/v1/valid_vinculos?select=atualizado_em&order=atualizado_em.desc&limit=1`);
+  it(`mesmo com valid_pims gravada há menos de ${RECENTE_MINUTOS} min, consulta de novo e marca os pedidos de uma vez`, async () => {
+    const { r, s } = await rodar({ valid_pims: [{ gerado_em: haMinutos(1) }], valid_vinculos: [] });
+    expect(r).toBe(true);
     expect(s.aoAgrovex().length).toBeGreaterThan(0);
+    expect(s.respostas('valid_pedidos').map((x) => x.url)).toEqual([`${URL_SB}/rest/v1/valid_pedidos?atendido_em=is.null&id=lte.4`]);
   });
 
   it('rodada antiga, tabela vazia ou sem conseguir saber: roda, e o erro vira o texto do tipo da falha', async () => {
@@ -265,7 +255,7 @@ describe('"Atualizar" da Validação: rodada recente responde com os dados já g
     }
   });
 
-  it('sem conseguir ler os vínculos, não trata como recente; a recusa do Supabase vira "erro interno", sem o texto dela', async () => {
+  it('sem conseguir ler os vínculos, a recusa do Supabase vira "erro interno", sem o texto dela', async () => {
     const recusa = { status: 500, corpo: { code: 'XX000', message: 'texto interno do banco que não vai para a tela' } };
     const { r, s } = await rodar({ valid_pims: [{ gerado_em: haMinutos(1) }], valid_vinculos: recusa });
     expect(r).toBe(true);

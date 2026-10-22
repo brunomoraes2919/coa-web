@@ -156,8 +156,9 @@ describe('as rotinas passam o prazo adiante', () => {
 
   it('nos dois programas, todo fetch ao Supabase passa por chamarSupabase', () => {
     const fonte = (arquivo: string) => readFileSync(resolve('scripts', arquivo), 'utf8');
-    // atender-pedidos.mjs não chama o fetch direto em lugar nenhum
-    expect(fonte('atender-pedidos.mjs').match(/\bfetchImpl\(/g)).toBeNull();
+    // atender-pedidos.mjs: só no download dos scripts do repositório (atualizarScripts), com o prazo PRAZO_DOWNLOAD_MS
+    expect(fonte('atender-pedidos.mjs').match(/\bfetchImpl\(/g)).toHaveLength(1);
+    expect(fonte('atender-pedidos.mjs')).toMatch(/fetchImpl\(`\$\{REPOSITORIO_RAW\}[^\n]*signal: AbortSignal\.timeout\(PRAZO_DOWNLOAD_MS\)/);
     // sincronizar-plantio.mjs: só no cliente do Agrovex (que tem o prazo dele), dentro de chamarSupabase, na leitura
     // das fontes de previsão de fora (lerFonteExterna, com prazo de 30 s; conferido em previsao-benchmark-servidor.test.ts)
     // e na leitura das bases públicas do Mapa de CAR e Matrícula (buscarBase, com prazo CAR_PRAZO_MS)

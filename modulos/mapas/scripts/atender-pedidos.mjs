@@ -10,17 +10,23 @@
 // consulta SICAR, INCRA/SIGEF, IBGE, OpenStreetMap e o PIMS (eucalipto) e grava o resultado em mapas_car.
 // Variáveis: AGROVEX_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (as mesmas da rotina horária).
 //
+// Código sempre novo: no servidor (pasta com o arquivo .trava das rotinas), quando há algum pedido pendente, antes de
+// atender baixa os scripts do repositório (atualizarScripts, as mesmas conferências da rotina horária) e, se algum
+// mudou, atende com o código novo (roda de novo, já com os arquivos trocados). Quem clica não espera o minuto 17.
+//
 // Freios (um usuário não pode fazer o servidor martelar o PIMS, o SAP ou a ZEUS):
 //   * toda leitura de pedidos pendentes tem ordem e limite;
-//   * "Atualizar plantio" e "Atualizar" da Validação: se a última rodada completa tem menos de 5 min, o
-//     pedido é respondido 'ok' com os dados que já estão gravados, sem consultar de novo;
+//   * "Atualizar plantio": se a última rodada completa tem menos de 5 min, o pedido é respondido 'ok' com os
+//     dados que já estão gravados, sem consultar de novo. O "Atualizar" da Validação lê sempre (pedido do usuário
+//     em 22/10/2026; a leitura leva ~10 s e os pedidos que chegam juntos são atendidos numa rodada só);
 //   * chuva e boletins: por verificação, no máximo um pedido de cada usuário; quem tem mais de 5
 //     pendentes recebe "muitos pedidos" nos que passam disso, sem consulta nenhuma;
 //   * chuva e boletins: antes de consultar, o servidor confere se quem pediu pode ver a fazenda/unidade
 //     (as mesmas regras das políticas de supabase/0018_seguranca_pedidos.sql); na dúvida, não atende.
 // Toda chamada ao Supabase passa por chamarSupabase (sincronizar-plantio.mjs), que põe prazo: 60 s na leitura,
 // 120 s na gravação. As chamadas ao Agrovex já tinham o prazo delas (120 s).
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { boletinsMecanizadas, buscarCarMatricula, cabecalhosSupabase, chamarSupabase, chuvaPorPicZeus, conferirUrlAgrovex, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, sincronizarLimitesZeus, ultimoDiaZeus, validarPedidoMec, validarPeriodoChuva } from './sincronizar-plantio.mjs';
@@ -734,10 +740,8 @@ const GUARDAR_VALID_DIAS = 7;
 
 /**
  * Uma verificação dos pedidos de "Atualizar" da Validação PIMS: sem pendentes → false; com pendentes →
- * consulta o PIMS e o SAP, grava valid_pims e marca os pedidos ('ok' ou 'erro: <texto do tipo da falha>').
- * Se valid_pims foi gravada há menos de RECENTE_MINUTOS e nenhum vínculo de depósito mudou depois dela, não
- * consulta de novo: os pedidos são marcados 'ok' e a tela relê o que já está gravado. Sem a tabela (script
- * 0007 não aplicado) → false, sem erro.
+ * consulta o PIMS e o SAP (sempre: cada clique lê de novo), grava valid_pims e marca os pedidos ('ok' ou
+ * 'erro: <texto do tipo da falha>'). Sem a tabela (script 0007 não aplicado) → false, sem erro.
  */
 export async function atenderPedidosValidacao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const ctx = { ...supabase, fetch: fetchImpl };
@@ -750,24 +754,11 @@ export async function atenderPedidosValidacao({ supabase, agrovex, fetch: fetchI
   const ids = Array.isArray(linhas) ? linhas.map((l) => Number(l.id)).filter(Number.isFinite) : [];
   if (!ids.length) return false;
 
-  const momento = agora();
-  const ultima = await ultimoCarimbo(ctx, 'valid_pims');
-  let recente = ehRecente(ultima, momento);
-  if (recente) {
-    // vínculo de depósito salvo depois da rodada ("O saldo entra na próxima atualização"): roda de novo.
-    // Sem conseguir saber (null), também roda.
-    const vinculo = await ultimoCarimbo(ctx, 'valid_vinculos', 'atualizado_em');
-    if (vinculo === null || (typeof vinculo === 'number' && vinculo > ultima)) recente = false;
-  }
   let resultado = 'ok';
-  if (recente) {
-    console.log(`== ${momento.toISOString()} ${ids.length} pedido(s) da validação respondido(s) com os dados já gravados (rodada há menos de ${RECENTE_MINUTOS} min).`);
-  } else {
-    let erroDaRodada = null;
-    const erro = await rodarValidacao({ agrovex, supabase, fetchImpl, aoErro: (e) => { erroDaRodada = e; } });
-    // o texto de `erro` já foi para o log; o pedido leva só o texto do tipo da falha
-    if (erro) resultado = `erro: ${erroDaRodada === null ? MENSAGENS_DE_ERRO.interno : mensagemPublica(erroDaRodada)}`;
-  }
+  let erroDaRodada = null;
+  const erro = await rodarValidacao({ agrovex, supabase, fetchImpl, aoErro: (e) => { erroDaRodada = e; } });
+  // o texto de `erro` já foi para o log; o pedido leva só o texto do tipo da falha
+  if (erro) resultado = `erro: ${erroDaRodada === null ? MENSAGENS_DE_ERRO.interno : mensagemPublica(erroDaRodada)}`;
   const marca = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_VALID}?atendido_em=is.null&id=lte.${ids[ids.length - 1]}`, {
     method: 'PATCH',
     headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
@@ -939,6 +930,86 @@ export async function atenderPedidosCar({ supabase, agrovex, fetch: fetchImpl = 
   return respondidos;
 }
 
+// ---------- código sempre novo: antes de atender um pedido, baixa os scripts do repositório ----------
+
+/** Tabelas de pedidos dos botões das telas (Atualizar, Inserir via integração, Buscar no PIMS, Buscar nas bases). */
+export const TABELAS_DE_PEDIDOS = [TABELA, TABELA_CHUVA, TABELA_MEC, TABELA_VALID, TABELA_CAR_PEDIDOS];
+/** Os arquivos que a rotina horária baixa (atualizar-e-rodar.sh): trocados os três juntos, ou nenhum. */
+export const ARQUIVOS_DOS_SCRIPTS = ['sincronizar-plantio.mjs', 'atender-pedidos.mjs', 'plantio.config.json'];
+const REPOSITORIO_RAW = 'https://raw.githubusercontent.com/brunomoraes2919/coa-web';
+/** marca, no ambiente, de que esta execução já é a do código novo (não baixa de novo) */
+const JA_ATUALIZADO = 'COA_PEDIDOS_CODIGO_NOVO';
+const PRAZO_DOWNLOAD_MS = 60_000;
+
+/** Algum pedido pendente em alguma tabela? Tabela que não existe ou leitura que falhou não conta. */
+export async function haPedidoPendente({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
+  for (const tabela of TABELAS_DE_PEDIDOS) {
+    try {
+      const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${tabela}?select=id&atendido_em=is.null&limit=1`, { headers: cabecalhosSupabase(chave) }, `a leitura dos pedidos pendentes (${tabela})`);
+      if (!resp.ok) continue;
+      const linhas = await resp.json();
+      if (Array.isArray(linhas) && linhas.length) return true;
+    } catch {
+      // sem conseguir ler esta tabela: as outras ainda podem ter pedido
+    }
+  }
+  return false;
+}
+
+/**
+ * De onde baixar, como na rotina horária: o main ou, com o arquivo `versao` (40 caracteres de um commit conferido),
+ * só aquele commit. `versao` com outra coisa: null (não baixa nada).
+ */
+export function refDosScripts(raiz) {
+  const arquivo = join(raiz, 'versao');
+  if (!existsSync(arquivo)) return 'main';
+  const ref = readFileSync(arquivo, 'utf8').replace(/\s+/g, '');
+  return /^[0-9a-f]{40}$/.test(ref) ? ref : null;
+}
+
+/**
+ * Baixa os scripts do repositório para scripts/.novo, confere (nenhum vazio, os .mjs sem erro de sintaxe, o .json
+ * legível) e, se algum difere do que está na pasta, troca os três. Devolve 'trocou', 'igual' ou 'falhou: <motivo>'
+ * (nada é trocado). Roda com a trava das rotinas na mão (atender-pedidos.sh): a rotina horária espera.
+ */
+export async function atualizarScripts({ raiz, fetch: fetchImpl = globalThis.fetch, conferirSintaxe = conferirSintaxeNode }) {
+  const ref = refDosScripts(raiz);
+  if (!ref) return 'falhou: o arquivo versao não tem um código de commit de 40 caracteres';
+  const pasta = join(raiz, 'scripts');
+  const novo = join(pasta, '.novo');
+  rmSync(novo, { recursive: true, force: true });
+  try {
+    mkdirSync(novo, { recursive: true });
+    for (const f of ARQUIVOS_DOS_SCRIPTS) {
+      const resp = await fetchImpl(`${REPOSITORIO_RAW}/${ref}/modulos/mapas/scripts/${f}`, { redirect: 'error', signal: AbortSignal.timeout(PRAZO_DOWNLOAD_MS) });
+      if (!resp.ok) return `falhou: ${f} respondeu HTTP ${resp.status}`;
+      const texto = await resp.text();
+      if (!texto.trim()) return `falhou: ${f} veio vazio`;
+      writeFileSync(join(novo, f), texto);
+    }
+    for (const f of ARQUIVOS_DOS_SCRIPTS) {
+      if (f.endsWith('.mjs') && !conferirSintaxe(join(novo, f))) return `falhou: ${f} veio com erro`;
+    }
+    try {
+      JSON.parse(readFileSync(join(novo, 'plantio.config.json'), 'utf8'));
+    } catch {
+      return 'falhou: plantio.config.json veio com erro';
+    }
+    const atual = (f) => (existsSync(join(pasta, f)) ? readFileSync(join(pasta, f), 'utf8') : null);
+    if (ARQUIVOS_DOS_SCRIPTS.every((f) => atual(f) === readFileSync(join(novo, f), 'utf8'))) return 'igual';
+    for (const f of ARQUIVOS_DOS_SCRIPTS) renameSync(join(novo, f), join(pasta, f));
+    return 'trocou';
+  } catch (e) {
+    return `falhou: ${String(e instanceof Error ? e.message : e).slice(0, 160)}`;
+  } finally {
+    rmSync(novo, { recursive: true, force: true });
+  }
+}
+
+function conferirSintaxeNode(arquivo) {
+  return spawnSync(process.execPath, ['--check', arquivo], { stdio: 'ignore', timeout: 60_000 }).status === 0;
+}
+
 async function main() {
   const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   const config = JSON.parse(readFileSync(join(raiz, 'scripts', 'plantio.config.json'), 'utf8'));
@@ -954,6 +1025,17 @@ async function main() {
     safras: config.safras ?? 'auto',
     excluirPrefixos: config.excluirPrefixos ?? [],
   };
+  // código sempre novo: no servidor (a pasta das rotinas tem o arquivo .trava), com pedido pendente, baixa os
+  // scripts antes de atender; se algum mudou, atende com eles (outra execução, com os arquivos já trocados)
+  if (!process.env[JA_ATUALIZADO] && existsSync(join(raiz, '.trava')) && (await haPedidoPendente(supabase))) {
+    const r = await atualizarScripts({ raiz });
+    if (r !== 'igual') console.log(`== ${new Date().toISOString()} scripts antes do pedido: ${r}`);
+    if (r === 'trocou') {
+      const novo = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { stdio: 'inherit', env: { ...process.env, [JA_ATUALIZADO]: '1' } });
+      if (novo.status !== 0) process.exitCode = novo.status ?? 1;
+      return;
+    }
+  }
   // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
   let erroConsulta = null;
   for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus, atualizarChuvaTalhao, atualizarLimitesZeus]) {
