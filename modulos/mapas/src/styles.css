@@ -216,6 +216,9 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--laranja); widt
 .tabela-populacao td.nome small { display: block; font-size: 0.74rem; }
 .tabela-populacao input { width: 100%; padding: 4px 6px; text-align: right; font-variant-numeric: tabular-nums; }
 .tabela-populacao input[aria-invalid='true'] { border-color: var(--erro); background: #fbeceb; }
+/* exemplo, não valor: cinza claro e em itálico */
+.tabela-populacao input::placeholder { color: #a7b0aa; font-style: italic; }
+.status-erro { color: var(--erro); font-weight: 600; font-size: 0.85rem; }
 .lista-alta { max-height: 520px; }
 
 /* ---------- Avisos ---------- */

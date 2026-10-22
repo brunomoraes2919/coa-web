@@ -256,10 +256,17 @@ export function soNumeroDigitado(texto: string): string {
   return texto.replace(/[^\d.,]/g, '');
 }
 
-/** Confere os dois campos com os limites do banco: sementes/m entre 0 e 100; população de 1.000 a 2.000.000. */
+/** População abaixo disto foi digitada em mil plantas ("244" = 244.000 plantas por hectare). */
+const POPULACAO_EM_MIL = 1000;
+
+/**
+ * Confere os dois campos com os limites do banco: sementes/m entre 0 e 100; população de 1.000 a 2.000.000 plantas
+ * por hectare. População digitada em mil plantas ("244" ou "244,5") vale vezes mil.
+ */
 export function validarPopulacao(sementes: string, populacao: string): { sementesMetro: number | null; populacao: number | null; erro: null } | { erro: string; campo: 'sementes' | 'populacao' } {
   const s = lerNumeroBr(sementes);
-  const p = lerNumeroBr(populacao);
+  const lida = lerNumeroBr(populacao);
+  const p = lida !== null && !Number.isNaN(lida) && lida > 0 && lida < POPULACAO_EM_MIL ? lida * 1000 : lida;
   if (s !== null && (Number.isNaN(s) || s <= 0 || s >= 100)) return { erro: 'Sementes por metro: use um número entre 0 e 100, como 12,2.', campo: 'sementes' };
   if (p !== null && (Number.isNaN(p) || p < 1000 || p > 2_000_000)) return { erro: 'População: use plantas por hectare, entre 1.000 e 2.000.000, como 244.000.', campo: 'populacao' };
   return { sementesMetro: s === null ? null : Math.round(s * 100) / 100, populacao: p === null ? null : Math.round(p), erro: null };

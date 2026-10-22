@@ -171,7 +171,11 @@ describe('sementes por metro e população', () => {
     expect(validarPopulacao('17,8', '355.000')).toEqual({ sementesMetro: 17.8, populacao: 355000, erro: null });
     expect(validarPopulacao('', '')).toEqual({ sementesMetro: null, populacao: null, erro: null });
     expect(validarPopulacao('150', '')).toMatchObject({ campo: 'sementes' });
-    expect(validarPopulacao('12', '244')).toMatchObject({ campo: 'populacao' });
+    // população digitada em mil plantas vale vezes mil
+    expect(validarPopulacao('12', '244')).toEqual({ sementesMetro: 12, populacao: 244000, erro: null });
+    expect(validarPopulacao('12', '244,5')).toEqual({ sementesMetro: 12, populacao: 244500, erro: null });
+    expect(validarPopulacao('12', '0,5')).toMatchObject({ campo: 'populacao' });
+    expect(validarPopulacao('12', '3.000.000')).toMatchObject({ campo: 'populacao' });
   });
   it('unidade e safra do PIMS como o Operacional grava (nome da safra no PIMS, ou o próprio nome)', async () => {
     const { chavesPimsDoMapa } = await import('../src/lib/variedades');

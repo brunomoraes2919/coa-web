@@ -25,8 +25,11 @@ export default function CadastroPopulacao({ resumo, chaves, gravados, erroLeitur
   const itens = useMemo(() => resumo.itens.filter((i) => i.chave), [resumo]);
   const [campos, setCampos] = useState<Campos>({});
   const [invalido, setInvalido] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
+  /** mensagem ao lado do botão: erro (vermelho) ou resultado */
+  const [status, setStatus] = useState<{ texto: string; erro: boolean } | null>(null);
   const [gravando, setGravando] = useState(false);
+  // aberto por padrão: fechado, o cadastro passava despercebido no fim da seção
+  const [aberto, setAberto] = useState(true);
 
   // campos = o que está gravado (de novo a cada leitura, a cada troca de fazenda ou safra)
   useEffect(() => {
@@ -56,26 +59,26 @@ export default function CadastroPopulacao({ resumo, chaves, gravados, erroLeitur
       const r = validarPopulacao(c.sementes, c.populacao);
       if (r.erro !== null) {
         setInvalido(`${i.chave}|${r.campo}`);
-        setStatus(`${colunasNomeVariedade(i).comercial || colunasNomeVariedade(i).pims}: ${r.erro}`);
+        setStatus({ texto: `Não foi gravado. ${colunasNomeVariedade(i).comercial || colunasNomeVariedade(i).pims}: ${r.erro}`, erro: true });
         return;
       }
       linhas.push({ variedade: i.chave, sementesMetro: r.sementesMetro, populacao: r.populacao });
     }
     setGravando(true);
-    setStatus('Gravando…');
+    setStatus({ texto: 'Gravando…', erro: false });
     try {
       await repo().salvarPopulacao(chaves.unidade, chaves.safra, linhas);
-      setStatus('Gravado. A legenda do mapa já mostra os valores.');
+      setStatus({ texto: 'Gravado. A legenda do mapa já mostra os valores.', erro: false });
       onSalvo();
     } catch (e) {
-      setStatus(`Não foi possível gravar: ${mensagemDeErro(e)}`);
+      setStatus({ texto: `Não foi possível gravar: ${mensagemDeErro(e)}`, erro: true });
     } finally {
       setGravando(false);
     }
   };
 
   return (
-    <details className="cadastro-populacao">
+    <details className="cadastro-populacao" open={aberto} onToggle={(e) => setAberto(e.currentTarget.open)}>
       <summary>
         Sementes e população
         <span className="suave">{cadastradas ? ` · ${cadastradas} de ${itens.length} variedades cadastradas` : ' · nenhuma cadastrada'}</span>
@@ -87,8 +90,8 @@ export default function CadastroPopulacao({ resumo, chaves, gravados, erroLeitur
       ) : (
         <div className="pilha">
           <p className="suave">
-            Sementes por metro linear e população (plantas por hectare) de cada variedade desta fazenda nesta safra. Saem na tabela da legenda do mapa e na
-            Revista do Operacional. Deixe em branco o que não quiser mostrar.
+            Sementes por metro linear e população (plantas por hectare; pode digitar em mil, como 244) de cada variedade desta fazenda nesta safra. Saem na
+            tabela da legenda do mapa e na Revista do Operacional. Deixe em branco o que não quiser mostrar.
           </p>
           <div className="tabela-rolagem">
             <table className="tabela tabela-populacao">
@@ -115,7 +118,7 @@ export default function CadastroPopulacao({ resumo, chaves, gravados, erroLeitur
                           type="text"
                           inputMode="decimal"
                           value={c.sementes}
-                          placeholder="12,2"
+                          placeholder="ex.: 12,2"
                           aria-label={`Sementes por metro de ${nome}`}
                           aria-invalid={invalido === `${i.chave}|sementes` || undefined}
                           onChange={(e) => mudar(i.chave, 'sementes', e.target.value)}
@@ -126,7 +129,7 @@ export default function CadastroPopulacao({ resumo, chaves, gravados, erroLeitur
                           type="text"
                           inputMode="numeric"
                           value={c.populacao}
-                          placeholder="244.000"
+                          placeholder="ex.: 244.000"
                           aria-label={`População de ${nome}`}
                           aria-invalid={invalido === `${i.chave}|populacao` || undefined}
                           onChange={(e) => mudar(i.chave, 'populacao', e.target.value)}
@@ -139,12 +142,12 @@ export default function CadastroPopulacao({ resumo, chaves, gravados, erroLeitur
             </table>
           </div>
           <div className="linha">
-            <button type="button" className="botao botao-pequeno" onClick={() => void salvar()} disabled={gravando || !itens.length}>
-              Salvar sementes e população
+            <button type="button" className="botao botao-primario botao-pequeno" onClick={() => void salvar()} disabled={gravando || !itens.length}>
+              {gravando ? 'Gravando…' : 'Salvar sementes e população'}
             </button>
             {status ? (
-              <span className="suave" role="status">
-                {status}
+              <span className={status.erro ? 'status-erro' : 'suave'} role={status.erro ? 'alert' : 'status'}>
+                {status.texto}
               </span>
             ) : null}
           </div>
