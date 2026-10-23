@@ -277,6 +277,9 @@ nav{display:flex;flex-direction:column;gap:2px;flex:1;}
 .categoria-vazia{grid-area:vazia;margin:18px 0 0;font-size:14px;color:#EAF2EF;opacity:.9;}
 .categoria-sair{background:none;border:1px solid rgba(255,255,255,.2);color:#EAF2EF;font-size:12.5px;padding:7px 14px;border-radius:6px;cursor:pointer;}
 .categoria-sair:hover{background:rgba(255,255,255,.08);}
+/* "?" da segurança, ao lado do nome na tela inicial */
+.categoria-ajuda{width:30px;height:30px;flex:none;border-radius:50%;border:1px solid rgba(255,255,255,.28);background:none;color:#EAF2EF;font:600 14px/1 inherit;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;padding:0;}
+.categoria-ajuda:hover,.categoria-ajuda:focus-visible{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.5);outline:none;}
 
 /* ---------- fazendas permitidas (Usuários) ---------- */
 /* blocos de caixas (fazendas, categorias) e botões do formulário de usuário: mesmo respiro da grade de campos */
@@ -478,6 +481,12 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 /* janela de redefinir senha */
 .dlg-mec.dlg-senha{width:min(460px,calc(100vw - 32px));}
 .dlg-mec.dlg-novidade{width:min(560px,calc(100vw - 32px));}
+.dlg-mec.dlg-seguranca{width:min(640px,calc(100vw - 32px));}
+.seguranca-camadas{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:12px;}
+.seguranca-camadas li{display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start;}
+.seguranca-camadas .num{width:28px;height:28px;border-radius:50%;background:#E3F0EA;color:var(--verde-teal);font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;}
+.seguranca-camadas b{display:block;font-size:14px;color:var(--verde-escuro);margin-bottom:2px;}
+.seguranca-camadas p{margin:0;font-size:13.5px;line-height:1.5;color:var(--texto-suave);}
 .novidade-selo{display:inline-block;margin-bottom:6px;padding:2px 9px;border-radius:999px;background:#FBEFD9;color:#8A5300;font-size:11.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;}
 .novidade-texto{margin:0;font-size:14px;line-height:1.55;color:var(--texto);}
 .novidade-lista{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:8px;font-size:13.5px;line-height:1.5;color:var(--texto-suave);}
@@ -1014,11 +1023,35 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     </div>
     <p class="categoria-vazia" id="categoria-vazia" style="display:none">Nenhuma categoria liberada para o seu usuário. Fale com o administrador.</p>
     <div class="categoria-rodape">
+      <button type="button" class="categoria-ajuda" id="btn-seguranca" title="Como o COA WEB protege os dados" aria-label="Como o COA WEB protege os dados" aria-haspopup="dialog">?</button>
       <span id="categoria-usuario-logado"></span>
       <button class="categoria-sair" id="btn-sair-categoria">Sair</button>
     </div>
   </div>
 </div>
+
+<dialog class="dlg-mec dlg-seguranca" id="dlg-seguranca" aria-labelledby="dlg-seguranca-titulo">
+  <form method="dialog">
+    <div class="dlg-mec-cab">
+      <div><h3 id="dlg-seguranca-titulo">Como o COA WEB protege os dados</h3><p>As camadas de segurança do sistema, da entrada até as fontes de dados.</p></div>
+      <button type="submit" class="dlg-mec-fechar" value="fechar" aria-label="Fechar">×</button>
+    </div>
+    <div class="dlg-mec-corpo">
+      <ol class="seguranca-camadas">
+        <li><span class="num">1</span><div><b>Só entra quem foi autorizado</b><p>Ninguém cria conta sozinho: o cadastro só é aceito para um e-mail que o administrador liberou nos últimos 15 minutos. A senha definitiva precisa de 6 caracteres ou mais, com letra maiúscula, minúscula e número, e trocar a senha encerra as outras sessões abertas.</p></div></li>
+        <li><span class="num">2</span><div><b>Cada usuário vê só o que é dele</b><p>As permissões ficam no próprio banco de dados (Row Level Security do PostgreSQL), não na tela: quem abrir o código da página ou chamar o banco por fora recebe apenas as fazendas e os módulos liberados para o seu usuário. Sem login, nenhuma tabela responde.</p></div></li>
+        <li><span class="num">3</span><div><b>Conexão criptografada e página blindada</b><p>Todo o tráfego passa por HTTPS. O navegador só aceita scripts de origens conhecidas e conferidas (Content Security Policy, com a assinatura de cada biblioteca externa), o que impede a injeção de código, e a página não pode ser embutida em outros sites. Tudo o que é digitado aparece na tela como texto, nunca como código.</p></div></li>
+        <li><span class="num">4</span><div><b>PIMS, SAP e ZEUS só para leitura</b><p>O navegador nunca acessa o PIMS, o SAP ou a ZEUS. Um servidor do COA faz apenas consultas de leitura nessas bases, nunca grava nelas, e guarda o resultado no banco do COA WEB. As chaves de acesso ficam só nesse servidor, fora do navegador e do código publicado.</p></div></li>
+        <li><span class="num">5</span><div><b>Pedidos conferidos e limitados</b><p>Antes de atender um botão como "Atualizar" ou "Buscar no PIMS", o servidor confere se quem pediu tem acesso àquela fazenda e àquele módulo. Há limite de pedidos por hora por usuário, e as mensagens de erro não expõem detalhes internos.</p></div></li>
+        <li><span class="num">6</span><div><b>Revisado e testado</b><p>O sistema passou por uma auditoria de segurança em outubro de 2026, com testes sem login e com login de cada perfil; as correções foram aplicadas no site e no banco. A cada mudança, os testes automáticos rodam antes da publicação.</p></div></li>
+      </ol>
+    </div>
+    <div class="dlg-mec-rodape">
+      <span>Viu algo estranho? Fale com o administrador do COA WEB.</span>
+      <div class="mec-pims-acoes"><button type="submit" class="btn" value="fechar">Entendi</button></div>
+    </div>
+  </form>
+</dialog>
 
 <dialog class="dlg-mec dlg-novidade" id="dlg-novidade" aria-labelledby="dlg-novidade-titulo">
   <form method="dialog">
@@ -5864,6 +5897,7 @@ document.getElementById('card-validacao').addEventListener('click', entrarValida
 document.getElementById('card-controle').addEventListener('click', entrarControle);
 document.getElementById('card-painel').addEventListener('click', entrarPainel);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
+document.getElementById('btn-seguranca').addEventListener('click', ()=>document.getElementById('dlg-seguranca').showModal());
 document.getElementById('btn-outra-curiosidade').addEventListener('click', mostrarCuriosidade);
 
 async function tentarLogin(){
