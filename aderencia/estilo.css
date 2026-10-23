@@ -146,6 +146,8 @@ h2, p { margin: 0; }
 .grafico .barra-dia { fill: var(--verde-teal); pointer-events: none; }
 .grafico .barra-dia.fim-de-semana { fill: #7FAFA4; }
 .grafico .alvo { fill: transparent; cursor: default; }
+.grafico .sem-registro { fill: #F3F5F3; }
+.grafico .sem-registro-texto { fill: var(--texto-fraco); font-size: 11px; font-style: italic; }
 .grafico .alvo:hover + .barra-dia, .grafico .barra-dia.realce { fill: var(--verde-escuro); }
 .legenda-mini { display: flex; gap: 14px; font-size: 12px; color: var(--texto-suave); padding: 0 18px 12px; }
 .legenda-mini i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }

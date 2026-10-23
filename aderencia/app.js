@@ -1,7 +1,9 @@
 /* =====================================================================
    Aderência de utilização da plataforma — módulo do COA WEB (só administradores)
-   Lê a função aderencia_dados (supabase/0031_aderencia.sql: eventos de uso gravados por assets/uso.js, o último
-   login de cada usuário, os mapas salvos e os pedidos de atualização) e monta o painel com aderencia/logica.js.
+   Lê a função aderencia_dados (supabase/0031_aderencia.sql e 0032_aderencia_historico.sql: o histórico de sessões do
+   Supabase, os eventos de uso gravados por assets/uso.js, os mapas salvos e os pedidos de atualização) e monta o
+   painel com aderencia/logica.js. Acessos, dias e horas de uso têm histórico; relatórios, telas e módulos só existem
+   desde o começo do rastreio.
    O período escolhido é lido de novo do banco a cada troca e a cada clique em Atualizar; perfil, unidade e busca
    só redesenham. Junto vem o período anterior (do mesmo tamanho, até 200 dias), para comparar os números do topo.
    A unidade não tem campo no cabeçalho (a fazenda do COA WEB é a do menu lateral): escolhe-se na tabela Unidades.
@@ -26,14 +28,7 @@
   const fmtPct = (v, casas) => fmtN((v || 0) * 100, casas) + '%';
   const fmtData = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4) : '—');
   const fmtDataCurta = (iso) => (iso ? iso.slice(8, 10) + '/' + iso.slice(5, 7) : '—');
-  /** Minutos → "45 min", "3 h", "12 h 30 min", "1.204 h". */
-  function fmtHoras(min) {
-    const m = Math.round(min || 0);
-    if (m < 60) return m + ' min';
-    const h = Math.floor(m / 60), resto = m % 60;
-    if (h >= 100) return fmtN(Math.round(m / 60)) + ' h';
-    return resto ? h + ' h ' + resto + ' min' : h + ' h';
-  }
+  const fmtH = (h) => fmtN(h) + ' h';
   const ehData = (t) => /^\d{4}-\d{2}-\d{2}$/.test(t || '');
   const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
   const SEMANA_LONGA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
@@ -48,7 +43,7 @@
     ativos: { nome: 'usuários ativos', valor: (d) => d.ativos, fmt: (v) => fmtN(v) },
     acessos: { nome: 'acessos', valor: (d) => d.acessos, fmt: (v) => fmtN(v) },
     relatorios: { nome: 'relatórios', valor: (d) => d.relatorios, fmt: (v) => fmtN(v) },
-    minutos: { nome: 'horas de uso', valor: (d) => d.minutos / 60, fmt: (v) => fmtN(v, v && v < 10 && v % 1 ? 1 : 0) + ' h' },
+    horas: { nome: 'horas de uso', valor: (d) => d.horas, fmt: (v) => fmtN(v) + ' h' },
   };
 
   const estado = { periodo: '30', fazenda: null, perfil: 'todos', metrica: 'ativos', ordem: { chave: 'acessos', desc: true }, busca: '' };
@@ -58,6 +53,7 @@
   let hoje = L.hojeCuiaba();
   let r = null;      // L.montar do período
   let rAnt = null;   // L.montar do período anterior (null quando não dá para comparar)
+  let rAntRastreio = false; // o período anterior inteiro já estava no rastreio (relatórios comparáveis)
   let lendo = false;
 
   /* ------------------------------ dados ------------------------------ */
@@ -96,6 +92,12 @@
   }
 
   const rastreioDia = () => (dados && dados.rastreio_desde ? L.hojeCuiaba(new Date(dados.rastreio_desde)) : null);
+  /** Desde quando há histórico de acessos (a renovação de sessão mais antiga guardada, ou o rastreio). */
+  const historicoDia = () => {
+    const h = dados && dados.historico_desde ? L.hojeCuiaba(new Date(dados.historico_desde)) : null;
+    const rd = rastreioDia();
+    return h && rd ? (h < rd ? h : rd) : h || rd;
+  };
 
   /** O período escolhido ({ de, ate }), ou null quando as datas escolhidas à mão ainda não estão completas. */
   function periodoAtual() {
@@ -180,15 +182,17 @@
     const filtro = { de: p.de, ate: p.ate, fazenda: estado.fazenda, perfil: estado.perfil };
     r = L.montar(dados, filtro, hoje);
     const ant = L.periodoAnterior(p.de, p.ate);
-    const rd = rastreioDia();
-    // só compara quando o período anterior inteiro já estava sendo rastreado (antes disso ele sempre daria zero)
-    rAnt = faixa && ant.de >= faixa.de && rd && rd <= ant.de ? L.montar(dados, Object.assign({}, filtro, ant), hoje) : null;
+    const rd = rastreioDia(), hd = historicoDia();
+    // só compara quando o período anterior inteiro tem histórico (antes disso ele sempre daria zero); relatórios,
+    // só quando ele já estava no rastreio (variacaoHtml)
+    rAnt = faixa && ant.de >= faixa.de && hd && hd <= ant.de ? L.montar(dados, Object.assign({}, filtro, ant), hoje) : null;
+    rAntRastreio = !!(rAnt && rd && rd <= ant.de);
 
     $('conteudo').hidden = false;
     $('campo-unidade').hidden = estado.fazenda === null;
     $('nome-unidade').textContent = estado.fazenda === null ? '' : nomeFazenda(estado.fazenda);
     $('atualizado').innerHTML = dados.gerado_em ? 'Lido às <b>' + esc(new Date(dados.gerado_em).toLocaleTimeString('pt-BR', { timeZone: 'America/Cuiaba', hour: '2-digit', minute: '2-digit' })) + '</b>' : '';
-    desenharExplica(p, rd);
+    desenharExplica(p, rd, hd);
     desenharKpis();
     desenharSerie();
     desenharUltimosDias();
@@ -201,20 +205,22 @@
     desenharAtencao();
   }
 
-  function desenharExplica(p, rd) {
+  function desenharExplica(p, rd, hd) {
     const n = r.dias.length;
     let t = '<b>' + esc(fmtData(p.de)) + ' a ' + esc(fmtData(p.ate)) + '</b> (' + n + (n === 1 ? ' dia' : ' dias') + ')';
     if (estado.fazenda !== null) t += ' · usuários liberados na <b>' + esc(nomeFazenda(estado.fazenda)) + '</b> (e os administradores que veem todas)';
     if (estado.perfil !== 'todos') t += ' · ' + (estado.perfil === 'admin' ? 'só administradores' : 'só colaboradores');
-    t += '. <b>Usuário ativo</b> é quem usou a plataforma ao menos uma vez no período; <b>adesão</b> é a parte dos cadastrados que usou.';
-    if (!rd) t += ' O rastreio detalhado começa quando os usuários abrirem o COA WEB depois desta versão: até lá, só contam o último login, os mapas salvos e os pedidos de atualização.';
-    else if (rd > p.de) t += ' O rastreio detalhado começou em <b>' + esc(fmtData(rd)) + '</b>: antes disso só contam o último login, os mapas salvos e os pedidos de atualização.';
+    t += '. <b>Usuário ativo</b> é quem usou a plataforma ao menos uma vez no período; <b>acesso</b> é cada vez que a pessoa usou (horas seguidas de uso contam como um); <b>horas de uso</b> são as horas do relógio com a plataforma aberta.';
+    t += ' Acessos, dias e horas vêm do histórico de sessões' + (hd ? ' (desde ' + esc(fmtData(hd)) + ')' : '') + ' e do rastreio da plataforma.';
+    if (!rd) t += ' <b>Relatórios, telas e módulos</b> começam a contar quando os usuários abrirem o COA WEB depois desta versão.';
+    else if (rd > p.de) t += ' <b>Relatórios, telas e módulos</b> só existem desde <b>' + esc(fmtData(rd)) + '</b>, quando o rastreio começou (os arquivos baixados antes disso não deixaram registro).';
+    if (hd && hd > p.de) t += ' Antes de ' + esc(fmtData(hd)) + ' não há registro de acessos.';
     $('explica').innerHTML = t;
   }
 
   /* ---- números do topo ---- */
   function variacaoHtml(chave, modo) {
-    if (!rAnt) return '';
+    if (!rAnt || ((chave === 'relatorios' || chave === 'pedidos') && !rAntRastreio)) return '';
     const atual = r.kpis[chave], antes = rAnt.kpis[chave];
     const v = L.variacao(atual, antes);
     if (!v) return '';
@@ -224,27 +230,30 @@
     const sobe = v.dif > 0;
     let texto;
     if (modo === 'pp') texto = (sobe ? '+' : '−') + fmtN(Math.abs(v.dif) * 100, 0) + ' p.p.';
-    else if (v.pct === null) texto = '+' + (modo === 'horas' ? fmtHoras(v.dif) : fmtN(v.dif, modo === 'decimal' ? 1 : 0));
+    else if (v.pct === null) texto = '+' + fmtN(v.dif, modo === 'decimal' ? 1 : 0);
     else texto = (sobe ? '▲ ' : '▼ ') + fmtPct(Math.abs(v.pct), 0);
     return '<span class="kpi-var ' + (sobe ? 'sobe' : 'desce') + '">' + esc(texto + base) + '</span>';
   }
   function desenharKpis() {
     const k = r.kpis;
+    const conhecidos = r.dispositivos.computador + r.dispositivos.celular + r.dispositivos.tablet;
     const movel = r.dispositivos.celular + r.dispositivos.tablet;
+    const rd = rastreioDia();
+    const relDesde = !rd ? 'contados a partir desta versão' : rd > r.de ? 'contados desde ' + fmtDataCurta(rd) : 'arquivos baixados';
     const cartao = (rotulo, valor, sub, varHtml, dica) =>
       '<div class="kpi"' + (dica ? ' data-dica="' + esc(dica) + '"' : '') + '><span class="kpi-rotulo">' + esc(rotulo) + '</span><span class="kpi-valor">' + esc(valor) + '</span>' +
       (sub ? '<span class="kpi-sub">' + esc(sub) + '</span>' : '') + (varHtml || '') + '</div>';
     $('kpis').innerHTML = [
       cartao('Usuários ativos', fmtN(k.ativos), 'de ' + fmtN(k.cadastrados) + ' cadastrados', variacaoHtml('ativos'), 'Usaram a plataforma ao menos uma vez no período'),
       cartao('Adesão', fmtPct(k.adesao), 'dos cadastrados usaram', variacaoHtml('adesao', 'pp')),
-      cartao('Acessos', fmtN(k.acessos), k.ativos ? fmtN(k.acessos / k.ativos, 1) + ' por usuário ativo' : '', variacaoHtml('acessos'), 'Cada vez que alguém abre o COA WEB logado (uma aba aberta ou recarregada)'),
+      cartao('Acessos', fmtN(k.acessos), k.ativos ? fmtN(k.acessos / k.ativos, 1) + ' por usuário ativo' : '', variacaoHtml('acessos'), 'Cada vez que alguém usou a plataforma (horas seguidas de uso contam como um acesso)'),
       cartao('Usuários por dia', fmtN(k.mediaAtivosDia, 1), 'média de pessoas diferentes por dia', variacaoHtml('mediaAtivosDia', 'decimal')),
-      cartao('Relatórios gerados', fmtN(k.relatorios), k.mapasSalvos ? '+ ' + fmtN(k.mapasSalvos) + ' mapas salvos' : 'arquivos baixados', variacaoHtml('relatorios'), 'PNG, PDF, planilhas e shapes baixados da plataforma'),
-      cartao('Tempo de uso', fmtHoras(k.minutos), k.ativos ? fmtHoras(k.minutos / k.ativos) + ' por usuário ativo' : '', variacaoHtml('minutos', 'horas'), 'Tempo com a plataforma aberta e em primeiro plano (contado de 5 em 5 minutos)'),
-      cartao('Pedidos de atualização', fmtN(k.pedidos), 'plantio, chuva, validação, boletins e CAR', variacaoHtml('pedidos')),
-      cartao('Pelo celular', k.acessos ? fmtPct(movel / k.acessos) : '—', fmtN(movel) + ' de ' + fmtN(k.acessos) + ' acessos', '', 'Acessos pelo celular ou tablet'),
-      cartao('Ativos na última semana', fmtN(k.ativos7), 'de ' + fmtN(k.cadastrados) + ', pelo último acesso', '', 'Acessaram nos últimos 7 dias (vale qualquer que seja o período escolhido)'),
-      cartao('Precisam de atenção', fmtN(k.nunca + k.semAcesso30), fmtN(k.nunca) + ' nunca entraram · ' + fmtN(k.semAcesso30) + ' há 30+ dias', '', 'Veja a lista em "Precisa de atenção", no fim da página'),
+      cartao('Horas de uso', fmtH(k.horas), k.ativos ? fmtN(k.horas / k.ativos, 1) + ' h por usuário ativo' : '', variacaoHtml('horas'), 'Horas do relógio com a plataforma aberta (abrir às 8h10 e sair às 9h20 conta 2 horas)'),
+      cartao('Relatórios gerados', fmtN(k.relatorios), relDesde, variacaoHtml('relatorios'), 'PNG, PDF, planilhas e shapes baixados da plataforma' + (rd ? ' (registrados desde ' + fmtData(rd) + ')' : '')),
+      cartao('Mapas salvos', fmtN(k.mapasSalvos), 'mapas de chuva e de variedade', variacaoHtml('mapasSalvos')),
+      cartao('Pedidos de atualização', fmtN(k.pedidos), 'plantio, chuva, validação, boletins e CAR', variacaoHtml('pedidos'), 'Botões Atualizar, Buscar no PIMS e Buscar nas bases. Antes do rastreio, o banco guardava os pedidos só por 7 a 30 dias' + (rd ? '; desde ' + fmtData(rd) + ' todos ficam registrados' : '') + '.'),
+      cartao('Pelo celular', conhecidos ? fmtPct(movel / conhecidos) : '—', fmtN(movel) + ' de ' + fmtN(conhecidos) + ' acessos', '', 'Acessos pelo celular ou tablet (pelo aparelho da sessão)'),
+      cartao('Precisam de atenção', fmtN(k.nunca + k.semAcesso30), fmtN(k.nunca) + (k.nunca === 1 ? ' nunca entrou · ' : ' nunca entraram · ') + fmtN(k.semAcesso30) + ' há 30+ dias', '', 'Veja a lista em "Precisa de atenção", no fim da página. Ativos na última semana: ' + fmtN(k.ativos7) + ' de ' + fmtN(k.cadastrados)),
     ].join('');
   }
 
@@ -272,7 +281,7 @@
     const W = Math.max(260, el.clientWidth - 36), H = 220;
     const m = { t: 10, r: 6, b: 24, l: 40 };
     const iw = W - m.l - m.r, ih = H - m.t - m.b, base = m.t + ih;
-    const esc_ = escala(max, estado.metrica !== 'minutos');
+    const esc_ = escala(max, true);
     const y = (v) => m.t + ih - (v / esc_.topo) * ih;
     const slot = iw / s.length;
     const gap = slot >= 6 ? Math.min(8, Math.max(2, slot * 0.22)) : slot >= 3 ? 1 : 0;
@@ -283,12 +292,21 @@
       g += '<line x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + yy + '" y2="' + yy + '"/><text x="' + (m.l - 6) + '" y="' + yy + '" dy="0.32em" text-anchor="end">' + esc(met.fmt(v)) + '</text>';
     }
     g += '</g>';
+    // dias sem registro: antes do rastreio (relatórios) ou antes do histórico de sessões (o resto)
+    const limite = estado.metrica === 'relatorios' ? (rastreioDia() || L.somarDias(hoje, 1)) : historicoDia();
+    const nSem = limite ? s.filter((d) => d.dia < limite).length : 0;
+    if (nSem) {
+      const largura = nSem * slot;
+      g += '<rect class="sem-registro" x="' + m.l + '" y="' + m.t + '" width="' + largura.toFixed(1) + '" height="' + ih + '"/>';
+      if (largura >= 70) g += '<text class="sem-registro-texto" x="' + (m.l + largura / 2).toFixed(1) + '" y="' + (m.t + 16) + '" text-anchor="middle">' + esc(largura >= 150 && nSem < s.length ? 'sem registro antes de ' + fmtDataCurta(limite) : 'sem registro') + '</text>';
+    }
     const passoRotulo = Math.max(1, Math.ceil(48 / slot));
     let barras = '', rotulos = '<g class="eixo">';
     s.forEach((d, i) => {
       const x = m.l + i * slot + gap / 2;
       const v = valores[i];
-      const linhas = [SEMANA_LONGA[d.semana] + ', ' + fmtData(d.dia), fmtN(d.ativos) + (d.ativos === 1 ? ' usuário ativo' : ' usuários ativos'), fmtN(d.acessos) + ' acessos', fmtN(d.relatorios) + ' relatórios', fmtHoras(d.minutos) + ' de uso'];
+      const linhas = [SEMANA_LONGA[d.semana] + ', ' + fmtData(d.dia), fmtN(d.ativos) + (d.ativos === 1 ? ' usuário ativo' : ' usuários ativos'), fmtN(d.acessos) + (d.acessos === 1 ? ' acesso' : ' acessos'), fmtH(d.horas) + ' de uso'];
+      linhas.push(i < nSem && estado.metrica === 'relatorios' ? 'Relatórios: sem registro (antes do rastreio)' : fmtN(d.relatorios) + (d.relatorios === 1 ? ' relatório' : ' relatórios'));
       if (d.mapas) linhas.push(fmtN(d.mapas) + (d.mapas === 1 ? ' mapa salvo' : ' mapas salvos'));
       barras += '<rect class="alvo" x="' + (m.l + i * slot).toFixed(1) + '" y="' + m.t + '" width="' + slot.toFixed(1) + '" height="' + ih + '" data-dica="' + esc(linhas.join('\n')) + '"/>';
       barras += '<path class="barra-dia' + (d.semana === 0 || d.semana === 6 ? ' fim-de-semana' : '') + '" d="' + caminhoBarra(+x.toFixed(1), +y(v).toFixed(1), +bw.toFixed(1), base) + '"/>';
@@ -298,10 +316,12 @@
     el.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + esc('Uso por dia: ' + met.nome) + '">' + g + barras + rotulos + '</svg>' +
       '<div class="legenda-mini"><span><i style="background:var(--verde-teal)"></i>Dias úteis</span><span><i style="background:#7FAFA4"></i>Sábado e domingo</span></div>';
     // subtítulo: média e pico
-    const media = valores.reduce((a, b) => a + b, 0) / (valores.length || 1);
+    // a média só conta os dias com registro (a faixa "sem registro" fica de fora)
+    const comRegistro = valores.slice(nSem);
+    const media = comRegistro.reduce((a, b) => a + b, 0) / (comRegistro.length || 1);
     const iPico = valores.indexOf(max);
     $('serie-sub').textContent = max > 0
-      ? 'Média de ' + fmtN(media, 1) + ' ' + met.nome + ' por dia · pico de ' + fmtN(max, estado.metrica === 'minutos' ? 1 : 0) + ' em ' + fmtDataCurta(s[iPico].dia) + ' (' + SEMANA[s[iPico].semana] + ')'
+      ? 'Média de ' + fmtN(media, 1) + ' ' + met.nome + ' por dia' + (nSem ? ' (desde ' + fmtDataCurta(s[nSem] ? s[nSem].dia : limite) + ')' : '') + ' · pico de ' + fmtN(max) + ' em ' + fmtDataCurta(s[iPico].dia) + ' (' + SEMANA[s[iPico].semana] + ')'
       : 'Nenhum registro de ' + met.nome + ' no período.';
   }
 
@@ -309,38 +329,32 @@
   function desenharUltimosDias() {
     const fim = r.ate;
     const dias = L.diasEntre(L.somarDias(fim, -13), fim);
-    const ids = new Map(r.usuarios.map((u) => [u.id, u]));
-    const porU = new Map();
-    const marcar = (u, dia, acessos, uso) => {
-      if (!ids.has(u) || dia < dias[0] || dia > fim) return;
-      if (!porU.has(u)) porU.set(u, new Map());
-      const m = porU.get(u);
-      const x = m.get(dia) || { acessos: 0, uso: 0 };
-      x.acessos += acessos; x.uso += uso;
-      m.set(dia, x);
-    };
-    for (const e of dados.eventos || []) marcar(e[2], e[0], e[3] === 'acesso' ? Number(e[8]) || 0 : 0, e[3] === 'acesso' ? 0 : Number(e[8]) || 0);
-    for (const p of dados.pedidos || []) marcar(p[1], p[0], 0, Number(p[3]) || 0);
-    for (const m of dados.mapas || []) marcar(m[1], m[0], 0, Number(m[4]) || 0);
+    const porU = L.atividadePorDia(dados, new Set(r.usuarios.map((u) => u.id)));
     const linhas = r.usuarios
-      .filter((u) => porU.has(u.id) || (estado.fazenda !== null && !u.todasFazendas))
-      .map((u) => { const m = porU.get(u.id) || new Map(); let ac = 0; m.forEach((x) => { ac += x.acessos; }); return { u, m, diasUso: m.size, acessos: ac }; })
-      .sort((a, b) => b.diasUso - a.diasUso || b.acessos - a.acessos || a.u.nome.localeCompare(b.u.nome, 'pt-BR'));
+      .map((u) => {
+        const m = new Map();
+        let acessos = 0, horas = 0;
+        (porU.get(u.id) || new Map()).forEach((x, d) => { if (d >= dias[0] && d <= fim) { m.set(d, x); acessos += x.acessos; horas += x.horas; } });
+        return { u, m, diasUso: m.size, acessos, horas };
+      })
+      .filter((l) => l.diasUso || (estado.fazenda !== null && !l.u.todasFazendas))
+      .sort((a, b) => b.diasUso - a.diasUso || b.horas - a.horas || a.u.nome.localeCompare(b.u.nome, 'pt-BR'));
     if (!linhas.length) { $('ultimos-dias').innerHTML = vazio('Ninguém usou a plataforma nesses 14 dias.'); return; }
     let h = '<table class="tabela grade-dias"><thead><tr><th>Usuário</th>';
     dias.forEach((d) => { const sem = L.diaDaSemana(d); h += '<th class="q" title="' + esc(SEMANA_LONGA[sem] + ', ' + fmtData(d)) + '">' + SEMANA_LETRA[sem] + '<br>' + esc(d.slice(8, 10)) + '</th>'; });
-    h += '<th class="n">Dias</th><th class="n">Acessos</th></tr></thead><tbody>';
+    h += '<th class="n">Dias</th><th class="n">Acessos</th><th class="n">Horas</th></tr></thead><tbody>';
     for (const l of linhas) {
       h += '<tr><td class="nome-usuario"><b>' + esc(l.u.nome) + '</b></td>';
       for (const d of dias) {
         const x = l.m.get(d);
-        const nivel = !x ? '' : x.acessos >= 4 ? ' n3' : x.acessos >= 2 ? ' n2' : ' n1';
-        const texto = l.u.nome + '\n' + SEMANA_LONGA[L.diaDaSemana(d)] + ', ' + fmtData(d) + '\n' + (!x ? 'Sem uso' : fmtN(x.acessos) + (x.acessos === 1 ? ' acesso' : ' acessos') + (x.uso ? ' · ' + fmtN(x.uso) + ' registros de uso' : ''));
+        const nivel = !x ? '' : x.horas >= 4 ? ' n3' : x.horas >= 2 ? ' n2' : ' n1';
+        const texto = l.u.nome + '\n' + SEMANA_LONGA[L.diaDaSemana(d)] + ', ' + fmtData(d) + '\n' +
+          (!x ? 'Sem uso' : fmtN(x.acessos) + (x.acessos === 1 ? ' acesso' : ' acessos') + ' · ' + fmtH(x.horas) + ' de uso');
         h += '<td class="q"><span class="quadrado' + nivel + '" data-dica="' + esc(texto) + '"></span></td>';
       }
-      h += num(l.diasUso) + num(l.acessos) + '</tr>';
+      h += num(l.diasUso) + num(l.acessos) + num(l.horas, fmtH(l.horas)) + '</tr>';
     }
-    h += '</tbody></table><div class="legenda-mini"><span><i class="quadrado"></i>Sem uso</span><span><i class="quadrado n1"></i>1 acesso (ou só uso)</span><span><i class="quadrado n2"></i>2 a 3</span><span><i class="quadrado n3"></i>4 ou mais</span></div>';
+    h += '</tbody></table><div class="legenda-mini"><span><i class="quadrado"></i>Sem uso</span><span><i class="quadrado n1"></i>Até 1 hora</span><span><i class="quadrado n2"></i>2 a 3 horas</span><span><i class="quadrado n3"></i>4 horas ou mais</span></div>';
     $('ultimos-dias').innerHTML = h;
   }
 
@@ -348,7 +362,7 @@
   const COLUNAS_USUARIOS = [
     ['nome', 'Usuário', false], ['fazendas', 'Unidades', false], ['acessos', 'Acessos', true], ['pctAcessos', '% dos acessos', true],
     ['diasAtivos', 'Dias ativos', true], ['relatorios', 'Relatórios', true], ['mapasSalvos', 'Mapas salvos', true], ['pedidos', 'Pedidos', true],
-    ['minutos', 'Tempo de uso', true], ['modulos', 'Módulos usados', false], ['ultimoAcesso', 'Último acesso', true], ['situacao', 'Situação', false],
+    ['horasUso', 'Horas de uso', true], ['modulos', 'Módulos usados', false], ['ultimoAcesso', 'Último acesso', true], ['situacao', 'Situação', false],
   ];
   const ORDEM_SITUACAO = { ativo: 0, esfriando: 1, inativo: 2, nunca: 3 };
   function desenharUsuarios() {
@@ -382,7 +396,7 @@
         '<td class="n' + (u.acessos ? '' : ' fraco') + '">' + esc(fmtN(u.acessos)) + (movel ? '<small>' + esc(fmtN(movel)) + ' pelo celular</small>' : '') + '</td>' +
         '<td class="n">' + barraCel(u.pctAcessos / maxPct, fmtPct(u.pctAcessos, 1)) + '</td>' +
         '<td class="n' + (u.diasAtivos ? '' : ' fraco') + '">' + esc(fmtN(u.diasAtivos) + ' de ' + fmtN(r.dias.length)) + '<small>' + esc(fmtPct(u.frequencia) + ' dos dias') + '</small></td>' +
-        num(u.relatorios) + num(u.mapasSalvos) + num(u.pedidos) + num(u.minutos, fmtHoras(u.minutos)) +
+        num(u.relatorios) + num(u.mapasSalvos) + num(u.pedidos) + num(u.horasUso, fmtH(u.horasUso)) +
         '<td class="col-modulos"><small>' + esc(u.modulos.length ? u.modulos.map(L.nomeModulo).join(', ') : '—') + '</small></td>' +
         '<td class="n">' + (u.ultimoAcesso ? esc(fmtData(u.ultimoAcesso)) + '<small>' + esc(quando(u.ultimoAcesso)) + '</small>' : '<span class="fraco">Nunca</span>') + '</td>' +
         '<td>' + situacaoHtml(u.situacao) + '</td></tr>';
@@ -394,30 +408,32 @@
   /* ---- unidades ---- */
   function desenharUnidades() {
     if (!r.unidades.length) { $('tab-unidades').innerHTML = vazio('Nenhuma unidade com usuários ou uso no período.'); return; }
-    const maxAcoes = Math.max(1, ...r.unidades.map((u) => u.acoes + u.mapas));
-    let h = '<table class="tabela"><thead><tr><th>Unidade</th><th class="n">Liberados</th><th class="n">Usaram</th><th class="n">Acessos</th><th class="n">Ações na unidade</th><th class="n">Relatórios</th><th class="n">Mapas</th><th class="n">Tempo</th></tr></thead><tbody>';
+    const maxAcessos = Math.max(1, ...r.unidades.map((u) => u.acessos));
+    const rd = rastreioDia();
+    let h = '<table class="tabela"><thead><tr><th>Unidade</th><th class="n">Liberados</th><th class="n">Usaram</th><th class="n">Acessos</th><th class="n">Horas de uso</th><th class="n">Ações na unidade</th><th class="n">Relatórios</th><th class="n">Mapas salvos</th></tr></thead><tbody>';
     for (const u of r.unidades) {
       h += '<tr><td><button type="button" class="link-unidade" data-fazenda="' + u.id + '" title="Ver o painel só desta unidade">' + esc(u.nome) + '</button></td>' +
         num(u.liberados) +
         '<td class="n" data-dica="' + esc(fmtN(u.ativos) + ' de ' + fmtN(u.liberados) + ' usuários liberados usaram no período') + '">' + (u.liberados ? barraCel(u.adesao, fmtN(u.ativos) + ' · ' + fmtPct(u.adesao)) : '<span class="fraco">—</span>') + '</td>' +
-        num(u.acessos) +
-        '<td class="n">' + barraCel((u.acoes + u.mapas) / maxAcoes, fmtN(u.acoes + u.mapas)) + '</td>' +
-        num(u.relatorios) + num(u.mapas) + num(u.minutos, fmtHoras(u.minutos)) + '</tr>';
+        '<td class="n">' + barraCel(u.acessos / maxAcessos, fmtN(u.acessos)) + '</td>' +
+        num(u.horas, fmtH(u.horas)) + num(u.acoes) + num(u.relatorios) + num(u.mapas) + '</tr>';
     }
-    h += '</tbody></table><p class="explica nota">Liberados: usuários com a unidade no cadastro (os administradores que veem todas não entram). Ações: módulos, telas e relatórios abertos com a unidade escolhida no menu lateral, de qualquer usuário.</p>';
+    h += '</tbody></table><p class="explica nota">Liberados: usuários com a unidade no cadastro (os administradores que veem todas não entram). Acessos e horas: dos usuários liberados (quem tem mais de uma unidade conta em cada uma). ' +
+      'Ações e relatórios: módulos, telas e arquivos com a unidade escolhida no menu lateral, de qualquer usuário' + (rd ? ', registrados desde ' + esc(fmtData(rd)) : '') + '.</p>';
     $('tab-unidades').innerHTML = h;
   }
 
   /* ---- módulos ---- */
   function desenharModulos() {
     if (!r.modulos.length) { $('tab-modulos').innerHTML = vazio('Nenhum módulo aberto no período.'); return; }
-    const maxMin = Math.max(1, ...r.modulos.map((m) => m.minutos));
-    let h = '<table class="tabela"><thead><tr><th>Módulo</th><th class="n">Usuários</th><th class="n">Aberturas</th><th class="n">Telas</th><th class="n">Relatórios</th><th class="n">Tempo de uso</th></tr></thead><tbody>';
+    const maxH = Math.max(1, ...r.modulos.map((m) => m.horas));
+    let h = '<table class="tabela"><thead><tr><th>Módulo</th><th class="n">Usuários</th><th class="n">Aberturas</th><th class="n">Telas</th><th class="n">Relatórios</th><th class="n">Horas de uso</th></tr></thead><tbody>';
     for (const m of r.modulos) {
       h += '<tr><td><b>' + esc(m.nome) + '</b></td>' + num(m.usuarios) + num(m.aberturas) + num(m.telas) + num(m.relatorios + m.mapas, fmtN(m.relatorios + m.mapas)) +
-        '<td class="n">' + barraCel(m.minutos / maxMin, fmtHoras(m.minutos)) + '</td></tr>';
+        '<td class="n">' + barraCel(m.horas / maxH, fmtH(m.horas)) + '</td></tr>';
     }
-    h += '</tbody></table><p class="explica nota">Aberturas: vezes que o módulo foi aberto pela tela inicial. Relatórios do Mapas incluem os mapas salvos.</p>';
+    const rd = rastreioDia();
+    h += '</tbody></table><p class="explica nota">Aberturas: vezes que o módulo foi aberto pela tela inicial. Relatórios do Mapas incluem os mapas salvos. Horas: horas do relógio com o módulo em uso' + (rd ? ' (registrado desde ' + esc(fmtData(rd)) + ')' : '') + '.</p>';
     $('tab-modulos').innerHTML = h;
   }
 
@@ -466,7 +482,7 @@
       for (let hr = 0; hr < 24; hr++) {
         const v = r.calor[d][hr];
         const nivel = v ? Math.min(5, 1 + Math.floor((v / max) * 4.999)) : 0;
-        h += '<td style="background:' + TONS[nivel] + '" data-dica="' + esc(SEMANA_LONGA[d] + ', das ' + hr + 'h às ' + (hr + 1) + 'h\n' + fmtN(v) + ' registros de uso') + '"></td>';
+        h += '<td style="background:' + TONS[nivel] + '" data-dica="' + esc(SEMANA_LONGA[d] + ', das ' + hr + 'h às ' + (hr + 1) + 'h\n' + fmtN(v) + (v === 1 ? ' hora de uso' : ' horas de uso') + ' (somando pessoas e dias)') + '"></td>';
       }
       h += '</tr>';
     }

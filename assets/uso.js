@@ -6,7 +6,7 @@
    O que conta:
    - relatorio: todo arquivo baixado. Os downloads da plataforma passam por um <a download>: clicado pelo código
      (click() ou dispatchEvent de um clique) ou pela pessoa.
-   - pagina: a tela aberta dentro do módulo (o endereço depois do #), ao abrir e a cada troca.
+   - pagina: a tela aberta dentro do módulo (o endereço depois do #, ou o que o módulo avisar), ao abrir e a cada troca.
    - ativo (só na página principal): a cada 5 minutos com a plataforma visível e em foco.
    Nada do que é digitado nas telas é registrado.
    ===================================================================== */
@@ -63,17 +63,29 @@
     if (a) baixou(a);
   }, true);
 
-  // telas dos módulos: o endereço depois do # ("saldos", "/variedades/novo")
+  // telas dos módulos: o endereço depois do # ("saldos", "/variedades/novo"). Os módulos trocam o endereço por
+  // history.replaceState/pushState (que não disparam hashchange) ou pelo próprio #; o módulo sem endereço avisa
+  // a tela com window.coaUso.tela(nome). A mesma tela seguida conta uma vez.
+  var tela = '';
+  function trocouTela(t) {
+    t = String(t || '').slice(0, 160);
+    if (t && t !== tela) registrar('pagina', t);
+    tela = t || tela;
+  }
   function telaAtual() {
     return location.hash.replace(/^#\/?/, '').split('?')[0];
   }
   if (!principal) {
-    var tela = telaAtual();
-    if (tela) registrar('pagina', tela);
-    window.addEventListener('hashchange', function () {
-      var t = telaAtual();
-      if (t && t !== tela) registrar('pagina', t);
-      tela = t;
+    trocouTela(telaAtual());
+    window.addEventListener('hashchange', function () { trocouTela(telaAtual()); });
+    ['pushState', 'replaceState'].forEach(function (nome) {
+      var original = history[nome];
+      if (typeof original !== 'function') return;
+      history[nome] = function () {
+        var r = original.apply(this, arguments);
+        try { trocouTela(telaAtual()); } catch (e) { /* o rastreio nunca atrapalha a tela */ }
+        return r;
+      };
     });
   }
 
@@ -86,6 +98,8 @@
 
   window.coaUso = {
     registrar: registrar,
+    /** Módulo sem a tela no endereço: avisa a tela aberta (conta só quando muda). */
+    tela: function (nome) { if (!principal) trocouTela(nome); },
     /** Página principal: quem grava (depois do login). Os eventos que esperavam na fila vão junto. */
     definirGravador: function (fn) {
       gravador = typeof fn === 'function' ? fn : null;

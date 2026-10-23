@@ -9,11 +9,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610231200">
-<script src="../assets/uso.js?v=202610231200"></script>
-<script src="config.js?v=202610231200"></script>
+<link rel="stylesheet" href="estilo.css?v=202610231500">
+<script src="../assets/uso.js?v=202610231500"></script>
+<script src="config.js?v=202610231500"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
-<script src="logica.js?v=202610231200"></script>
+<script src="logica.js?v=202610231500"></script>
 </head>
 <body>
 <div class="app" id="app">
@@ -74,14 +74,14 @@
           <button type="button" data-metrica="ativos" aria-pressed="true">Usuários ativos</button>
           <button type="button" data-metrica="acessos" aria-pressed="false">Acessos</button>
           <button type="button" data-metrica="relatorios" aria-pressed="false">Relatórios</button>
-          <button type="button" data-metrica="minutos" aria-pressed="false">Tempo de uso</button>
+          <button type="button" data-metrica="horas" aria-pressed="false">Horas de uso</button>
         </div>
       </header>
       <div class="grafico" id="grafico-dias"></div>
     </section>
 
     <section class="cartao">
-      <header class="cartao-cab"><div><h2>Acessos nos últimos 14 dias</h2><p>Cada quadrado é um dia; quanto mais escuro, mais acessos. Só os usuários com algum uso no período ou liberados na unidade escolhida.</p></div></header>
+      <header class="cartao-cab"><div><h2>Uso nos últimos 14 dias</h2><p>Cada quadrado é um dia; quanto mais escuro, mais horas de uso. Só os usuários que usaram nesses dias (com uma unidade escolhida, também os liberados nela que não usaram).</p></div></header>
       <div class="tabela-rolagem" id="ultimos-dias"></div>
     </section>
 
@@ -100,22 +100,22 @@
 
     <div class="duas-colunas">
       <section class="cartao">
-        <header class="cartao-cab"><div><h2>Módulos</h2><p>Quantos usuários usaram cada módulo, quantas vezes ele foi aberto e o tempo de uso.</p></div></header>
+        <header class="cartao-cab"><div><h2>Módulos</h2><p>Quantos usuários usaram cada módulo, quantas vezes ele foi aberto e as horas de uso (desde o começo do rastreio).</p></div></header>
         <div class="tabela-rolagem" id="tab-modulos"></div>
       </section>
       <section class="cartao">
-        <header class="cartao-cab"><div><h2>Telas mais abertas</h2><p>As telas dentro dos módulos, pelo número de aberturas.</p></div></header>
+        <header class="cartao-cab"><div><h2>Telas mais abertas</h2><p>As telas dentro dos módulos, pelo número de aberturas (desde o começo do rastreio).</p></div></header>
         <div class="tabela-rolagem" id="tab-telas"></div>
       </section>
     </div>
 
     <div class="duas-colunas">
       <section class="cartao">
-        <header class="cartao-cab"><div><h2>Relatórios gerados</h2><p>Arquivos baixados (PNG, PDF, planilhas, shapes), mapas salvos e pedidos de atualização.</p></div></header>
+        <header class="cartao-cab"><div><h2>Relatórios gerados</h2><p>Arquivos baixados (PNG, PDF, planilhas, shapes; registrados desde o começo do rastreio), mapas salvos e pedidos de atualização.</p></div></header>
         <div id="relatorios"></div>
       </section>
       <section class="cartao">
-        <header class="cartao-cab"><div><h2>Horários de uso</h2><p>Dia da semana e hora (Cuiabá) com mais atividade.</p></div></header>
+        <header class="cartao-cab"><div><h2>Horários de uso</h2><p>Dia da semana e hora (Cuiabá) com mais gente usando, somando os dias do período.</p></div></header>
         <div class="tabela-rolagem" id="calor"></div>
       </section>
     </div>
@@ -129,6 +129,6 @@
 </div>
 <div class="dica" id="dica" role="tooltip" hidden></div>
 <div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Lendo o uso da plataforma</span><i>.</i><i>.</i><i>.</i></p></div></div>
-<script src="app.js?v=202610231200"></script>
+<script src="app.js?v=202610231500"></script>
 </body>
 </html>

@@ -642,6 +642,7 @@
       try { window.parent.postMessage({ tipo: 'chuva-rota', vista: v }, location.origin); } catch (e) { /* fora do COA WEB */ }
     }
     estado.vista = v;
+    if (window.coaUso) window.coaUso.tela(v); // Aderência de utilização: a aba aberta
     document.querySelectorAll('#abas button').forEach((b) => b.setAttribute('aria-selected', b.getAttribute('data-vista') === v ? 'true' : 'false'));
     ['mapa', 'diario', 'pics'].forEach((x) => { $('vista-' + x).hidden = x !== v || !atual; });
     if (!atual || !atual.linhas) return;
