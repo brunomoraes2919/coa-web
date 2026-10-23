@@ -1,5 +1,5 @@
 # O que a Vercel NÃO publica. O navegador só precisa de: index.html, assets/, api/ e as pastas dos
-# módulos já prontos (acompanhamento/, chuva/, previsao/, validacao/, mapas/, sat/).
+# módulos já prontos (acompanhamento/, chuva/, previsao/, validacao/, mapas/, sat/, painel/, aderencia/).
 # Isto vale só para a publicação na Vercel: o repositório no GitHub (e o GitHub Pages, se ligado)
 # continua mostrando tudo. As rotinas da VM baixam os scripts do GitHub, não da Vercel.
 

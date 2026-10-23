@@ -13,6 +13,7 @@
 <link rel="preconnect" href="https://pkaxbitsqxjxjlwnhjhd.supabase.co">
 <!-- planilhas, imagem e PDF só são usados em exportar/importar: carregam sem segurar a tela (defer); aguardarBiblioteca() espera se for cedo demais -->
 <script src="assets/curiosidades.js?v=202610091600"></script>
+<script src="assets/uso.js?v=202610231200"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js" integrity="sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw" crossorigin="anonymous"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js" integrity="sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz" crossorigin="anonymous"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
@@ -849,6 +850,19 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 @media (max-width:480px){
   .app.modo-chuva .page[data-page="chuva"].active{margin:0 -12px -12px;}
 }
+/* ---------- ADERÊNCIA DE UTILIZAÇÃO (só administradores): módulo num iframe (aderencia/index.html?embed=1) ---------- */
+.app.modo-aderencia .topbar{display:none;}
+.app.modo-aderencia{min-height:0;}
+.app.modo-aderencia main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;padding-top:0;}
+.app.modo-aderencia .page[data-page="aderencia"].active{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;margin:0 -34px -60px;}
+#aderencia-frame{display:block;flex:1 1 auto;width:100%;min-height:0;border:0;background:var(--fundo);}
+@media (max-width:900px){
+  .app.modo-aderencia{display:flex;flex-direction:column;height:100vh;height:100dvh;}
+  .app.modo-aderencia .sidebar{flex:none;}
+  .app.modo-aderencia main{flex:1 1 auto;min-height:0;height:auto;}
+  .app.modo-aderencia .page[data-page="aderencia"].active{margin:0 -18px -18px;}
+}
+@media (max-width:640px){ .app.modo-aderencia .page[data-page="aderencia"].active{margin:0 -14px -14px;} }
 /* ---------- categoria MONTAGENS DE PAINEL: módulo num iframe (painel/index.html?embed=1) ---------- */
 .app.modo-painel{min-height:0;}
 .app.modo-painel main{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;}
@@ -1015,6 +1029,10 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       <button class="categoria-card" id="card-painel">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="1.5"/><path d="M12 4v13M2.5 10.5H12"/><path d="M8 20.5h8"/></svg>
         <span>Montagens de Painel</span><small class="categoria-card-desc">O que a TV do COA mostra, quadro por quadro</small>
+      </button>
+      <button class="categoria-card admin-only" id="card-aderencia">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 20h18"/><path d="M6 16v-3M10.5 16V9M15 16v-5M19.5 16V6"/><circle cx="19.5" cy="4" r="1.2"/></svg>
+        <span>Aderência de utilização</span><small class="categoria-card-desc">Quem usa a plataforma, em que unidade e quanto</small>
       </button>
       <button class="categoria-card admin-only" id="card-administracao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><path d="M20 8v6M23 11h-6"/></svg>
@@ -1213,6 +1231,12 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <button class="nav-btn" data-page="validacao" data-valid="coletor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3H7v18h4"/><path d="M13 3l5 5v2.5"/><path d="M13 3v5h5"/><circle cx="16.5" cy="17" r="4.5"/><path d="M16.5 14.8V17l1.5 1.2"/></svg>Boletins em Validação PIMS</button>
         <button class="nav-btn" data-page="validacao" data-valid="saldos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-5 9 5v11H3z"/><path d="M7 20v-7h10v7"/><path d="M7 16h10"/></svg>Consultar depósitos</button>
         <button class="nav-btn" data-page="validacao" data-valid="depositos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>Vínculo de depósitos</button>
+      </nav>
+    </div>
+    <div id="nav-aderencia" style="display:none">
+      <div class="nav-eyebrow">Aderência de utilização</div>
+      <nav>
+        <button class="nav-btn" data-page="aderencia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h18"/><path d="M6 16v-3M10.5 16V9M15 16v-5M19.5 16V6"/></svg>Painel de uso</button>
       </nav>
     </div>
     <div id="nav-painel" style="display:none">
@@ -1688,6 +1712,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <section class="page" data-page="previsao"></section>
     <section class="page" data-page="chuva"></section>
     <section class="page" data-page="painel"></section>
+    <section class="page" data-page="aderencia"></section>
     <section class="page" data-page="validacao"></section>
     <section class="page" data-page="controle"></section>
 
@@ -1954,6 +1979,7 @@ const titulos = {
   validacao:['Validação PIMS','Ordens de serviço por coordenador, áreas e depósitos'],
   controle:['Controle Técnico','Suas ordens, apontamentos e estoque do depósito'],
   painel:['Montagens de Painel','O que a TV do COA mostra, quadro por quadro'], // o cabeçalho de verdade é o do módulo
+  aderencia:['Aderência de utilização','Quem usa a plataforma, em que unidade e quanto'], // o cabeçalho de verdade é o do módulo
 };
 document.querySelectorAll('.nav-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
@@ -1964,6 +1990,7 @@ document.querySelectorAll('.nav-btn').forEach(btn=>{
     else if(btn.dataset.previsao) irParaPrevisao(btn.dataset.previsao);
     else if(btn.dataset.chuva) irParaChuva(btn.dataset.chuva);
     else if(btn.dataset.page === 'painel') irParaPainel();
+    else if(btn.dataset.page === 'aderencia') irParaAderencia();
     else if(btn.dataset.valid) irParaValidacao(btn.dataset.valid);
     else if(btn.dataset.ctrl) irParaControle(btn.dataset.ctrl);
     else irPara(btn.dataset.page);
@@ -1982,6 +2009,7 @@ function irPara(pagina){
   document.getElementById('app-shell').classList.toggle('modo-validacao', pagina==='validacao');
   document.getElementById('app-shell').classList.toggle('modo-controle', pagina==='controle');
   document.getElementById('app-shell').classList.toggle('modo-painel', pagina==='painel');
+  document.getElementById('app-shell').classList.toggle('modo-aderencia', pagina==='aderencia');
   renderTudo();
 }
 function atualizarCabecalhoPagina(){
@@ -5025,6 +5053,103 @@ function descarregarPainel(){
 }
 
 /* =====================================================================
+   ADERÊNCIA DE UTILIZAÇÃO — módulo num iframe da mesma origem, só para administradores
+   (aderencia/index.html?embed=1; a sessão do Supabase é a mesma do COA WEB; o banco também só entrega a quem é
+   administrador, pela função aderencia_dados). O módulo não usa a fazenda do menu: ele tem o filtro dele.
+   ===================================================================== */
+let aderenciaFrame = null;   // iframe #aderencia-frame (criado na primeira entrada; removido ao sair)
+function irParaAderencia(){
+  if(!sessao || sessao.perfil !== 'admin'){ mostrarCategoriaScreen(); return; }
+  irPara('aderencia');
+  if(aderenciaFrame) return;
+  const frame = document.createElement('iframe');
+  frame.id = 'aderencia-frame';
+  frame.title = 'Aderência de utilização da plataforma';
+  frame.addEventListener('load', ()=>{ if(frame === aderenciaFrame) coaLoader.esconder(); });
+  coaLoader.mostrar('Abrindo a Aderência de utilização', true);
+  frame.src = 'aderencia/index.html?embed=1';
+  aderenciaFrame = frame;
+  document.querySelector('.page[data-page="aderencia"]').appendChild(frame);
+}
+function entrarAderencia(){
+  if(!sessao || sessao.perfil !== 'admin'){ mostrarCategoriaScreen(); return; }
+  categoriaAtual = 'aderencia';
+  ['nav-algodao','nav-mecanizadas','nav-administracao','nav-mapas','nav-acompanhamento','nav-sat','nav-previsao','nav-chuva','nav-validacao','nav-controle','nav-painel']
+    .forEach(id=>{ document.getElementById(id).style.display = 'none'; });
+  document.getElementById('nav-aderencia').style.display = '';
+  document.getElementById('categoria-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = '';
+  irParaAderencia();
+}
+function descarregarAderencia(){
+  if(aderenciaFrame){
+    aderenciaFrame.src = 'about:blank';
+    aderenciaFrame.remove();
+  }
+  aderenciaFrame = null;
+}
+
+/* =====================================================================
+   USO DA PLATAFORMA — o que alimenta a Aderência (assets/uso.js; supabase/0031_aderencia.sql)
+   Acesso ao abrir logado, entrada com senha, módulo escolhido na tela inicial, telas do menu, troca de fazenda,
+   arquivos baixados (aqui e nos módulos) e o tempo de uso. O banco põe o usuário e a hora. Falhar aqui nunca
+   atrapalha a tela.
+   ===================================================================== */
+const USO_SESSAO = (window.crypto && crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + String(Math.random()).slice(2, 12)).slice(0, 36);
+let usoIniciado = false;
+function dispositivoDoUso(){
+  const toque = window.matchMedia && matchMedia('(pointer: coarse)').matches;
+  if(!toque) return 'computador';
+  return Math.min(screen.width, screen.height) < 600 ? 'celular' : 'tablet';
+}
+function gravarUso(ev){
+  if(!sessao || !ev || !ev.tipo) return;
+  const linha = {
+    tipo: ev.tipo,
+    // o módulo escolhido vem no detalhe; os outros eventos são do módulo aberto agora (null = tela inicial)
+    modulo: ev.tipo === 'modulo' ? ev.detalhe : (categoriaAtual || null),
+    detalhe: ev.tipo === 'modulo' ? null : (ev.detalhe || null),
+    fazenda_id: categoriaAtual ? fazendaSelecionadaId() : null,
+    sessao: USO_SESSAO,
+    dispositivo: dispositivoDoUso(),
+  };
+  sb.from('uso_eventos').insert(linha).then(r=>{ if(r.error) console.warn('Aderência: uso não registrado', r.error.message); }, ()=>{});
+}
+function iniciarUso(){
+  if(usoIniciado || !window.coaUso) return;
+  usoIniciado = true;
+  window.coaUso.definirGravador(gravarUso);
+  window.coaUso.registrar('acesso', null);
+}
+// módulo escolhido na tela inicial (o id do cartão é card-<categoria>)
+document.querySelector('.categoria-cards').addEventListener('click', e=>{
+  const card = e.target.closest('.categoria-card');
+  if(card && card.id && window.coaUso) window.coaUso.registrar('modulo', card.id.replace(/^card-/, ''));
+});
+// telas do menu lateral que são desta página (as dos módulos em iframe são registradas pelo próprio módulo)
+document.querySelectorAll('.nav-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    const doModulo = btn.dataset.rota || btn.dataset.acomp || btn.dataset.sat || btn.dataset.previsao || btn.dataset.chuva || btn.dataset.valid || btn.dataset.ctrl
+      || ['painel','aderencia','mapas','acompanhamento','sat','previsao','chuva','validacao','controle'].includes(btn.dataset.page);
+    if(!doModulo && window.coaUso) window.coaUso.registrar('pagina', btn.textContent);
+  });
+});
+document.getElementById('sb-fazenda').addEventListener('change', e=>{
+  const o = e.target.selectedOptions && e.target.selectedOptions[0];
+  if(window.coaUso) window.coaUso.registrar('fazenda', o ? o.textContent : null);
+});
+// eventos dos módulos (iframes desta página): só tela aberta e arquivo baixado
+window.addEventListener('message', ev=>{
+  if(ev.origin !== location.origin) return;
+  const d = ev.data;
+  if(!d || typeof d !== 'object' || d.tipo !== 'coa-uso' || !d.evento || typeof d.evento !== 'object') return;
+  if(![...document.querySelectorAll('iframe')].some(f=>f.contentWindow === ev.source)) return;
+  const tipo = d.evento.tipo;
+  if(tipo !== 'relatorio' && tipo !== 'pagina') return;
+  gravarUso({ tipo, detalhe: typeof d.evento.detalhe === 'string' ? d.evento.detalhe.slice(0, 160) : null });
+});
+
+/* =====================================================================
    PREVISÃO DO TEMPO — módulo num iframe da mesma origem
    (previsao/index.html?embed=1; a sessão do Supabase é a mesma do COA WEB)
    - COA → módulo: { tipo:'coa-fazenda', id, nome }
@@ -5599,6 +5724,7 @@ async function carregarSessaoEDados(){
 
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('login-senha').value = '';
+  iniciarUso();
 
   categoriasDoUsuario = []; categoriasFalhou = false; // sem lista de uma sessão anterior; nada liberado até a consulta responder
   await carregarCategoriasDoUsuario();
@@ -5795,6 +5921,9 @@ function mostrarCategoriaScreen(){
   mostrarBoasVindas();
   const cardAdministracao = document.getElementById('card-administracao');
   if(cardAdministracao) cardAdministracao.style.display = sessao && sessao.perfil==='admin' ? '' : 'none';
+  const cardAderencia = document.getElementById('card-aderencia');
+  if(cardAderencia) cardAderencia.style.display = sessao && sessao.perfil==='admin' ? '' : 'none';
+  document.getElementById('nav-aderencia').style.display = 'none';
   // só os cards das categorias liberadas para o usuário
   CATEGORIAS.forEach(c=>{
     const card = document.getElementById(c.card);
@@ -5896,6 +6025,7 @@ document.getElementById('card-validacao').addEventListener('click', entrarValida
 document.getElementById('card-controle').addEventListener('click', entrarControle);
 document.getElementById('card-painel').addEventListener('click', entrarPainel);
 document.getElementById('btn-sair-categoria').addEventListener('click', sair);
+document.getElementById('card-aderencia').addEventListener('click', entrarAderencia);
 document.getElementById('btn-seguranca').addEventListener('click', ()=>document.getElementById('dlg-seguranca').showModal());
 document.getElementById('btn-outra-curiosidade').addEventListener('click', mostrarCuriosidade);
 
@@ -5919,6 +6049,7 @@ async function tentarLogin(){
   }
   coaLoader.mostrar('Entrando');
   await carregarSessaoEDados();
+  if(sessao && window.coaUso) window.coaUso.registrar('entrada', null);
 }
 async function sair(){
   coaLoader.mostrar('Saindo');
@@ -5930,6 +6061,7 @@ async function sair(){
   descarregarValidacao();
   descarregarControle();
   descarregarPainel();
+  descarregarAderencia();
   if(canalRealtime){ sb.removeChannel(canalRealtime); canalRealtime = null; }
   // o SIGNED_OUT (mais abaixo) já recarrega a página; se o servidor não respondeu (sem rede), a sessão guardada
   // neste navegador é apagada assim mesmo, para o "Sair" valer e a página não voltar logada
@@ -6031,7 +6163,7 @@ sb.auth.onAuthStateChange((event)=>{
   // saiu (aqui, em outra aba, ou a sessão foi encerrada no servidor) com alguém logado nesta página: recarrega,
   // para nenhum dado ficar na memória nem no HTML. Sem ninguém logado (tela de entrada) não recarrega.
   if(event === 'SIGNED_OUT' && sessao){ recarregarAposSair(); return; }
-  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = []; categoriasFalhou = false; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); descarregarChuva(); descarregarValidacao(); descarregarControle(); descarregarPainel(); mostrarTelaLogin(); }
+  if(event === 'SIGNED_OUT'){ categoriasDoUsuario = []; categoriasFalhou = false; descarregarMapas(); descarregarAcomp(); descarregarSat(); descarregarPrevisao(); descarregarChuva(); descarregarValidacao(); descarregarControle(); descarregarPainel(); descarregarAderencia(); mostrarTelaLogin(); }
 });
 
 </script>
