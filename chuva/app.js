@@ -43,6 +43,7 @@
   let atual = null;    // fazenda na tela: { f, dados, faz, talhoes, proj, caixa, per, linhas, limites }
   let coaFazenda;      // fazenda escolhida no COA WEB (quando o módulo está no iframe)
   let pedido = 0;      // só a leitura mais recente desenha a tela
+  let lembrete = null; // o aviso de atualizar (window.coaLembrete), criado na primeira fazenda lida
   let fazendaDoCiclo = null; // de qual fazenda é o ciclo escolhido no Período
   let grafico = null;
 
@@ -740,8 +741,9 @@
   const ESPERA_MS = 4000;
   const LIMITE_ATUALIZAR_MS = 6 * 60 * 1000; // a leitura de todas as fazendas leva alguns minutos
   let atualizando = false;
+  /** O botão Atualizar (e o "Atualizar agora" do lembrete): true se buscou e carregou os dados novos. */
   async function atualizar() {
-    if (atualizando) return;
+    if (atualizando) return false;
     atualizando = true;
     const btn = $('btn-atualizar');
     btn.disabled = true;
@@ -760,8 +762,11 @@
       for (const k of Object.keys(cache)) delete cache[k]; // relê a fazenda do banco, com os dados novos
       avisar('');
       await carregarFazenda();
+      if (lembrete) lembrete.esconder();
+      return true;
     } catch (e) {
       avisar(e && e.message ? e.message : 'Não foi possível atualizar.');
+      return false;
     } finally {
       atualizando = false;
       btn.disabled = false;
@@ -844,6 +849,16 @@
       fazendaDoCiclo = f.id;
       preencherPeriodos();
       atualizado();
+      // lembrete de atualizar (assets/lembrete-atualizar.js): aparece toda vez que a pessoa entra na tela
+      if (!lembrete && window.coaLembrete) {
+        lembrete = window.coaLembrete.criar({
+          depoisDe: $('aviso'), fonte: 'da ZEUS',
+          quando: () => (atual && atual.faz ? atual.faz.geradoEm : null),
+          detalhe: () => (atual && atual.f ? 'de ' + atual.f.nome : ''),
+          atualizar: atualizar,
+        });
+        lembrete.mostrar();
+      } else if (lembrete) lembrete.atualizarTexto();
       mostrarVista(estado.vista);
       montarFazenda();
       mostrarVista(estado.vista);

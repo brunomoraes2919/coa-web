@@ -1083,7 +1083,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <li><b>Validação PIMS e Controle Técnico:</b> o Atualizar busca só a unidade que está na tela, mais rápido.</li>
         <li><b>Chuva por talhão:</b> ganhou o botão Atualizar.</li>
         <li><b>TVs do Operacional</b> (e das Montagens de Painel): pedem a atualização sozinhas, de hora em hora, enquanto estão ligadas.</li>
-        <li>O horário da última atualização fica no canto de cada tela.</li>
+        <li>Toda vez que você entrar numa dessas telas aparece um aviso com o horário dos dados e o botão <b>Atualizar agora</b>: atualize antes de tirar um relatório.</li>
       </ul>
     </div>
     <div class="dlg-mec-rodape">
@@ -4912,6 +4912,8 @@ function entrarAcompanhamento(){
   document.getElementById('app-shell').style.display = '';
   irParaAcomp(null); // 1ª entrada: cria o iframe no painel; depois mantém o módulo onde estava
   enviarFazendaAcomp();
+  // nova entrada: o módulo que já estava aberto mostra de novo o lembrete de atualizar (assets/lembrete-atualizar.js)
+  enviarAoAcomp({ tipo:'coa-entrada' });
 }
 function descarregarAcomp(){
   if(acompFrame){
@@ -4995,6 +4997,8 @@ function entrarChuva(){
   document.getElementById('app-shell').style.display = '';
   irParaChuva(null); // 1ª entrada: cria o iframe no mapa; depois mantém o módulo onde estava
   enviarFazendaChuva();
+  // nova entrada: o módulo que já estava aberto mostra de novo o lembrete de atualizar (assets/lembrete-atualizar.js)
+  enviarAChuva({ tipo:'coa-entrada' });
 }
 function descarregarChuva(){
   if(chuvaFrame){
@@ -5306,6 +5310,8 @@ function entrarValidacao(){
   document.getElementById('app-shell').style.display = '';
   irParaValidacao(null); // 1ª entrada: cria o iframe nas pendências; depois mantém o módulo onde estava
   enviarFazendaValidacao();
+  // nova entrada: o módulo que já estava aberto mostra de novo o lembrete de atualizar (assets/lembrete-atualizar.js)
+  enviarAValidacao({ tipo:'coa-entrada' });
 }
 function descarregarValidacao(){
   if(validFrame){
@@ -5389,6 +5395,8 @@ function entrarControle(){
   document.getElementById('app-shell').style.display = '';
   irParaControle(null); // 1ª entrada: cria o iframe no resumo (vista pendencias); depois mantém o módulo onde estava
   enviarFazendaControle();
+  // nova entrada: o módulo que já estava aberto mostra de novo o lembrete de atualizar (assets/lembrete-atualizar.js)
+  enviarAoControle({ tipo:'coa-entrada' });
 }
 function descarregarControle(){
   if(ctrlFrame){

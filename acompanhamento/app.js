@@ -1361,6 +1361,12 @@
   // ultrawide e TV na vertical). URL: ?tv=1&tempo=20&fazendas=SM3,GLOBO&todas=0
   // ===========================================================================
   var PARAMS = new URLSearchParams(location.search);
+  /**
+   * Lembrete de atualizar (assets/lembrete-atualizar.js): toda vez que a pessoa entra no Operacional, o aviso com o
+   * horário dos dados do PIMS e o botão "Atualizar agora" (os dados só mudam quando alguém clica em Atualizar).
+   * Não aparece no modo TV.
+   */
+  var lembrete = null;
   var tv = { ativo: false, lista: [], i: 0, tempo: 20, timer: null, relogio: null, pausado: false, wake: null, ocioso: null, pedido: null, pedindo: false };
   /**
    * TV ligada: pede ao servidor a atualização do PIMS (como o botão Atualizar) a cada TV_PEDIDO_MIN minutos, e logo ao
@@ -1400,6 +1406,7 @@
     if (!DADOS) return;
     fecharAmpliado(true);
     tv.ativo = true; tv.pausado = false;
+    if (lembrete) lembrete.esconder();
     tv.tempo = Math.max(8, Number(PARAMS.get('tempo')) || 20);
     document.documentElement.classList.add('modo-tv');
     $('tv').hidden = false;
@@ -2304,7 +2311,7 @@
     conf.ocupado = true;
     try {
       var marca = await fonte.assinatura(), dia = paraIso(hoje()), mudou = marca !== marcaCarregada;
-      if (mudou) await carregarDados();
+      if (mudou) { await carregarDados(); if (lembrete) lembrete.atualizarTexto(); } // alguém atualizou: o lembrete mostra o horário novo
       var avisava = conf.falhas >= FALHAS_PARA_AVISAR;
       conf.falhas = 0;
       if (mudou || dia !== conf.dia) { conf.dia = dia; if (tv.ativo) { tvMontarLista(); tvDesenhar(); } else render(); }
@@ -2352,9 +2359,10 @@
     return mapasPromessa;
   }
 
+  /** O botão Atualizar (e o "Atualizar agora" do lembrete): true se buscou e carregou os dados novos. */
   async function atualizarAgora() {
     var b = $('btn-sync');
-    if (b.disabled) return;
+    if (b.disabled) return false;
     b.disabled = true; b.classList.add('girando');
     mostrarAviso('Buscando os dados no PIMS…');
     try {
@@ -2362,7 +2370,9 @@
       await carregarDados();
       render();
       mostrarAviso('');
-    } catch (e) { mostrarAviso(e.message, true); }
+      if (lembrete) lembrete.esconder();
+      return true;
+    } catch (e) { mostrarAviso(e.message, true); return false; }
     finally { b.disabled = false; b.classList.remove('girando'); }
   }
 
@@ -2524,6 +2534,15 @@
       $('carregando').classList.add('fora');
       render();
       aplicarFazendaCoa();
+      if (window.coaLembrete) {
+        lembrete = window.coaLembrete.criar({
+          depoisDe: $('aviso'), fonte: 'do PIMS',
+          quando: function () { return DADOS && DADOS.geradoEm; },
+          atualizar: atualizarAgora,
+          ativo: function () { return !tv.ativo && PARAMS.get('tv') !== '1'; },
+        });
+        if (PARAMS.get('tv') !== '1' && !retomar) lembrete.mostrar();
+      }
       carregarMapas();
       setInterval(conferirDados, CONFERIR_SEG * 1000);
       setInterval(conferirVersao, VERSAO_MIN * 60000);

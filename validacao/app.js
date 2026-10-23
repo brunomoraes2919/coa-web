@@ -58,6 +58,7 @@
   let equipeControle = PARAMS.get('eq') || ''; // 'unidade|equipe' aberta
   let fonte = null;
   let atualizando = false;
+  let lembrete = null; // o aviso de atualizar (window.coaLembrete), criado depois de carregar
 
   /* ------------------------------ dados ------------------------------ */
   function fonteSupabase() {
@@ -678,6 +679,11 @@
     const el = $('aviso');
     el.hidden = !texto; el.textContent = texto || ''; el.className = 'aviso' + (tipo ? ' ' + tipo : '');
   }
+  /** Quando os dados da tela foram lidos: com uma unidade na tela, o horário dela; com todas, o mais antigo (cada unidade é atualizada no seu clique). */
+  function quandoDaTela() {
+    const daTela = MODO_CONTROLE || estado.unidade === TODAS || estado.unidade === SEM_UNIDADE ? linhas : linhas.filter((l) => l.unidade === estado.unidade);
+    return daTela.reduce((m, l) => (!l.gerado_em ? m : !m || (estado.unidade === TODAS && !MODO_CONTROLE ? l.gerado_em < m : l.gerado_em > m) ? l.gerado_em : m), '');
+  }
   function desenhar() {
     preencherUnidades();
     preencherEquipes();
@@ -704,9 +710,8 @@
     else if (estado.vista === 'coletor') desenharColetor();
     else if (estado.vista === 'saldos') desenharSaldos();
     else desenharDepositos();
-    // cada unidade é atualizada no seu clique: com uma unidade na tela, vale o horário dela; com todas, o mais antigo
-    const daTela = MODO_CONTROLE || estado.unidade === TODAS || estado.unidade === SEM_UNIDADE ? linhas : linhas.filter((l) => l.unidade === estado.unidade);
-    const quando = daTela.reduce((m, l) => (!l.gerado_em ? m : !m || (estado.unidade === TODAS && !MODO_CONTROLE ? l.gerado_em < m : l.gerado_em > m) ? l.gerado_em : m), '');
+    const quando = quandoDaTela();
+    if (lembrete) lembrete.atualizarTexto();
     $('atualizado').innerHTML = quando ? 'PIMS · <b>' + new Date(quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</b>' : '';
     $('atualizado').title = 'Os dados só mudam quando alguém clica em Atualizar' + (estado.unidade === TODAS && !MODO_CONTROLE ? ' (o horário é o da unidade atualizada há mais tempo)' : '');
     const semSap = linhas.some((l) => (l.avisos || []).length);
@@ -766,10 +771,11 @@
     return estado.unidade === TODAS ? '' : estado.unidade;
   }
 
+  /** O botão Atualizar (e o "Atualizar agora" do lembrete): true se buscou e carregou os dados novos. */
   async function atualizar() {
-    if (atualizando) return;
+    if (atualizando) return false;
     const unidade = unidadeDoAtualizar();
-    if (unidade === null) { avisar('A fazenda escolhida no menu não tem unidade no PIMS: não há o que buscar.', 'alerta'); return; }
+    if (unidade === null) { avisar('A fazenda escolhida no menu não tem unidade no PIMS: não há o que buscar.', 'alerta'); return false; }
     atualizando = true;
     const btn = $('btn-atualizar');
     btn.disabled = true;
@@ -790,10 +796,13 @@
       $('aviso').classList.remove('fixo');
       avisar('', '');
       desenhar();
+      if (lembrete) lembrete.esconder();
+      return true;
     } catch (e) {
       $('aviso').classList.remove('fixo');
       desenhar();
       avisar(e && e.message ? e.message : 'Não foi possível atualizar.', 'erro');
+      return false;
     } finally {
       atualizando = false;
       btn.disabled = false;
@@ -940,6 +949,14 @@
     if (PARAMS.has('de')) estado.de = ehData(PARAMS.get('de')) ? PARAMS.get('de') : '';
     if (PARAMS.has('ate')) estado.ate = ehData(PARAMS.get('ate')) ? PARAMS.get('ate') : '';
     mostrarPeriodo();
+    // lembrete de atualizar (assets/lembrete-atualizar.js): aparece toda vez que a pessoa entra na tela
+    if (window.coaLembrete) {
+      lembrete = window.coaLembrete.criar({
+        depoisDe: $('aviso'), fonte: 'do PIMS e do SAP', quando: quandoDaTela, atualizar: atualizar,
+        detalhe: () => { const u = unidadeDoAtualizar(); return u ? 'de ' + u : u === '' ? 'de todas as unidades' : ''; },
+      });
+      lembrete.mostrar();
+    }
     desenhar();
     avisarPai();
   })();

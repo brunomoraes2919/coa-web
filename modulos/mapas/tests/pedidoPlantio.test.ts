@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { criarLocalRepo } from '../src/data/localRepo';
 import { TABELAS } from '../src/data/supabaseLinhas';
 import { criarSupabaseRepo } from '../src/data/supabaseRepo';
-import { aguardarPedido, atualizarPlantio, textoPlantioPims, type PassosAtualizacao, type SituacaoPedidoPlantio } from '../src/lib/pedidoPlantio';
+import { aguardarPedido, atualizarPlantio, lembretePlantio, textoPlantioPims, type PassosAtualizacao, type SituacaoPedidoPlantio } from '../src/lib/pedidoPlantio';
 import { BancoFalso } from './helpers/supabaseFalso';
 
 const pendente: SituacaoPedidoPlantio = { atendidoEm: null, resultado: null };
@@ -246,5 +246,20 @@ describe('atualizarPlantio (fluxo do botão "Atualizar plantio")', () => {
       texto:
         'O servidor atualizou o plantio, mas não foi possível carregá-lo: Não foi possível conectar ao servidor. Verifique a internet e as configurações. Recarregue a página.',
     });
+  });
+});
+
+describe('lembrete de atualizar o plantio (toda vez que a tela abre)', () => {
+  const agora = new Date('2026-10-23T15:00:00Z');
+  it('carregando: sem lembrete; sem plantio: pede para atualizar', () => {
+    expect(lembretePlantio(undefined, agora)).toBeNull();
+    expect(lembretePlantio(null, agora)).toEqual({ texto: expect.stringContaining('Ainda não há plantio do PIMS'), recente: false });
+  });
+  it('com plantio: a data, há quanto tempo e o pedido para atualizar antes do mapa', () => {
+    const velho = lembretePlantio('2026-10-23T12:00:00Z', agora)!;
+    expect(velho.recente).toBe(false);
+    expect(velho.texto).toMatch(/^Plantio do PIMS de .+ \(há 3 h\)\. Os dados só mudam quando alguém clica em Atualizar: antes de gerar o mapa, atualize/);
+    expect(lembretePlantio('2026-10-23T14:55:00Z', agora)).toEqual({ texto: expect.stringContaining('(há 5 min)'), recente: true });
+    expect(lembretePlantio('2026-10-21T15:00:00Z', agora)!.texto).toContain('(há 2 dias)');
   });
 });

@@ -66,6 +66,29 @@ export function textoPlantioPims(geradoEm: string | null | undefined): string {
   return `Plantio do PIMS: ${fmtDataHora(geradoEm, true) || 'sem dados'}`;
 }
 
+/** Com menos que isto, o plantio aparece como recente no lembrete (o lembrete aparece do mesmo jeito). */
+export const LEMBRETE_RECENTE_MIN = 10;
+
+/**
+ * O lembrete do topo das telas que geram mapa: desde 23/10/2026 o plantio só muda quando alguém clica em Atualizar,
+ * então toda vez que a tela abre ele avisa de quando é o plantio. undefined = ainda carregando (sem lembrete).
+ */
+export function lembretePlantio(geradoEm: string | null | undefined, agora: Date = new Date()): { texto: string; recente: boolean } | null {
+  if (geradoEm === undefined) return null;
+  const t = geradoEm ? new Date(geradoEm) : null;
+  if (!t || Number.isNaN(t.getTime())) {
+    return { texto: 'Ainda não há plantio do PIMS nesta tela. Antes de gerar o mapa, clique em Atualizar plantio.', recente: false };
+  }
+  const min = Math.max(0, Math.round((agora.getTime() - t.getTime()) / 60000));
+  const h = Math.round(min / 60);
+  const d = Math.round(h / 24);
+  const ha = min < 1 ? 'agora há pouco' : min < 60 ? `há ${min} min` : h < 24 ? `há ${h} h` : d === 1 ? 'há 1 dia' : `há ${d} dias`;
+  return {
+    texto: `Plantio do PIMS de ${fmtDataHora(geradoEm, true)} (${ha}). Os dados só mudam quando alguém clica em Atualizar: antes de gerar o mapa, atualize para ter o plantio mais recente.`,
+    recente: min < LEMBRETE_RECENTE_MIN,
+  };
+}
+
 export const ETAPA_PEDINDO = 'Pedindo ao servidor…';
 export const ETAPA_BUSCANDO = 'Buscando no PIMS… (até 1 minuto)';
 
