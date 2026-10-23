@@ -55,18 +55,18 @@ test('acesso é cada sequência de horas seguidas com uso; dias e horas somam to
   const ana = r.usuarios.find((u) => u.id === 'a');
   // 20/10: 8h a 10h (entrada e renovações) e 14h = 2 acessos, 4 horas
   // 21/10: 8h a 9h (eventos) e 11h (mapa salvo) = 2 acessos, 3 horas
-  // 22/10: 9h = 1 acesso, 1 hora
-  assert.equal(ana.acessos, 5);
-  assert.equal(ana.horasUso, 8);
-  assert.equal(ana.diasAtivos, 3);
-  assert.deepEqual(ana.dias, ['2026-10-20', '2026-10-21', '2026-10-22']);
+  // 22/10: 9h = 1 acesso, 1 hora; 23/10: o último uso, às 8h = 1 acesso, 1 hora
+  assert.equal(ana.acessos, 6);
+  assert.equal(ana.horasUso, 9);
+  assert.equal(ana.diasAtivos, 4);
+  assert.deepEqual(ana.dias, ['2026-10-20', '2026-10-21', '2026-10-22', '2026-10-23']);
   assert.equal(ana.entradas, 2); // a do Supabase em 20/10 e a da plataforma em 21/10
-  assert.equal(ana.pctAcessos, 5 / 6);
-  assert.equal(ana.frequencia, 3 / 7);
-  assert.deepEqual(ana.dispositivos, { computador: 3, celular: 1, desconhecido: 1 });
+  assert.equal(ana.pctAcessos, 6 / 8);
+  assert.equal(ana.frequencia, 4 / 7);
+  assert.deepEqual(ana.dispositivos, { computador: 3, celular: 1, desconhecido: 2 });
   assert.deepEqual(ana.modulos, ['mapas']);
   const duda = r.usuarios.find((u) => u.id === 'd');
-  assert.deepEqual([duda.acessos, duda.horasUso, duda.pedidos, duda.relatorios], [1, 3, 2, 1]); // 14h, 15h e o pedido às 16h
+  assert.deepEqual([duda.acessos, duda.horasUso, duda.pedidos, duda.relatorios], [2, 4, 2, 1]); // o login às 7h; 14h, 15h e o pedido às 16h
   assert.equal(r.usuarios[0].id, 'a'); // mais acessos primeiro
   assert.deepEqual(r.atencao.map((u) => u.id), ['c', 'b']); // nunca acessou primeiro, depois o mais antigo
 });
@@ -75,9 +75,9 @@ test('números do topo', () => {
   const k = montar({}).kpis;
   assert.deepEqual(
     [k.cadastrados, k.ativos, k.adesao, k.acessos, k.entradas, k.relatorios, k.mapasSalvos, k.pedidos, k.horas, k.ativos7, k.nunca, k.semAcesso30],
-    [4, 2, 0.5, 6, 2, 3, 1, 2, 11, 2, 1, 1],
+    [4, 2, 0.5, 8, 2, 3, 1, 2, 13, 2, 1, 1],
   );
-  assert.equal(k.mediaAtivosDia, 4 / 7); // 20, 21 e 22 (dois usuários)
+  assert.equal(k.mediaAtivosDia, 5 / 7); // 20, 21, 22 (dois usuários) e 23
 });
 
 test('série por dia, horários e dispositivos', () => {
@@ -85,16 +85,16 @@ test('série por dia, horários e dispositivos', () => {
   assert.equal(r.serie.length, 7);
   assert.deepEqual(r.serie.find((d) => d.dia === '2026-10-20'), { dia: '2026-10-20', ativos: 1, acessos: 2, relatorios: 0, horas: 4, mapas: 0, semana: 2 });
   assert.deepEqual(r.serie.find((d) => d.dia === '2026-10-21'), { dia: '2026-10-21', ativos: 1, acessos: 2, relatorios: 2, horas: 3, mapas: 1, semana: 3 });
-  assert.deepEqual(r.serie.find((d) => d.dia === '2026-10-22'), { dia: '2026-10-22', ativos: 2, acessos: 2, relatorios: 1, horas: 4, mapas: 0, semana: 4 });
+  assert.deepEqual(r.serie.find((d) => d.dia === '2026-10-22'), { dia: '2026-10-22', ativos: 2, acessos: 3, relatorios: 1, horas: 5, mapas: 0, semana: 4 });
   assert.deepEqual([r.calor[2][8], r.calor[2][14], r.calor[3][11], r.calor[4][9], r.calor[4][16], r.calor[4][10]], [1, 1, 1, 1, 1, 0]);
-  assert.deepEqual(r.dispositivos, { computador: 4, celular: 1, tablet: 0, desconhecido: 1 });
+  assert.deepEqual(r.dispositivos, { computador: 4, celular: 1, tablet: 0, desconhecido: 3 });
 });
 
 test('por unidade, módulo, relatórios e telas', () => {
   const r = montar({});
   const norte = r.unidades.find((u) => u.id === 1);
   const sul = r.unidades.find((u) => u.id === 2);
-  assert.deepEqual([norte.liberados, norte.ativos, norte.adesao, norte.acessos, norte.horas], [2, 1, 0.5, 5, 8]); // Ana e Caio; só Ana usou
+  assert.deepEqual([norte.liberados, norte.ativos, norte.adesao, norte.acessos, norte.horas], [2, 1, 0.5, 6, 9]); // Ana e Caio; só Ana usou
   assert.equal(norte.acoes, 1 + 3 + 2); // módulo, telas e relatórios com a Norte escolhida (o tempo não é ação)
   assert.equal(norte.mapas, 1);
   assert.deepEqual([sul.liberados, sul.ativos, sul.acessos, sul.relatorios], [2, 0, 0, 1]); // o PDF foi da Duda (administradora)
@@ -104,6 +104,15 @@ test('por unidade, módulo, relatórios e telas', () => {
   assert.deepEqual(r.relatorios.mapas, [{ nome: 'Mapa de variedade', n: 1 }]);
   assert.deepEqual(r.relatorios.pedidos, [{ nome: 'Atualizar validação', n: 2 }]);
   assert.deepEqual(r.telas, [{ nome: 'Mapas › variedades/novo', n: 3, usuarios: 1 }]);
+});
+
+test('mês antigo: quem ainda não tinha cadastro fica de fora; o horário do último login conta como uso', () => {
+  const r = L.montar(dados, { de: '2026-09-01', ate: '2026-09-30', fazenda: null, perfil: 'todos' }, HOJE);
+  assert.deepEqual(r.usuarios.map((u) => u.id).sort(), ['a', 'b', 'd']); // Caio foi cadastrado em 01/10
+  const ana = r.usuarios.find((u) => u.id === 'a');
+  assert.deepEqual([ana.acessos, ana.diasAtivos, ana.horasUso], [1, 1, 1]); // o login de 10/09 (sem nenhuma sessão guardada)
+  assert.deepEqual(r.usuarios.find((u) => u.id === 'b').dias, ['2026-09-05', '2026-09-10']);
+  assert.equal(r.kpis.cadastrados, 3);
 });
 
 test('filtro por unidade e por perfil', () => {

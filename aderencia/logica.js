@@ -47,6 +47,8 @@
   const diaDaSemana = (iso) => new Date(numeroDoDia(iso) * DIA_MS).getUTCDay();
   /** Data de um carimbo com hora (ISO) em Cuiabá. */
   const diaDoCarimbo = (ts) => (ts ? hojeCuiaba(new Date(ts)) : null);
+  /** Hora (0 a 23) de um carimbo com hora (ISO) em Cuiabá. */
+  const horaDoCarimbo = (ts) => new Date(new Date(ts).getTime() - 4 * 3600000).getUTCHours();
 
   /** Períodos prontos do filtro. */
   function periodo(chave, hoje, rastreioDesde) {
@@ -81,7 +83,8 @@
 
   /**
    * Uso de cada pessoa em cada dia, de todas as fontes: renovações de sessão e entradas com senha (histórico do
-   * Supabase), eventos da plataforma (rastreio), pedidos de atualização e mapas salvos.
+   * Supabase), eventos da plataforma (rastreio), pedidos de atualização, mapas salvos e o horário do último login e
+   * do último uso de cada pessoa (quem clica em Sair perde as sessões no Supabase, mas o último login fica).
    * Map(usuário → Map(dia → { horas: Map(hora → aparelho|null), soDia, logins, entradas }))
    *   horas   as horas do relógio com algum sinal de uso
    *   soDia   houve sinal sem hora (dado antigo): o dia conta, sem hora
@@ -111,6 +114,11 @@
     }
     for (const p of pedidosDe(dados)) marcar(dia(p.u, p.dia), p.hora, null);
     for (const m of mapasDe(dados)) marcar(dia(m.u, m.dia), m.hora, null);
+    for (const u of dados.usuarios || []) {
+      for (const ts of [u.ultimo_login, u.ultimo_uso]) {
+        if (ts && !isNaN(new Date(ts).getTime())) marcar(dia(u.id, diaDoCarimbo(ts)), horaDoCarimbo(ts), null);
+      }
+    }
     return por;
   }
   /**
@@ -169,7 +177,8 @@
     const dentro = (dia) => dia >= de && dia <= ate;
     const fazendas = new Map((dados.fazendas || []).map((f) => [Number(f.id), f.nome]));
     const usuariosTodos = (dados.usuarios || []).map((u) => Object.assign({}, u, { fazendas: (u.fazendas || []).map(Number) }));
-    const usuarios = usuariosTodos.filter((u) => usuarioNoFiltro(u, filtro));
+    // quem ainda não tinha cadastro no fim do período fica de fora dele (a adesão de um mês antigo é a de quem existia)
+    const usuarios = usuariosTodos.filter((u) => usuarioNoFiltro(u, filtro) && !(u.criado_em && diaDoCarimbo(u.criado_em) > ate));
     const ids = new Set(usuarios.map((u) => u.id));
     const ev = eventosDe(dados).filter((e) => ids.has(e.u) && dentro(e.dia));
     const ped = pedidosDe(dados).filter((p) => ids.has(p.u) && dentro(p.dia));
