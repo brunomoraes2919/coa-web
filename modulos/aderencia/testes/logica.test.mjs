@@ -150,3 +150,16 @@ test('CSV dos usuários: separador ";" e nome que começa com "=" não vira fór
   assert.ok(csv[0].includes('Horas de uso'));
   assert.ok(csv[1].startsWith("'=SOMA(1);x@teste;Colaborador;Fazenda Norte;0;"));
 });
+
+test('dias ativos contam desde o cadastro; ações em outras tabelas contam como uso', () => {
+  // Caio foi cadastrado em 01/10: no período de 24/09 a 23/10 ele só podia usar em 23 dias
+  const base = Object.assign({}, dados, { acoes: [['2026-10-15', 10, 'c', 1], ['2026-10-16', 9, 'c', 2]] }); // [dia, hora, usuário, n]
+  const r = L.montar(base, { de: '2026-09-24', ate: HOJE, fazenda: null, perfil: 'todos' }, HOJE);
+  const caio = r.usuarios.find((u) => u.id === 'c');
+  assert.deepEqual([caio.diasAtivos, caio.diasPossiveis, caio.desdeCadastro, caio.acessos, caio.horasUso], [2, 23, true, 2, 2]);
+  assert.equal(caio.frequencia, 2 / 23);
+  assert.equal(caio.situacao, 'ativo'); // uma meta salva em 16/10 é uso
+  const ana = r.usuarios.find((u) => u.id === 'a'); // cadastrada em 01/09: vale o período inteiro
+  assert.deepEqual([ana.diasPossiveis, ana.desdeCadastro], [30, false]);
+  assert.ok(L.csvUsuarios(r).split('\r\n')[0].includes('Dias possíveis'));
+});

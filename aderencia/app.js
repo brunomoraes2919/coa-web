@@ -215,6 +215,7 @@
     if (!rd) t += ' <b>Relatórios, telas e módulos</b> começam a contar quando os usuários abrirem o COA WEB depois desta versão.';
     else if (rd > p.de) t += ' <b>Relatórios, telas e módulos</b> só existem desde <b>' + esc(fmtData(rd)) + '</b>, quando o rastreio começou (os arquivos baixados antes disso não deixaram registro).';
     if (hd && hd > p.de) t += ' Antes de ' + esc(fmtData(hd)) + ' não há registro de acessos.';
+    if (rd && rd > p.de) t += ' Atenção: o botão Sair apaga as sessões guardadas no Supabase (em todos os aparelhos da pessoa); para quem saiu antes de ' + esc(fmtData(rd)) + ', o histórico de antes dessa data fica incompleto (contam só login, pedidos, mapas e cadastros).';
     $('explica').innerHTML = t;
   }
 
@@ -358,12 +359,31 @@
     $('ultimos-dias').innerHTML = h;
   }
 
-  /* ---- usuários ---- */
+  /** O "?" no título de uma coluna: passar o mouse (ou tocar) mostra a explicação. */
+  const ajuda = (texto) => (texto ? ' <span class="ajuda" role="img" aria-label="' + esc(texto) + '" data-dica="' + esc(texto) + '">?</span>' : '');
+  /** Datas que entram nas explicações (o rastreio da plataforma começou depois do histórico de sessões). */
+  const desdeRastreio = () => { const rd = rastreioDia(); return rd ? ' (registrado desde ' + fmtData(rd) + ')' : ' (registrado a partir desta versão)'; };
+  const AJUDA = {
+    usuario: 'Nome e e-mail do cadastro. Administrador e Administrador+ aparecem marcados.',
+    unidades: 'Unidades liberadas no cadastro da pessoa. "Todas" é o administrador que vê todas.',
+    acessos: 'Quantas vezes a pessoa usou a plataforma no período. Horas seguidas de uso contam como um acesso: abrir às 8h e usar até as 10h é 1 acesso; voltar às 14h é mais 1. O número pequeno diz quantos foram pelo celular.',
+    pctAcessos: 'A parte da pessoa no total de acessos de todos no período (com os filtros escolhidos). A barra compara com quem mais acessou.',
+    diasAtivos: 'Em quantos dias a pessoa usou a plataforma, de quantos podia usar: do começo do período ou do cadastro dela, o que for mais recente. A porcentagem é a frequência.',
+    relatorios: 'Arquivos baixados da plataforma: PNG, PDF, planilhas e shapes.',
+    mapasSalvos: 'Mapas de chuva e de variedade salvos no módulo Mapas.',
+    pedidos: 'Pedidos de atualização feitos pelos botões Atualizar, Buscar no PIMS e Buscar nas bases.',
+    horasUso: 'Horas do relógio com a plataforma aberta: abrir às 8h10 e sair às 9h20 conta 2 horas.',
+    modulos: 'Módulos que a pessoa abriu no período.',
+    ultimoAcesso: 'O último sinal de uso em qualquer data: sessão, login, tela, pedido, mapa ou cadastro.',
+    situacao: 'Ativo: usou nos últimos 7 dias. Esfriando: último uso entre 8 e 30 dias. Inativo: mais de 30 dias sem usar. Nunca acessou: cadastrado e nunca entrou.',
+  };
   const COLUNAS_USUARIOS = [
-    ['nome', 'Usuário', false], ['fazendas', 'Unidades', false], ['acessos', 'Acessos', true], ['pctAcessos', '% dos acessos', true],
-    ['diasAtivos', 'Dias ativos', true], ['relatorios', 'Relatórios', true], ['mapasSalvos', 'Mapas salvos', true], ['pedidos', 'Pedidos', true],
-    ['horasUso', 'Horas de uso', true], ['modulos', 'Módulos usados', false], ['ultimoAcesso', 'Último acesso', true], ['situacao', 'Situação', false],
+    ['nome', 'Usuário', false, 'usuario'], ['fazendas', 'Unidades', false, 'unidades'], ['acessos', 'Acessos', true, 'acessos'], ['pctAcessos', '% dos acessos', true, 'pctAcessos'],
+    ['diasAtivos', 'Dias ativos', true, 'diasAtivos'], ['relatorios', 'Relatórios', true, 'relatorios'], ['mapasSalvos', 'Mapas salvos', true, 'mapasSalvos'], ['pedidos', 'Pedidos', true, 'pedidos'],
+    ['horasUso', 'Horas de uso', true, 'horasUso'], ['modulos', 'Módulos usados', false, 'modulos'], ['ultimoAcesso', 'Último acesso', true, 'ultimoAcesso'], ['situacao', 'Situação', false, 'situacao'],
   ];
+  /** O texto de ajuda de uma coluna (os do rastreio dizem desde quando há registro). */
+  const textoAjuda = (k) => AJUDA[k] + (k === 'relatorios' || k === 'modulos' ? desdeRastreio() : '');
   const ORDEM_SITUACAO = { ativo: 0, esfriando: 1, inativo: 2, nunca: 3 };
   function desenharUsuarios() {
     const busca = estado.busca.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -379,10 +399,10 @@
     if (!r.usuarios.length) { $('tab-usuarios').innerHTML = vazio('Nenhum usuário neste filtro.'); return; }
     const maxPct = Math.max(0.0001, ...r.usuarios.map((u) => u.pctAcessos));
     let h = '<table class="tabela"><thead><tr>';
-    for (const [k, rotulo, numerica] of COLUNAS_USUARIOS) {
+    for (const [k, rotulo, numerica, chaveAjuda] of COLUNAS_USUARIOS) {
       const ordenavel = k !== 'fazendas' && k !== 'modulos';
       const sort = chave === k ? (desc ? 'descending' : 'ascending') : 'none';
-      h += '<th' + (numerica ? ' class="n' + (ordenavel ? ' ordenavel' : '') + '"' : ordenavel ? ' class="ordenavel"' : '') + (ordenavel ? ' data-ordem="' + k + '" aria-sort="' + sort + '" tabindex="0"' : '') + '>' + esc(rotulo) + '</th>';
+      h += '<th' + (numerica ? ' class="n' + (ordenavel ? ' ordenavel' : '') + '"' : ordenavel ? ' class="ordenavel"' : '') + (ordenavel ? ' data-ordem="' + k + '" aria-sort="' + sort + '" tabindex="0"' : '') + '>' + esc(rotulo) + ajuda(textoAjuda(chaveAjuda)) + '</th>';
     }
     h += '</tr></thead><tbody>';
     if (!lista.length) h += '<tr><td colspan="' + COLUNAS_USUARIOS.length + '">' + vazio('Nenhum usuário com esse nome ou e-mail.') + '</td></tr>';
@@ -395,7 +415,8 @@
         '<td' + (unidades.length > 2 ? ' data-dica="' + esc(unidades.join('\n')) + '"' : '') + '>' + esc(unidadesTexto) + '</td>' +
         '<td class="n' + (u.acessos ? '' : ' fraco') + '">' + esc(fmtN(u.acessos)) + (movel ? '<small>' + esc(fmtN(movel)) + ' pelo celular</small>' : '') + '</td>' +
         '<td class="n">' + barraCel(u.pctAcessos / maxPct, fmtPct(u.pctAcessos, 1)) + '</td>' +
-        '<td class="n' + (u.diasAtivos ? '' : ' fraco') + '">' + esc(fmtN(u.diasAtivos) + ' de ' + fmtN(r.dias.length)) + '<small>' + esc(fmtPct(u.frequencia) + ' dos dias') + '</small></td>' +
+        '<td class="n' + (u.diasAtivos ? '' : ' fraco') + '"' + (u.desdeCadastro ? ' data-dica="' + esc('Cadastrado em ' + fmtData(u.criadoEm) + ': podia usar em ' + fmtN(u.diasPossiveis) + ' dos ' + fmtN(r.dias.length) + ' dias do período') + '"' : '') + '>' +
+          esc(fmtN(u.diasAtivos) + ' de ' + fmtN(u.diasPossiveis)) + '<small>' + esc(fmtPct(u.frequencia) + (u.desdeCadastro ? ' desde o cadastro' : ' dos dias')) + '</small></td>' +
         num(u.relatorios) + num(u.mapasSalvos) + num(u.pedidos) + num(u.horasUso, fmtH(u.horasUso)) +
         '<td class="col-modulos"><small>' + esc(u.modulos.length ? u.modulos.map(L.nomeModulo).join(', ') : '—') + '</small></td>' +
         '<td class="n">' + (u.ultimoAcesso ? esc(fmtData(u.ultimoAcesso)) + '<small>' + esc(quando(u.ultimoAcesso)) + '</small>' : '<span class="fraco">Nunca</span>') + '</td>' +
@@ -410,7 +431,17 @@
     if (!r.unidades.length) { $('tab-unidades').innerHTML = vazio('Nenhuma unidade com usuários ou uso no período.'); return; }
     const maxAcessos = Math.max(1, ...r.unidades.map((u) => u.acessos));
     const rd = rastreioDia();
-    let h = '<table class="tabela"><thead><tr><th>Unidade</th><th class="n">Liberados</th><th class="n">Usaram</th><th class="n">Acessos</th><th class="n">Horas de uso</th><th class="n">Ações na unidade</th><th class="n">Relatórios</th><th class="n">Mapas salvos</th></tr></thead><tbody>';
+    const th = (rotulo, texto, numerica) => '<th' + (numerica ? ' class="n"' : '') + '>' + esc(rotulo) + ajuda(texto) + '</th>';
+    let h = '<table class="tabela"><thead><tr>' +
+      th('Unidade', 'Clique numa unidade para ver o painel só dela.') +
+      th('Liberados', 'Usuários com a unidade no cadastro (os administradores que veem todas não entram).', true) +
+      th('Usaram', 'Quantos dos liberados usaram a plataforma no período, e a porcentagem (adesão da unidade).', true) +
+      th('Acessos', 'Acessos dos usuários liberados na unidade (quem tem mais de uma unidade conta em cada uma).', true) +
+      th('Horas de uso', 'Horas de uso dos usuários liberados na unidade.', true) +
+      th('Ações na unidade', 'Módulos, telas e relatórios abertos com esta unidade escolhida no menu lateral, de qualquer usuário' + desdeRastreio() + '.', true) +
+      th('Relatórios', 'Arquivos baixados com esta unidade escolhida no menu lateral' + desdeRastreio() + '.', true) +
+      th('Mapas salvos', 'Mapas de chuva e de variedade salvos desta unidade.', true) +
+      '</tr></thead><tbody>';
     for (const u of r.unidades) {
       h += '<tr><td><button type="button" class="link-unidade" data-fazenda="' + u.id + '" title="Ver o painel só desta unidade">' + esc(u.nome) + '</button></td>' +
         num(u.liberados) +
@@ -427,7 +458,15 @@
   function desenharModulos() {
     if (!r.modulos.length) { $('tab-modulos').innerHTML = vazio('Nenhum módulo aberto no período.'); return; }
     const maxH = Math.max(1, ...r.modulos.map((m) => m.horas));
-    let h = '<table class="tabela"><thead><tr><th>Módulo</th><th class="n">Usuários</th><th class="n">Aberturas</th><th class="n">Telas</th><th class="n">Relatórios</th><th class="n">Horas de uso</th></tr></thead><tbody>';
+    const th = (rotulo, texto, numerica) => '<th' + (numerica ? ' class="n"' : '') + '>' + esc(rotulo) + ajuda(texto) + '</th>';
+    let h = '<table class="tabela"><thead><tr>' +
+      th('Módulo', 'Os módulos da tela inicial' + desdeRastreio() + '.') +
+      th('Usuários', 'Quantas pessoas usaram o módulo no período.', true) +
+      th('Aberturas', 'Vezes que o módulo foi aberto pela tela inicial.', true) +
+      th('Telas', 'Telas abertas dentro do módulo (cada troca de aba conta uma).', true) +
+      th('Relatórios', 'Arquivos baixados no módulo; no Mapas, mais os mapas salvos.', true) +
+      th('Horas de uso', 'Horas do relógio em que alguém usou o módulo (somando as pessoas).', true) +
+      '</tr></thead><tbody>';
     for (const m of r.modulos) {
       h += '<tr><td><b>' + esc(m.nome) + '</b></td>' + num(m.usuarios) + num(m.aberturas) + num(m.telas) + num(m.relatorios + m.mapas, fmtN(m.relatorios + m.mapas)) +
         '<td class="n">' + barraCel(m.horas / maxH, fmtH(m.horas)) + '</td></tr>';
@@ -576,7 +615,8 @@
     const novo = $('tab-usuarios').querySelector('th[data-ordem="' + k + '"]');
     if (novo) novo.focus();
   }
-  $('tab-usuarios').addEventListener('click', (e) => { const th = e.target.closest('th[data-ordem]'); if (th) ordenarPor(th); });
+  // o "?" do título só explica a coluna (tocar nele no celular não ordena)
+  $('tab-usuarios').addEventListener('click', (e) => { if (e.target.closest('.ajuda')) return; const th = e.target.closest('th[data-ordem]'); if (th) ordenarPor(th); });
   $('tab-usuarios').addEventListener('keydown', (e) => { const th = e.target.closest('th[data-ordem]'); if (th && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); ordenarPor(th); } });
   $('btn-csv').addEventListener('click', () => {
     if (!r) return;

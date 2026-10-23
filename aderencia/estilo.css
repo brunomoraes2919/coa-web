@@ -110,6 +110,12 @@ h2, p { margin: 0; }
   color: var(--texto-fraco); background: #FAFBFA; border-top: 1px solid var(--linha-suave); border-bottom: 1px solid var(--linha); white-space: nowrap;
 }
 .tabela th.ordenavel { cursor: pointer; user-select: none; }
+.ajuda {
+  display: inline-flex; align-items: center; justify-content: center; width: 15px; height: 15px; margin-left: 4px; vertical-align: 1px;
+  border-radius: 50%; border: 1px solid #B9C5BC; background: #fff; color: var(--texto-suave); font-size: 10px; font-weight: 700;
+  letter-spacing: 0; text-transform: none; cursor: help;
+}
+.ajuda:hover { border-color: var(--verde-teal); color: var(--verde-teal); }
 .tabela th.ordenavel:hover { color: var(--verde-teal); }
 .tabela th[aria-sort="descending"]::after { content: " ↓"; }
 .tabela th[aria-sort="ascending"]::after { content: " ↑"; }

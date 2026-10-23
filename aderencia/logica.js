@@ -80,10 +80,13 @@
   const mapasDe = (dados) => (dados.mapas || []).map((m) => ({ dia: m[0], u: m[1], tipo: m[2] || 'chuva', fazenda: numOuNull(m[3]), n: Number(m[4]) || 0, hora: numOuNull(m[5]) }));
   /** renovações de sessão e entradas com senha [[dia, hora, usuário, dispositivo, n]] */
   const sessaoDe = (lista) => (lista || []).map((x) => ({ dia: x[0], hora: numOuNull(x[1]), u: x[2], disp: x[3] || null, n: Number(x[4]) || 0 }));
+  /** ações gravadas noutras tabelas (metas, sementes, variedades, vínculos, painéis...) [[dia, hora, usuário, n]] */
+  const acoesDe = (dados) => (dados.acoes || []).map((x) => ({ dia: x[0], hora: numOuNull(x[1]), u: x[2], n: Number(x[3]) || 0 }));
 
   /**
    * Uso de cada pessoa em cada dia, de todas as fontes: renovações de sessão e entradas com senha (histórico do
-   * Supabase), eventos da plataforma (rastreio), pedidos de atualização, mapas salvos e o horário do último login e
+   * Supabase), eventos da plataforma (rastreio), pedidos de atualização, mapas salvos, cadastros e edições gravados
+   * noutras tabelas (metas, sementes, variedades, vínculos, painéis...) e o horário do último login e
    * do último uso de cada pessoa (quem clica em Sair perde as sessões no Supabase, mas o último login fica).
    * Map(usuário → Map(dia → { horas: Map(hora → aparelho|null), soDia, logins, entradas }))
    *   horas   as horas do relógio com algum sinal de uso
@@ -114,6 +117,7 @@
     }
     for (const p of pedidosDe(dados)) marcar(dia(p.u, p.dia), p.hora, null);
     for (const m of mapasDe(dados)) marcar(dia(m.u, m.dia), m.hora, null);
+    for (const a of acoesDe(dados)) marcar(dia(a.u, a.dia), a.hora, null);
     for (const u of dados.usuarios || []) {
       for (const ts of [u.ultimo_login, u.ultimo_uso]) {
         if (ts && !isNaN(new Date(ts).getTime())) marcar(dia(u.id, diaDoCarimbo(ts)), horaDoCarimbo(ts), null);
@@ -226,8 +230,11 @@
     const totalAcessos = [...porU.values()].reduce((s, x) => s + x.acessos, 0);
     const lista = [...porU.values()].map((x) => {
       const ultimoAcesso = maior(maior(x.ultimoSinal, x.ultimoUsoGeral), x.ultimoLogin);
+      // dias em que a pessoa podia usar: desde o começo do período ou desde o cadastro, o que for mais recente
+      const inicio = x.criadoEm && x.criadoEm > de ? x.criadoEm : de;
+      const diasPossiveis = Math.max(1, numeroDoDia(ate) - numeroDoDia(inicio) + 1);
       return Object.assign(x, {
-        diasAtivos: x.dias.length, frequencia: dias.length ? x.dias.length / dias.length : 0,
+        diasAtivos: x.dias.length, diasPossiveis, desdeCadastro: inicio !== de, frequencia: Math.min(1, x.dias.length / diasPossiveis),
         pctAcessos: totalAcessos ? x.acessos / totalAcessos : 0, modulos: [...x.modulos].sort(),
         ultimoAcesso: ultimoAcesso, situacao: situacao(ultimoAcesso, hoje), ativoNoPeriodo: x.dias.length > 0, dias: x.dias.sort(),
       });
@@ -351,7 +358,7 @@
 
   /** Linhas do CSV dos usuários (separador ';', como o Excel em português espera). */
   function csvUsuarios(r) {
-    const cab = ['Usuário', 'E-mail', 'Perfil', 'Unidades', 'Acessos', '% dos acessos', 'Dias ativos', 'Frequência', 'Relatórios baixados', 'Mapas salvos', 'Pedidos', 'Horas de uso', 'Módulos', 'Último acesso', 'Situação'];
+    const cab = ['Usuário', 'E-mail', 'Perfil', 'Unidades', 'Acessos', '% dos acessos', 'Dias ativos', 'Dias possíveis (desde o cadastro)', 'Frequência', 'Relatórios baixados', 'Mapas salvos', 'Pedidos', 'Horas de uso', 'Módulos', 'Último acesso', 'Situação'];
     const cel = (v) => {
       const t = String(v === null || v === undefined ? '' : v);
       const seguro = /^[=+\-@]/.test(t) ? "'" + t : t; // planilha não executa fórmula vinda de nome
@@ -360,7 +367,7 @@
     const num = (v, casas) => Number(v || 0).toFixed(casas || 0).replace('.', ',');
     const linhas = r.usuarios.map((x) => [
       x.nome, x.email, x.perfil === 'admin' ? (x.super ? 'Administrador+' : 'Administrador') : 'Colaborador', x.fazendasNomes.join(', '), x.acessos,
-      num(x.pctAcessos * 100, 1), x.diasAtivos, num(x.frequencia * 100, 0) + '%', x.relatorios, x.mapasSalvos, x.pedidos, x.horasUso,
+      num(x.pctAcessos * 100, 1), x.diasAtivos, x.diasPossiveis, num(x.frequencia * 100, 0) + '%', x.relatorios, x.mapasSalvos, x.pedidos, x.horasUso,
       x.modulos.map(nomeModulo).join(', '), x.ultimoAcesso || '', TEXTO_SITUACAO[x.situacao],
     ]);
     return [cab, ...linhas].map((l) => l.map(cel).join(';')).join('\r\n');
