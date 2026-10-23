@@ -102,7 +102,7 @@ export async function atualizarPlantio({ pedir, situacao, recarregar, aoEtapa, o
   const fim = await aguardarPedido(() => situacao(id), opcoes);
   if (fim.tipo === 'erro') return { tipo: 'erro', texto: `O servidor não conseguiu atualizar o plantio: ${fim.mensagem}` };
   if (fim.tipo === 'tempo') {
-    return { tipo: 'alerta', texto: 'O servidor não respondeu em 2 minutos. O plantio também é atualizado sozinho a cada hora.' };
+    return { tipo: 'alerta', texto: 'O servidor não respondeu em 2 minutos. Tente de novo em instantes.' };
   }
   try {
     const arquivo = await recarregar();

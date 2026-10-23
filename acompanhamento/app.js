@@ -241,7 +241,7 @@
             return true;
           }
         }
-        throw new Error('O servidor do PIMS não respondeu em 2 minutos e meio. Os dados são atualizados sozinhos a cada hora.');
+        throw new Error('O servidor do PIMS não respondeu em 2 minutos e meio. Tente de novo em instantes.');
       },
       /**
        * O que a Revista cruza além do PIMS (cada leitura depende da categoria do usuário; sem ela o banco devolve
@@ -1361,7 +1361,23 @@
   // ultrawide e TV na vertical). URL: ?tv=1&tempo=20&fazendas=SM3,GLOBO&todas=0
   // ===========================================================================
   var PARAMS = new URLSearchParams(location.search);
-  var tv = { ativo: false, lista: [], i: 0, tempo: 20, timer: null, relogio: null, pausado: false, wake: null, ocioso: null };
+  var tv = { ativo: false, lista: [], i: 0, tempo: 20, timer: null, relogio: null, pausado: false, wake: null, ocioso: null, pedido: null, pedindo: false };
+  /**
+   * TV ligada: pede ao servidor a atualização do PIMS (como o botão Atualizar) a cada TV_PEDIDO_MIN minutos, e logo ao
+   * entrar se os dados já têm mais que isso. Desde 23/10/2026 o servidor não relê o PIMS sozinho: os dados só mudam
+   * quando alguém pede. Com várias TVs, o servidor responde com os dados já gravados quem pedir menos de 5 min depois
+   * da última leitura (uma consulta só ao Agrovex). TV desligada não pede nada.
+   */
+  var TV_PEDIDO_MIN = 60;
+  function tvPedirAtualizacao() {
+    if (!tv.ativo || tv.pedindo) return;
+    tv.pedindo = true;
+    Promise.resolve()
+      .then(function () { return fonte.atualizar(function () {}); })
+      .then(function () { return conferirDados(); })
+      .catch(function () { /* a TV segue com os dados que tem; a próxima hora tenta de novo */ })
+      .then(function () { tv.pedindo = false; });
+  }
 
   function tvEscala() { return parseFloat(getComputedStyle($('tv')).fontSize) / 14; }
 
@@ -1393,12 +1409,14 @@
     manterTelaLigada();
     tvRelogio();
     clearInterval(tv.relogio); tv.relogio = setInterval(tvRelogio, 15000);
+    clearInterval(tv.pedido); tv.pedido = setInterval(tvPedirAtualizacao, TV_PEDIDO_MIN * 60000);
+    if (!DADOS.geradoEm || Date.now() - new Date(DADOS.geradoEm).getTime() > TV_PEDIDO_MIN * 60000) setTimeout(tvPedirAtualizacao, 5000);
     tvMostrar();
   }
 
   function sairTv() {
     tv.ativo = false;
-    clearTimeout(tv.timer); clearInterval(tv.relogio);
+    clearTimeout(tv.timer); clearInterval(tv.relogio); clearInterval(tv.pedido);
     document.documentElement.classList.remove('modo-tv');
     $('tv').hidden = true;
     if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(function () {});
@@ -2271,7 +2289,7 @@
     var marca = await fonte.assinatura().catch(function () { return null; });
     var r = await Promise.all([fonte.dados(), fonte.planos()]);
     // sem dados (banco vazio ou sessão vencida), o que já está na tela continua lá
-    if (!r[0].safras || !r[0].safras.length) throw new Error('Ainda não há dados do PIMS no banco. A rotina do servidor grava a cada hora; você também pode clicar em Atualizar.');
+    if (!r[0].safras || !r[0].safras.length) throw new Error('Ainda não há dados do PIMS no banco. Clique em Atualizar para buscar.');
     DADOS = r[0]; PLANOS = r[1]; marcaCarregada = marca;
   }
 

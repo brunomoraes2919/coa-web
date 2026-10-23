@@ -212,7 +212,7 @@ describe('atualizarPlantio (fluxo do botão "Atualizar plantio")', () => {
     const { p } = passos({ situacao: async () => pendente });
     expect(await atualizarPlantio(p)).toEqual({
       tipo: 'alerta',
-      texto: 'O servidor não respondeu em 2 minutos. O plantio também é atualizado sozinho a cada hora.',
+      texto: 'O servidor não respondeu em 2 minutos. Tente de novo em instantes.',
     });
     expect(p.recarregar).not.toHaveBeenCalled();
   });

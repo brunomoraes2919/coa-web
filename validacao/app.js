@@ -5,6 +5,8 @@
    integração e os extras: apontamentos recentes, necessidade de produto, doses e boletins em validação) e os
    vínculos coordenador ↔ depósito (valid_vinculos), que os administradores cadastram aqui.
    Com ?modo=controle é o Controle Técnico: a mesma tela, só com a equipe do coordenador (sem os vínculos).
+   Os dados só mudam quando alguém clica em Atualizar (desde 23/10/2026 o servidor não relê sozinho de hora em hora),
+   e o Atualizar pede só a unidade da tela (no Controle Técnico, a da equipe).
    - COA → módulo: { tipo:'coa-fazenda', id, nome } e { tipo:'validacao-vista', vista }
    - módulo → COA: { tipo:'validacao-rota', vista, coaFazenda }
    No Controle Técnico as mensagens são 'controle-vista' e 'controle-rota', e a fazenda do menu não vale.
@@ -109,8 +111,10 @@
         }
         conferir(await sb.from('valid_vinculos').upsert({ unidade: v.unidade, equipe: v.equipe, deposito: v.deposito, deposito_origem: null }, { onConflict: 'unidade,equipe' }), 'salvar o vínculo');
       },
-      pedirAtualizacao: async function () {
-        const r = await sb.from('valid_pedidos').insert({}).select('id').single();
+      pedirAtualizacao: async function (unidade) {
+        let r = await sb.from('valid_pedidos').insert(unidade ? { unidade: unidade } : {}).select('id').single();
+        // banco sem a coluna da unidade (script 0034 não aplicado): o pedido de sempre, de todas as unidades
+        if (r.error && unidade && (r.error.code === 'PGRST204' || /unidade/.test(r.error.message || ''))) r = await sb.from('valid_pedidos').insert({}).select('id').single();
         return conferir(r, 'pedir a atualização').id;
       },
       situacaoPedido: async function (id) {
@@ -149,7 +153,7 @@
       pronto: async function () {},
       ler: async () => { const d = await api('/api/validacao-teste'); return MODO_CONTROLE ? recorteLocal(d) : d; },
       salvarVinculo: (v) => api('/api/validacao-teste/vinculo', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(v) }),
-      pedirAtualizacao: async () => (await api('/api/validacao-teste/pedido', { method: 'POST' })).id,
+      pedirAtualizacao: async () => (await api('/api/validacao-teste/pedido', { method: 'POST' })).id, // o teste local ignora a unidade
       situacaoPedido: async () => ({ atendido_em: new Date().toISOString(), resultado: 'ok' }),
     };
   }
@@ -225,7 +229,7 @@
     const bruta = ordemBruta(chave);
     const d = L.detalheDaOrdem(bruta);
     let corpo;
-    if (d.pendente) corpo = '<p class="det-nota">Os apontamentos desta ordem chegam na próxima atualização do servidor (a cada hora, ou pelo botão Atualizar).</p>';
+    if (d.pendente) corpo = '<p class="det-nota">Os apontamentos desta ordem chegam no próximo Atualizar.</p>';
     else {
       const semArea = bruta && bruta.sa === 1;
       const talhoes = d.talhoes.length
@@ -609,7 +613,7 @@
     const r = L.saldosDosDepositos(linha, busca);
     if (r.pendente) {
       desenharComparacao(null, [], '');
-      $('saldos').innerHTML = '<p class="vazio">O saldo de todos os depósitos chega na próxima atualização do servidor (a cada hora). Clique em <b>Atualizar</b> para buscar agora.</p>';
+      $('saldos').innerHTML = '<p class="vazio">O saldo de todos os depósitos chega no próximo Atualizar. Clique em <b>Atualizar</b> para buscar agora.</p>';
       return;
     }
     const todos = L.saldosDosDepositos(linha, '').depositos;
@@ -700,10 +704,13 @@
     else if (estado.vista === 'coletor') desenharColetor();
     else if (estado.vista === 'saldos') desenharSaldos();
     else desenharDepositos();
-    const mais = linhas.reduce((m, l) => (l.gerado_em > m ? l.gerado_em : m), '');
-    $('atualizado').innerHTML = mais ? 'PIMS · <b>' + new Date(mais).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</b>' : '';
+    // cada unidade é atualizada no seu clique: com uma unidade na tela, vale o horário dela; com todas, o mais antigo
+    const daTela = MODO_CONTROLE || estado.unidade === TODAS || estado.unidade === SEM_UNIDADE ? linhas : linhas.filter((l) => l.unidade === estado.unidade);
+    const quando = daTela.reduce((m, l) => (!l.gerado_em ? m : !m || (estado.unidade === TODAS && !MODO_CONTROLE ? l.gerado_em < m : l.gerado_em > m) ? l.gerado_em : m), '');
+    $('atualizado').innerHTML = quando ? 'PIMS · <b>' + new Date(quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) + '</b>' : '';
+    $('atualizado').title = 'Os dados só mudam quando alguém clica em Atualizar' + (estado.unidade === TODAS && !MODO_CONTROLE ? ' (o horário é o da unidade atualizada há mais tempo)' : '');
     const semSap = linhas.some((l) => (l.avisos || []).length);
-    if (!linhas.length || (MODO_CONTROLE && !linhas[0].gerado_em)) avisar(MODO_CONTROLE ? 'Ainda não há dados desta equipe. O servidor grava as ordens a cada hora.' : 'Ainda não há dados da validação. O servidor grava as ordens a cada hora; clique em Atualizar para buscar agora.', '');
+    if (!linhas.length || (MODO_CONTROLE && !linhas[0].gerado_em)) avisar(MODO_CONTROLE ? 'Ainda não há dados desta equipe. Clique em Atualizar para buscar no PIMS.' : 'Ainda não há dados da validação. Clique em Atualizar para buscar no PIMS.', '');
     else if (estado.unidade === SEM_UNIDADE) avisar('A fazenda escolhida no menu não tem ordens de serviço no PIMS (ou você não tem acesso à unidade dela).', '');
     else if (semSap) avisar('O saldo de alguns depósitos do SAP não pôde ser lido na última atualização. As ordens estão atualizadas.', 'alerta');
     else if (!$('aviso').classList.contains('fixo')) avisar('', '');
@@ -749,23 +756,35 @@
       .map((f) => ({ unidade: String(f.unidade_pims).toUpperCase(), coaId: f.coa_fazenda_id }));
   }
 
+  /**
+   * A unidade que o Atualizar pede: a da tela (a escolhida aqui ou a fazenda do menu do COA WEB); no Controle Técnico,
+   * a da equipe aberta. '' = todas as unidades; null = a fazenda do menu não tem unidade no PIMS (nada a buscar).
+   */
+  function unidadeDoAtualizar() {
+    if (MODO_CONTROLE) return (equipeControle.split('|')[0] || '').trim() || null;
+    if (estado.unidade === SEM_UNIDADE) return null;
+    return estado.unidade === TODAS ? '' : estado.unidade;
+  }
+
   async function atualizar() {
     if (atualizando) return;
+    const unidade = unidadeDoAtualizar();
+    if (unidade === null) { avisar('A fazenda escolhida no menu não tem unidade no PIMS: não há o que buscar.', 'alerta'); return; }
     atualizando = true;
     const btn = $('btn-atualizar');
     btn.disabled = true;
     $('aviso').classList.add('fixo');
     avisar('Pedindo ao servidor…', '');
     try {
-      const id = await fonte.pedirAtualizacao();
-      avisar('Buscando as ordens no PIMS e o saldo no SAP… (até 2 minutos e meio)', '');
+      const id = await fonte.pedirAtualizacao(unidade);
+      avisar((unidade ? 'Buscando no PIMS e no SAP as ordens e o saldo de ' + unidade : 'Buscando no PIMS e no SAP as ordens e o saldo de todas as unidades') + '… (até 2 minutos e meio)', '');
       let fim = null;
       for (let esperado = 0; esperado < LIMITE_MS && !fim; esperado += INTERVALO_MS) {
         await new Promise((r) => setTimeout(r, INTERVALO_MS));
         const s = await fonte.situacaoPedido(id);
         if (s && s.atendido_em) fim = s;
       }
-      if (!fim) throw new Error('O servidor não respondeu a tempo. As ordens também são atualizadas sozinhas a cada hora.');
+      if (!fim) throw new Error('O servidor não respondeu a tempo. Tente de novo em instantes.');
       if (String(fim.resultado || '').trim() !== 'ok') throw new Error('O servidor não conseguiu atualizar: ' + (String(fim.resultado || '').replace(/^\s*erro:\s*/i, '').trim() || 'sem detalhes'));
       await carregar();
       $('aviso').classList.remove('fixo');
@@ -899,7 +918,7 @@
     document.title = 'Controle Técnico · COA';
     $('marca-titulo').textContent = 'Controle Técnico';
     $('marca-sub').textContent = 'Suas ordens, apontamentos e estoque';
-    $('btn-atualizar').hidden = true; // a carga é a do servidor, de hora em hora
+    // sem a rotina de hora em hora (23/10/2026), o coordenador também atualiza: sempre só a unidade da equipe dele
   }
   (async function iniciar() {
     fonte = CFG.modo === 'local' ? fonteLocal() : fonteSupabase();

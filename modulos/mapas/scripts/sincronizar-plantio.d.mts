@@ -289,8 +289,8 @@ export interface BoletimValidScript {
   o: string; n: string; d: string | null; os: number | null; eq: string | null; sit: 'F' | 'P'; em: string | null;
   t?: number; p1?: string; ul?: string; m?: string[]; si?: 1; it: ItemBoletimScript[];
 }
-export function montarSqlBoletinsFalha(desde: string, pular?: number | null, tamanho?: number): string;
-export function montarSqlBoletinsPendentes(desde: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlBoletinsFalha(desde: string, pular?: number | null, tamanho?: number, unidades?: string[] | null): string;
+export function montarSqlBoletinsPendentes(desde: string, pular?: number | null, tamanho?: number, unidades?: string[] | null): string;
 export function montarSqlLogIntegracaoSap(boletins: unknown[], desde: string, pular?: number | null, tamanho?: number): string;
 export function montarSqlSaldoItensSap(itens: unknown[], depositos: unknown[], pular?: number | null, tamanho?: number): string;
 export function linhasBoletins(dados: {
@@ -304,10 +304,10 @@ export const VALID_DIAS_APONT: number;
 export const VALID_DIAS_DOSE: number;
 export const VALID_DOSE_TOLERANCIA: number;
 export function diaAnterior(agora: Date, dias: number): string;
-export function montarSqlApontamentosRecentes(desdeDia: string, pular?: number, tamanho?: number): string;
-export function montarSqlNecessidadeValidacao(desde: string, pular?: number | null, tamanho?: number): string;
-export function montarSqlDoseValidacao(desdeDia: string, pular?: number | null, tamanho?: number): string;
-export function montarSqlColetorValidacao(desde: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlApontamentosRecentes(desdeDia: string, pular?: number, tamanho?: number, unidades?: string[] | null): string;
+export function montarSqlNecessidadeValidacao(desde: string, pular?: number | null, tamanho?: number, unidades?: string[] | null): string;
+export function montarSqlDoseValidacao(desdeDia: string, pular?: number | null, tamanho?: number, unidades?: string[] | null): string;
+export function montarSqlColetorValidacao(desde: string, pular?: number | null, tamanho?: number, unidades?: string[] | null): string;
 export interface SaldosDaUnidade {
   /** depósito → [[item, saldo]] */
   sd: Record<string, [string, number][]>;
@@ -327,14 +327,24 @@ export const VALID_TOLERANCIA_HA: number;
 export const SAP_EMPRESA_DA_UNIDADE: Record<string, string>;
 /** a evolução inteira, sem paginar (= montarSqlEvolucaoValidacao()) */
 export const SQL_EVOLUCAO_VALIDACAO: string;
-export function montarSqlEvolucaoValidacao(pular?: number | null, tamanho?: number): string;
+export function montarSqlEvolucaoValidacao(pular?: number | null, tamanho?: number, unidades?: string[] | null): string;
 export const SQL_DEPOSITOS_PIMS: string;
+export function montarSqlDepositosPims(unidades?: string[] | null): string;
+/** Unidades de um pedido aceitas no SQL (ou null = todas). */
+export function unidadesDoPedido(lista: unknown): string[] | null;
+/** ` AND <coluna> IN (...)` para as unidades, ou '' (todas). */
+export function filtroUnidades(coluna: string, unidades?: string[] | null): string;
+/** Filtro `in.(...)` do PostgREST, já codificado para a URL. */
+export function listaPostgrest(valores: string[]): string;
+export const HORA_ROTINA_DIARIA: number;
+/** O que a rotina automática faz nesta hora: 'diaria' (às 4h de Cuiabá), 'nada' ou 'completa' (COA_ROTINA_COMPLETA=1). */
+export function rotinaDoHorario(agora?: Date, env?: Record<string, string | undefined>): 'diaria' | 'nada' | 'completa';
 export const SQL_DEPOSITOS_SAP: string;
 export function inicioSafraValidacao(agora?: Date): string;
-export function montarSqlOrdensValidacao(desde: string, pular?: number, tamanho?: number): string;
-export function montarSqlCoordenadoresValidacao(desde: string): string;
-export function montarSqlTalhoesValidacao(desde: string, pular?: number, tamanho?: number): string;
-export function montarSqlApontamentosValidacao(desde: string, pular?: number, tamanho?: number): string;
+export function montarSqlOrdensValidacao(desde: string, pular?: number, tamanho?: number, unidades?: string[] | null, enxuta?: boolean): string;
+export function montarSqlCoordenadoresValidacao(desde: string, unidades?: string[] | null): string;
+export function montarSqlTalhoesValidacao(desde: string, pular?: number, tamanho?: number, unidades?: string[] | null, enxuta?: boolean): string;
+export function montarSqlApontamentosValidacao(desde: string, pular?: number, tamanho?: number, unidades?: string[] | null, enxuta?: boolean): string;
 export function montarSqlEstoqueSap(codigos: unknown[], pular?: number | null, tamanho?: number): string;
 export function linhasValidacao(
   dados: {
@@ -354,9 +364,9 @@ export function linhasValidacao(
 ): LinhaValidScript[];
 export function depositosVinculados(vinculos: { unidade: string; deposito: string | null }[]): Record<string, Record<string, string[]>>;
 export function lerVinculosValidacao(opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<{ unidade: string; deposito: string | null }[]>;
-export function sincronizarValidacao(opcoes: { url: string; token: string; vinculos?: { unidade: string; deposito: string | null }[]; fetchImpl?: FetchLike; agora?: Date }): Promise<{ geradoEm: string; linhas: LinhaValidScript[]; avisos: string[] }>;
-export function gravarValidacaoSupabase(dados: { geradoEm: string; linhas: LinhaValidScript[] }, opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<'ok' | 'vazio' | 'sem-tabela'>;
-export function rodarValidacao(opcoes: { agrovex: { url: string; token: string }; supabase: { url: string; chave: string }; fetchImpl?: FetchLike; /** recebe o erro inteiro (para quem responde a um pedido escolher a mensagem pelo tipo) */ aoErro?: (e: unknown) => void }): Promise<string | null>;
+export function sincronizarValidacao(opcoes: { url: string; token: string; vinculos?: { unidade: string; deposito: string | null }[]; unidades?: string[] | null; fetchImpl?: FetchLike; agora?: Date }): Promise<{ geradoEm: string; linhas: LinhaValidScript[]; avisos: string[]; unidades: string[] | null }>;
+export function gravarValidacaoSupabase(dados: { geradoEm: string; linhas: LinhaValidScript[]; unidades?: string[] | null }, opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<'ok' | 'vazio' | 'sem-tabela'>;
+export function rodarValidacao(opcoes: { agrovex: { url: string; token: string }; supabase: { url: string; chave: string }; unidades?: string[] | null; fetchImpl?: FetchLike; /** recebe o erro inteiro (para quem responde a um pedido escolher a mensagem pelo tipo) */ aoErro?: (e: unknown) => void }): Promise<string | null>;
 // cadastro de variedades do PIMS (nome comercial no Mapas)
 export interface VariedadePimsScript { id: string | null; codigo: number | null; abreviada: string | null; descricao: string | null; grupo: string | null; ativo: boolean; talhoes: number }
 export interface LinhaVariedadeScript {

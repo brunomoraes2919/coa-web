@@ -21,7 +21,7 @@
     previsao: 'Previsão do Tempo', chuva: 'Chuva por talhão', validacao: 'Validação PIMS', controle: 'Controle Técnico',
     painel: 'Montagens de Painel', aderencia: 'Aderência de utilização', administracao: 'Administração de usuários',
   };
-  const NOMES_PEDIDO = { plantio: 'Atualizar plantio', chuva: 'Chuva via integração', boletins: 'Boletins do PIMS', validacao: 'Atualizar validação', car: 'Buscar nas bases (CAR)' };
+  const NOMES_PEDIDO = { plantio: 'Atualizar plantio', chuva: 'Chuva via integração', boletins: 'Boletins do PIMS', validacao: 'Atualizar validação', car: 'Buscar nas bases (CAR)', chuva_talhao: 'Atualizar chuva por talhão' };
   const nomeModulo = (m) => (m ? NOMES_MODULO[m] || m : 'Tela inicial');
 
   // ------------------------------------------------------------------ datas (dias de Cuiabá, 'YYYY-MM-DD')

@@ -4,7 +4,7 @@ Esta pasta guarda **cópias de referência** do que está instalado na VM do Goo
 
 | Arquivo daqui | Onde fica na VM | O que faz |
 |---|---|---|
-| `atualizar-e-rodar.sh` | `~/plantio-pims/atualizar-e-rodar.sh` | Rotina de hora em hora (minuto 17): baixa os scripts e roda o plantio |
+| `atualizar-e-rodar.sh` | `~/plantio-pims/atualizar-e-rodar.sh` | Roda de hora em hora (minuto 17): baixa os scripts; desde 23/10/2026 só **age às 4h** (veja abaixo) |
 | `atender-pedidos.sh` | `~/plantio-pims/atender-pedidos.sh` | A cada ~30 s: atende os pedidos feitos pelas telas |
 | `plantio-pims.service` e `.timer` | `/etc/systemd/system/` | Agenda a rotina de hora em hora |
 | `plantio-pims-pedidos.service` e `.timer` | `/etc/systemd/system/` | Agenda a verificação dos pedidos |
@@ -12,6 +12,14 @@ Esta pasta guarda **cópias de referência** do que está instalado na VM do Goo
 O que a VM **baixa sozinha**, a cada hora, são outros três arquivos, da pasta `modulos/mapas/scripts` do `main`: `sincronizar-plantio.mjs`, `atender-pedidos.mjs` e `plantio.config.json`. Isso continua igual.
 
 **Código sempre novo nos botões (desde 22/10/2026).** Quando há algum pedido pendente ("Atualizar" da Validação, "Atualizar plantio", chuva, boletins ou CAR), o próprio `atender-pedidos.mjs` baixa esses três arquivos antes de atender, com as mesmas conferências da rotina horária (nenhum vazio, `node --check`, JSON legível, os três trocados juntos e só se algum mudou; o arquivo `versao` vale do mesmo jeito) e atende o pedido com o código novo. Assim, quem clica não espera o minuto 17. Sem pedido pendente, nada é baixado. Isso só acontece na pasta das rotinas (a que tem o arquivo `.trava`); não precisa mudar nada na VM.
+
+**Só no clique (desde 23/10/2026).** A VM não consulta mais o Agrovex sozinha ao longo do dia: a rotina de hora em hora relia o PIMS, o SAP e a ZEUS o dia todo (e, a cada 30 s, a chuva por talhão e a situação da ZEUS), e isso travava o Agrovex para as outras pessoas nos picos. Agora:
+
+- o timer de hora em hora continua igual na VM (nada a mudar lá), mas `sincronizar-plantio.mjs` só faz alguma coisa **às 4h de Cuiabá**: o cadastro de variedades e a foto do benchmark da previsão (que precisa de uma por dia). Nas outras horas ele escreve no registro `rotina automática: nada a fazer nesta hora` e termina;
+- tudo o mais vem de pedido, pelo `atender-pedidos.mjs`: o "Atualizar" do Operacional e do Mapas (plantio e Operacional, todas as fazendas), o da Validação PIMS e do Controle Técnico (**só a unidade da tela**), o da Chuva por talhão (tabela `chuva_talhao_pedidos`, script `supabase/0034`; relê também os limites da ZEUS, se têm mais de 24 h, e a situação da ZEUS), a chuva do Mapa de chuva (que também atualiza a situação da ZEUS), os boletins e o CAR;
+- as TVs do Operacional (e as das Montagens de Painel, que mostram o Operacional) pedem o "Atualizar" sozinhas de hora em hora enquanto estão ligadas; pedidos com menos de 5 min da última leitura são respondidos com os dados já gravados;
+- cada consulta ao Agrovex vai para o registro com o tempo e o número de linhas (`MCP PIMS · ordens de serviço: 4210 ms, 812 linhas.`), para medir a carga;
+- para rodar a rotina completa de antes, à mão: `COA_ROTINA_COMPLETA=1` no ambiente do comando.
 
 As chaves ficam só na VM, no arquivo `~/.plantio-pims.env`. **Nenhum comando deste guia mostra chave na tela**, e nenhuma chave deve ser colada em conversa, e-mail ou no repositório.
 

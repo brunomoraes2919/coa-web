@@ -18,8 +18,8 @@ function podeAtualizar(): boolean {
 
 /**
  * Topo das telas Novo mapa e Safras: data do plantio do PIMS e o botão "Atualizar plantio", que pede ao
- * servidor do COA WEB para buscar o plantio no PIMS agora, sem esperar a rotina de cada hora (mapa feito
- * logo depois do apontamento do plantio). Ao terminar, todas as telas abertas passam a usar o plantio
+ * servidor do COA WEB para buscar o plantio no PIMS agora (mapa feito logo depois do apontamento do plantio). Desde
+ * 23/10/2026 não há mais rotina de cada hora: o plantio só muda quando alguém clica em Atualizar. Ao terminar, todas as telas abertas passam a usar o plantio
  * novo (recarregarPlantioPims). Só no COA WEB (Supabase): no modo local não aparece.
  */
 export default function AtualizarPlantio() {
@@ -69,7 +69,7 @@ export default function AtualizarPlantio() {
           type="button"
           className="botao botao-pequeno"
           disabled={etapa !== null}
-          title="Busca agora no PIMS o plantio apontado há pouco, sem esperar a atualização automática de cada hora"
+          title="Busca agora no PIMS o plantio de todas as fazendas (os dados só mudam quando alguém clica em Atualizar)"
           onClick={() => void atualizar()}
         >
           ↻ Atualizar plantio

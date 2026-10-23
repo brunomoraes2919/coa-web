@@ -1073,22 +1073,23 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 <dialog class="dlg-mec dlg-novidade" id="dlg-novidade" aria-labelledby="dlg-novidade-titulo">
   <form method="dialog">
     <div class="dlg-mec-cab">
-      <div><span class="novidade-selo">Novidade</span><h3 id="dlg-novidade-titulo">Revista do plantio no Operacional</h3><p>Uma nova aba em Operacional → Revista.</p></div>
+      <div><span class="novidade-selo">Mudança</span><h3 id="dlg-novidade-titulo">Os dados agora são atualizados no botão Atualizar</h3><p>PIMS, SAP e ZEUS: o COA WEB não busca mais sozinho de hora em hora.</p></div>
       <button type="submit" class="dlg-mec-fechar" value="fechar" aria-label="Fechar">×</button>
     </div>
     <div class="dlg-mec-corpo">
-      <p class="novidade-texto">O relatório do plantio da safra num documento só, diagramado como uma revista, pronto para enviar à gestão, à diretoria ou à equipe da fazenda.</p>
+      <p class="novidade-texto">Para o servidor de dados não travar nos horários de pico (manhã, almoço e fim da tarde), os dados do PIMS, do SAP e da ZEUS só são buscados quando alguém clica em <b>Atualizar</b>. O clique busca na hora: é só apertar quando precisar do dado mais recente.</p>
       <ul class="novidade-lista">
-        <li><b>Tudo cruzado:</b> área e ritmo do PIMS, metas, chuva da ZEUS (da fazenda e por talhão), mapas de chuva salvos, variedades, equipes e a previsão do tempo.</li>
-        <li><b>Por fazenda</b> na aba de cada uma; em <b>Todas</b>, a revista do grupo (administrador).</li>
-        <li><b>Baixar PDF</b> em A4, com capa, sumário e mapas; dá para <b>trocar a foto da capa</b>.</li>
+        <li><b>Operacional e Mapas:</b> o botão Atualizar busca o plantio e a colheita de todas as fazendas.</li>
+        <li><b>Validação PIMS e Controle Técnico:</b> o Atualizar busca só a unidade que está na tela, mais rápido.</li>
+        <li><b>Chuva por talhão:</b> ganhou o botão Atualizar.</li>
+        <li><b>TVs do Operacional</b> (e das Montagens de Painel): pedem a atualização sozinhas, de hora em hora, enquanto estão ligadas.</li>
+        <li>O horário da última atualização fica no canto de cada tela.</li>
       </ul>
     </div>
     <div class="dlg-mec-rodape">
       <span>Este aviso aparece uma vez.</span>
       <div class="mec-pims-acoes">
-        <button type="submit" class="btn fantasma" value="fechar">Agora não</button>
-        <button type="submit" class="btn" value="abrir" id="novidade-abrir">Abrir a Revista</button>
+        <button type="submit" class="btn" value="fechar">Entendi</button>
       </div>
     </div>
   </form>
@@ -5738,23 +5739,18 @@ async function carregarSessaoEDados(){
   else mostrarNovidade();
 }
 
-/* Aviso de novidade: uma vez por usuário neste navegador, para quem tem a categoria da novidade.
+/* Aviso de novidade: uma vez por usuário neste navegador, para quem tem alguma das categorias da novidade.
    Para anunciar outra, troque NOVIDADE.chave (quem já viu a anterior vê a nova) e o texto do #dlg-novidade. */
-const NOVIDADE = { chave: 'revista-plantio-2026-10', categoria: 'acompanhamento' };
+const NOVIDADE = { chave: 'atualizar-no-clique-2026-10', categorias: ['acompanhamento', 'mapas', 'validacao', 'controle', 'chuva'] };
 function chaveNovidade(){ return 'coa.novidade.' + NOVIDADE.chave + '.' + (sessao ? sessao.id : ''); }
 function mostrarNovidade(){
   const dlg = document.getElementById('dlg-novidade');
-  if(!sessao || !dlg || dlg.open || !podeCategoria(NOVIDADE.categoria)) return;
+  if(!sessao || !dlg || dlg.open || !NOVIDADE.categorias.some(podeCategoria)) return;
   try{ if(localStorage.getItem(chaveNovidade())) return; }catch(e){ return; } // sem armazenamento, não incomoda a cada entrada
   dlg.showModal();
 }
 document.getElementById('dlg-novidade').addEventListener('close', ()=>{
   try{ localStorage.setItem(chaveNovidade(), new Date().toISOString()); }catch(e){ /* sem armazenamento */ }
-  if(document.getElementById('dlg-novidade').returnValue === 'abrir'){
-    acompVista = 'revista';
-    entrarAcompanhamento();
-    irParaAcomp('revista');
-  }
 });
 
 function mostrarTelaLogin(){

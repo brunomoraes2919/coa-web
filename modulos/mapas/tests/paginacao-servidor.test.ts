@@ -537,14 +537,18 @@ describe('paginação: as consultas da Validação (sincronizarValidacao)', () =
     expect(sd['1001'].length + sd['1002'].length).toBe(3);
   });
 
-  it('as consultas que já eram paginadas não têm reserva (não existe consulta inteira delas): a recusa derruba a etapa, como antes', async () => {
+  it('as consultas que já eram paginadas não têm consulta inteira: recusada a nova, vale a de antes; recusadas as duas, a etapa cai', async () => {
     const aviso = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const { impl, feitas } = agrovexQuePagina(tabelaDe, (f) => (f.sql.includes('AS sem_area') ? 'falhou' : null));
     await expect(sincronizarValidacao({ url: 'https://agrovex.test/mcp', token: 'tk', fetchImpl: impl, agora: new Date(2026, 9, 6, 12, 0) }))
       .rejects.toThrow(/Consulta ao PIMS falhou \(ordens de serviço\): falhou/);
-    expect(aviso).not.toHaveBeenCalled();
+    // a nova (somas enxutas) foi recusada, a de antes também: um aviso, e nenhuma página além da primeira de cada
+    expect(aviso).toHaveBeenCalledTimes(1);
+    expect(String(aviso.mock.calls[0][0])).toMatch(/consulta nova foi recusada \(ordens de serviço\)/);
     aviso.mockRestore();
-    expect(feitas.map((f) => f.pular)).toEqual([0]);
+    expect(feitas.map((f) => f.pular)).toEqual([0, 0]);
+    expect(feitas[0].sql).toContain('WHERE ID_APORDSERVICO IN (SELECT ID_APORDSERVICO FROM');
+    expect(feitas[1].sql).not.toContain('WHERE ID_APORDSERVICO IN (SELECT ID_APORDSERVICO FROM');
   });
 
   it('teto de páginas também vale para as consultas da validação que já paginavam', async () => {

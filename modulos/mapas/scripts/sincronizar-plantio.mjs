@@ -1,5 +1,8 @@
 // Sincroniza o status de plantio do PIMS (via Agrovex MCP) e, depois dele, o Acompanhamento Operacional e a
-// Validação PIMS. É o programa da rotina de hora em hora do servidor (VM) e a biblioteca de atender-pedidos.mjs.
+// Validação PIMS. É a biblioteca de atender-pedidos.mjs (os dados só são atualizados quando alguém clica em
+// Atualizar) e o programa da rotina automática do servidor (VM), que desde 23/10/2026 só age uma vez por dia, às 4h
+// de Cuiabá: o benchmark da previsão e o cadastro de variedades (rotinaDoHorario). Com COA_ROTINA_COMPLETA=1 no
+// ambiente, roda tudo, como era (para uso manual).
 // No servidor: AGROVEX_TOKEN, SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no ambiente; grava em mapas_plantio_pims
 // (upsert + limpeza das linhas que sumiram do PIMS). Faltando qualquer uma das três, termina com erro (código 1).
 // No computador de quem desenvolve: AGROVEX_TOKEN=... node scripts/sincronizar-plantio.mjs --local   (ou
@@ -239,6 +242,8 @@ async function abrirSessao(url, token, fetchImpl) {
   // Na rede de verdade o token só sai para o host permitido, venha o endereço de onde vier. Com um fetch
   // injetado (os testes) nada sai da máquina, e o endereço fica como veio.
   if (fetchImpl === globalThis.fetch) url = conferirUrlAgrovex(url);
+  // na rede de verdade (VM), cada consulta vai para o log com o tempo e o tamanho: é o que mede a carga no Agrovex
+  const medir = fetchImpl === globalThis.fetch;
   let sessao = null;
   let protocolo = null;
   let id = 0;
@@ -268,6 +273,7 @@ async function abrirSessao(url, token, fetchImpl) {
   return {
     /** Executa uma SELECT no PIMS (ou na ZEUS, com fonte = FONTES.zeus) e devolve { columns, rows }. */
     async consultar(sql, pergunta, rotulo, fonte = FONTES.pims) {
+      const inicio = Date.now();
       const r = await lerResposta(await enviar('POST', {
         jsonrpc: '2.0', id: ++id, method: 'tools/call',
         params: {
@@ -291,6 +297,7 @@ async function abrirSessao(url, token, fetchImpl) {
         throw recusada(`Consulta ao ${nome} falhou (${rotulo}): ${typeof msg === 'string' ? msg : JSON.stringify(msg)}`);
       }
       if (dados.truncated) throw erroDoTipo('fonte', `Consulta ao ${nome} falhou (${rotulo}): resultado truncado (${dados.row_count} linhas).`);
+      if (medir) console.log(`MCP ${nome} · ${rotulo}: ${Date.now() - inicio} ms, ${(dados.rows ?? []).length} linhas.`);
       return { columns: dados.columns ?? [], rows: dados.rows ?? [] };
     },
     /** Tira o token de um texto que vai para o log (o que a fonte devolve pode repetir o que recebeu). */
@@ -1010,6 +1017,27 @@ function empresaDa(unidade) {
   return Object.hasOwn(SAP_EMPRESA_DA_UNIDADE, u) ? SAP_EMPRESA_DA_UNIDADE[u] : null;
 }
 
+/**
+ * Unidades do PIMS de um pedido (o Atualizar da Validação pede só a da tela). Só passam nomes com letras, números,
+ * espaço e - . / ( ) &, até 80 caracteres, sem repetir; o que sobrar vira null (todas as unidades).
+ */
+export function unidadesDoPedido(lista) {
+  if (!Array.isArray(lista) || !lista.length) return null;
+  const ok = [];
+  for (const u of lista) {
+    const t = typeof u === 'string' ? u.trim() : '';
+    if (!t || t.length > 80 || !/^[\p{L}\p{N} .\-/()&]+$/u.test(t)) return null;
+    if (!ok.includes(t)) ok.push(t);
+  }
+  return ok;
+}
+
+/** ` AND <coluna> IN ('A', 'B')` para as unidades pedidas (aspas dobradas), ou '' sem filtro (todas). */
+export function filtroUnidades(coluna, unidades) {
+  if (!Array.isArray(unidades) || !unidades.length) return '';
+  return ` AND ${coluna} IN (${unidades.map((u) => `'${String(u).replace(/'/g, "''")}'`).join(', ')})`;
+}
+
 /** Primeiro dia da safra atual para a validação: 1º de agosto (do ano passado, se ainda não chegou agosto). */
 export function inicioSafraValidacao(agora = new Date()) {
   return `${agora.getFullYear() - (agora.getMonth() >= 7 ? 0 : 1)}-08-01`;
@@ -1029,8 +1057,8 @@ const SQL_EXEC_VALIDACAO = `SELECT ID_APORDSERVICO, DT_OPERACAO AS dia, QT_AREA 
  * Entra nessa lista a operação com 3 ou mais ordens fechadas desde a safra anterior em que menos da
  * metade teve área apontada (no PIMS de hoje as operações ficam ou acima de 65% ou abaixo de 10%).
  */
-export function montarSqlOrdensValidacao(desde, pular = 0, tamanho = VALID_PAGINA) {
-  const a = alvoValidacao(desde);
+export function montarSqlOrdensValidacao(desde, pular = 0, tamanho = VALID_PAGINA, unidades = null, enxuta = true) {
+  const a = alvoValidacao(desde, unidades, enxuta);
   return `${a.cte}
 SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS operacao, o.DE_OPERACAO AS operacao_de,
   os.FG_SITUACAO AS situacao, CONVERT(varchar(10), os.DT_ABERTURA, 23) AS abertura, CONVERT(varchar(10), os.DT_ENCERRA, 23) AS encerramento,
@@ -1042,13 +1070,20 @@ ORDER BY os.ID_APORDSERVICO
 ${paginaSql(pular, tamanho)}`;
 }
 
-/** As ordens da validação (as mesmas de montarSqlOrdensValidacao), em pedaços para as consultas que detalham cada uma. */
-function alvoValidacao(desde) {
+/**
+ * As ordens da validação (as mesmas de montarSqlOrdensValidacao), em pedaços para as consultas que detalham cada uma.
+ * `enxuta`: as somas do planejado (pl) e do executado (ex) só olham as ordens abertas e as encerradas desde a safra
+ * anterior, as únicas que a consulta usa (o resultado é o mesmo; antes elas somavam todas as ordens da história do
+ * PIMS a cada consulta e a cada página). `unidades`: só as unidades pedidas (o filtro vale para as ordens; a
+ * marca das operações sem área (sa) continua olhando todas, porque é uma propriedade da operação).
+ */
+function alvoValidacao(desde, unidades = null, enxuta = true) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   const anterior = `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
+  const soAsOrdens = (col) => (enxuta ? ` WHERE ${col} IN (SELECT ID_APORDSERVICO FROM ${PIMS}APORDSERVICO WHERE FG_SITUACAO = 'A' OR DT_ENCERRA >= '${anterior}')` : '');
   return {
-    cte: `WITH pl AS (SELECT ID_APORDSERVICO, SUM(QT_AREA) AS ha, COUNT(*) AS n FROM ${PIMS}APORDSERVICO_LC GROUP BY ID_APORDSERVICO),
-ex AS (SELECT x.ID_APORDSERVICO, SUM(x.ha) AS ha, MAX(x.dia) AS ultimo FROM (${SQL_EXEC_VALIDACAO}) x GROUP BY x.ID_APORDSERVICO),
+    cte: `WITH pl AS (SELECT ID_APORDSERVICO, SUM(QT_AREA) AS ha, COUNT(*) AS n FROM ${PIMS}APORDSERVICO_LC${soAsOrdens('ID_APORDSERVICO')} GROUP BY ID_APORDSERVICO),
+ex AS (SELECT x.ID_APORDSERVICO, SUM(x.ha) AS ha, MAX(x.dia) AS ultimo FROM (${SQL_EXEC_VALIDACAO}) x${soAsOrdens('x.ID_APORDSERVICO')} GROUP BY x.ID_APORDSERVICO),
 sa AS (SELECT o2.ID_OPERACAO FROM ${PIMS}APORDSERVICO o2 LEFT JOIN ex ON ex.ID_APORDSERVICO = o2.ID_APORDSERVICO
   WHERE o2.FG_SITUACAO = 'F' AND o2.DT_ENCERRA >= '${anterior}' GROUP BY o2.ID_OPERACAO
   HAVING COUNT(*) >= 3 AND 2 * SUM(CASE WHEN ex.ha > 0 THEN 1 ELSE 0 END) < COUNT(*))`,
@@ -1059,14 +1094,14 @@ LEFT JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
 LEFT JOIN pl ON pl.ID_APORDSERVICO = os.ID_APORDSERVICO
 LEFT JOIN ex ON ex.ID_APORDSERVICO = os.ID_APORDSERVICO
 LEFT JOIN sa ON sa.ID_OPERACAO = os.ID_OPERACAO`,
-    onde: `WHERE os.FG_SITUACAO = 'A'
-   OR (os.FG_SITUACAO = 'F' AND os.DT_ENCERRA >= '${d}' AND sa.ID_OPERACAO IS NULL AND ABS(ISNULL(pl.ha, 0) - ISNULL(ex.ha, 0)) > ${VALID_TOLERANCIA_HA})`,
+    onde: `WHERE (os.FG_SITUACAO = 'A'
+   OR (os.FG_SITUACAO = 'F' AND os.DT_ENCERRA >= '${d}' AND sa.ID_OPERACAO IS NULL AND ABS(ISNULL(pl.ha, 0) - ISNULL(ex.ha, 0)) > ${VALID_TOLERANCIA_HA}))${filtroUnidades('u.DE_UNI_ADM', unidades)}`,
   };
 }
 
 /** Talhões planejados de cada ordem da validação (APORDSERVICO_LC): o que a tela mostra ao abrir a ordem. */
-export function montarSqlTalhoesValidacao(desde, pular = 0, tamanho = VALID_PAGINA) {
-  const a = alvoValidacao(desde);
+export function montarSqlTalhoesValidacao(desde, pular = 0, tamanho = VALID_PAGINA, unidades = null, enxuta = true) {
+  const a = alvoValidacao(desde, unidades, enxuta);
   return `${a.cte}
 SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, up.CD_UPNIVEL3 AS talhao, lc.QT_AREA AS ha
 ${a.de}
@@ -1084,8 +1119,8 @@ const SQL_APONT_VALIDACAO = `SELECT ID_APORDSERVICO, NO_BOLETIM, DT_OPERACAO, ID
     JOIN ${PIMS}APAPLINS_LC l ON l.ID_APAPLINSUMO = a.ID_APAPLINSUMO WHERE a.ID_APORDSERVICO IS NOT NULL`;
 
 /** Apontamentos (um por talhão de cada boletim) das ordens da validação. */
-export function montarSqlApontamentosValidacao(desde, pular = 0, tamanho = VALID_PAGINA) {
-  const a = alvoValidacao(desde);
+export function montarSqlApontamentosValidacao(desde, pular = 0, tamanho = VALID_PAGINA, unidades = null, enxuta = true) {
+  const a = alvoValidacao(desde, unidades, enxuta);
   return `${a.cte}
 SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, ap.NO_BOLETIM AS boletim, CONVERT(varchar(10), ap.DT_OPERACAO, 23) AS dia, up.CD_UPNIVEL3 AS talhao, ap.ha,
   CONVERT(varchar(16), ap.LAST_UPDATE, 120) AS lancado, ap.CHANGED_BY AS por
@@ -1101,12 +1136,12 @@ ${paginaSql(pular, tamanho)}`;
  * Evolução das ordens ABERTAS: hectares apontados por dia em cada ordem. Com `pular`, paginada (ordens abertas
  * × dias com apontamento). A ordem de sempre (unidade, ordem, dia) não tem empate: são as colunas do GROUP BY.
  */
-export function montarSqlEvolucaoValidacao(pular = null, tamanho = VALID_PAGINA) {
+export function montarSqlEvolucaoValidacao(pular = null, tamanho = VALID_PAGINA, unidades = null) {
   return `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, CONVERT(varchar(10), x.dia, 23) AS dia, SUM(x.ha) AS ha
 FROM ${PIMS}APORDSERVICO os
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 JOIN (${SQL_EXEC_VALIDACAO}) x ON x.ID_APORDSERVICO = os.ID_APORDSERVICO
-WHERE os.FG_SITUACAO = 'A'
+WHERE os.FG_SITUACAO = 'A'${filtroUnidades('u.DE_UNI_ADM', unidades)}
 GROUP BY u.DE_UNI_ADM, os.NO_BOLETIM, CONVERT(varchar(10), x.dia, 23)${fimDaConsulta(pular, tamanho, '1, 2, 3', '1, 2, 3')}`;
 }
 
@@ -1117,24 +1152,27 @@ export const SQL_EVOLUCAO_VALIDACAO = montarSqlEvolucaoValidacao();
  * Coordenadores: as Equipes que tiveram ordem aberta ou fechada desde `desde` (ou têm ordem em aberto).
  * Uma linha por unidade × equipe: é cadastro (as equipes de cada unidade), lido numa consulta só.
  */
-export function montarSqlCoordenadoresValidacao(desde) {
+export function montarSqlCoordenadoresValidacao(desde, unidades = null) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   return `SELECT u.DE_UNI_ADM AS unidade, e.DE_EQUIPE AS equipe,
   SUM(CASE WHEN os.FG_SITUACAO = 'A' THEN 1 ELSE 0 END) AS abertas, COUNT(*) AS ordens
 FROM ${PIMS}APORDSERVICO os
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
-WHERE os.DT_ABERTURA >= '${d}' OR os.DT_ENCERRA >= '${d}'
+WHERE (os.DT_ABERTURA >= '${d}' OR os.DT_ENCERRA >= '${d}')${filtroUnidades('u.DE_UNI_ADM', unidades)}
 GROUP BY u.DE_UNI_ADM, e.DE_EQUIPE
 ORDER BY 1, 2`;
 }
 
 /** Depósitos de cada unidade no PIMS que têm código no SAP (CD_INT_ERP = WhsCode). Cadastro: lido numa consulta só. */
-export const SQL_DEPOSITOS_PIMS = `SELECT DISTINCT u.DE_UNI_ADM AS unidade, d.CD_INT_ERP AS codigo, d.DE_DEPOSITO AS nome
+export function montarSqlDepositosPims(unidades = null) {
+  return `SELECT DISTINCT u.DE_UNI_ADM AS unidade, d.CD_INT_ERP AS codigo, d.DE_DEPOSITO AS nome
 FROM ${PIMS}DEPOSITO d
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = d.ID_UNIDADEADM
-WHERE d.FG_INT_ERP = 'S' AND d.CD_INT_ERP IS NOT NULL AND LTRIM(RTRIM(d.CD_INT_ERP)) <> ''
+WHERE d.FG_INT_ERP = 'S' AND d.CD_INT_ERP IS NOT NULL AND LTRIM(RTRIM(d.CD_INT_ERP)) <> ''${filtroUnidades('u.DE_UNI_ADM', unidades)}
 ORDER BY 1, 2`;
+}
+export const SQL_DEPOSITOS_PIMS = montarSqlDepositosPims();
 
 /** Depósitos de uma empresa do SAP (nome atual e se está inativo). */
 export const SQL_DEPOSITOS_SAP = 'SELECT "WhsCode" AS codigo, "WhsName" AS nome, "Inactive" AS inativo FROM OWHS';
@@ -1315,7 +1353,7 @@ const ORIGEM_BOLETIM = ['I', 'P', 'T', 'C', 'L']; // insumo, plantio, tratamento
  * Com `pular`, paginada. A fila não tem chave conhecida aqui: depois da ordem de sempre (unidade, boletim,
  * item) vêm as outras colunas devolvidas, então só empatam linhas idênticas (trocar uma pela outra não muda nada).
  */
-export function montarSqlBoletinsFalha(desde, pular = null, tamanho = VALID_PAGINA) {
+export function montarSqlBoletinsFalha(desde, pular = null, tamanho = VALID_PAGINA, unidades = null) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   return `SELECT COALESCE(ui.DE_UNI_ADM, up.DE_UNI_ADM, ut.DE_UNI_ADM, uc.DE_UNI_ADM, ul.DE_UNI_ADM) AS unidade, e.FG_ORIGEM AS origem, e.NO_BOLETIM AS boletim,
   CONVERT(varchar(10), e.DT_CONSUMO, 23) AS dia, CONVERT(varchar(30), e.ID_BOLETIM_DE) AS id_item, e.CD_MATERIAL_ERP AS material, e.QT_CONSUMO AS qtd, e.CD_UNI_MEDIDA AS un,
@@ -1335,7 +1373,7 @@ LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = COALESCE(ai.ID_APORDSER
 LEFT JOIN ${PIMS}EQUIPE eqo ON eqo.ID_EQUIPE = os.ID_EQUIPE
 LEFT JOIN ${PIMS}EQUIPE eqi ON eqi.ID_EQUIPE = ai.ID_EQUIPE
 LEFT JOIN ${PIMS}EQUIPE eqp ON eqp.ID_EQUIPE = ap.ID_EQUIPE
-WHERE e.DT_CONSUMO >= '${d}' AND LTRIM(RTRIM(e.NO_DOC_ERP)) = '-1' AND e.FG_STATUS <> '12'${fimDaConsulta(pular, tamanho, '1, 3, 5', '1, 3, 5, 2, 4, 6, 7, 8, 9, 10, 11, 12')}`;
+WHERE e.DT_CONSUMO >= '${d}' AND LTRIM(RTRIM(e.NO_DOC_ERP)) = '-1' AND e.FG_STATUS <> '12'${filtroUnidades('COALESCE(ui.DE_UNI_ADM, up.DE_UNI_ADM, ut.DE_UNI_ADM, uc.DE_UNI_ADM, ul.DE_UNI_ADM)', unidades)}${fimDaConsulta(pular, tamanho, '1, 3, 5', '1, 3, 5, 2, 4, 6, 7, 8, 9, 10, 11, 12')}`;
 }
 
 /**
@@ -1343,7 +1381,7 @@ WHERE e.DT_CONSUMO >= '${d}' AND LTRIM(RTRIM(e.NO_DOC_ERP)) = '-1' AND e.FG_STAT
  * Com `pular`, paginada. Depois da ordem de sempre (unidade, dia, boletim) vêm a origem e a chave do item (colunas
  * 2 e 5), que já não empatam, e as demais colunas devolvidas (para os boletins sem item).
  */
-export function montarSqlBoletinsPendentes(desde, pular = null, tamanho = VALID_PAGINA) {
+export function montarSqlBoletinsPendentes(desde, pular = null, tamanho = VALID_PAGINA, unidades = null) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   const parte = (origem, cab, id, itens, idItem, qtd, equipe) => `SELECT u.DE_UNI_ADM AS unidade, '${origem}' AS origem, a.NO_BOLETIM AS boletim, CONVERT(varchar(10), a.DT_OPERACAO, 23) AS dia,
   CONVERT(varchar(30), l.${idItem}) AS id_item, i.CD_INT_ERP AS material, i.DE_INSUMO AS nome, l.${qtd} AS qtd, dp.CD_INT_ERP AS deposito, os.NO_BOLETIM AS os,
@@ -1355,7 +1393,7 @@ LEFT JOIN ${PIMS}INSUMO i ON i.ID_INSUMO = l.ID_INSUMO
 LEFT JOIN ${PIMS}DEPOSITO dp ON dp.ID_DEPOSITO = l.ID_DEPOSITO
 LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO
 LEFT JOIN ${PIMS}EQUIPE eqo ON eqo.ID_EQUIPE = os.ID_EQUIPE${equipe ? `\nLEFT JOIN ${PIMS}EQUIPE eqa ON eqa.ID_EQUIPE = a.ID_EQUIPE` : ''}
-WHERE a.DT_OPERACAO >= '${d}' AND a.FG_STATUS_EAI = '0' AND a.FG_INTEGRAR = 'S'`;
+WHERE a.DT_OPERACAO >= '${d}' AND a.FG_STATUS_EAI = '0' AND a.FG_INTEGRAR = 'S'${filtroUnidades('u.DE_UNI_ADM', unidades)}`;
   return `${parte('I', 'APAPLINSUMO', 'ID_APAPLINSUMO', 'APAPLINS_INSLC', 'ID_APAPLINS_INSLC', 'QT_CONS_TOTAL', true)}
 UNION ALL
 ${parte('P', 'APPLANTIO', 'ID_APPLANTIO', 'APPLANTIO_IN', 'ID_APPLANTIO_IN', 'QT_TOTAL', true)}
@@ -1496,7 +1534,7 @@ export function diaAnterior(agora, dias) {
  * com o que a conferência precisa: a ordem e as datas dela, o planejado do talhão na ordem (nulo = talhão
  * fora da ordem), o total já apontado no talhão e, na aplicação de insumo, quantos itens o boletim tem.
  */
-export function montarSqlApontamentosRecentes(desdeDia, pular = 0, tamanho = VALID_PAGINA) {
+export function montarSqlApontamentosRecentes(desdeDia, pular = 0, tamanho = VALID_PAGINA, unidades = null) {
   const d = String(desdeDia).replace(/[^0-9-]/g, '');
   const cond = (a) => `(${a}DT_OPERACAO >= '${d}' OR ${a}LAST_UPDATE >= '${d}')`;
   return `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, os.FG_SITUACAO AS os_sit, CONVERT(varchar(10), os.DT_ABERTURA, 23) AS abertura,
@@ -1521,7 +1559,7 @@ LEFT JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = ap.ID_UPNIVEL3
 LEFT JOIN (SELECT ID_APORDSERVICO, ID_UPNIVEL3, SUM(QT_AREA) AS ha FROM ${PIMS}APORDSERVICO_LC GROUP BY ID_APORDSERVICO, ID_UPNIVEL3) lc
   ON lc.ID_APORDSERVICO = ap.ID_APORDSERVICO AND lc.ID_UPNIVEL3 = ap.ID_UPNIVEL3
 LEFT JOIN (SELECT x.ID_APORDSERVICO, x.ID_UPNIVEL3, SUM(x.ha) AS ha FROM (${SQL_APONT_VALIDACAO}) x GROUP BY x.ID_APORDSERVICO, x.ID_UPNIVEL3) tot
-  ON tot.ID_APORDSERVICO = ap.ID_APORDSERVICO AND tot.ID_UPNIVEL3 = ap.ID_UPNIVEL3
+  ON tot.ID_APORDSERVICO = ap.ID_APORDSERVICO AND tot.ID_UPNIVEL3 = ap.ID_UPNIVEL3${unidades && unidades.length ? `\nWHERE 1 = 1${filtroUnidades('u.DE_UNI_ADM', unidades)}` : ''}
 ORDER BY u.DE_UNI_ADM, ap.DT_OPERACAO DESC, ap.NO_BOLETIM, ap.ID_UPNIVEL3
 ${paginaSql(pular, tamanho)}`;
 }
@@ -1532,7 +1570,7 @@ ${paginaSql(pular, tamanho)}`;
  * Com `pular`, paginada. A receita (APORDSERVICO_CO) não tem chave conhecida aqui: depois da ordem de sempre
  * (unidade, ordem, produto) vêm as outras colunas devolvidas, então só empatam linhas idênticas.
  */
-export function montarSqlNecessidadeValidacao(desde, pular = null, tamanho = VALID_PAGINA) {
+export function montarSqlNecessidadeValidacao(desde, pular = null, tamanho = VALID_PAGINA, unidades = null) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   return `SELECT u.DE_UNI_ADM AS unidade, os.NO_BOLETIM AS os, e.DE_EQUIPE AS equipe, CONVERT(varchar(10), os.DT_ABERTURA, 23) AS abertura, op.DE_OPERACAO AS operacao_de,
   i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, co.CONSUMO_TOTAL AS planejado, ISNULL(ci.q, 0) + ISNULL(cp.q, 0) AS consumido
@@ -1546,7 +1584,7 @@ LEFT JOIN (SELECT a.ID_APORDSERVICO, l.ID_INSUMO, SUM(l.QT_CONS_TOTAL) AS q FROM
   WHERE a.ID_APORDSERVICO IS NOT NULL GROUP BY a.ID_APORDSERVICO, l.ID_INSUMO) ci ON ci.ID_APORDSERVICO = os.ID_APORDSERVICO AND ci.ID_INSUMO = co.ID_INSUMO
 LEFT JOIN (SELECT a.ID_APORDSERVICO, l.ID_INSUMO, SUM(l.QT_TOTAL) AS q FROM ${PIMS}APPLANTIO a JOIN ${PIMS}APPLANTIO_IN l ON l.ID_APPLANTIO = a.ID_APPLANTIO
   WHERE a.ID_APORDSERVICO IS NOT NULL GROUP BY a.ID_APORDSERVICO, l.ID_INSUMO) cp ON cp.ID_APORDSERVICO = os.ID_APORDSERVICO AND cp.ID_INSUMO = co.ID_INSUMO
-WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '${d}'${fimDaConsulta(pular, tamanho, '1, 2, 7', '1, 2, 7, 3, 4, 5, 6, 8, 9')}`;
+WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '${d}'${filtroUnidades('u.DE_UNI_ADM', unidades)}${fimDaConsulta(pular, tamanho, '1, 2, 7', '1, 2, 7, 3, 4, 5, 6, 8, 9')}`;
 }
 
 /**
@@ -1554,7 +1592,7 @@ WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '${d}'${fimDaConsulta(pular, ta
  * (APAPLINSUMO.DE_OBSERVACAO): é nela que o coordenador justifica, no PIMS, a variação que aconteceu de verdade.
  * Com `pular`, paginada: depois da ordem de sempre vem a chave do item do boletim (APAPLINS_INSLC), que não empata.
  */
-export function montarSqlDoseValidacao(desdeDia, pular = null, tamanho = VALID_PAGINA) {
+export function montarSqlDoseValidacao(desdeDia, pular = null, tamanho = VALID_PAGINA, unidades = null) {
   const d = String(desdeDia).replace(/[^0-9-]/g, '');
   return `SELECT u.DE_UNI_ADM AS unidade, a.NO_BOLETIM AS boletim, CONVERT(varchar(10), a.DT_OPERACAO, 23) AS dia, os.NO_BOLETIM AS os, COALESCE(eo.DE_EQUIPE, ea.DE_EQUIPE) AS equipe,
   up.CD_UPNIVEL3 AS talhao, i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, l.QT_DOSE_PROG AS prog, l.QT_DOSE_REAL AS dose_real, l.QT_AREA_EXEC AS ha, l.QT_CONS_TOTAL AS total, a.DE_OBSERVACAO AS obs
@@ -1566,7 +1604,7 @@ LEFT JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = l.ID_UPNIVEL3
 LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO
 LEFT JOIN ${PIMS}EQUIPE eo ON eo.ID_EQUIPE = os.ID_EQUIPE
 LEFT JOIN ${PIMS}EQUIPE ea ON ea.ID_EQUIPE = a.ID_EQUIPE
-WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG > ${VALID_DOSE_TOLERANCIA}${fimDaConsulta(pular, tamanho, '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8', '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8, l.ID_APAPLINS_INSLC')}`;
+WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG > ${VALID_DOSE_TOLERANCIA}${filtroUnidades('u.DE_UNI_ADM', unidades)}${fimDaConsulta(pular, tamanho, '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8', '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8, l.ID_APAPLINS_INSLC')}`;
 }
 
 /**
@@ -1577,7 +1615,7 @@ WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.
  * boletim) vêm as outras colunas devolvidas, menos a 9 (a mensagem do PIMS, texto livre): só empatam linhas
  * iguais em tudo o mais.
  */
-export function montarSqlColetorValidacao(desde, pular = null, tamanho = VALID_PAGINA) {
+export function montarSqlColetorValidacao(desde, pular = null, tamanho = VALID_PAGINA, unidades = null) {
   const d = String(desde).replace(/[^0-9-]/g, '');
   // `final` = tabela onde o boletim cai depois de importado; `area` = a coluna de hectares do boletim e da tabela final
   const parte = (tipo, tabela, final, area) => {
@@ -1597,7 +1635,7 @@ LEFT JOIN ${PIMS}EQUIPE eo ON eo.ID_EQUIPE = os.ID_EQUIPE` : '';
 FROM ${PIMS}${tabela} t
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = t.ID_UNIDADEADM
 ${os}
-WHERE t.DT_OPERACAO >= '${d}'`;
+WHERE t.DT_OPERACAO >= '${d}'${filtroUnidades('u.DE_UNI_ADM', unidades)}`;
   };
   return `${parte('I', 'APAPLINSUMO_TMP', 'APAPLINSUMO', null)}
 UNION ALL
@@ -1710,36 +1748,59 @@ export function depositosVinculados(vinculos) {
  * Consulta o PIMS (e o SAP, para nomes de depósito e saldo dos vinculados) e devolve
  * { geradoEm, linhas, avisos } da validação (não grava nada). Falha do SAP não derruba as ordens: vira aviso.
  */
-export async function sincronizarValidacao({ url, token, vinculos = [], fetchImpl = fetch, agora = new Date() }) {
+export async function sincronizarValidacao({ url, token, vinculos = [], unidades = null, fetchImpl = fetch, agora = new Date() }) {
   const desde = inicioSafraValidacao(agora);
+  const so = unidadesDoPedido(unidades); // null = todas as unidades
+  const daUnidade = (linhas) => (so ? linhas.filter((r) => so.includes(txt(r.unidade) ?? '')) : linhas);
   const cliente = await abrirSessao(url, token, fetchImpl);
   try {
     // Todas as consultas que crescem com a safra são lidas em páginas (consultarPaginas, com teto de páginas).
     // `reserva`: as que passaram a ser paginadas agora; se a fonte recusar a página, vale a consulta inteira de sempre.
-    const paginar = async (montar, motivo, rotulo, reserva = false) => objetosDe(await consultarPaginas(cliente, montar, motivo, rotulo, { tamanho: VALID_PAGINA, reserva }));
-    const ordens = await paginar((pular, tamanho) => montarSqlOrdensValidacao(desde, pular, tamanho), 'ordens de serviço abertas e fechadas com diferença de área (validação)', 'ordens de serviço');
-    const talhoes = await paginar((pular, tamanho) => montarSqlTalhoesValidacao(desde, pular, tamanho), 'talhões planejados das ordens de serviço (validação)', 'talhões das ordens');
-    const apontamentos = await paginar((pular, tamanho) => montarSqlApontamentosValidacao(desde, pular, tamanho), 'apontamentos de cada ordem de serviço (validação)', 'apontamentos das ordens');
-    const evolucao = await paginar((pular, tamanho) => montarSqlEvolucaoValidacao(pular, tamanho), 'área apontada por dia nas ordens abertas (validação)', 'evolução das ordens', true);
+    // Cada consulta vai primeiro do jeito novo (só as unidades pedidas e, nas ordens, as somas enxutas). Se a fonte
+    // recusar (erro de SQL, não de rede nem de prazo), vale a consulta de antes, de todas as unidades, filtrada aqui:
+    // um erro no SQL novo deixa a Validação mais pesada, nunca fora do ar.
+    const comReserva = async (rotulo, novo, antigo) => {
+      try {
+        return await novo();
+      } catch (e) {
+        if (!(e instanceof Error) || e.recusada !== true) throw e;
+        console.warn(`Validação: a consulta nova foi recusada (${rotulo}); usando a de antes. Motivo: ${cliente.semToken(e.message).slice(0, 300)}`);
+        return daUnidade(await antigo());
+      }
+    };
+    const paginarSo = (rotulo, motivo, montar, reserva = false) => comReserva(
+      rotulo,
+      async () => objetosDe(await consultarPaginas(cliente, (pular, tamanho) => montar(pular, tamanho, so, true), motivo, rotulo, { tamanho: VALID_PAGINA, reserva })),
+      async () => objetosDe(await consultarPaginas(cliente, (pular, tamanho) => montar(pular, tamanho, null, false), motivo, rotulo, { tamanho: VALID_PAGINA, reserva })),
+    );
+    const ordens = await paginarSo('ordens de serviço', 'ordens de serviço abertas e fechadas com diferença de área (validação)', (pular, tamanho, u, enxuta) => montarSqlOrdensValidacao(desde, pular, tamanho, u, enxuta));
+    const talhoes = await paginarSo('talhões das ordens', 'talhões planejados das ordens de serviço (validação)', (pular, tamanho, u, enxuta) => montarSqlTalhoesValidacao(desde, pular, tamanho, u, enxuta));
+    const apontamentos = await paginarSo('apontamentos das ordens', 'apontamentos de cada ordem de serviço (validação)', (pular, tamanho, u, enxuta) => montarSqlApontamentosValidacao(desde, pular, tamanho, u, enxuta));
+    const evolucao = await paginarSo('evolução das ordens', 'área apontada por dia nas ordens abertas (validação)', (pular, tamanho, u) => montarSqlEvolucaoValidacao(pular, tamanho, u), true);
     // cadastros (equipes e depósitos): pequenos e limitados, numa consulta só
-    const coordenadores = objetosDe(await cliente.consultar(montarSqlCoordenadoresValidacao(desde), 'coordenadores com ordem de serviço na safra (validação)', 'coordenadores'));
-    const depositos = objetosDe(await cliente.consultar(SQL_DEPOSITOS_PIMS, 'depósitos do PIMS com código do SAP (validação)', 'depósitos'));
-    const falhas = await paginar((pular, tamanho) => montarSqlBoletinsFalha(desde, pular, tamanho), 'itens de boletim recusados pelo SAP na integração (validação)', 'boletins com falha', true);
-    const pendentes = await paginar((pular, tamanho) => montarSqlBoletinsPendentes(desde, pular, tamanho), 'boletins ainda não enviados ao SAP (validação)', 'boletins pendentes', true);
+    const coordenadores = await comReserva('coordenadores',
+      async () => objetosDe(await cliente.consultar(montarSqlCoordenadoresValidacao(desde, so), 'coordenadores com ordem de serviço na safra (validação)', 'coordenadores')),
+      async () => objetosDe(await cliente.consultar(montarSqlCoordenadoresValidacao(desde), 'coordenadores com ordem de serviço na safra (validação)', 'coordenadores')));
+    const depositos = await comReserva('depósitos',
+      async () => objetosDe(await cliente.consultar(montarSqlDepositosPims(so), 'depósitos do PIMS com código do SAP (validação)', 'depósitos')),
+      async () => objetosDe(await cliente.consultar(SQL_DEPOSITOS_PIMS, 'depósitos do PIMS com código do SAP (validação)', 'depósitos')));
+    const falhas = await paginarSo('boletins com falha', 'itens de boletim recusados pelo SAP na integração (validação)', (pular, tamanho, u) => montarSqlBoletinsFalha(desde, pular, tamanho, u), true);
+    const pendentes = await paginarSo('boletins pendentes', 'boletins ainda não enviados ao SAP (validação)', (pular, tamanho, u) => montarSqlBoletinsPendentes(desde, pular, tamanho, u), true);
     // sem protótipo, como em depositosVinculados: as chaves são empresas, unidades e códigos de depósito
     const logs = Object.create(null);
     const sapItens = Object.create(null);
-    const apontRecentes = await paginar((pular, tamanho) => montarSqlApontamentosRecentes(diaAnterior(agora, VALID_DIAS_APONT - 1), pular, tamanho), 'apontamentos feitos ou lançados nos últimos dias (validação)', 'apontamentos recentes');
-    const necessidade = await paginar((pular, tamanho) => montarSqlNecessidadeValidacao(desde, pular, tamanho), 'produtos planejados e já consumidos nas ordens abertas (validação)', 'necessidade das ordens', true);
-    const dose = await paginar((pular, tamanho) => montarSqlDoseValidacao(diaAnterior(agora, VALID_DIAS_DOSE), pular, tamanho), 'aplicações com dose real fora da programada (validação)', 'dose real x programada', true);
-    const coletor = await paginar((pular, tamanho) => montarSqlColetorValidacao(desde, pular, tamanho), 'boletins na tela de validação do PIMS, aguardando a importação (validação)', 'boletins em validação', true);
+    const apontRecentes = await paginarSo('apontamentos recentes', 'apontamentos feitos ou lançados nos últimos dias (validação)', (pular, tamanho, u) => montarSqlApontamentosRecentes(diaAnterior(agora, VALID_DIAS_APONT - 1), pular, tamanho, u));
+    const necessidade = await paginarSo('necessidade das ordens', 'produtos planejados e já consumidos nas ordens abertas (validação)', (pular, tamanho, u) => montarSqlNecessidadeValidacao(desde, pular, tamanho, u), true);
+    const dose = await paginarSo('dose real x programada', 'aplicações com dose real fora da programada (validação)', (pular, tamanho, u) => montarSqlDoseValidacao(diaAnterior(agora, VALID_DIAS_DOSE), pular, tamanho, u), true);
+    const coletor = await paginarSo('boletins em validação', 'boletins na tela de validação do PIMS, aguardando a importação (validação)', (pular, tamanho, u) => montarSqlColetorValidacao(desde, pular, tamanho, u), true);
 
     const avisos = [];
     const depositosSap = Object.create(null);
     const estoque = Object.create(null);
     const saldos = Object.create(null); // saldo de todos os depósitos de cada unidade (aba "Consultar depósitos")
     const vinculados = depositosVinculados(vinculos);
-    for (const empresa of new Set(Object.values(SAP_EMPRESA_DA_UNIDADE))) {
+    const empresas = so ? so.map(empresaDa).filter(Boolean) : Object.values(SAP_EMPRESA_DA_UNIDADE);
+    for (const empresa of new Set(empresas)) {
       const fonte = { nome: 'SAP', source: 'hana', database: empresa, schema: empresa };
       try {
         const mapa = new Map();
@@ -1778,8 +1839,10 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
           }
           sapItens[empresa] = { itens, saldo };
         }
-        const porUnidade = vinculados[empresa];
-        if (!porUnidade) continue;
+        const porUnidade = so && vinculados[empresa]
+          ? Object.fromEntries(Object.entries(vinculados[empresa]).filter(([u]) => so.includes(u)))
+          : vinculados[empresa];
+        if (!porUnidade || !Object.keys(porUnidade).length) continue;
         const res = objetosDe(await consultarPaginas(cliente, (pular, tamanho) => montarSqlEstoqueSap(Object.values(porUnidade).flat(), pular, tamanho), 'saldo dos depósitos dos coordenadores e origem de cada produto pelas transferências (validação)', `saldo ${empresa}`, { fonte, reserva: true }));
         for (const [unidade, codigos] of Object.entries(porUnidade)) {
           const porDeposito = (estoque[unidade] ??= Object.create(null));
@@ -1798,15 +1861,24 @@ export async function sincronizarValidacao({ url, token, vinculos = [], fetchImp
     const geradoEm = agora.toISOString();
     const boletins = linhasBoletins({ falhas, pendentes, logs, sap: sapItens, depositosSap });
     const extras = linhasExtras({ apontamentos: apontRecentes, necessidade, dose, coletor, saldos });
-    return { geradoEm, linhas: linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes, apontamentos, depositosSap, estoque, boletins, extras, avisos }, geradoEm), avisos };
+    const linhas = linhasValidacao({ ordens, evolucao, coordenadores, depositos, talhoes, apontamentos, depositosSap, estoque, boletins, extras, avisos }, geradoEm);
+    return { geradoEm, linhas: so ? linhas.filter((l) => so.includes(l.unidade)) : linhas, avisos, unidades: so };
   } finally {
     await cliente.fechar();
   }
 }
 
-/** Grava em valid_pims (upsert por unidade e limpeza das rodadas anteriores). 'ok', 'vazio' ou 'sem-tabela'. */
+/** Filtro `in.(…)` do PostgREST para uma lista de textos (entre aspas, com \ e " escapados), já codificado para a URL. */
+export const listaPostgrest = (valores) => encodeURIComponent(`in.(${valores.map((v) => `"${String(v).replace(/[\\"]/g, (c) => '\\' + c)}"`).join(',')})`);
+
+/**
+ * Grava em valid_pims (upsert por unidade e limpeza das rodadas anteriores). 'ok', 'vazio' ou 'sem-tabela'.
+ * Com `dados.unidades` (o Atualizar de uma unidade), só as linhas dessas unidades mudam: a delas é trocada e,
+ * se o PIMS não devolveu nada para uma delas, a linha velha dela sai; as outras unidades ficam como estão.
+ */
 export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchImpl = globalThis.fetch }) {
-  if (!dados.linhas.length) {
+  const so = Array.isArray(dados.unidades) && dados.unidades.length ? dados.unidades : null;
+  if (!dados.linhas.length && !so) {
     console.warn('Validação: o PIMS não retornou nenhuma ordem; valid_pims não foi alterada.');
     return 'vazio';
   }
@@ -1815,6 +1887,12 @@ export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchI
     headers: { ...cabecalhosSupabase(chave), 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
     body: JSON.stringify(linhas),
   }, 'o upsert em valid_pims');
+  if (!dados.linhas.length) {
+    // só unidades pedidas, e o PIMS não tem nada delas: sai a linha velha de cada uma
+    const limpa = await chamarSupabase(fetchImpl, `${url}/rest/v1/valid_pims?unidade=${listaPostgrest(so)}&gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, { method: 'DELETE', headers: cabecalhosSupabase(chave) }, 'a limpeza de valid_pims');
+    if (!limpa.ok) await erroSupabase(limpa, chave, 'a limpeza de valid_pims');
+    return 'vazio';
+  }
   let resp = await enviar(dados.linhas);
   if (!resp.ok && /PGRST204/.test(await resp.clone().text().catch(() => ''))) {
     // banco ainda sem as colunas novas (scripts 0008 e 0009): grava o resto, para as ordens não pararem
@@ -1829,7 +1907,9 @@ export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchI
     }
     await erroSupabase(resp, chave, 'o upsert em valid_pims');
   }
-  const limpeza = await chamarSupabase(fetchImpl, `${url}/rest/v1/valid_pims?gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, { method: 'DELETE', headers: cabecalhosSupabase(chave) }, 'a limpeza de valid_pims');
+  // com unidades pedidas, só elas: a linha que não veio desta vez (sem ordens agora) sai; as outras unidades, não
+  const soEstas = so ? `unidade=${listaPostgrest(so)}&` : '';
+  const limpeza = await chamarSupabase(fetchImpl, `${url}/rest/v1/valid_pims?${soEstas}gerado_em=lt.${encodeURIComponent(dados.geradoEm)}`, { method: 'DELETE', headers: cabecalhosSupabase(chave) }, 'a limpeza de valid_pims');
   if (!limpeza.ok) await erroSupabase(limpeza, chave, 'a limpeza de valid_pims');
   return 'ok';
 }
@@ -1839,10 +1919,10 @@ export async function gravarValidacaoSupabase(dados, { url, chave, fetch: fetchI
  * mensagem de erro (para o log). `aoErro` (opcional) recebe o erro inteiro: quem responde a um pedido escolhe
  * por ele a mensagem que vai para a tela, sem repassar o texto de fora.
  */
-export async function rodarValidacao({ agrovex, supabase, fetchImpl = globalThis.fetch, aoErro }) {
+export async function rodarValidacao({ agrovex, supabase, unidades = null, fetchImpl = globalThis.fetch, aoErro }) {
   try {
     const vinculos = await lerVinculosValidacao({ ...supabase, fetch: fetchImpl });
-    const dados = await sincronizarValidacao({ url: agrovex.url, token: agrovex.token, vinculos, fetchImpl });
+    const dados = await sincronizarValidacao({ url: agrovex.url, token: agrovex.token, vinculos, unidades, fetchImpl });
     const situacao = await gravarValidacaoSupabase(dados, { ...supabase, fetch: fetchImpl });
     const ordens = dados.linhas.reduce((s, l) => s + l.ordens.length, 0);
     const abertas = dados.linhas.reduce((s, l) => s + l.ordens.filter((o) => o.s === 'A').length, 0);
@@ -3048,6 +3128,23 @@ export async function rodarBenchmarkPrevisao({ agrovex, supabase, visualCrossing
 
 // ---------- execução pela linha de comando ----------
 
+/** Hora de Cuiabá (UTC−4) em que a rotina automática ainda age: o benchmark da previsão e o cadastro de variedades. */
+export const HORA_ROTINA_DIARIA = 4;
+
+/**
+ * O que a rotina automática do servidor (o timer de hora em hora da VM) faz agora. Desde 23/10/2026 os dados do
+ * PIMS, do SAP e da ZEUS só são consultados quando alguém clica em Atualizar (atender-pedidos.mjs): a rotina de
+ * hora em hora relia tudo, o dia todo, e travava o Agrovex nos picos. Fica só o que precisa de uma foto por dia:
+ *   'diaria'   — às HORA_ROTINA_DIARIA de Cuiabá: benchmark da previsão e cadastro de variedades;
+ *   'nada'     — nas outras horas: termina sem consultar nada;
+ *   'completa' — com COA_ROTINA_COMPLETA=1 no ambiente: tudo, como antes (para rodar à mão).
+ */
+export function rotinaDoHorario(agora = new Date(), env = {}) {
+  if (typeof env.COA_ROTINA_COMPLETA === 'string' && env.COA_ROTINA_COMPLETA.trim() === '1') return 'completa';
+  const hora = (agora.getUTCHours() + 20) % 24; // Cuiabá: UTC−4, sem horário de verão
+  return hora === HORA_ROTINA_DIARIA ? 'diaria' : 'nada';
+}
+
 /**
  * O que a linha de comando pede, pelos argumentos e pelo ambiente:
  *   { local: false, token, supabaseUrl, supabaseChave } — a rotina do servidor: consulta o PIMS e grava no Supabase;
@@ -3087,6 +3184,24 @@ async function main() {
   }
   // conferido antes de qualquer chamada: o token só sai para o host do Agrovex (o endereço vem de arquivo baixado)
   const urlAgrovex = conferirUrlAgrovex(process.env.AGROVEX_URL || config.url);
+  const rotina = modo.local ? 'completa' : rotinaDoHorario(new Date(), process.env);
+  if (rotina === 'nada') {
+    console.log(`== ${new Date().toISOString()} rotina automática: nada a fazer nesta hora (os dados são atualizados pelo botão Atualizar; às ${HORA_ROTINA_DIARIA}h de Cuiabá, o benchmark e as variedades).`);
+    return;
+  }
+  if (rotina === 'diaria') {
+    const supabase = { url: modo.supabaseUrl, chave: modo.supabaseChave };
+    console.log(`== ${new Date().toISOString()} rotina diária: cadastro de variedades e benchmark da previsão.`);
+    if (config.variedades !== false) {
+      const erro = await rodarVariedades({ agrovex: { url: urlAgrovex, token, safras: config.safras ?? 'auto', excluirPrefixos: config.excluirPrefixos ?? [] }, supabase });
+      if (erro) process.exitCode = 1;
+    }
+    if (config.previsao !== false) {
+      const erro = await rodarBenchmarkPrevisao({ agrovex: { url: urlAgrovex, token }, supabase, visualCrossingChave: (process.env.VISUALCROSSING_KEY || '').trim() });
+      if (erro) process.exitCode = 1;
+    }
+    return;
+  }
   const dados = await sincronizar({
     url: urlAgrovex,
     token,

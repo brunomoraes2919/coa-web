@@ -276,7 +276,7 @@ export default function Plantio() {
           <h1>Plantio · {safra.nome}</h1>
           <p className="subtitulo">
             {casado
-              ? `Plantio do PIMS de ${fmtDataHora(casado.geradoEm)} (atualizado automaticamente a cada hora). Talhões sem registro no PIMS podem ser marcados à mão.${usaAreas ? ' O mapa e a lista mostram as áreas da cultura desta safra, o mesmo limite dos mapas de chuva e de variedade.' : ''}`
+              ? `Plantio do PIMS de ${fmtDataHora(casado.geradoEm)} (atualizado quando alguém clica em Atualizar). Talhões sem registro no PIMS podem ser marcados à mão.${usaAreas ? ' O mapa e a lista mostram as áreas da cultura desta safra, o mesmo limite dos mapas de chuva e de variedade.' : ''}`
               : 'Clique nos talhões do mapa ou marque na lista os que já foram plantados.'}
           </p>
         </div>

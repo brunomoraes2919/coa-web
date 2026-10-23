@@ -61,6 +61,8 @@ export const SITUACAO_ZEUS_MINUTOS: number;
 export function atualizarSituacaoZeus(opcoes: {
   supabase: { url: string; chave: string };
   agrovex: { url: string; token: string };
+  /** um pedido acabou de ser atendido: não espera o minuto múltiplo de 5 */
+  sobDemanda?: boolean;
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<'recente' | 'fora-do-passo' | 'sem-tabela' | 'vazio' | 'ok'>;
@@ -69,6 +71,8 @@ export const CHUVA_TALHAO_MINUTOS: number;
 export function atualizarChuvaTalhao(opcoes: {
   supabase: { url: string; chave: string };
   agrovex: { url: string; token: string };
+  /** o Atualizar da tela: relê sempre */
+  sobDemanda?: boolean;
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<'recente' | 'fora-do-passo' | 'sem-tabela' | 'sem-coluna' | 'vazio' | 'ok'>;
@@ -77,6 +81,8 @@ export const LIMITES_ZEUS_HORAS: number;
 export function atualizarLimitesZeus(opcoes: {
   supabase: { url: string; chave: string };
   agrovex: { url: string; token: string };
+  /** junto de um pedido: não espera o minuto múltiplo de 5 (as 24 h continuam valendo) */
+  sobDemanda?: boolean;
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<'recente' | 'fora-do-passo' | 'sem-tabela' | 'vazio' | 'ok'>;
@@ -90,6 +96,15 @@ export function atenderPedidosMec(opcoes: {
   agora?: () => Date;
 }): Promise<number>;
 export function atenderPedidosValidacao(opcoes: {
+  supabase: { url: string; chave: string };
+  agrovex: { url: string; token: string };
+  fetch?: FetchLike;
+  agora?: () => Date;
+}): Promise<boolean>;
+/** As unidades que os pedidos pendentes da Validação pedem (null = todas). */
+export function unidadesDosPedidosValidacao(linhas: { unidade?: string | null }[], conhecidas: Set<string>): string[] | null;
+/** Pedidos do Atualizar da Chuva por talhão: relê a chuva por talhão (e os limites e a situação da ZEUS) e marca os pedidos. */
+export function atenderPedidosChuvaTalhao(opcoes: {
   supabase: { url: string; chave: string };
   agrovex: { url: string; token: string };
   fetch?: FetchLike;

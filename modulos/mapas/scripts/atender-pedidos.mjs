@@ -8,7 +8,14 @@
 // atividades mecanizadas da unidade no período, no formato do relatório exportado do PIMS.
 // E os pedidos de "Buscar nas bases" do Mapa de CAR e Matrícula (tabela mapas_car_pedidos, só ADMINISTRADOR+):
 // consulta SICAR, INCRA/SIGEF, IBGE, OpenStreetMap e o PIMS (eucalipto) e grava o resultado em mapas_car.
-// Variáveis: AGROVEX_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (as mesmas da rotina horária).
+// E os do "Atualizar" da Validação PIMS (valid_pedidos: só a unidade da tela) e da Chuva por talhão
+// (chuva_talhao_pedidos), que relê a chuva por talhão, os limites da ZEUS (1 vez por dia) e a situação da ZEUS.
+//
+// Só no clique (23/10/2026): o servidor não consulta mais o Agrovex sozinho. Antes, a cada verificação de 30 s,
+// relia a situação da ZEUS (a cada 15 min), a chuva por talhão (a cada 30 min) e os limites da ZEUS (1 vez por dia),
+// e a rotina de hora em hora relia tudo: nos picos isso travava o Agrovex para as outras pessoas. Agora cada uma
+// dessas leituras vem de um pedido (a situação da ZEUS, junto dos pedidos de chuva e da chuva por talhão).
+// Variáveis: AGROVEX_TOKEN, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (as mesmas da rotina automática).
 //
 // Código sempre novo: no servidor (pasta com o arquivo .trava das rotinas), quando há algum pedido pendente, antes de
 // atender baixa os scripts do repositório (atualizarScripts, as mesmas conferências da rotina horária) e, se algum
@@ -18,7 +25,8 @@
 //   * toda leitura de pedidos pendentes tem ordem e limite;
 //   * "Atualizar plantio": se a última rodada completa tem menos de 5 min, o pedido é respondido 'ok' com os
 //     dados que já estão gravados, sem consultar de novo. O "Atualizar" da Validação lê sempre (pedido do usuário
-//     em 22/10/2026; a leitura leva ~10 s e os pedidos que chegam juntos são atendidos numa rodada só);
+//     em 22/10/2026), mas só a unidade que está na tela (23/10/2026); os pedidos que chegam juntos são atendidos
+//     numa rodada só (as unidades deles juntas, ou todas, se algum pediu todas);
 //   * chuva e boletins: por verificação, no máximo um pedido de cada usuário; quem tem mais de 5
 //     pendentes recebe "muitos pedidos" nos que passam disso, sem consulta nenhuma;
 //   * chuva e boletins: antes de consultar, o servidor confere se quem pediu pode ver a fazenda/unidade
@@ -607,7 +615,7 @@ const SITUACAO_ZEUS_PASSO_MIN = 5;
  * velho). Como nas outras tabelas: só limpa depois de a gravação dar certo, e nunca quando a ZEUS não devolveu nada.
  * Devolve 'recente', 'fora-do-passo', 'sem-tabela' (script 0004 não aplicado), 'vazio' ou 'ok'.
  */
-export async function atualizarSituacaoZeus({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+export async function atualizarSituacaoZeus({ supabase, agrovex, sobDemanda = false, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?select=conferido_em&order=conferido_em.desc&limit=1`, {
     headers: cabecalhosSupabase(supabase.chave),
   }, 'a leitura da situação da ZEUS');
@@ -619,7 +627,8 @@ export async function atualizarSituacaoZeus({ supabase, agrovex, fetch: fetchImp
   const momento = agora();
   const ultima = Array.isArray(linhas) && linhas[0]?.conferido_em ? Date.parse(linhas[0].conferido_em) : NaN;
   if (Number.isFinite(ultima) && momento.getTime() - ultima < SITUACAO_ZEUS_MINUTOS * 60_000) return 'recente';
-  if (momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
+  // sob demanda (um pedido acabou de ser atendido), sem esperar o minuto múltiplo de 5
+  if (!sobDemanda && momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
   const novas = await ultimoDiaZeus({ url: agrovex.url, token: agrovex.token, fetchImpl, agora: momento });
   if (!novas.length) return 'vazio';
   const gravar = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_SITUACAO_ZEUS}?on_conflict=fazenda`, {
@@ -650,7 +659,7 @@ export const CHUVA_TALHAO_MINUTOS = 30;
  * a última gravação tem mais de 30 min. Devolve 'recente', 'fora-do-passo', 'sem-tabela' (script 0013 não
  * aplicado), 'sem-coluna' (script 0014 não aplicado), 'vazio' ou 'ok'.
  */
-export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+export async function atualizarChuvaTalhao({ supabase, agrovex, sobDemanda = false, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO}?select=gerado_em&order=gerado_em.desc&limit=1`, {
     headers: cabecalhosSupabase(supabase.chave),
   }, 'a leitura da chuva por talhão');
@@ -661,8 +670,9 @@ export async function atualizarChuvaTalhao({ supabase, agrovex, fetch: fetchImpl
   const linhas = await resp.json();
   const momento = agora();
   const ultima = Array.isArray(linhas) && linhas[0]?.gerado_em ? Date.parse(linhas[0].gerado_em) : NaN;
-  if (Number.isFinite(ultima) && momento.getTime() - ultima < CHUVA_TALHAO_MINUTOS * 60_000) return 'recente';
-  if (momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
+  // sob demanda (o Atualizar da tela), sempre relê
+  if (!sobDemanda && Number.isFinite(ultima) && momento.getTime() - ultima < CHUVA_TALHAO_MINUTOS * 60_000) return 'recente';
+  if (!sobDemanda && momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
   const novas = await sincronizarChuvaTalhao({ url: agrovex.url, token: agrovex.token, fetchImpl, agora: momento });
   if (!novas.length) return 'vazio';
   // uma fazenda por pedido: cada linha leva a chuva de todos os talhões e passa de 300 KB nas maiores
@@ -700,7 +710,7 @@ export const LIMITES_ZEUS_HORAS = 24;
  * talhão. Só consulta quando a última gravação tem mais de 24 h. Devolve 'recente', 'fora-do-passo',
  * 'sem-tabela' (script 0016 não aplicado), 'vazio' ou 'ok'.
  */
-export async function atualizarLimitesZeus({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+export async function atualizarLimitesZeus({ supabase, agrovex, sobDemanda = false, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_LIMITES_ZEUS}?select=gerado_em&order=gerado_em.desc&limit=1`, {
     headers: cabecalhosSupabase(supabase.chave),
   }, 'a leitura dos limites da ZEUS');
@@ -712,7 +722,7 @@ export async function atualizarLimitesZeus({ supabase, agrovex, fetch: fetchImpl
   const momento = agora();
   const ultima = Array.isArray(linhas) && linhas[0]?.gerado_em ? Date.parse(linhas[0].gerado_em) : NaN;
   if (Number.isFinite(ultima) && momento.getTime() - ultima < LIMITES_ZEUS_HORAS * 3_600_000) return 'recente';
-  if (momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
+  if (!sobDemanda && momento.getUTCMinutes() % SITUACAO_ZEUS_PASSO_MIN !== 0) return 'fora-do-passo';
   const novas = await sincronizarLimitesZeus({ url: agrovex.url, token: agrovex.token, fetchImpl, agora: momento });
   if (!novas.length) return 'vazio';
   // uma fazenda por pedido: cada linha leva o contorno de todos os talhões
@@ -739,24 +749,50 @@ const TABELA_VALID = 'valid_pedidos';
 const GUARDAR_VALID_DIAS = 7;
 
 /**
+ * As unidades que os pedidos pendentes da Validação pedem: null = todas (algum pediu todas, ou pediu uma unidade
+ * que valid_pims ainda não tem: a leitura completa traz unidade nova). Só valem nomes que já estão em valid_pims.
+ */
+export function unidadesDosPedidosValidacao(linhas, conhecidas) {
+  const pedidas = new Set();
+  for (const l of linhas) {
+    const u = typeof l?.unidade === 'string' ? l.unidade.trim() : '';
+    if (!u || !conhecidas.has(u)) return null;
+    pedidas.add(u);
+  }
+  return pedidas.size ? [...pedidas].sort() : null;
+}
+
+/**
  * Uma verificação dos pedidos de "Atualizar" da Validação PIMS: sem pendentes → false; com pendentes →
- * consulta o PIMS e o SAP (sempre: cada clique lê de novo), grava valid_pims e marca os pedidos ('ok' ou
- * 'erro: <texto do tipo da falha>'). Sem a tabela (script 0007 não aplicado) → false, sem erro.
+ * consulta o PIMS e o SAP (sempre: cada clique lê de novo, mas só as unidades pedidas), grava valid_pims e marca
+ * os pedidos ('ok' ou 'erro: <texto do tipo da falha>'). Sem a tabela (script 0007 não aplicado) → false, sem
+ * erro; sem a coluna unidade (script 0034 não aplicado), lê todas as unidades, como antes.
  */
 export async function atenderPedidosValidacao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
   const ctx = { ...supabase, fetch: fetchImpl };
-  const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_VALID}?select=id&atendido_em=is.null&order=id.asc&limit=${MAX_PENDENTES_LIDOS}`, { headers: cabecalhosSupabase(supabase.chave) }, 'a leitura dos pedidos da validação');
+  const ler = (colunas) => chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_VALID}?select=${colunas}&atendido_em=is.null&order=id.asc&limit=${MAX_PENDENTES_LIDOS}`, { headers: cabecalhosSupabase(supabase.chave) }, 'a leitura dos pedidos da validação');
+  let resp = await ler('id,unidade');
+  if (!resp.ok && resp.status === 400 && /42703|unidade/.test(await resp.clone().text().catch(() => ''))) resp = await ler('id');
   if (!resp.ok) {
     if (await semTabela(resp)) return false;
     await erroRest(resp, supabase.chave, 'a leitura dos pedidos da validação');
   }
   const linhas = await resp.json();
-  const ids = Array.isArray(linhas) ? linhas.map((l) => Number(l.id)).filter(Number.isFinite) : [];
+  const pendentes = Array.isArray(linhas) ? linhas.filter((l) => Number.isFinite(Number(l?.id))) : [];
+  const ids = pendentes.map((l) => Number(l.id));
   if (!ids.length) return false;
+  // só nomes que já estão em valid_pims entram no SQL (o resto vira leitura de todas as unidades)
+  let unidades = null;
+  if (pendentes.every((l) => typeof l.unidade === 'string' && l.unidade.trim())) {
+    const conhecidas = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/valid_pims?select=unidade`, { headers: cabecalhosSupabase(supabase.chave) }, 'a leitura das unidades da validação')
+      .then(async (r) => (r.ok ? new Set((await r.json()).map((x) => x.unidade)) : new Set()))
+      .catch(() => new Set());
+    unidades = unidadesDosPedidosValidacao(pendentes, conhecidas);
+  }
 
   let resultado = 'ok';
   let erroDaRodada = null;
-  const erro = await rodarValidacao({ agrovex, supabase, fetchImpl, aoErro: (e) => { erroDaRodada = e; } });
+  const erro = await rodarValidacao({ agrovex, supabase, unidades, fetchImpl, aoErro: (e) => { erroDaRodada = e; } });
   // o texto de `erro` já foi para o log; o pedido leva só o texto do tipo da falha
   if (erro) resultado = `erro: ${erroDaRodada === null ? MENSAGENS_DE_ERRO.interno : mensagemPublica(erroDaRodada)}`;
   const marca = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_VALID}?atendido_em=is.null&id=lte.${ids[ids.length - 1]}`, {
@@ -770,6 +806,53 @@ export async function atenderPedidosValidacao({ supabase, agrovex, fetch: fetchI
     method: 'DELETE',
     headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
   }, 'a limpeza dos pedidos da validação').catch(() => undefined);
+  return true;
+}
+
+// ---------- pedidos de "Atualizar" da Chuva por talhão (tabela chuva_talhao_pedidos) ----------
+
+const TABELA_CHUVA_TALHAO_PEDIDOS = 'chuva_talhao_pedidos';
+const GUARDAR_CHUVA_TALHAO_PEDIDOS_DIAS = 7;
+
+/**
+ * Uma verificação dos pedidos de "Atualizar" da Chuva por talhão: sem pendentes (ou sem a tabela, script 0034 não
+ * aplicado) → false; com pendentes → relê a chuva por talhão (sempre), os limites da ZEUS (se a última leitura tem
+ * mais de 24 h) e a situação da ZEUS (se tem mais de 15 min), numa rodada só para todos os pedidos que chegaram
+ * juntos, e marca os pedidos ('ok' ou 'erro: <texto do tipo da falha>').
+ */
+export async function atenderPedidosChuvaTalhao({ supabase, agrovex, fetch: fetchImpl = globalThis.fetch, agora = () => new Date() }) {
+  const resp = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO_PEDIDOS}?select=id&atendido_em=is.null&order=id.asc&limit=${MAX_PENDENTES_LIDOS}`, { headers: cabecalhosSupabase(supabase.chave) }, 'a leitura dos pedidos da chuva por talhão');
+  if (!resp.ok) {
+    if (await semTabela(resp)) return false;
+    await erroRest(resp, supabase.chave, 'a leitura dos pedidos da chuva por talhão');
+  }
+  const linhas = await resp.json();
+  const ids = Array.isArray(linhas) ? linhas.map((l) => Number(l.id)).filter(Number.isFinite) : [];
+  if (!ids.length) return false;
+
+  let resultado = 'ok';
+  try {
+    const situacao = await atualizarChuvaTalhao({ supabase, agrovex, sobDemanda: true, fetch: fetchImpl, agora });
+    if (situacao === 'sem-tabela' || situacao === 'sem-coluna') resultado = `erro: ${MENSAGENS_DE_ERRO.interno}`;
+  } catch (e) {
+    console.error(`Erro na chuva por talhão: ${detalheParaLog(e, supabase, agrovex)}`);
+    resultado = `erro: ${mensagemPublica(e)}`;
+  }
+  // limites e situação: falha neles não muda a resposta do pedido (a chuva já foi gravada)
+  await atualizarLimitesZeus({ supabase, agrovex, sobDemanda: true, fetch: fetchImpl, agora }).catch((e) => console.error(`Erro nos limites da ZEUS: ${detalheParaLog(e, supabase, agrovex)}`));
+  await atualizarSituacaoZeus({ supabase, agrovex, sobDemanda: true, fetch: fetchImpl, agora }).catch((e) => console.error(`Erro na situação da ZEUS: ${detalheParaLog(e, supabase, agrovex)}`));
+
+  const marca = await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO_PEDIDOS}?atendido_em=is.null&id=lte.${ids[ids.length - 1]}`, {
+    method: 'PATCH',
+    headers: { ...cabecalhosSupabase(supabase.chave), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify({ atendido_em: agora().toISOString(), resultado: resultado.slice(0, 300) }),
+  }, 'a marcação dos pedidos da chuva por talhão');
+  if (!marca.ok) await erroRest(marca, supabase.chave, 'a marcação dos pedidos da chuva por talhão');
+  const limite = new Date(agora().getTime() - GUARDAR_CHUVA_TALHAO_PEDIDOS_DIAS * 86_400_000).toISOString();
+  await chamarSupabase(fetchImpl, `${supabase.url}/rest/v1/${TABELA_CHUVA_TALHAO_PEDIDOS}?atendido_em=lt.${encodeURIComponent(limite)}`, {
+    method: 'DELETE',
+    headers: { ...cabecalhosSupabase(supabase.chave), Prefer: 'return=minimal' },
+  }, 'a limpeza dos pedidos da chuva por talhão').catch(() => undefined);
   return true;
 }
 
@@ -933,7 +1016,7 @@ export async function atenderPedidosCar({ supabase, agrovex, fetch: fetchImpl = 
 // ---------- código sempre novo: antes de atender um pedido, baixa os scripts do repositório ----------
 
 /** Tabelas de pedidos dos botões das telas (Atualizar, Inserir via integração, Buscar no PIMS, Buscar nas bases). */
-export const TABELAS_DE_PEDIDOS = [TABELA, TABELA_CHUVA, TABELA_MEC, TABELA_VALID, TABELA_CAR_PEDIDOS];
+export const TABELAS_DE_PEDIDOS = [TABELA, TABELA_CHUVA, TABELA_MEC, TABELA_VALID, TABELA_CAR_PEDIDOS, TABELA_CHUVA_TALHAO_PEDIDOS];
 /** Os arquivos que a rotina horária baixa (atualizar-e-rodar.sh): trocados os três juntos, ou nenhum. */
 export const ARQUIVOS_DOS_SCRIPTS = ['sincronizar-plantio.mjs', 'atender-pedidos.mjs', 'plantio.config.json'];
 const REPOSITORIO_RAW = 'https://raw.githubusercontent.com/brunomoraes2919/coa-web';
@@ -1036,9 +1119,17 @@ async function main() {
       return;
     }
   }
-  // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio
+  // primeiro as consultas rápidas (chuva e boletins: quem pediu está esperando na tela); um erro nelas não impede o plantio.
+  // Nada aqui consulta o Agrovex sem pedido: a situação da ZEUS vem junto dos pedidos de chuva (e da chuva por talhão).
   let erroConsulta = null;
-  for (const atender of [atenderPedidosChuva, atenderPedidosMec, atenderPedidosValidacao, atualizarSituacaoZeus, atualizarChuvaTalhao, atualizarLimitesZeus]) {
+  try {
+    if (await atenderPedidosChuva({ supabase, agrovex })) {
+      await atualizarSituacaoZeus({ supabase, agrovex, sobDemanda: true }).catch((e) => console.error(`Erro na situação da ZEUS: ${detalheParaLog(e, supabase, agrovex)}`));
+    }
+  } catch (e) {
+    erroConsulta = e;
+  }
+  for (const atender of [atenderPedidosMec, atenderPedidosValidacao, atenderPedidosChuvaTalhao]) {
     try {
       await atender({ supabase, agrovex });
     } catch (e) {

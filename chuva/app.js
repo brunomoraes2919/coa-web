@@ -93,6 +93,19 @@
         if (c.error && !semTabela) throw c.error;
         return { talhoes: r[0], areas: r[1], zeus: zeus, chuva: (c.data && c.data[0]) || null, semTabela: semTabela, semColunas: semColunas };
       },
+      /** O Atualizar: grava o pedido (chuva_talhao_pedidos, script 0034); o servidor relê a ZEUS e marca o pedido. */
+      pedirAtualizacao: async function () {
+        const r = await sb.from('chuva_talhao_pedidos').insert({}).select('id').single();
+        if (!r.error) return r.data.id;
+        const e = r.error, texto = (e.code || '') + ' ' + (e.message || '');
+        if (/PGRST205|42P01|could not find the table/i.test(texto)) throw new Error('O botão Atualizar ainda não foi ativado no banco: falta rodar o script supabase/0034_atualizar_so_no_clique.sql no Supabase.');
+        if (/42501|row-level security|permission denied/i.test(texto)) throw new Error('Sua conta não pode pedir a atualização da chuva por talhão.');
+        throw new Error(e.message || 'Não foi possível pedir a atualização.');
+      },
+      situacaoPedido: async function (id) {
+        const r = await sb.from('chuva_talhao_pedidos').select('atendido_em,resultado').eq('id', id).maybeSingle();
+        return r.error ? null : r.data;
+      },
     };
   }
   /* servidor local de testes (modulos/chuva/scripts/servidor-local.mjs): fazenda fictícia */
@@ -102,6 +115,8 @@
       pronto: async function () {},
       cadastro: function () { return ler('/api/chuva-teste'); },
       fazenda: function (f) { return ler('/api/chuva-teste/fazenda?id=' + encodeURIComponent(f.id)); },
+      pedirAtualizacao: async function () { return 1; },
+      situacaoPedido: async function () { return { atendido_em: new Date().toISOString(), resultado: 'ok' }; },
     };
   }
 
@@ -718,7 +733,41 @@
     el.classList.toggle('velho', diasDeAtraso() > 2);
     el.innerHTML = (faz.temTalhoes ? 'Chuva por talhão até <b>' + esc(L.fmtDia(faz.hoje, true)) + '</b>' : 'Sem chuva por talhão') +
       (hora ? '<br>conferido em ' + esc(hora) : '');
+    el.title = 'Os dados só mudam quando alguém clica em Atualizar';
   }
+
+  /* ------------------------------ Atualizar (o servidor relê a ZEUS) ------------------------------ */
+  const ESPERA_MS = 4000;
+  const LIMITE_ATUALIZAR_MS = 6 * 60 * 1000; // a leitura de todas as fazendas leva alguns minutos
+  let atualizando = false;
+  async function atualizar() {
+    if (atualizando) return;
+    atualizando = true;
+    const btn = $('btn-atualizar');
+    btn.disabled = true;
+    avisar('Pedindo ao servidor…');
+    try {
+      const id = await fonte.pedirAtualizacao();
+      avisar('Buscando na ZEUS a chuva de cada talhão… (pode levar alguns minutos)');
+      let fim = null;
+      for (let esperado = 0; esperado < LIMITE_ATUALIZAR_MS && !fim; esperado += ESPERA_MS) {
+        await new Promise((r) => setTimeout(r, ESPERA_MS));
+        const s = await fonte.situacaoPedido(id);
+        if (s && s.atendido_em) fim = s;
+      }
+      if (!fim) throw new Error('O servidor não respondeu a tempo. Tente de novo em instantes.');
+      if (String(fim.resultado || '').trim() !== 'ok') throw new Error('O servidor não conseguiu atualizar: ' + (String(fim.resultado || '').replace(/^\s*erro:\s*/i, '').trim() || 'sem detalhes'));
+      for (const k of Object.keys(cache)) delete cache[k]; // relê a fazenda do banco, com os dados novos
+      avisar('');
+      await carregarFazenda();
+    } catch (e) {
+      avisar(e && e.message ? e.message : 'Não foi possível atualizar.');
+    } finally {
+      atualizando = false;
+      btn.disabled = false;
+    }
+  }
+  $('btn-atualizar').addEventListener('click', atualizar);
   /** Há quantos dias a tabela de chuva por talhão da ZEUS não recebe dado (pela data em que o servidor conferiu). */
   function diasDeAtraso() {
     const faz = atual && atual.faz;
@@ -787,7 +836,7 @@
       const atraso = diasDeAtraso();
       if (dados.semTabela) avisar('A chuva por talhão ainda não foi ativada no banco: falta rodar o script supabase/0013_chuva_talhao.sql no Supabase.');
       else if (dados.semColunas) avisar('A chuva por talhão está sendo trocada para a tabela do Power BI: falta rodar o script supabase/0014_chuva_talhao_field_data.sql no Supabase.');
-      else if (!atual.faz.temTalhoes) avisar('A tabela de chuva por talhão da ZEUS (stg_field_data) não tem dados de ' + f.nome + ', ou a primeira carga ainda não chegou (o servidor confere a cada 30 minutos).');
+      else if (!atual.faz.temTalhoes) avisar('A tabela de chuva por talhão da ZEUS (stg_field_data) não tem dados de ' + f.nome + ', ou a primeira carga ainda não chegou. Clique em Atualizar para buscar.');
       else if (atraso > 2) avisar('A tabela de chuva por talhão da ZEUS (stg_field_data, a mesma do Power BI) não recebe dados desde ' + L.fmtDia(atual.faz.hoje, true) + ' (' + atraso + ' dias). Todos os períodos terminam nesse dia.');
       else avisar('');
       // o ciclo é da fazenda: ao trocar de fazenda, o período volta para os últimos 7 dias

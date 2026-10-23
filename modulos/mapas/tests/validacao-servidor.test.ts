@@ -24,7 +24,16 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
 
   it('a consulta traz as abertas e as fechadas na safra com diferença acima de 1 ha, paginada', () => {
     const sql = montarSqlOrdensValidacao('2026-08-01', 4000, 4000);
-    expect(sql).toContain("WHERE os.FG_SITUACAO = 'A'");
+    expect(sql).toContain("WHERE (os.FG_SITUACAO = 'A'");
+    // as somas do planejado e do executado só olham as ordens abertas e as encerradas desde a safra anterior
+    expect(sql).toContain("FROM PIMSMCPRD.dbo.APORDSERVICO_LC WHERE ID_APORDSERVICO IN (SELECT ID_APORDSERVICO FROM PIMSMCPRD.dbo.APORDSERVICO WHERE FG_SITUACAO = 'A' OR DT_ENCERRA >= '2025-08-01')");
+    expect(sql).toContain("x WHERE x.ID_APORDSERVICO IN (SELECT ID_APORDSERVICO FROM PIMSMCPRD.dbo.APORDSERVICO WHERE FG_SITUACAO = 'A' OR DT_ENCERRA >= '2025-08-01') GROUP BY");
+    expect(montarSqlOrdensValidacao('2026-08-01', 0, 4000, null, false)).not.toContain('WHERE ID_APORDSERVICO IN');
+    // sem unidade pedida, todas; com unidade, só ela (a marca das operações sem área continua olhando todas)
+    expect(sql).not.toContain('u.DE_UNI_ADM IN');
+    const so = montarSqlOrdensValidacao('2026-08-01', 0, 4000, ['FAZENDA DOURADO']);
+    expect(so).toContain("ABS(ISNULL(pl.ha, 0) - ISNULL(ex.ha, 0)) > 1)) AND u.DE_UNI_ADM IN ('FAZENDA DOURADO')");
+    expect(so.match(/u\.DE_UNI_ADM IN/g)).toHaveLength(1);
     expect(sql).toContain("os.FG_SITUACAO = 'F' AND os.DT_ENCERRA >= '2026-08-01' AND sa.ID_OPERACAO IS NULL AND ABS(ISNULL(pl.ha, 0) - ISNULL(ex.ha, 0)) > 1");
     // operações que não apontam área: medidas nas ordens fechadas desde a safra anterior
     expect(sql).toContain("o2.DT_ENCERRA >= '2025-08-01'");
@@ -33,6 +42,7 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
     // a data vai limpa para o SQL
     expect(montarSqlOrdensValidacao("2026-08-01'; DROP TABLE x --")).not.toContain('DROP');
     expect(montarSqlCoordenadoresValidacao('2026-08-01')).toContain("os.DT_ABERTURA >= '2026-08-01' OR os.DT_ENCERRA >= '2026-08-01'");
+    expect(montarSqlCoordenadoresValidacao('2026-08-01', ['A'])).toContain("WHERE (os.DT_ABERTURA >= '2026-08-01' OR os.DT_ENCERRA >= '2026-08-01') AND u.DE_UNI_ADM IN ('A')");
   });
 
   it('o detalhe (talhões e apontamentos) vale para as mesmas ordens do retrato, paginado', () => {

@@ -95,7 +95,7 @@ describe('toda leitura de pedidos pendentes tem ordem e limite', () => {
     expect(await atenderPedidosValidacao(opcoes(s.impl))).toBe(false);
     expect(s.chamadas.map((c) => c.url)).toEqual([
       `${URL_SB}/rest/v1/mapas_plantio_pedidos?select=id&atendido_em=is.null&order=id.asc&limit=500`,
-      `${URL_SB}/rest/v1/valid_pedidos?select=id&atendido_em=is.null&order=id.asc&limit=500`,
+      `${URL_SB}/rest/v1/valid_pedidos?select=id,unidade&atendido_em=is.null&order=id.asc&limit=500`,
     ]);
   });
 });
