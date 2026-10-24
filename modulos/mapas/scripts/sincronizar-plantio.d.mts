@@ -337,8 +337,11 @@ export function filtroUnidades(coluna: string, unidades?: string[] | null): stri
 /** Filtro `in.(...)` do PostgREST, já codificado para a URL. */
 export function listaPostgrest(valores: string[]): string;
 export const HORA_ROTINA_DIARIA: number;
-/** O que a rotina automática faz nesta hora: 'diaria' (às 4h de Cuiabá), 'nada' ou 'completa' (COA_ROTINA_COMPLETA=1). */
-export function rotinaDoHorario(agora?: Date, env?: Record<string, string | undefined>): 'diaria' | 'nada' | 'completa';
+export const HORA_ROTINA_COMPLEMENTO: number;
+/** O que a rotina automática faz nesta hora: 'diaria' (6h de Cuiabá), 'complemento' (12h), 'nada' ou 'completa' (COA_ROTINA_COMPLETA=1). */
+export function rotinaDoHorario(agora?: Date, env?: Record<string, string | undefined>): 'diaria' | 'complemento' | 'nada' | 'completa';
+/** A foto do benchmark de hoje está completa (cada fonte × fazenda de ontem já tem foto hoje)? Só lê o Supabase. */
+export function fotoDeHojeCompleta(supabase: { url: string; chave: string }, agora?: Date, fetchImpl?: FetchLike): Promise<boolean>;
 export const SQL_DEPOSITOS_SAP: string;
 export function inicioSafraValidacao(agora?: Date): string;
 export function montarSqlOrdensValidacao(desde: string, pular?: number, tamanho?: number, unidades?: string[] | null, enxuta?: boolean): string;

@@ -4,7 +4,7 @@ Esta pasta guarda **cópias de referência** do que está instalado na VM do Goo
 
 | Arquivo daqui | Onde fica na VM | O que faz |
 |---|---|---|
-| `atualizar-e-rodar.sh` | `~/plantio-pims/atualizar-e-rodar.sh` | Roda de hora em hora (minuto 17): baixa os scripts; desde 23/10/2026 só **age às 4h** (veja abaixo) |
+| `atualizar-e-rodar.sh` | `~/plantio-pims/atualizar-e-rodar.sh` | Roda de hora em hora (minuto 17): baixa os scripts; desde 23/10/2026 só **age às 6h** (e às 12h se faltou foto do benchmark; veja abaixo) |
 | `atender-pedidos.sh` | `~/plantio-pims/atender-pedidos.sh` | A cada ~30 s: atende os pedidos feitos pelas telas |
 | `plantio-pims.service` e `.timer` | `/etc/systemd/system/` | Agenda a rotina de hora em hora |
 | `plantio-pims-pedidos.service` e `.timer` | `/etc/systemd/system/` | Agenda a verificação dos pedidos |
@@ -15,7 +15,7 @@ O que a VM **baixa sozinha**, a cada hora, são outros três arquivos, da pasta 
 
 **Só no clique (desde 23/10/2026).** A VM não consulta mais o Agrovex sozinha ao longo do dia: a rotina de hora em hora relia o PIMS, o SAP e a ZEUS o dia todo (e, a cada 30 s, a chuva por talhão e a situação da ZEUS), e isso travava o Agrovex para as outras pessoas nos picos. Agora:
 
-- o timer de hora em hora continua igual na VM (nada a mudar lá), mas `sincronizar-plantio.mjs` só faz alguma coisa **às 4h de Cuiabá**: o cadastro de variedades e a foto do benchmark da previsão (que precisa de uma por dia). Nas outras horas ele escreve no registro `rotina automática: nada a fazer nesta hora` e termina;
+- o timer de hora em hora continua igual na VM (nada a mudar lá), mas `sincronizar-plantio.mjs` só faz alguma coisa **às 6h de Cuiabá**: o cadastro de variedades e a foto do benchmark da previsão (que precisa de uma por dia e só sai a partir das 6h, quando a ZEUS já publicou). **Às 12h** ele confere no Supabase se faltou alguma foto de hoje (ZEUS incompleta, fonte fora do ar) e só então completa. Nas outras horas ele escreve no registro `rotina automática: nada a fazer nesta hora` e termina;
 - tudo o mais vem de pedido, pelo `atender-pedidos.mjs`: o "Atualizar" do Operacional e do Mapas (plantio e Operacional, todas as fazendas), o da Validação PIMS e do Controle Técnico (**só a unidade da tela**), o da Chuva por talhão (tabela `chuva_talhao_pedidos`, script `supabase/0034`; relê também os limites da ZEUS, se têm mais de 24 h, e a situação da ZEUS), a chuva do Mapa de chuva (que também atualiza a situação da ZEUS), os boletins e o CAR;
 - as TVs do Operacional (e as das Montagens de Painel, que mostram o Operacional) pedem o "Atualizar" sozinhas de hora em hora enquanto estão ligadas; pedidos com menos de 5 min da última leitura são respondidos com os dados já gravados;
 - cada consulta ao Agrovex vai para o registro com o tempo e o número de linhas (`MCP PIMS · ordens de serviço: 4210 ms, 812 linhas.`), para medir a carga;

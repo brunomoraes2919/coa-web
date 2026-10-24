@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { atenderPedidosChuvaTalhao, atenderPedidosValidacao, TABELAS_DE_PEDIDOS, unidadesDosPedidosValidacao } from '../scripts/atender-pedidos.mjs';
 import {
-  filtroUnidades, gravarValidacaoSupabase, listaPostgrest, montarSqlApontamentosRecentes, montarSqlApontamentosValidacao, montarSqlBoletinsFalha,
+  filtroUnidades, fotoDeHojeCompleta, gravarValidacaoSupabase, listaPostgrest, montarSqlApontamentosRecentes, montarSqlApontamentosValidacao, montarSqlBoletinsFalha,
   montarSqlBoletinsPendentes, montarSqlColetorValidacao, montarSqlCoordenadoresValidacao, montarSqlDepositosPims, montarSqlDoseValidacao,
   montarSqlEvolucaoValidacao, montarSqlNecessidadeValidacao, montarSqlOrdensValidacao, montarSqlTalhoesValidacao, rotinaDoHorario,
   sincronizarValidacao, unidadesDoPedido,
@@ -50,14 +50,33 @@ const ORDEM = (unidade: string, os: number) => ({
 /** As ordens de duas unidades (a consulta de ordens é a que traz "AS sem_area"); o resto, vazio. */
 const duasUnidades = (sql: string) => (sql.includes('AS sem_area') ? [ORDEM('FAZENDA A', 1), ORDEM('FAZENDA B', 2)] : []);
 
-describe('rotina automática: só às 4h de Cuiabá', () => {
-  it('às 4h o benchmark e as variedades; nas outras horas nada; COA_ROTINA_COMPLETA=1 roda tudo', () => {
-    expect(rotinaDoHorario(new Date('2026-10-24T08:17:00Z'), {})).toBe('diaria'); // 4h17 em Cuiabá
-    for (const h of [0, 3, 5, 9, 11, 12, 16, 20, 23]) {
+describe('rotina automática: só às 6h de Cuiabá (e às 12h se faltou foto do benchmark)', () => {
+  it('às 6h o benchmark e as variedades; às 12h o complemento; nas outras horas nada; COA_ROTINA_COMPLETA=1 roda tudo', () => {
+    // às 6h, não às 4h: antes das 6h o benchmark não tira a foto do dia (PREV_HORA_FOTO)
+    expect(rotinaDoHorario(new Date('2026-10-24T10:17:00Z'), {})).toBe('diaria'); // 6h17 em Cuiabá
+    expect(rotinaDoHorario(new Date('2026-10-24T16:17:00Z'), {})).toBe('complemento'); // 12h17
+    for (const h of [0, 3, 5, 8, 9, 11, 12, 15, 17, 20, 23]) {
       expect(rotinaDoHorario(new Date(Date.UTC(2026, 9, 24, h, 17)), {}), `UTC ${h}h`).toBe('nada');
     }
     expect(rotinaDoHorario(new Date('2026-10-24T13:17:00Z'), { COA_ROTINA_COMPLETA: '1' })).toBe('completa');
     expect(rotinaDoHorario(new Date('2026-10-24T13:17:00Z'), { COA_ROTINA_COMPLETA: '0' })).toBe('nada');
+  });
+});
+
+describe('benchmark: o complemento do meio-dia só consulta o Agrovex se faltou foto de hoje', () => {
+  const ler = (linhas: Record<string, string>[]) => (async () => new Response(JSON.stringify(linhas), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch;
+  const sb = { url: URL_SB, chave: CHAVE };
+  const agora = new Date('2026-10-24T16:17:00Z'); // 24/10, 12h17 em Cuiabá
+  const foto = (fonte: string, unidade: string, emitida_em: string) => ({ fonte, unidade, emitida_em });
+  it('completa quando cada foto de ontem (fonte × fazenda) já existe hoje', async () => {
+    const ontem = [foto('zeus', 'A', '2026-10-23'), foto('metno', 'A', '2026-10-23')];
+    expect(await fotoDeHojeCompleta(sb, agora, ler([...ontem, foto('zeus', 'A', '2026-10-24'), foto('metno', 'A', '2026-10-24')]))).toBe(true);
+    // a ZEUS de hoje não saiu (carga incompleta às 6h): falta
+    expect(await fotoDeHojeCompleta(sb, agora, ler([...ontem, foto('metno', 'A', '2026-10-24')]))).toBe(false);
+  });
+  it('sem foto ontem: basta ter alguma hoje', async () => {
+    expect(await fotoDeHojeCompleta(sb, agora, ler([]))).toBe(false);
+    expect(await fotoDeHojeCompleta(sb, agora, ler([foto('zeus', 'A', '2026-10-24')]))).toBe(true);
   });
 });
 

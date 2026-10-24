@@ -1,8 +1,8 @@
 // Sincroniza o status de plantio do PIMS (via Agrovex MCP) e, depois dele, o Acompanhamento Operacional e a
 // Validação PIMS. É a biblioteca de atender-pedidos.mjs (os dados só são atualizados quando alguém clica em
-// Atualizar) e o programa da rotina automática do servidor (VM), que desde 23/10/2026 só age uma vez por dia, às 4h
-// de Cuiabá: o benchmark da previsão e o cadastro de variedades (rotinaDoHorario). Com COA_ROTINA_COMPLETA=1 no
-// ambiente, roda tudo, como era (para uso manual).
+// Atualizar) e o programa da rotina automática do servidor (VM), que desde 23/10/2026 só age às 6h de Cuiabá (a foto
+// do benchmark da previsão e o cadastro de variedades) e, se faltou foto, às 12h (rotinaDoHorario). Com
+// COA_ROTINA_COMPLETA=1 no ambiente, roda tudo, como era (para uso manual).
 // No servidor: AGROVEX_TOKEN, SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no ambiente; grava em mapas_plantio_pims
 // (upsert + limpeza das linhas que sumiram do PIMS). Faltando qualquer uma das três, termina com erro (código 1).
 // No computador de quem desenvolve: AGROVEX_TOKEN=... node scripts/sincronizar-plantio.mjs --local   (ou
@@ -3128,21 +3128,43 @@ export async function rodarBenchmarkPrevisao({ agrovex, supabase, visualCrossing
 
 // ---------- execução pela linha de comando ----------
 
-/** Hora de Cuiabá (UTC−4) em que a rotina automática ainda age: o benchmark da previsão e o cadastro de variedades. */
-export const HORA_ROTINA_DIARIA = 4;
+/**
+ * Hora de Cuiabá (UTC−4) em que a rotina automática ainda age: a foto do dia do benchmark da previsão (que só sai a
+ * partir de PREV_HORA_FOTO, quando a ZEUS já publicou) e o cadastro de variedades. (Em 23/10/2026 ela ficou às 4h por
+ * engano: antes das 6h o benchmark não tira a foto, e o dia ficava sem previsão guardada.)
+ */
+export const HORA_ROTINA_DIARIA = PREV_HORA_FOTO;
+/** Hora em que a rotina volta, só se faltou alguma foto de hoje (a ZEUS incompleta é aceita a partir dela). */
+export const HORA_ROTINA_COMPLEMENTO = PREV_HORA_ZEUS_INCOMPLETA;
 
 /**
  * O que a rotina automática do servidor (o timer de hora em hora da VM) faz agora. Desde 23/10/2026 os dados do
  * PIMS, do SAP e da ZEUS só são consultados quando alguém clica em Atualizar (atender-pedidos.mjs): a rotina de
  * hora em hora relia tudo, o dia todo, e travava o Agrovex nos picos. Fica só o que precisa de uma foto por dia:
- *   'diaria'   — às HORA_ROTINA_DIARIA de Cuiabá: benchmark da previsão e cadastro de variedades;
- *   'nada'     — nas outras horas: termina sem consultar nada;
- *   'completa' — com COA_ROTINA_COMPLETA=1 no ambiente: tudo, como antes (para rodar à mão).
+ *   'diaria'      — às HORA_ROTINA_DIARIA (6h) de Cuiabá: benchmark da previsão e cadastro de variedades;
+ *   'complemento' — às HORA_ROTINA_COMPLEMENTO (12h): o benchmark de novo, só se faltou foto de hoje
+ *                   (fotoDeHojeCompleta confere no Supabase antes, sem consultar o Agrovex);
+ *   'nada'        — nas outras horas: termina sem consultar nada;
+ *   'completa'    — com COA_ROTINA_COMPLETA=1 no ambiente: tudo, como antes (para rodar à mão).
  */
 export function rotinaDoHorario(agora = new Date(), env = {}) {
   if (typeof env.COA_ROTINA_COMPLETA === 'string' && env.COA_ROTINA_COMPLETA.trim() === '1') return 'completa';
   const hora = (agora.getUTCHours() + 20) % 24; // Cuiabá: UTC−4, sem horário de verão
-  return hora === HORA_ROTINA_DIARIA ? 'diaria' : 'nada';
+  return hora === HORA_ROTINA_DIARIA ? 'diaria' : hora === HORA_ROTINA_COMPLEMENTO ? 'complemento' : 'nada';
+}
+
+/**
+ * A foto do benchmark de hoje está completa? Compara as fotos de hoje (fonte × fazenda) com as de ontem: se cada uma
+ * que existia ontem já existe hoje, está completa (sem foto ontem, basta ter alguma hoje). Só lê o Supabase.
+ */
+export async function fotoDeHojeCompleta(supabase, agora = new Date(), fetchImpl = globalThis.fetch) {
+  const hoje = diaMT(agora);
+  const ontem = somarDias(hoje, -1);
+  const linhas = await sbLer(supabase, `prev_previsoes?select=fonte,unidade,emitida_em&emitida_em=gte.${ontem}`, 'a leitura das fotos do benchmark', fetchImpl);
+  const de = (dia) => new Set(linhas.filter((l) => l.emitida_em === dia).map((l) => `${l.fonte}|${l.unidade}`));
+  const deHoje = de(hoje), deOntem = de(ontem);
+  if (!deOntem.size) return deHoje.size > 0;
+  return [...deOntem].every((k) => deHoje.has(k));
 }
 
 /**
@@ -3187,6 +3209,17 @@ async function main() {
   const rotina = modo.local ? 'completa' : rotinaDoHorario(new Date(), process.env);
   if (rotina === 'nada') {
     console.log(`== ${new Date().toISOString()} rotina automática: nada a fazer nesta hora (os dados são atualizados pelo botão Atualizar; às ${HORA_ROTINA_DIARIA}h de Cuiabá, o benchmark e as variedades).`);
+    return;
+  }
+  if (rotina === 'complemento') {
+    const supabase = { url: modo.supabaseUrl, chave: modo.supabaseChave };
+    if (config.previsao === false || (await fotoDeHojeCompleta(supabase))) {
+      console.log(`== ${new Date().toISOString()} rotina do meio-dia: a foto de hoje do benchmark está completa; nada a fazer.`);
+      return;
+    }
+    console.log(`== ${new Date().toISOString()} rotina do meio-dia: faltou foto de hoje no benchmark; completando.`);
+    const erro = await rodarBenchmarkPrevisao({ agrovex: { url: urlAgrovex, token }, supabase, visualCrossingChave: (process.env.VISUALCROSSING_KEY || '').trim() });
+    if (erro) process.exitCode = 1;
     return;
   }
   if (rotina === 'diaria') {

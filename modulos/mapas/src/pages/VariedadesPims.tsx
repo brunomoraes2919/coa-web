@@ -85,7 +85,7 @@ export default function VariedadesPims() {
         <div>
           <h1>Variedades</h1>
           <p className="subtitulo">
-            O cadastro de variedades do PIMS, atualizado todo dia às 4h. Digite o nome comercial: no mapa de variedade ela sai como “Nome comercial (nome do PIMS)”.
+            O cadastro de variedades do PIMS, atualizado todo dia às 6h. Digite o nome comercial: no mapa de variedade ela sai como “Nome comercial (nome do PIMS)”.
           </p>
         </div>
       </div>
@@ -103,7 +103,7 @@ export default function VariedadesPims() {
         <Carregando texto="Carregando as variedades…" />
       ) : lista.length === 0 ? (
         <div className="cartao vazio">
-          <p>O cadastro de variedades ainda não chegou do PIMS. A rotina do servidor grava a lista todo dia às 4h.</p>
+          <p>O cadastro de variedades ainda não chegou do PIMS. A rotina do servidor grava a lista todo dia às 6h.</p>
         </div>
       ) : (
         <>
