@@ -5724,7 +5724,8 @@ async function carregarSessaoEDados(){
   sessao = {
     id: user.id, email: user.email, nome: perfil.nome, perfil: perfil.perfil,
     super: temAdminMais ? !!perfil.super : perfil.perfil === 'admin',
-    todasFazendas: perfil.todas_fazendas !== false
+    todasFazendas: perfil.todas_fazendas !== false,
+    novidadesVistas: Array.isArray(user.user_metadata && user.user_metadata.novidades_vistas) ? user.user_metadata.novidades_vistas : []
   };
   // senha provisória (usuário novo, ou senha voltada para a padrão): só continua depois de criar a definitiva.
   // Erro na consulta = script 0011 ainda não rodado: segue como antes.
@@ -5747,18 +5748,33 @@ async function carregarSessaoEDados(){
   else mostrarNovidade();
 }
 
-/* Aviso de novidade: uma vez por usuário neste navegador, para quem tem alguma das categorias da novidade.
+/* Aviso de novidade: uma vez por usuário, para quem tem alguma das categorias da novidade. O "já vi" fica na conta
+   (user_metadata.novidades_vistas do Supabase Auth: vale em qualquer computador, celular ou navegador, e sobrevive ao
+   navegador que apaga os dados ao fechar) e, de reserva, neste navegador. Só marca aviso visto: nenhuma permissão lê isso.
    Para anunciar outra, troque NOVIDADE.chave (quem já viu a anterior vê a nova) e o texto do #dlg-novidade. */
 const NOVIDADE = { chave: 'atualizar-no-clique-2026-10', categorias: ['acompanhamento', 'mapas', 'validacao', 'controle', 'chuva'] };
 function chaveNovidade(){ return 'coa.novidade.' + NOVIDADE.chave + '.' + (sessao ? sessao.id : ''); }
+function novidadeVistaNaConta(){ return !!sessao && sessao.novidadesVistas.includes(NOVIDADE.chave); }
+function gravarNovidadeNaConta(){
+  if(!sessao || novidadeVistaNaConta()) return;
+  const vistas = sessao.novidadesVistas.concat(NOVIDADE.chave).slice(-20); // as últimas 20 bastam
+  sessao.novidadesVistas = vistas;
+  sb.auth.updateUser({ data: { novidades_vistas: vistas } })
+    .then(r=>{ if(r.error) console.warn('Aviso de novidade: não gravou na conta', r.error.message); })
+    .catch(()=>{ /* sem rede: este navegador guarda e a próxima entrada tenta de novo */ });
+}
 function mostrarNovidade(){
   const dlg = document.getElementById('dlg-novidade');
   if(!sessao || !dlg || dlg.open || !NOVIDADE.categorias.some(podeCategoria)) return;
-  try{ if(localStorage.getItem(chaveNovidade())) return; }catch(e){ return; } // sem armazenamento, não incomoda a cada entrada
+  if(novidadeVistaNaConta()) return;
+  let vistaAqui = false;
+  try{ vistaAqui = !!localStorage.getItem(chaveNovidade()); }catch(e){ /* sem armazenamento: vale a conta */ }
+  if(vistaAqui){ gravarNovidadeNaConta(); return; } // viu antes de a conta guardar: passa para a conta
   dlg.showModal();
 }
 document.getElementById('dlg-novidade').addEventListener('close', ()=>{
   try{ localStorage.setItem(chaveNovidade(), new Date().toISOString()); }catch(e){ /* sem armazenamento */ }
+  gravarNovidadeNaConta();
 });
 
 function mostrarTelaLogin(){
