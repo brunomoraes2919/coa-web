@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610281500">
+<link rel="stylesheet" href="estilo.css?v=202610281700">
 <script src="../assets/uso.js?v=202610231500"></script>
 <script src="../assets/lembrete-atualizar.js?v=202610232000"></script>
 <script src="config.js?v=202610081500"></script>
@@ -31,8 +31,11 @@
       <label class="campo-select"><span>Período</span><select id="sel-periodo"></select></label>
       <label class="campo-select campo-data" hidden><span>De</span><input type="date" id="dt-de"></label>
       <label class="campo-select campo-data" hidden><span>Até</span><input type="date" id="dt-ate"></label>
-      <label class="campo-select campo-chave" title="Marcado: a tabela ao lado do mapa (e o Excel) traz uma linha por talhão em cada dia do período. Desmarcado: o acumulado do período."><span>Tabela</span>
-        <span class="chave-caixa"><input type="checkbox" id="chk-por-dia"> Por dia</span></label>
+      <div class="campo-select campo-chave" role="group" aria-label="Tabela" title="Por dia: uma linha por talhão em cada dia do período. Por mês: a chuva de cada talhão somada por mês. Nenhuma marcada: o acumulado do período. Vale para a tabela ao lado do mapa e para o Excel."><span>Tabela</span>
+        <div class="chave-caixa">
+          <label><input type="checkbox" id="chk-por-dia"> Por dia</label>
+          <label><input type="checkbox" id="chk-por-mes"> Por mês</label>
+        </div></div>
       <label class="campo-select" title="Quais limites de talhão desenhar: as áreas de uma safra, os talhões cadastrados na ZEUS (os que têm valor de chuva; só em algumas fazendas) ou todos os talhões da fazenda"><span>Limites</span><select id="sel-limites"></select></label>
     </div>
     <div class="barra-acoes">
@@ -117,6 +120,6 @@
 </div>
 
 <div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Carregando a chuva por talhão</span><i>.</i><i>.</i><i>.</i></p></div></div>
-<script src="app.js?v=202610281500"></script>
+<script src="app.js?v=202610281700"></script>
 </body>
 </html>
