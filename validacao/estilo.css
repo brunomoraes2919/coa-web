@@ -76,7 +76,20 @@ h2, p { margin: 0; }
 .botao-acao:disabled svg { animation: girar 1s linear infinite; }
 @keyframes girar { to { transform: rotate(360deg); } }
 
-.abas { flex: 1 1 100%; display: flex; gap: 4px; margin-top: 4px; overflow-x: auto; scrollbar-width: none; }
+/* abas com setas: aparecem só quando há aba escondida daquele lado (a barra rola sem barra de rolagem) */
+.abas-caixa { flex: 1 1 100%; position: relative; min-width: 0; }
+.abas { display: flex; gap: 4px; margin-top: 4px; overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth; }
+.abas-seta {
+  position: absolute; top: 4px; bottom: 3px; z-index: 2; width: 44px; display: flex; align-items: center; border: 0; padding: 0; cursor: pointer; color: var(--verde-teal);
+}
+.abas-seta[hidden] { display: none; }
+.abas-seta.esq { left: 0; justify-content: flex-start; background: linear-gradient(90deg, #fff 55%, rgba(255,255,255,0)); }
+.abas-seta.dir { right: 0; justify-content: flex-end; background: linear-gradient(270deg, #fff 55%, rgba(255,255,255,0)); }
+.abas-seta svg {
+  width: 28px; height: 28px; padding: 5px; border-radius: 50%; background: #fff; border: 1px solid #CBD5CE; box-shadow: 0 1px 3px rgba(16,54,50,.15);
+  fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+}
+.abas-seta:hover svg { background: var(--linha-suave); }
 .abas::-webkit-scrollbar { display: none; }
 .abas button {
   display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px 11px; border: 0; background: none; cursor: pointer; white-space: nowrap;

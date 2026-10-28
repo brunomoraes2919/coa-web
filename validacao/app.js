@@ -688,6 +688,13 @@
     preencherUnidades();
     preencherEquipes();
     document.querySelectorAll('#abas [data-vista]').forEach((b) => { b.hidden = VISTAS.indexOf(b.dataset.vista) < 0; b.setAttribute('aria-selected', String(b.dataset.vista === estado.vista)); });
+    // a aba aberta (pelo menu lateral, por exemplo) fica à vista na barra
+    const abaAberta = document.querySelector('#abas [aria-selected="true"]');
+    if (abaAberta) {
+      const a = $('abas'), esq = abaAberta.offsetLeft - a.offsetLeft, dir = esq + abaAberta.offsetWidth;
+      if (esq < a.scrollLeft + 44) a.scrollLeft = esq - 48;
+      else if (dir > a.scrollLeft + a.clientWidth - 44) a.scrollLeft = dir - a.clientWidth + 48;
+    }
     TODAS_AS_VISTAS.forEach((v) => { $('vista-' + v).hidden = v !== estado.vista; });
     const hoje = L.hojeIso();
     // os números das abas valem para o filtro escolhido
@@ -825,6 +832,24 @@
     if (!b) return;
     irPara(b.dataset.vista);
   });
+  /* setas da barra de abas: cada uma aparece só quando há aba escondida daquele lado; a roda do mouse também rola */
+  function marcarSetasDasAbas() {
+    const a = $('abas'), fim = a.scrollWidth - a.clientWidth;
+    $('abas-esq').hidden = a.scrollLeft <= 2;
+    $('abas-dir').hidden = a.scrollLeft >= fim - 2;
+  }
+  $('abas-esq').addEventListener('click', () => { $('abas').scrollLeft -= $('abas').clientWidth * 0.7; });
+  $('abas-dir').addEventListener('click', () => { $('abas').scrollLeft += $('abas').clientWidth * 0.7; });
+  $('abas').addEventListener('scroll', marcarSetasDasAbas, { passive: true });
+  $('abas').addEventListener('wheel', (e) => {
+    const a = $('abas');
+    if (a.scrollWidth <= a.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+    a.scrollLeft += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+  window.addEventListener('resize', marcarSetasDasAbas);
+  if (window.ResizeObserver) new ResizeObserver(marcarSetasDasAbas).observe($('abas'));
+  marcarSetasDasAbas();
   $('sel-unidade').addEventListener('change', (e) => { estado.unidade = e.target.value; estado.equipe = TODAS; desenhar(); avisarPai(); });
   $('sel-equipe').addEventListener('change', (e) => { estado.equipe = e.target.value; desenhar(); });
   // período: data vazia = sem limite daquele lado; se as datas se cruzarem, a outra acompanha

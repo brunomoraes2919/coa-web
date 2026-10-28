@@ -113,6 +113,21 @@ describe('acompanhamento: regras puras', () => {
     expect(linhas.some((l) => l.unidade === 'GLOBO')).toBe(false);
   });
 
+  it('leva a variedade apontada no boletim de plantio (o cadastro do talhão pode estar "A DEFINIR")', () => {
+    expect(montarSqlAcompanhamento(['SOJA 26/27']).plantio).toMatch(/VARIEDADE va ON va\.ID_VARIEDADE = a\.ID_VARIEDADE/);
+    const talhoes = { columns: COL_TALHOES, rows: [['NEBRASKA', 'NEBRASKA', 'SOJA 26/27', '9', '016', 490, 0, 'A DEFINIR SOJA', null]] };
+    const plantio = {
+      columns: [...COL_PLANTIO, 'variedade'],
+      rows: [
+        ['NEBRASKA', 'SOJA 26/27', '9', '016', '2026-10-20', 300, 'JOAO', 17, 'N', 'SEMENTE SOJA 74K76 RSF'],
+        ['NEBRASKA', 'SOJA 26/27', '9', '016', '2026-10-21', 190, 'JOAO', 17, 'N', null],
+      ],
+    };
+    const [l] = linhasAcompanhamento({ talhoes, plantio, colheita: { columns: COL_COLHEITA, rows: [] } }, 'x');
+    expect(l.talhoes[0].variedade).toBe('A DEFINIR');
+    expect(l.apontamentos.map((a) => a.v)).toEqual(['74K76 RSF', undefined]); // sem variedade, o campo não vai
+  });
+
   it('reconhece a mesma cultura mesmo com o nome da safra mudando de um ano para outro', () => {
     expect(culturaDaSafra('MILHO SAFRINHA 23/24')).toBe('MILHO 2 SAFRA');
     expect(culturaDaSafra('MILHO 2ª SAFRA 24/25')).toBe('MILHO 2 SAFRA');

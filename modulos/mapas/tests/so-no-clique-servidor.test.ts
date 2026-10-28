@@ -87,8 +87,9 @@ describe('Validação: o Atualizar relê só a unidade da tela', () => {
     expect(unidadesDoPedido(["X'; DROP TABLE y --"])).toBeNull(); // caractere fora da lista: vira todas
     expect(unidadesDoPedido([])).toBeNull();
     expect(unidadesDoPedido(null)).toBeNull();
-    expect(filtroUnidades('u.DE_UNI_ADM', ["D'OURO"])).toBe(" AND u.DE_UNI_ADM IN ('D''OURO')");
-    expect(filtroUnidades('u.DE_UNI_ADM', null)).toBe('');
+    expect(filtroUnidades('u.DE_UNI_ADM', ["D'OURO"])).toBe(" AND u.DE_UNI_ADM IN ('D''OURO') AND u.DE_UNI_ADM NOT IN ('BACABA')");
+    // sem unidade, só tira as unidades que saíram do grupo (a Bacaba)
+    expect(filtroUnidades('u.DE_UNI_ADM', null)).toBe(" AND u.DE_UNI_ADM NOT IN ('BACABA')");
     expect(decodeURIComponent(listaPostgrest(['FAZENDA A', 'B"C', 'D\\E']))).toBe('in.("FAZENDA A","B\\"C","D\\\\E")');
   });
 
@@ -111,8 +112,8 @@ describe('Validação: o Atualizar relê só a unidade da tela', () => {
       montarSqlColetorValidacao('2026-08-01', 0, 4000),
     ];
     for (const sql of semFiltro) expect(sql).not.toMatch(/DE_UNI_ADM\) IN \(|DE_UNI_ADM IN \(/);
-    // sem unidade, os apontamentos recentes não ganham um WHERE solto
-    expect(montarSqlApontamentosRecentes('2026-10-20', 0, 4000)).not.toContain('WHERE 1 = 1');
+    // sem unidade, os apontamentos recentes só tiram a Bacaba
+    expect(montarSqlApontamentosRecentes('2026-10-20', 0, 4000)).toContain("WHERE 1 = 1 AND u.DE_UNI_ADM NOT IN ('BACABA')");
   });
 
   it('com unidade, as consultas vão filtradas e só a linha dela volta', async () => {

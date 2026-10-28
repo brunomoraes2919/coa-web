@@ -107,6 +107,8 @@ export interface ApontamentoAcompScript {
   eq: string | null;
   e: string;
   rep: boolean;
+  /** variedade apontada no boletim de plantio (só quando existe) */
+  v?: string;
 }
 
 export interface LinhaAcompScript {
@@ -315,6 +317,13 @@ export interface SaldosDaUnidade {
   sdi: Record<string, [string, string]>;
 }
 export function montarSqlSaldoDepositosSap(codigos: unknown[], pular?: number | null, tamanho?: number): string;
+/** Depósitos ativos do SAP da mesma filial da fazenda que faltam no cadastro do PIMS. */
+export function depositosDaFilial(
+  depositos: Record<string, unknown>[],
+  empresa: string,
+  sap: Map<string, { nome: string | null; inativo: boolean; filial?: string | null }>,
+  unidadesDaEmpresa?: string[],
+): { unidade: string; codigo: string; nome: string }[];
 export function saldosPorUnidade(depositos: Record<string, unknown>[], linhasSap: Record<string, unknown>[]): Record<string, SaldosDaUnidade>;
 export function linhasExtras(dados: {
   apontamentos?: Record<string, unknown>[];
@@ -334,6 +343,10 @@ export function montarSqlDepositosPims(unidades?: string[] | null): string;
 export function unidadesDoPedido(lista: unknown): string[] | null;
 /** ` AND <coluna> IN (...)` para as unidades, ou '' (todas). */
 export function filtroUnidades(coluna: string, unidades?: string[] | null): string;
+/** Unidades do PIMS fora do COA (não fazem mais parte do grupo): nenhuma consulta as lê. */
+export const UNIDADES_FORA_DO_COA: string[];
+/** " AND coluna NOT IN (...)" com as unidades fora do COA (vazio se não houver). */
+export function foraDoCoa(coluna: string): string;
 /** Filtro `in.(...)` do PostgREST, já codificado para a URL. */
 export function listaPostgrest(valores: string[]): string;
 export const HORA_ROTINA_DIARIA: number;

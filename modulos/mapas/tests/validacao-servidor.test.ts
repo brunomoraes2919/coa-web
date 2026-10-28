@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { atenderPedidosValidacao } from '../scripts/atender-pedidos.mjs';
 import {
-  depositosVinculados, diaAnterior, inicioSafraValidacao, itemDoSaldoSap, linhasBoletins, linhasExtras, linhasValidacao, montarSqlApontamentosRecentes,
+  depositosDaFilial, depositosVinculados, diaAnterior, inicioSafraValidacao, itemDoSaldoSap, linhasBoletins, linhasExtras, linhasValidacao, montarSqlApontamentosRecentes,
   montarSqlApontamentosValidacao, montarSqlBoletinsFalha, montarSqlColetorValidacao, montarSqlDoseValidacao, montarSqlNecessidadeValidacao,
   montarSqlBoletinsPendentes, montarSqlLogIntegracaoSap, montarSqlSaldoItensSap, montarSqlCoordenadoresValidacao, montarSqlEstoqueSap,
   montarSqlOrdensValidacao, montarSqlSaldoDepositosSap, montarSqlTalhoesValidacao, saldosPorUnidade,
@@ -274,6 +274,21 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
     expect(sql).not.toContain('OR 1=1');
     expect(montarSqlSaldoDepositosSap(['1001'])).not.toContain('LIMIT');
     expect(() => montarSqlSaldoDepositosSap(["'; drop"])).toThrow();
+  });
+
+  it('consultar depósitos: traz do SAP os depósitos ativos da filial da fazenda que faltam no cadastro do PIMS', () => {
+    const sap = new Map([
+      ['1801', { nome: 'COMBUSTIVEL - FAZ A', inativo: false, filial: '9' }],
+      ['1802', { nome: 'CORRECAO - FAZ A', inativo: false, filial: '9' }],
+      ['1899', { nome: 'ANTIGO', inativo: true, filial: '9' }],
+      ['1301', { nome: 'OUTRA FAZENDA', inativo: false, filial: '4' }],
+    ]);
+    expect(depositosDaFilial([{ unidade: 'DOURADO', codigo: '1802', nome: 'x' }], 'SBOAGROPECUARIALOCKS', sap))
+      .toEqual([{ unidade: 'DOURADO', codigo: '1801', nome: 'COMBUSTIVEL - FAZ A' }]);
+    // empresa sem filial: entra inteira só se uma unidade só usa a empresa; código estranho fica de fora
+    const semFilial = new Map([['8101', { nome: 'A', inativo: false, filial: null }], ['8102', { nome: 'B', inativo: false, filial: null }], ['*', { nome: 'C', inativo: false, filial: null }]]);
+    expect(depositosDaFilial([{ unidade: 'SM3', codigo: '8101' }], 'SBOAGROPECUARIASM3', semFilial, ['SM3'])).toEqual([{ unidade: 'SM3', codigo: '8102', nome: 'B' }]);
+    expect(depositosDaFilial([{ unidade: 'SM3', codigo: '8101' }], 'SBOAGROPECUARIASM3', semFilial, ['SM3', 'OUTRA'])).toEqual([]);
   });
 
   it('consultar depósitos: saldo por unidade, nome do produto uma vez só, depósito sem saldo com lista vazia', () => {

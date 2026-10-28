@@ -363,6 +363,32 @@
     return r;
   }
 
+  // ---- variedade do talhão ----
+  /** A variedade, ou null quando vazia ou "A DEFINIR" (o marcador do PIMS para variedade ainda não informada). */
+  function variedadeDefinida(v) {
+    var s = String(v === null || v === undefined ? '' : v).trim();
+    return !s || /^A\s*DEFINIR\b/i.test(s) ? null : s;
+  }
+  /**
+   * Em que variedade(s) cai a área do talhão: [{ v, fr }] com fr somando 1 (ou menos, se parte do apontado veio sem
+   * variedade e o cadastro está "A DEFINIR"), maior primeiro. Com plantio apontado vale a variedade dos boletins, como
+   * no relatório por variedade do PIMS (um talhão pode ter mais de uma, ou o cadastro pode estar "A DEFINIR"); o
+   * apontado sem variedade fica com a do cadastro. Sem apontamento, a do cadastro.
+   */
+  function partesDaVariedade(cadastro, porVariedade) {
+    var vc = variedadeDefinida(cadastro), por = {}, total = 0;
+    Object.keys(porVariedade || {}).forEach(function (v) {
+      var ha = porVariedade[v]; if (!(ha > 0)) return;
+      total += ha;
+      var alvo = v || vc; // apontado sem variedade: a do cadastro
+      if (alvo) por[alvo] = (por[alvo] || 0) + ha;
+    });
+    if (total > 0) {
+      return Object.keys(por).map(function (v) { return { v: v, fr: por[v] / total }; }).sort(function (a, b) { return b.fr - a.fr || (a.v < b.v ? -1 : 1); });
+    }
+    return vc ? [{ v: vc, fr: 1 }] : [];
+  }
+
   // ===========================================================================
   // Indicadores (equivalentes às medidas do relatório Power BI)
   // ===========================================================================
@@ -373,13 +399,20 @@
     var ops = aps.filter(function (a) { return !a.rep; });
     var m = { unidades: unidades, s: s, o: o, ops: ops };
 
-    var exT = {};
+    var exT = {}, varT = {};
     ops.forEach(function (a) { var k = a.u + '|' + a.t; exT[k] = (exT[k] || 0) + a.a; });
+    // área plantada de cada variedade no talhão (a do boletim de plantio; `a.v` vem do servidor): vale também na colheita
+    DADOS.apontamentos.forEach(function (a) {
+      if (a.op !== 'PLANTIO' || a.rep || !U[a.u] || a.s !== s) return;
+      var vs = varT[a.u + '|' + a.t] = varT[a.u + '|' + a.t] || {}, v = variedadeDefinida(a.v) || ''; vs[v] = (vs[v] || 0) + a.a;
+    });
     m.talhoes = tal.map(function (t) {
-      var base = Math.max(0, t.area - t.dano), ap = exT[t.u + '|' + t.t] || 0;
+      var k = t.u + '|' + t.t, base = Math.max(0, t.area - t.dano), ap = exT[k] || 0;
       var enc = o === 'PLANTIO' && !!t.enc; // só informa no mapa: a área feita vem dos boletins
       var ex = RelatorioLogica.execucaoDoTalhao(base, ap);
-      return { u: t.u, t: t.t, setor: t.setor, variedade: t.variedade, base: base, area: t.area, dano: t.dano, apontado: ap, efetivo: ex.efetivo, perc: ex.perc, enc: enc, k: classe(ex.perc) };
+      var partes = partesDaVariedade(t.variedade, varT[k]);
+      return { u: t.u, t: t.t, setor: t.setor, variedade: partes.length ? partes[0].v : null, variedades: partes, variedadeCadastro: t.variedade,
+        base: base, area: t.area, dano: t.dano, apontado: ap, efetivo: ex.efetivo, perc: ex.perc, enc: enc, k: classe(ex.perc) };
     });
     m.areaCad = soma(tal, function (t) { return t.area; });
     m.dano = soma(tal, function (t) { return t.dano; });
@@ -452,11 +485,13 @@
       return e;
     }).sort(function (a, b) { return b.ult7 - a.ult7 || b.total - a.total; });
 
+    // por variedade, como o PIMS: a área de cada talhão vai para a(s) variedade(s) apontada(s) no plantio, na
+    // proporção do apontado; antes de plantar, para a do cadastro. "A DEFINIR" sem apontamento não entra na lista.
     var vr = {};
     m.talhoes.forEach(function (t) {
-      // "A DEFINIR" é só o marcador do PIMS para variedade ainda não informada: não entra na lista
-      if (!t.variedade || /^A\s*DEFINIR$/i.test(String(t.variedade).trim())) return;
-      var v = vr[t.variedade] = vr[t.variedade] || { v: t.variedade, prev: 0, exec: 0 }; v.prev += t.base; v.exec += t.efetivo;
+      t.variedades.forEach(function (p) {
+        var v = vr[p.v] = vr[p.v] || { v: p.v, prev: 0, exec: 0 }; v.prev += t.base * p.fr; v.exec += t.efetivo * p.fr;
+      });
     });
     m.variedades = Object.keys(vr).map(function (k) { return vr[k]; }).sort(function (a, b) { return b.prev - a.prev; });
     return m;

@@ -179,19 +179,19 @@ describe('paginação: o SQL de cada consulta', () => {
     ];
     for (const sql of inteiras) expect(sql, sql.slice(-120)).not.toMatch(/OFFSET|FETCH NEXT|LIMIT/);
     // o texto é o de antes da paginação: o ORDER BY que cada consulta já tinha, sem as colunas de desempate…
-    expect(montarSql('SOJA 26/27').endsWith("WHERE ps.DE_PER_SAFRA = 'SOJA 26/27'\nORDER BY unidade, codigo")).toBe(true);
+    expect(montarSql('SOJA 26/27').endsWith("WHERE ps.DE_PER_SAFRA = 'SOJA 26/27' AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY unidade, codigo")).toBe(true);
     expect(montarSqlChuva('2023-08-01').endsWith('HAVING avg(p.mm) >= 0.2\nORDER BY 1, 2')).toBe(true);
     expect(SQL_EVOLUCAO_VALIDACAO.endsWith('CONVERT(varchar(10), x.dia, 23)\nORDER BY 1, 2, 3')).toBe(true);
     expect(montarSqlEvolucaoValidacao()).toBe(SQL_EVOLUCAO_VALIDACAO);
-    expect(montarSqlBoletinsFalha('2026-08-01').endsWith("e.FG_STATUS <> '12'\nORDER BY 1, 3, 5")).toBe(true);
-    expect(montarSqlBoletinsPendentes('2026-08-01').endsWith("a.FG_INTEGRAR = 'S'\nORDER BY 1, 4, 3")).toBe(true);
-    expect(montarSqlNecessidadeValidacao('2026-08-01').endsWith("os.DT_ABERTURA >= '2026-08-01'\nORDER BY 1, 2, 7")).toBe(true);
-    expect(montarSqlDoseValidacao('2026-09-26').endsWith('> 0.1\nORDER BY 1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8')).toBe(true);
-    expect(montarSqlColetorValidacao('2026-08-01').endsWith("WHERE t.DT_OPERACAO >= '2026-08-01'\nORDER BY 1, 4 DESC, 3")).toBe(true);
+    expect(montarSqlBoletinsFalha('2026-08-01').endsWith("e.FG_STATUS <> '12' AND COALESCE(ui.DE_UNI_ADM, up.DE_UNI_ADM, ut.DE_UNI_ADM, uc.DE_UNI_ADM, ul.DE_UNI_ADM) NOT IN ('BACABA')\nORDER BY 1, 3, 5")).toBe(true);
+    expect(montarSqlBoletinsPendentes('2026-08-01').endsWith("a.FG_INTEGRAR = 'S' AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, 4, 3")).toBe(true);
+    expect(montarSqlNecessidadeValidacao('2026-08-01').endsWith("os.DT_ABERTURA >= '2026-08-01' AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, 2, 7")).toBe(true);
+    expect(montarSqlDoseValidacao('2026-09-26').endsWith("> 0.1 AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8")).toBe(true);
+    expect(montarSqlColetorValidacao('2026-08-01').endsWith("WHERE t.DT_OPERACAO >= '2026-08-01' AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, 4 DESC, 3")).toBe(true);
     // …e as que não tinham ORDER BY continuam sem
-    expect(a.talhoes.endsWith("IN ('SOJA 26/27') AND up.QT_AREA_PROD > 0.1")).toBe(true);
-    expect(a.plantio.endsWith("WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN ('SOJA 26/27')")).toBe(true);
-    expect(a.colheita.endsWith("o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN ('SOJA 26/27')")).toBe(true);
+    expect(a.talhoes.endsWith("IN ('SOJA 26/27') AND up.QT_AREA_PROD > 0.1 AND u.DE_UNI_ADM NOT IN ('BACABA')")).toBe(true);
+    expect(a.plantio.endsWith("WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN ('SOJA 26/27') AND u.DE_UNI_ADM NOT IN ('BACABA')")).toBe(true);
+    expect(a.colheita.endsWith("o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN ('SOJA 26/27') AND u.DE_UNI_ADM NOT IN ('BACABA')")).toBe(true);
     expect(montarSqlHistorico(['SOJA 25/26']).endsWith('GROUP BY u.DE_UNI_ADM, ps.DE_PER_SAFRA, CONVERT(varchar(10), a.DT_OPERACAO, 120)')).toBe(true);
   });
 

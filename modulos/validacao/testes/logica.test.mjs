@@ -404,6 +404,11 @@ test('início da safra, unidade da fazenda e título', () => {
   assert.equal(L.inicioSafra('2026-07-31'), '2025-08-01');
   assert.equal(L.unidadeDaFazenda('Fazenda Três Flechas', ['DOURADO', 'TRES FLECHAS']), 'TRES FLECHAS');
   assert.equal(L.unidadeDaFazenda('Outra', ['DOURADO']), null);
+  // as unidades de pecuária: "Pecuária Dourado" no COA = "PECUARIA LOCKS - DOURADO" no PIMS, sem confundir com a DOURADO
+  const us = ['DOURADO', 'PECUARIA LOCKS - DOURADO', 'PECUARIA LOCKS - GLOBO'];
+  assert.equal(L.unidadeDaFazenda('Pecuária Dourado', us), 'PECUARIA LOCKS - DOURADO');
+  assert.equal(L.unidadeDaFazenda('Pecuaria Globo', us), 'PECUARIA LOCKS - GLOBO');
+  assert.equal(L.unidadeDaFazenda('Fazenda Dourado', us), 'DOURADO');
   assert.equal(L.titulo('TRES FLECHAS'), 'Tres Flechas');
   assert.equal(L.titulo('SM3'), 'SM3');
 });

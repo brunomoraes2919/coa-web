@@ -643,11 +643,16 @@
     };
   }
 
-  /** Unidade do PIMS de uma fazenda do COA WEB pelo nome ("Fazenda Três Flechas" → "TRES FLECHAS"); sem igual → null. */
+  /**
+   * Unidade do PIMS de uma fazenda do COA WEB pelo nome ("Fazenda Três Flechas" → "TRES FLECHAS"; "Pecuária Dourado" →
+   * "PECUARIA LOCKS - DOURADO": o "LOCKS" e os traços do nome da unidade não contam); sem igual → null.
+   */
   function unidadeDaFazenda(nomeFazenda, unidades) {
+    const limpo = (t) => semAcento(t).replace(/\bLOCKS\b/g, ' ').replace(/[-–]/g, ' ').replace(/\s+/g, ' ').trim();
     const alvo = semAcento(nomeFazenda).replace(/^(FAZENDA|FAZ\.?)\s+/, '');
     if (!alvo) return null;
-    return (unidades || []).find(function (u) { return semAcento(u) === alvo; }) || null;
+    return (unidades || []).find(function (u) { return semAcento(u) === alvo; }) ||
+      (unidades || []).find(function (u) { return limpo(u) === limpo(alvo); }) || null;
   }
 
   /** "TRES FLECHAS" → "Tres Flechas"; siglas curtas com número ficam como estão ("SM3"). */

@@ -163,7 +163,7 @@ LEFT JOIN PIMSMCPRD.dbo.VARIEDADE v ON v.ID_VARIEDADE = up.ID_VARIEDADE
 LEFT JOIN (SELECT ID_UPNIVEL3, ID_PERIODOSAFRA, SUM(QT_AREA) AS area_plantada, MIN(DT_OPERACAO) AS primeira, MAX(DT_OPERACAO) AS ultima
            FROM PIMSMCPRD.dbo.APPLANTIO GROUP BY ID_UPNIVEL3, ID_PERIODOSAFRA) a
   ON a.ID_UPNIVEL3 = up.ID_UPNIVEL3 AND a.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
-WHERE ps.DE_PER_SAFRA = ${safra}${fimDaConsulta(pular, tamanho, 'unidade, codigo', 'unidade, codigo, up.ID_UPNIVEL3, up.ID_PERIODOSAFRA')}`;
+WHERE ps.DE_PER_SAFRA = ${safra}${foraDoCoa('u.DE_UNI_ADM')}${fimDaConsulta(pular, tamanho, 'unidade, codigo', 'unidade, codigo, up.ID_UPNIVEL3, up.ID_PERIODOSAFRA')}`;
 }
 
 /** plantado = plantio encerrado ou apontado >= 99% da área prevista; plantando = 0 < apontado < 99%; a_plantar = sem apontamento. */
@@ -543,10 +543,10 @@ JOIN ${PIMS}UPNIVEL2 u2 ON up.ID_UPNIVEL2 = u2.ID_UPNIVEL2
 JOIN ${PIMS}UPNIVEL1 u1 ON u2.ID_UPNIVEL1 = u1.ID_UPNIVEL1
 JOIN ${PIMS}UNIDADEADM u ON u1.ID_UNIDADEADM = u.ID_UNIDADEADM
 LEFT JOIN ${PIMS}VARIEDADE v ON v.ID_VARIEDADE = up.ID_VARIEDADE
-WHERE ps.DE_PER_SAFRA IN (${em}) AND up.QT_AREA_PROD > 0.1${fim('up.ID_UPNIVEL3, up.ID_PERIODOSAFRA')}`,
+WHERE ps.DE_PER_SAFRA IN (${em}) AND up.QT_AREA_PROD > 0.1${foraDoCoa('u.DE_UNI_ADM')}${fim('up.ID_UPNIVEL3, up.ID_PERIODOSAFRA')}`,
     plantio: `SELECT u.DE_UNI_ADM AS unidade, ps.DE_PER_SAFRA AS safra, CONVERT(varchar(30), up.ID_UPNIVEL3) AS id,
   up.CD_UPNIVEL3 AS codigo, CONVERT(varchar(10), a.DT_OPERACAO, 120) AS data, a.QT_AREA AS area,
-  e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS cd_operacao, a.FG_REPLANTIO AS replantio
+  e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS cd_operacao, a.FG_REPLANTIO AS replantio, va.DE_VARIEDADE AS variedade
 FROM ${PIMS}APPLANTIO a
 JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO AND os.ID_UNIDADEADM = a.ID_UNIDADEADM
 JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = a.ID_UPNIVEL3
@@ -554,7 +554,8 @@ JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 LEFT JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
 LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
-WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN (${em})${fim('a.ID_APPLANTIO, a.ID_UNIDADEADM')}`,
+LEFT JOIN ${PIMS}VARIEDADE va ON va.ID_VARIEDADE = a.ID_VARIEDADE
+WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN (${em})${foraDoCoa('u.DE_UNI_ADM')}${fim('a.ID_APPLANTIO, a.ID_UNIDADEADM')}`,
     colheita: `SELECT u.DE_UNI_ADM AS unidade, ps.DE_PER_SAFRA AS safra, CONVERT(varchar(30), up.ID_UPNIVEL3) AS id,
   up.CD_UPNIVEL3 AS codigo, CONVERT(varchar(10), a.DT_OPERACAO, 120) AS data, a.QT_AREA_EXEC AS area,
   e.DE_EQUIPE AS equipe, o.CD_OPERACAO AS cd_operacao
@@ -565,7 +566,7 @@ JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
 LEFT JOIN ${PIMS}EQUIPE e ON e.ID_EQUIPE = os.ID_EQUIPE
-WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em})${fim('a.ID_APORDSERVICO, a.ID_UNIDADEADM, a.NO_BOLETIM, a.ID_UPNIVEL3, a.DT_OPERACAO, a.QT_AREA_EXEC, a.LAST_UPDATE')}`,
+WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em})${foraDoCoa('u.DE_UNI_ADM')}${fim('a.ID_APORDSERVICO, a.ID_UNIDADEADM, a.NO_BOLETIM, a.ID_UPNIVEL3, a.DT_OPERACAO, a.QT_AREA_EXEC, a.LAST_UPDATE')}`,
   };
 }
 
@@ -612,10 +613,15 @@ export function linhasAcompanhamento({ talhoes, plantio, colheita }, geradoEm) {
       const l = linhas.get(chave(txt(r.safra), txt(r.unidade)));
       const d = txt(r.data);
       if (!l || !d) continue;
-      l.apontamentos.push({
+      const ap = {
         op, id: txt(r.id), t: txt(r.codigo), d, a: num(r.area), eq: txt(r.equipe), e: primeiroNome(r.equipe),
         rep: op === 'PLANTIO' && (txt(r.replantio) === 'S' || Number(r.cd_operacao) === 18),
-      });
+      };
+      // variedade apontada no boletim de plantio (a que o PIMS soma por variedade): o cadastro do talhão pode estar
+      // "A DEFINIR" ou com outra variedade. Só vai quando existe, para não crescer a linha.
+      const v = op === 'PLANTIO' ? limparVariedade(r.variedade) : null;
+      if (v) ap.v = v;
+      l.apontamentos.push(ap);
     }
   };
   somar(plantio, 'PLANTIO');
@@ -676,7 +682,7 @@ JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 LEFT JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
 WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA IN (${em}) AND a.DT_OPERACAO IS NOT NULL
-  AND ISNULL(a.FG_REPLANTIO, 'N') <> 'S' AND ISNULL(o.CD_OPERACAO, 0) <> 18
+  AND ISNULL(a.FG_REPLANTIO, 'N') <> 'S' AND ISNULL(o.CD_OPERACAO, 0) <> 18${foraDoCoa('u.DE_UNI_ADM')}
 GROUP BY u.DE_UNI_ADM, ps.DE_PER_SAFRA, CONVERT(varchar(10), a.DT_OPERACAO, 120)
 UNION ALL
 SELECT u.DE_UNI_ADM, ps.DE_PER_SAFRA, 'COLHEITA', CONVERT(varchar(10), a.DT_OPERACAO, 120), SUM(a.QT_AREA_EXEC)
@@ -686,7 +692,7 @@ JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = a.ID_UPNIVEL3
 JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
 JOIN ${PIMS}OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
-WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em}) AND a.DT_OPERACAO IS NOT NULL
+WHERE os.FG_SITUACAO IN ('A','F') AND o.CD_OPERACAO IN (16, 114) AND ps.DE_PER_SAFRA IN (${em}) AND a.DT_OPERACAO IS NOT NULL${foraDoCoa('u.DE_UNI_ADM')}
 GROUP BY u.DE_UNI_ADM, ps.DE_PER_SAFRA, CONVERT(varchar(10), a.DT_OPERACAO, 120)${fimDaConsulta(pular, tamanho, '', '1, 2, 3, 4')}`;
 }
 
@@ -994,7 +1000,6 @@ const VALID_PAGINA = PAGINA_CONSULTA;
 
 /** Empresa do SAP B1 (base SBO*) em que ficam os depósitos de cada unidade do PIMS (DE_UNI_ADM). */
 export const SAP_EMPRESA_DA_UNIDADE = {
-  BACABA: 'SBOAGROPECUARIALOCKS',
   'COMPLEXO INDUSTRIAL': 'SBOAGROPECUARIALOCKS',
   DOURADO: 'SBOAGROPECUARIALOCKS',
   GLOBO: 'SBOAGROPECUARIALOCKS',
@@ -1034,8 +1039,19 @@ export function unidadesDoPedido(lista) {
 
 /** ` AND <coluna> IN ('A', 'B')` para as unidades pedidas (aspas dobradas), ou '' sem filtro (todas). */
 export function filtroUnidades(coluna, unidades) {
-  if (!Array.isArray(unidades) || !unidades.length) return '';
-  return ` AND ${coluna} IN (${unidades.map((u) => `'${String(u).replace(/'/g, "''")}'`).join(', ')})`;
+  if (!Array.isArray(unidades) || !unidades.length) return foraDoCoa(coluna);
+  return ` AND ${coluna} IN (${unidades.map((u) => `'${String(u).replace(/'/g, "''")}'`).join(', ')})${foraDoCoa(coluna)}`;
+}
+
+/**
+ * Unidades do PIMS que não fazem mais parte do grupo (a Bacaba saiu da empresa em 10/2026): nenhuma consulta ao PIMS
+ * as lê, e o SAP delas também não (SAP_EMPRESA_DA_UNIDADE). Para tirar outra, acrescente o nome (DE_UNI_ADM) aqui.
+ */
+export const UNIDADES_FORA_DO_COA = ['BACABA'];
+/** Pedaço de WHERE que tira as unidades fora do COA: " AND coluna NOT IN ('BACABA')" (vazio se a lista estiver vazia). */
+export function foraDoCoa(coluna) {
+  if (!UNIDADES_FORA_DO_COA.length) return '';
+  return ` AND ${coluna} NOT IN (${UNIDADES_FORA_DO_COA.map((u) => `'${String(u).replace(/'/g, "''")}'`).join(', ')})`;
 }
 
 /** Primeiro dia da safra atual para a validação: 1º de agosto (do ano passado, se ainda não chegou agosto). */
@@ -1174,10 +1190,48 @@ ORDER BY 1, 2`;
 }
 export const SQL_DEPOSITOS_PIMS = montarSqlDepositosPims();
 
-/** Depósitos de uma empresa do SAP (nome atual e se está inativo). */
-export const SQL_DEPOSITOS_SAP = 'SELECT "WhsCode" AS codigo, "WhsName" AS nome, "Inactive" AS inativo FROM OWHS';
+/** Depósitos de uma empresa do SAP (nome atual, se está inativo e a filial). */
+export const SQL_DEPOSITOS_SAP = 'SELECT "WhsCode" AS codigo, "WhsName" AS nome, "Inactive" AS inativo, "BPLid" AS filial FROM OWHS';
 
 const ehCodigoSap = (c) => /^[A-Za-z0-9_.-]{1,20}$/.test(String(c ?? ''));
+
+/**
+ * Depósitos do SAP que faltam no cadastro do PIMS de cada unidade desta empresa: o PIMS só tem os depósitos que
+ * a fazenda usa nos boletins (a Dourado tem 14 de 43). No SAP, cada fazenda é uma filial (OWHS.BPLid): a filial da
+ * unidade é a mais comum entre os depósitos dela que estão no PIMS, e entram todos os depósitos ATIVOS dessa filial.
+ * Empresa sem filial (SM3, Siriema: uma fazenda por empresa) entra inteira, só quando uma unidade só usa a empresa.
+ * `depositos` = linhas do PIMS ({ unidade, codigo, nome }); `sap` = Map código → { nome, inativo, filial }.
+ * Devolve as linhas novas, no mesmo formato, para juntar às do PIMS.
+ */
+export function depositosDaFilial(depositos, empresa, sap, unidadesDaEmpresa = Object.keys(SAP_EMPRESA_DA_UNIDADE).filter((u) => SAP_EMPRESA_DA_UNIDADE[u] === empresa)) {
+  const porUnidade = new Map();
+  for (const r of depositos) {
+    const u = txt(r.unidade), c = txt(r.codigo);
+    if (!u || !c || empresaDa(u) !== empresa) continue;
+    if (!porUnidade.has(u)) porUnidade.set(u, new Set());
+    porUnidade.get(u).add(c);
+  }
+  const comFilial = [...sap.values()].some((d) => d.filial !== null && d.filial !== undefined && d.filial !== '');
+  const novas = [];
+  for (const [u, codigos] of porUnidade) {
+    let filial = null;
+    if (comFilial) {
+      const vezes = new Map();
+      for (const c of codigos) {
+        const f = sap.get(c)?.filial;
+        if (f !== null && f !== undefined && f !== '') vezes.set(String(f), (vezes.get(String(f)) ?? 0) + 1);
+      }
+      filial = [...vezes.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0]?.[0] ?? null;
+      if (filial === null) continue;
+    } else if (unidadesDaEmpresa.length !== 1) continue;
+    for (const [c, d] of sap) {
+      if (codigos.has(c) || d.inativo || !ehCodigoSap(c)) continue;
+      if (comFilial && String(d.filial ?? '') !== filial) continue;
+      novas.push({ unidade: u, codigo: c, nome: d.nome ?? c });
+    }
+  }
+  return novas.sort((a, b) => comparar(a.unidade, b.unidade) || comparar(a.codigo, b.codigo));
+}
 
 /**
  * Saldo (≠ 0) de cada item nos depósitos pedidos, numa empresa do SAP, com a ORIGEM de cada item: o
@@ -1559,7 +1613,7 @@ LEFT JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = ap.ID_UPNIVEL3
 LEFT JOIN (SELECT ID_APORDSERVICO, ID_UPNIVEL3, SUM(QT_AREA) AS ha FROM ${PIMS}APORDSERVICO_LC GROUP BY ID_APORDSERVICO, ID_UPNIVEL3) lc
   ON lc.ID_APORDSERVICO = ap.ID_APORDSERVICO AND lc.ID_UPNIVEL3 = ap.ID_UPNIVEL3
 LEFT JOIN (SELECT x.ID_APORDSERVICO, x.ID_UPNIVEL3, SUM(x.ha) AS ha FROM (${SQL_APONT_VALIDACAO}) x GROUP BY x.ID_APORDSERVICO, x.ID_UPNIVEL3) tot
-  ON tot.ID_APORDSERVICO = ap.ID_APORDSERVICO AND tot.ID_UPNIVEL3 = ap.ID_UPNIVEL3${unidades && unidades.length ? `\nWHERE 1 = 1${filtroUnidades('u.DE_UNI_ADM', unidades)}` : ''}
+  ON tot.ID_APORDSERVICO = ap.ID_APORDSERVICO AND tot.ID_UPNIVEL3 = ap.ID_UPNIVEL3\nWHERE 1 = 1${filtroUnidades('u.DE_UNI_ADM', unidades)}
 ORDER BY u.DE_UNI_ADM, ap.DT_OPERACAO DESC, ap.NO_BOLETIM, ap.ID_UPNIVEL3
 ${paginaSql(pular, tamanho)}`;
 }
@@ -1805,9 +1859,11 @@ export async function sincronizarValidacao({ url, token, vinculos = [], unidades
       try {
         const mapa = new Map();
         for (const r of objetosDe(await cliente.consultar(SQL_DEPOSITOS_SAP, 'depósitos do SAP (validação)', `depósitos ${empresa}`, fonte))) {
-          if (txt(r.codigo)) mapa.set(txt(r.codigo), { nome: txt(r.nome), inativo: txt(r.inativo) === 'Y' });
+          if (txt(r.codigo)) mapa.set(txt(r.codigo), { nome: txt(r.nome), inativo: txt(r.inativo) === 'Y', filial: txt(r.filial) });
         }
         depositosSap[empresa] = mapa;
+        // os depósitos da fazenda que existem no SAP e não estão no cadastro do PIMS (mesma filial)
+        depositos.push(...depositosDaFilial(depositos, empresa, mapa));
         // saldo de todos os depósitos das unidades desta empresa: se falhar, o resto do SAP segue
         const depsDaEmpresa = depositos.filter((r) => empresaDa(r.unidade) === empresa && ehCodigoSap(r.codigo));
         if (depsDaEmpresa.length) {
@@ -2343,7 +2399,7 @@ JOIN ${PIMS}PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
 JOIN ${PIMS}SAFRA sf ON sf.ID_SAFRA = ps.ID_SAFRA
 JOIN ${PIMS}OCUPACAO oc ON oc.ID_OCUPACAO = ps.ID_OCUPACAO
 WHERE sf.DE_SAFRA IN (${listaSql(safras)}) AND up.QT_AREA_PROD > 1
-  AND oc.DE_OCUPACAO IN ('ALGODAO', 'SOJA', 'MILHO') AND up.CD_UPNIVEL3 <> '9999'
+  AND oc.DE_OCUPACAO IN ('ALGODAO', 'SOJA', 'MILHO') AND up.CD_UPNIVEL3 <> '9999'${foraDoCoa('u.DE_UNI_ADM')}
 ORDER BY u.DE_UNI_ADM, sf.DE_SAFRA, ps.DE_PER_SAFRA, up.CD_UPNIVEL3, up.ID_UPNIVEL3
 OFFSET ${Math.max(0, Math.floor(pular))} ROWS FETCH NEXT ${Math.max(1, Math.floor(tamanho))} ROWS ONLY`;
 }
