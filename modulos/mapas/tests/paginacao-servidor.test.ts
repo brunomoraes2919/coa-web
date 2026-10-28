@@ -186,7 +186,7 @@ describe('paginação: o SQL de cada consulta', () => {
     expect(montarSqlBoletinsFalha('2026-08-01').endsWith("e.FG_STATUS <> '12' AND COALESCE(ui.DE_UNI_ADM, up.DE_UNI_ADM, ut.DE_UNI_ADM, uc.DE_UNI_ADM, ul.DE_UNI_ADM) NOT IN ('BACABA')\nORDER BY 1, 3, 5")).toBe(true);
     expect(montarSqlBoletinsPendentes('2026-08-01').endsWith("a.FG_INTEGRAR = 'S' AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, 4, 3")).toBe(true);
     expect(montarSqlNecessidadeValidacao('2026-08-01').endsWith("os.DT_ABERTURA >= '2026-08-01' AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, 2, 7")).toBe(true);
-    expect(montarSqlDoseValidacao('2026-09-26').endsWith("> 0.1 AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8")).toBe(true);
+    expect(montarSqlDoseValidacao('2026-09-26').endsWith(">= 0.05 AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8")).toBe(true);
     expect(montarSqlColetorValidacao('2026-08-01').endsWith("WHERE t.DT_OPERACAO >= '2026-08-01' AND u.DE_UNI_ADM NOT IN ('BACABA')\nORDER BY 1, 4 DESC, 3")).toBe(true);
     // …e as que não tinham ORDER BY continuam sem
     expect(a.talhoes.endsWith("IN ('SOJA 26/27') AND up.QT_AREA_PROD > 0.1 AND u.DE_UNI_ADM NOT IN ('BACABA')")).toBe(true);

@@ -451,7 +451,7 @@
       cartao('abertas', p.prontas, 'Ordens prontas para fechar', 'Toda a área planejada já foi apontada: é só encerrar no PIMS.', 'ok') +
       cartao('fechadas', p.fechadas, 'Fechadas com diferença', 'Encerradas faltando área ou com área a mais, no período.', 'atencao') +
       cartao('estoque', p.emFalta, 'Produtos em falta para as ordens', 'O que as ordens abertas ainda vão consumir não cabe no saldo do depósito do coordenador.', 'ruim') +
-      cartao('doses', p.doses, 'Doses fora do programado sem justificativa', 'Aplicações dos últimos 10 dias com a dose real mais de 10% diferente da receita e sem a Observação preenchida no boletim.', 'atencao') +
+      cartao('doses', p.doses, 'Doses fora do programado sem justificativa', 'Aplicações dos últimos 10 dias com a dose real 5% ou mais diferente da receita e sem justificativa no PIMS.', 'atencao') +
       cartao('coletor', p.coletor, 'Boletins em validação com problema', 'Estão na tela de validação do PIMS com erro registrado ou previsto para a importação.', 'atencao');
   }
 
@@ -508,8 +508,8 @@
   function desenharDoses() {
     const lista = L.dosesFora(linhas, filtro());
     const semJust = lista.filter((d) => !d.justificada).length;
-    $('explica-doses').innerHTML = 'Aplicações dos últimos 10 dias (dentro do período escolhido) em que a <b>dose real</b> lançada no boletim ficou mais de 10% diferente da <b>dose programada</b> na ordem. ' +
-      'Quando a variação aconteceu de verdade, o coordenador justifica no campo <b>Observação</b> do boletim no PIMS: essas ficam em verde. As demais costumam ser área ou quantidade digitada errada.' +
+    $('explica-doses').innerHTML = 'Aplicações dos últimos 10 dias (dentro do período escolhido) em que a <b>dose real</b> lançada no boletim ficou 5% ou mais diferente da <b>dose programada</b> na ordem. ' +
+      'Quando a variação aconteceu de verdade, o coordenador justifica no PIMS (indicador de variação de dose do boletim): essas ficam em verde, com quem justificou. As demais costumam ser área ou quantidade digitada errada.' +
       (lista.length ? ' <b>' + semJust + '</b> sem justificativa e <b>' + (lista.length - semJust) + '</b> justificada' + (lista.length - semJust === 1 ? '' : 's') + '.' : '');
     if (!lista.length) { $('tab-doses').innerHTML = '<p class="vazio">Nenhuma aplicação com a dose fora do programado neste período.</p>'; return; }
     $('tab-doses').innerHTML = '<table class="tabela tabela-cartoes tabela-doses"><thead><tr><th>Produto</th><th>Boletim</th><th>Ordem e coordenador</th><th>Talhão</th><th class="n">Programada</th><th class="n">Real</th><th class="n">Desvio</th><th class="n">Área</th><th class="n">Consumo</th><th>Justificativa</th></tr></thead><tbody>' +
@@ -520,7 +520,7 @@
         '<td class="n" data-rotulo="Programada">' + fmtQtd(d.pg) + '</td><td class="n" data-rotulo="Real">' + fmtQtd(d.re) + '</td>' +
         '<td class="n desvio ' + (d.desvio > 0 ? 'mais' : 'menos') + '" data-rotulo="Desvio"><b>' + (d.desvio > 0 ? '+' : '−') + Math.round(Math.abs(d.desvio) * 100) + '%</b></td>' +
         '<td class="n" data-rotulo="Área">' + fmtHa(d.ha) + ' ha</td><td class="n" data-rotulo="Consumo">' + fmtQtd(d.q) + '</td>' +
-        '<td class="confere just" data-rotulo="Justificativa">' + (d.justificada ? '<span class="bom">' + esc(d.ju) + '</span>' : '<span class="alerta-linha">sem justificativa</span>') + '</td></tr>').join('') +
+        '<td class="confere just" data-rotulo="Justificativa">' + (d.justificada ? '<span class="bom">' + esc(d.ju) + '</span>' + (d.jp ? '<small class="just-por">' + esc(L.titulo(d.jp)) + '</small>' : '') :'<span class="alerta-linha">sem justificativa</span>') + '</td></tr>').join('') +
       '</tbody></table>';
   }
 

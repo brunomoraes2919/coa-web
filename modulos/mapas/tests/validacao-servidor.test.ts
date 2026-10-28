@@ -218,8 +218,10 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
     const nec = montarSqlNecessidadeValidacao('2026-08-01');
     expect(nec).toContain("WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '2026-08-01'");
     expect(nec).toContain('co.CONSUMO_TOTAL AS planejado, ISNULL(ci.q, 0) + ISNULL(cp.q, 0) AS consumido');
-    expect(montarSqlDoseValidacao('2026-09-26')).toContain("a.DT_OPERACAO >= '2026-09-26' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG > 0.1");
-    expect(montarSqlDoseValidacao('2026-09-26')).toContain('a.DE_OBSERVACAO AS obs'); // a justificativa da variação
+    expect(montarSqlDoseValidacao('2026-09-26')).toContain("a.DT_OPERACAO >= '2026-09-26' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG >= 0.05");
+    // a justificativa da variação: a do indicador do PIMS (PRC_INDGER) e quem justificou; sem ela, a Observação do boletim
+    expect(montarSqlDoseValidacao('2026-09-26')).toContain("COALESCE(NULLIF(LTRIM(RTRIM(j.DE_JUSTIFICATIVA)), ''), a.DE_OBSERVACAO) AS obs");
+    expect(montarSqlDoseValidacao('2026-09-26')).toContain('OUTER APPLY (SELECT TOP 1 p.DE_JUSTIFICATIVA, p.CHANGED_BY_MOBIL FROM PIMSMCPRD.dbo.PRC_INDGER p');
     const col = montarSqlColetorValidacao('2026-08-01');
     expect(col.match(/t\.DT_OPERACAO >= '2026-08-01'/g)).toHaveLength(4);
     expect(col).toContain('APATIVMEC_TMP');
@@ -239,7 +241,7 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
       necessidade: [{ unidade: 'DOURADO', os: 10, equipe: 'COORD A', abertura: '2026-10-01', operacao_de: 'APLIC', item: '000040', nome: 'DUAL HERBICIDA', planejado: 259.9994, consumido: 0 }],
       dose: [
         { unidade: 'SM3', boletim: 9, dia: '2026-10-03', os: 20, equipe: 'COORD C', talhao: '007A', item: '075908', nome: 'CARTAGO', prog: 1.2, dose_real: 0.40071, ha: 156, total: 62.5102, obs: null },
-        { unidade: 'SM3', boletim: 10, dia: '2026-10-04', os: 20, equipe: 'COORD C', talhao: '008', item: '075908', nome: 'CARTAGO', prog: 1.2, dose_real: 1.5, ha: 10, total: 15, obs: '  Dose superior\n ajuste de estoque. ' },
+        { unidade: 'SM3', boletim: 10, dia: '2026-10-04', os: 20, equipe: 'COORD C', talhao: '008', item: '075908', nome: 'CARTAGO', prog: 1.2, dose_real: 1.5, ha: 10, total: 15, obs: '  Dose superior\n ajuste de estoque. ', justificado_por: 'RONALDO TESTE' },
       ],
       coletor: [
         { unidade: 'SM3', tipo: 'A', boletim: 1502, dia: '2026-09-29', os: '1762', equipe: 'COORD C', operacao_de: 'ADUBACAO', st: null, msg: null, lancado: '2026-09-29 08:34', por: 'COORD C', talhao: '028', ha: 5, os_sit: 'F', os_ab: '2026-09-24', os_enc: '2026-10-01', plan_talhao: 5, exec_talhao: null, ja_no_pims: 0 },
@@ -254,7 +256,7 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
     expect(r.DOURADO.nec).toEqual([{ os: 10, eq: 'COORD A', ab: '2026-10-01', opn: 'APLIC', c: '000040', nm: 'DUAL HERBICIDA', pl: 259.999, co: 0 }]);
     expect(r.SM3.dose).toEqual([
       { b: 9, d: '2026-10-03', os: 20, eq: 'COORD C', tl: '007A', c: '075908', nm: 'CARTAGO', pg: 1.2, re: 0.4007, ha: 156, q: 62.51 },
-      { b: 10, d: '2026-10-04', os: 20, eq: 'COORD C', tl: '008', c: '075908', nm: 'CARTAGO', pg: 1.2, re: 1.5, ha: 10, q: 15, ju: 'Dose superior ajuste de estoque.' },
+      { b: 10, d: '2026-10-04', os: 20, eq: 'COORD C', tl: '008', c: '075908', nm: 'CARTAGO', pg: 1.2, re: 1.5, ha: 10, q: 15, ju: 'Dose superior ajuste de estoque.', jp: 'RONALDO TESTE' },
     ]);
     expect(r.SM3.col).toEqual([
       { t: 'A', b: 1502, d: '2026-09-29', os: '1762', eq: 'COORD C', opn: 'ADUBACAO', st: null, m: '', la: '2026-09-29 08:34', por: 'COORD C', tl: '028', ha: 5, oss: 'F', oab: '2026-09-24', oenc: '2026-10-01', pt: 5, xt: 0 },

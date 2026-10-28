@@ -256,6 +256,7 @@ tr[aria-expanded="true"] .seta { transform: rotate(45deg); border-color: var(--v
 .tabela tr.justificada > td { background: #F4FAF6; }
 .tabela-doses tr.justificada .desvio b { color: var(--bom); }
 .tabela-doses .just { min-width: 150px; max-width: 280px; }
+.tabela-doses .just-por { display: block; margin-top: 2px; font-size: 11.5px; color: var(--texto-suave); }
 .tabela-doses .desvio.mais b { color: var(--ruim); }
 .tabela-doses .desvio.menos b { color: var(--atencao); }
 .pronta { color: var(--bom); font-weight: 600; }

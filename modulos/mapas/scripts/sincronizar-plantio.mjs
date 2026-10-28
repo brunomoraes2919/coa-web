@@ -1575,7 +1575,7 @@ export function linhasBoletins({ falhas = [], pendentes = [], logs = {}, sap = {
 /* ---- páginas novas da validação: apontamentos recentes, necessidade de produto, dose e coletor ---- */
 export const VALID_DIAS_APONT = 3; // apontamentos feitos ou lançados nos últimos N dias (hoje incluído)
 export const VALID_DIAS_DOSE = 10;
-export const VALID_DOSE_TOLERANCIA = 0.1; // dose real fora de ±10% da programada
+export const VALID_DOSE_TOLERANCIA = 0.05; // dose real a ±5% ou mais da programada (a mesma regra do relatório de variação de dose do PIMS)
 
 /** 'YYYY-MM-DD' de `dias` dias antes de `agora` (data local do servidor). */
 export function diaAnterior(agora, dias) {
@@ -1642,15 +1642,20 @@ WHERE os.FG_SITUACAO = 'A' AND os.DT_ABERTURA >= '${d}'${filtroUnidades('u.DE_UN
 }
 
 /**
- * Aplicações desde `desdeDia` em que a dose real fugiu da programada além da tolerância, com a Observação do boletim
- * (APAPLINSUMO.DE_OBSERVACAO): é nela que o coordenador justifica, no PIMS, a variação que aconteceu de verdade.
+ * Aplicações desde `desdeDia` em que a dose real fugiu da programada além da tolerância, com a justificativa do
+ * boletim: o coordenador justifica a variação no indicador do PIMS (PRC_INDGER.DE_JUSTIFICATIVA, TP_BOLETIM 'I' =
+ * boletim de insumo, uma por boletim; a mesma do relatório de variação de dose do PIMS) e quem justificou; sem ela, a
+ * Observação do boletim (APAPLINSUMO.DE_OBSERVACAO, quase sempre vazia).
  * Com `pular`, paginada: depois da ordem de sempre vem a chave do item do boletim (APAPLINS_INSLC), que não empata.
  */
 export function montarSqlDoseValidacao(desdeDia, pular = null, tamanho = VALID_PAGINA, unidades = null) {
   const d = String(desdeDia).replace(/[^0-9-]/g, '');
   return `SELECT u.DE_UNI_ADM AS unidade, a.NO_BOLETIM AS boletim, CONVERT(varchar(10), a.DT_OPERACAO, 23) AS dia, os.NO_BOLETIM AS os, COALESCE(eo.DE_EQUIPE, ea.DE_EQUIPE) AS equipe,
-  up.CD_UPNIVEL3 AS talhao, i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, l.QT_DOSE_PROG AS prog, l.QT_DOSE_REAL AS dose_real, l.QT_AREA_EXEC AS ha, l.QT_CONS_TOTAL AS total, a.DE_OBSERVACAO AS obs
+  up.CD_UPNIVEL3 AS talhao, i.CD_INT_ERP AS item, i.DE_INSUMO AS nome, l.QT_DOSE_PROG AS prog, l.QT_DOSE_REAL AS dose_real, l.QT_AREA_EXEC AS ha, l.QT_CONS_TOTAL AS total,
+  COALESCE(NULLIF(LTRIM(RTRIM(j.DE_JUSTIFICATIVA)), ''), a.DE_OBSERVACAO) AS obs, j.CHANGED_BY_MOBIL AS justificado_por
 FROM ${PIMS}APAPLINSUMO a
+OUTER APPLY (SELECT TOP 1 p.DE_JUSTIFICATIVA, p.CHANGED_BY_MOBIL FROM ${PIMS}PRC_INDGER p
+  WHERE p.ID_BOLETIM = a.ID_APAPLINSUMO AND p.TP_BOLETIM = 'I' ORDER BY p.LAST_UPDATE DESC) j
 JOIN ${PIMS}APAPLINS_INSLC l ON l.ID_APAPLINSUMO = a.ID_APAPLINSUMO
 JOIN ${PIMS}UNIDADEADM u ON u.ID_UNIDADEADM = a.ID_UNIDADEADM
 LEFT JOIN ${PIMS}INSUMO i ON i.ID_INSUMO = l.ID_INSUMO
@@ -1658,7 +1663,7 @@ LEFT JOIN ${PIMS}UPNIVEL3 up ON up.ID_UPNIVEL3 = l.ID_UPNIVEL3
 LEFT JOIN ${PIMS}APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO
 LEFT JOIN ${PIMS}EQUIPE eo ON eo.ID_EQUIPE = os.ID_EQUIPE
 LEFT JOIN ${PIMS}EQUIPE ea ON ea.ID_EQUIPE = a.ID_EQUIPE
-WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG > ${VALID_DOSE_TOLERANCIA}${filtroUnidades('u.DE_UNI_ADM', unidades)}${fimDaConsulta(pular, tamanho, '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8', '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8, l.ID_APAPLINS_INSLC')}`;
+WHERE a.DT_OPERACAO >= '${d}' AND l.QT_DOSE_PROG > 0 AND ABS(l.QT_DOSE_REAL - l.QT_DOSE_PROG) / l.QT_DOSE_PROG >= ${VALID_DOSE_TOLERANCIA}${filtroUnidades('u.DE_UNI_ADM', unidades)}${fimDaConsulta(pular, tamanho, '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8', '1, a.DT_OPERACAO DESC, a.NO_BOLETIM, 8, l.ID_APAPLINS_INSLC')}`;
 }
 
 /**
@@ -1707,7 +1712,7 @@ const numOuNulo = (v) => (v === null || v === undefined || v === '' ? null : Num
  *   ap   [{ os, s, ab, enc, eq, opn, t tipo, b boletim, d dia, tl talhão, ha, la lançado, por, it itens (insumo),
  *           pt planejado do talhão na ordem (null = fora da ordem), xt total apontado no talhão }]
  *   nec  [{ os, eq, ab, opn, c item, nm, pl planejado, co consumido }]
- *   dose [{ b, d, os, eq, tl, c, nm, pg programada, re real, ha, q total, ju justificativa (Observação do boletim) }]
+ *   dose [{ b, d, os, eq, tl, c, nm, pg programada, re real, ha, q total, ju justificativa (PRC_INDGER ou Observação do boletim), jp quem justificou }]
  *   col  [{ t, b, d, os, eq, opn, st, m mensagem do PIMS, la, por, tl talhão, ha, oss situação da ordem (null = não existe),
  *           oab/oenc abertura e encerramento da ordem, pt planejado no talhão (null = fora da ordem), xt já apontado, dup 1 = nº já usado }]
  *   sd/sdi  saldo de todos os depósitos da unidade (saldosPorUnidade), só da Validação PIMS: o Controle Técnico lê
@@ -1741,7 +1746,11 @@ export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], c
     if (!x) continue;
     const linhaDose = { b: numOuNulo(r.boletim), d: txt(r.dia), os: numOuNulo(r.os), eq: txt(r.equipe), tl: txt(r.talhao), c: txt(r.item), nm: txt(r.nome) ?? '', pg: arred(r.prog, 4), re: arred(r.dose_real, 4), ha: arred(r.ha), q: arred(r.total, 3) };
     const justificativa = txt(r.obs);
-    if (justificativa) linhaDose.ju = justificativa.replace(/\s+/g, ' ').slice(0, 300);
+    if (justificativa) {
+      linhaDose.ju = justificativa.replace(/\s+/g, ' ').slice(0, 300);
+      const por = txt(r.justificado_por);
+      if (por) linhaDose.jp = por.slice(0, 80);
+    }
     x.dose.push(linhaDose);
   }
   for (const r of coletor) {
