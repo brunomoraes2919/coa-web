@@ -310,9 +310,9 @@
 
   /* ------------------------------ mapa: dica ao passar o mouse ------------------------------ */
   /** De onde vem a chuva do pedaço de um talhão dividido ('' = é a do próprio talhão). Já vem escapado. */
-  function textoChuvaDe(l) {
+  function textoChuvaDe(l, semEscape) {
     if (!l.chuvaDe) return '';
-    const nomes = l.chuvaDe.map(esc);
+    const nomes = semEscape ? l.chuvaDe.slice() : l.chuvaDe.map(esc);
     return nomes.length === 1 ? 'chuva do talhão ' + nomes[0] + ' (talhão dividido)'
       : 'média dos talhões ' + nomes.slice(0, -1).join(', ') + ' e ' + nomes[nomes.length - 1] + ' (talhão dividido)';
   }
@@ -650,6 +650,171 @@
         '<td class="lista-talhoes">' + (p.talhoes.length ? '<b>' + p.talhoes.length + '</b>: ' + lista(p.talhoes) : '<span class="fraco">nenhum</span>') + '</td></tr>').join('') +
       '</tbody></table>';
   }
+
+  /* ------------------------------ exportar Excel ------------------------------ */
+  /* A fazenda e o período da tela em três abas: Talhões (a tabela, sem a busca), Dia a dia (todos os dias do período,
+     com as cores do Power BI) e Pluviômetros. O ExcelJS (o mesmo da página principal) só carrega no primeiro clique. */
+  const EXCELJS_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js';
+  const EXCELJS_SRI = 'sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz';
+  let carregandoExcelJs = null;
+  function carregarExcelJs() {
+    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
+    if (!carregandoExcelJs) {
+      carregandoExcelJs = new Promise((ok, falha) => {
+        const s = document.createElement('script');
+        s.src = EXCELJS_SRC; s.integrity = EXCELJS_SRI; s.crossOrigin = 'anonymous';
+        s.onload = () => (window.ExcelJS ? ok(window.ExcelJS) : falha(new Error('o gerador de Excel não abriu')));
+        s.onerror = () => { carregandoExcelJs = null; s.remove(); falha(new Error('não foi possível carregar o gerador de Excel; confira a internet e tente de novo')); };
+        document.head.appendChild(s);
+      });
+    }
+    return carregandoExcelJs;
+  }
+  /** Dia ISO como data do Excel (meia-noite UTC: o Excel mostra o mesmo dia em qualquer fuso). */
+  const dataExcel = (iso) => (iso ? new Date(iso + 'T00:00:00Z') : null);
+  const argb = (cor) => 'FF' + String(cor).replace('#', '').toUpperCase();
+  const r1 = (v) => (v === null || v === undefined ? null : Math.round(v * 10) / 10);
+  const textoDoSelect = (id) => { const o = $(id).selectedOptions && $(id).selectedOptions[0]; return o ? o.textContent.trim() : ''; };
+
+  /** Título, linhas de contexto e cabeçalho da aba; devolve a linha do cabeçalho. */
+  function cabecalhoDaAba(ws, titulo, colunas) {
+    const faz = atual.faz, per = atual.per;
+    const gerado = faz.geradoEm ? new Date(faz.geradoEm) : null;
+    ws.addRow([titulo + ' · ' + atual.f.nome]).font = { bold: true, size: 14, color: { argb: 'FF103632' } };
+    ws.addRow(['Período: ' + L.fmtDia(per.de, true) + ' a ' + L.fmtDia(per.ate, true) + ' (' + per.dias + ' ' + plural(per.dias, 'dia', 'dias') + ') · ' + textoDoSelect('sel-periodo') +
+      ' · Limites: ' + textoDoSelect('sel-limites')]);
+    ws.addRow(['Chuva da ZEUS (stg_field_data, a base do relatório Power BI) até ' + L.fmtDia(faz.hoje, true) +
+      (gerado && !isNaN(gerado) ? ' · dados conferidos em ' + gerado.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', ' às') : '') +
+      ' · exportado do COA WEB em ' + new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', ' às')]);
+    [2, 3].forEach((n) => { ws.getRow(n).font = { size: 10, color: { argb: 'FF5B6B62' } }; });
+    ws.addRow([]);
+    const cab = ws.addRow(colunas.map((c) => c.titulo));
+    cab.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cab.alignment = { vertical: 'middle', wrapText: true };
+    cab.height = 30;
+    cab.eachCell((c) => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0C5A50' } }; });
+    colunas.forEach((c, i) => { ws.getColumn(i + 1).width = c.largura; if (c.formato) ws.getColumn(i + 1).numFmt = c.formato; });
+    ws.views = [{ state: 'frozen', xSplit: 1, ySplit: cab.number }];
+    return cab.number;
+  }
+
+  function abaTalhoes(wb) {
+    const ws = wb.addWorksheet('Talhões');
+    const faz = atual.faz;
+    const dia = (i) => dataExcel(L.somarDias(faz.inicio, i));
+    const colunas = [
+      { titulo: 'Talhão', largura: 10 }, { titulo: 'Área (ha)', largura: 10, formato: '#,##0.00' },
+      { titulo: 'Chuva no período (mm)', largura: 13, formato: '0.0' }, { titulo: 'Dias com chuva', largura: 10, formato: '0' },
+      { titulo: 'Maior chuva (mm)', largura: 11, formato: '0.0' }, { titulo: 'Dia da maior chuva', largura: 12, formato: 'dd/mm/yyyy' },
+      { titulo: 'Última chuva', largura: 12, formato: 'dd/mm/yyyy' }, { titulo: 'Chuva da última (mm)', largura: 12, formato: '0.0' },
+      { titulo: 'Dias sem chuva', largura: 10, formato: '0' }, { titulo: 'Observação', largura: 46 },
+    ];
+    const linhaCab = cabecalhoDaAba(ws, 'Chuva por talhão', colunas);
+    const linhas = L.ordenar(atual.linhas.filter((l) => !l.foraDoCiclo), estado.ordem.col, estado.ordem.desc);
+    linhas.forEach((l) => {
+      ws.addRow([
+        l.nome, l.area || null, r1(l.total), l.total === null ? null : l.diasChuva,
+        l.maior ? r1(l.maior.mm) : null, l.maior ? dia(l.maior.i) : null,
+        l.ultima ? dia(l.ultima.i) : null, l.ultima ? r1(l.ultima.mm) : null, l.diasSem,
+        l.semDado ? 'sem dado: o talhão não está na tabela de chuva por talhão da ZEUS' : textoChuvaDe(l, true),
+      ]);
+    });
+    const r = L.resumoDaFazenda(atual.linhas);
+    ws.addRow([]);
+    const media = ws.addRow(['Média da fazenda (ponderada pela área)', null, r1(r.media)]);
+    media.font = { bold: true };
+    ws.autoFilter = { from: { row: linhaCab, column: 1 }, to: { row: linhaCab + linhas.length, column: colunas.length } };
+  }
+
+  function abaDiario(wb) {
+    const ws = wb.addWorksheet('Dia a dia');
+    const per = atual.per, faz = atual.faz;
+    const colunas = [{ titulo: 'Talhão', largura: 10 }];
+    for (let d = per.i0; d <= per.i1; d++) colunas.push({ titulo: L.somarDias(faz.inicio, d), largura: 7, formato: '0.0' });
+    colunas.push({ titulo: 'Total (mm)', largura: 10, formato: '0.0' });
+    const linhaCab = cabecalhoDaAba(ws, 'Chuva por talhão, dia a dia (mm)', colunas);
+    // o cabeçalho dos dias como data de verdade (dd/mm)
+    for (let d = per.i0, c = 2; d <= per.i1; d++, c++) {
+      const cel = ws.getRow(linhaCab).getCell(c);
+      cel.value = dataExcel(L.somarDias(faz.inicio, d)); cel.numFmt = 'dd/mm';
+    }
+    L.ordenar(atual.linhas.filter((l) => !l.foraDoCiclo), 'codigo', false).forEach((l) => {
+      const valores = [l.nome];
+      let total = 0, lidos = 0;
+      for (let d = per.i0; d <= per.i1; d++) {
+        const v = l.serie ? l.serie[d] : null;
+        if (v === null || v === undefined) { valores.push(null); continue; }
+        lidos++; total += v;
+        valores.push(Math.round(v * 100) / 100);
+      }
+      valores.push(lidos ? r1(total) : null);
+      const linha = ws.addRow(valores);
+      for (let d = per.i0, c = 2; d <= per.i1; d++, c++) {
+        const v = l.serie ? l.serie[d] : null;
+        if (v === null || v === undefined || v <= 0) continue;
+        const cor = L.corDoDia(v), cel = linha.getCell(c);
+        cel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argb(cor) } };
+        cel.font = { color: { argb: argb(L.tintaSobre(cor)) } };
+      }
+      linha.getCell(valores.length).font = { bold: true };
+    });
+    ws.addRow([]);
+    ws.addRow(['Célula vazia = sem dado na tabela da ZEUS; 0 = dia sem chuva. Cores: as faixas de chuva no dia do relatório Power BI.']).font = { size: 10, color: { argb: 'FF5B6B62' } };
+  }
+
+  function abaPics(wb) {
+    const ws = wb.addWorksheet('Pluviômetros');
+    const texto = { ok: 'Em dia', atrasado: 'Atrasado', 'sem-leitura': 'Sem leitura' };
+    const colunas = [
+      { titulo: 'Pluviômetro', largura: 14 }, { titulo: 'Nome na ZEUS', largura: 22 }, { titulo: 'Chuva medida (mm)', largura: 12, formato: '0.0' },
+      { titulo: 'Dias com chuva', largura: 10, formato: '0' }, { titulo: 'Última leitura', largura: 18 }, { titulo: 'Situação', largura: 16 },
+      { titulo: 'Dias sem leitura', largura: 10, formato: '0' }, { titulo: 'Talhões ligados no cadastro da ZEUS', largura: 60 },
+    ];
+    cabecalhoDaAba(ws, 'Pluviômetros da ZEUS', colunas);
+    const pics = atual.pics.slice().sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { numeric: true }));
+    pics.forEach((p) => {
+      ws.addRow([
+        p.nome, p.nomeZeus && p.nomeZeus !== p.nome ? p.nomeZeus : null, r1(p.total), p.total === null ? null : p.diasChuva,
+        L.fmtLeitura(p.ul), texto[p.situacao] + (p.situacao === 'atrasado' ? ' ' + p.atrasoH + ' h' : ''), p.semLeitura || 0,
+        p.talhoes.slice().sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true })).join(', '),
+      ]);
+    });
+    if (!pics.length) ws.addRow(['A ZEUS não tem pluviômetros para esta fazenda.']);
+  }
+
+  let exportando = false;
+  async function exportarExcel() {
+    if (exportando) return;
+    if (!atual || !atual.faz || !atual.linhas || !atual.linhas.length) { avisar('Não há talhões na tela para exportar.'); return; }
+    exportando = true;
+    const rotulo = $('btn-excel').querySelector('span');
+    rotulo.textContent = 'Gerando…';
+    try {
+      const ExcelJS = await carregarExcelJs();
+      const wb = new ExcelJS.Workbook();
+      wb.creator = 'COA WEB';
+      abaTalhoes(wb);
+      abaDiario(wb);
+      abaPics(wb);
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const nome = 'chuva-por-talhao_' + L.semAcento(atual.f.nome).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') +
+        '_' + atual.per.de + '_a_' + atual.per.ate + '.xlsx';
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = nome;
+      document.body.appendChild(link);
+      link.click(); // o assets/uso.js conta o arquivo baixado (Aderência)
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+    } catch (e) {
+      avisar('Não foi possível gerar o Excel: ' + (e && e.message ? e.message : 'erro desconhecido') + '.');
+    } finally {
+      exportando = false;
+      rotulo.textContent = 'Exportar Excel';
+    }
+  }
+  $('btn-excel').addEventListener('click', exportarExcel);
 
   /* ------------------------------ telas e filtros ------------------------------ */
   function mostrarVista(v) {
