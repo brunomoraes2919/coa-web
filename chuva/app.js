@@ -35,6 +35,8 @@
     fazenda: null, periodo: PARAMS.get('periodo') || '7',
     de: PARAMS.get('de'), ate: PARAMS.get('ate'), limites: ['zeus', 'base'].indexOf(PARAMS.get('limites')) >= 0 ? PARAMS.get('limites') : 'auto', modo: PARAMS.get('modo') === 'seca' ? 'seca' : 'chuva', pics: true, sel: null,
     ordem: { col: 'codigo', desc: false }, busca: '',
+    // tabela "Por dia": uma linha por talhão em cada dia do período (desmarcado: o acumulado)
+    porDia: PARAMS.get('pordia') === '1', ordemDia: { col: 'codigo', desc: false },
   };
   let fonte = null;
   let fazendas = [];   // [{ id, nome, unidade, coaId }]
@@ -458,6 +460,7 @@
     ['ultima', 'Última chuva', ''], ['diasSem', 'Dias sem chuva', 'n'],
   ];
   function desenharTabela() {
+    if (estado.porDia) { desenharTabelaPorDia(); return; }
     const busca = L.semAcento(estado.busca);
     // com um ciclo escolhido, a tabela traz só os talhões dele
     const doPeriodo = atual.linhas.filter((l) => !l.foraDoCiclo);
@@ -486,8 +489,73 @@
     }).join('');
     $('tab-talhoes').innerHTML = '<table class="tabela"><thead><tr>' + cab + '</tr></thead><tbody>' + corpo + '</tbody></table>';
   }
+  /* ---- tabela "Por dia": Talhão · Data · Chuva, todos os dias do período ---- */
+  const COLUNAS_DIA = [['codigo', 'Talhão', ''], ['data', 'Data', ''], ['mm', 'Chuva no dia (mm)', 'n']];
+  const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+  /** Uma linha por talhão e dia do período, na ordem pedida; talhão sem dado na ZEUS vira uma linha só. */
+  function linhasPorDia(talhoes, ordem) {
+    const per = atual.per, saida = [];
+    // posição de cada talhão na ordem do código: desempate de todas as ordens
+    const pos = new Map(L.ordenar(talhoes, 'codigo', false).map((l, k) => [l, k]));
+    talhoes.forEach((l) => {
+      if (!l.serie) { saida.push({ l: l, d: null, mm: null }); return; }
+      for (let d = per.i0; d <= per.i1; d++) {
+        const v = l.serie[d];
+        saida.push({ l: l, d: d, mm: v === null || v === undefined ? null : v });
+      }
+    });
+    const chave = { data: (x) => x.d, mm: (x) => x.mm }[ordem.col] || ((x) => pos.get(x.l));
+    return saida.sort((a, b) => {
+      const x = chave(a), y = chave(b);
+      const semX = x === null, semY = y === null;
+      if (semX !== semY) return semX ? 1 : -1; // sem dado sempre no fim
+      const c = semX ? 0 : (ordem.desc ? y - x : x - y);
+      return c || pos.get(a.l) - pos.get(b.l) || (a.d === null || b.d === null ? 0 : a.d - b.d);
+    });
+  }
+  function desenharTabelaPorDia() {
+    const busca = L.semAcento(estado.busca);
+    const doPeriodo = atual.linhas.filter((l) => !l.foraDoCiclo);
+    const filtradas = doPeriodo.filter((l) => !busca || L.semAcento(l.nome).indexOf(busca) >= 0);
+    const linhas = linhasPorDia(filtradas, estado.ordemDia);
+    const semDado = doPeriodo.filter((l) => l.semDado).length;
+    const fora = atual.linhas.length - doPeriodo.length;
+    $('tabela-conta').textContent = (busca ? filtradas.length + ' de ' : '') + doPeriodo.length + ' ' + plural(doPeriodo.length, 'talhão', 'talhões') +
+      ' × ' + atual.per.dias + ' ' + plural(atual.per.dias, 'dia', 'dias') + (fora ? ' · ' + fora + ' fora do ciclo' : '') + (semDado ? ' · ' + semDado + ' sem dado na ZEUS' : '');
+    if (!linhas.length) { $('tab-talhoes').innerHTML = '<p class="vazio">Nenhum talhão com esse nome.</p>'; return; }
+    const maior = Math.max.apply(null, [1].concat(linhas.map((x) => x.mm || 0)));
+    const ordem = estado.ordemDia;
+    const cab = COLUNAS_DIA.map((c) => {
+      const ord = ordem.col === c[0];
+      return '<th class="' + c[2] + '"' + (ord ? ' aria-sort="' + (ordem.desc ? 'descending' : 'ascending') + '"' : '') + '>' +
+        '<button type="button" data-col="' + c[0] + '">' + c[1] + '<span class="seta">' + (ord && ordem.desc ? '▼' : '▲') + '</span></button></th>';
+    }).join('');
+    const corpo = linhas.map((x) => {
+      const i = atual.linhas.indexOf(x.l);
+      const iso = x.d === null ? null : L.somarDias(atual.faz.inicio, x.d);
+      return '<tr data-i="' + i + '"' + (i === estado.sel ? ' class="sel"' : '') + '>' +
+        '<td><span class="cod">' + esc(x.l.nome) + '</span></td>' +
+        '<td class="junto">' + (iso ? L.fmtDia(iso, true) + ' <span class="peq">' + SEMANA[new Date(iso + 'T12:00:00Z').getUTCDay()] + '</span>' : '<span class="fraco">período todo</span>') + '</td>' +
+        '<td class="n">' + (x.mm === null ? '<span class="fraco">sem dado</span>'
+          : '<div class="chuva-cel"><span class="barra-mm"><i style="width:' + Math.round((x.mm / maior) * 100) + '%"></i></span><b>' + L.fmtMm(x.mm) + '</b></div>') + '</td></tr>';
+    }).join('');
+    $('tab-talhoes').innerHTML = '<table class="tabela"><thead><tr>' + cab + '</tr></thead><tbody>' + corpo + '</tbody></table>';
+  }
+  $('chk-por-dia').checked = estado.porDia;
+  $('chk-por-dia').addEventListener('change', () => {
+    estado.porDia = $('chk-por-dia').checked;
+    if (atual && atual.linhas) { desenharTabela(); if (estado.sel !== null) selecionar(estado.sel, 'tabela'); }
+  });
+
   $('tab-talhoes').addEventListener('click', (ev) => {
     const col = ev.target.closest('button[data-col]');
+    if (col && estado.porDia) {
+      const c = col.getAttribute('data-col');
+      // a chuva começa da maior; talhão e data, em ordem
+      estado.ordemDia = { col: c, desc: estado.ordemDia.col === c ? !estado.ordemDia.desc : c === 'mm' };
+      desenharTabela();
+      return;
+    }
     if (col) {
       const c = col.getAttribute('data-col');
       // números começam do maior; o código, em ordem
@@ -518,12 +586,13 @@
     desenharDetalhe();
     document.querySelectorAll('#tab-talhoes tr.sel').forEach((tr) => tr.classList.remove('sel'));
     if (estado.sel !== null) {
-      let tr = document.querySelector('#tab-talhoes tr[data-i="' + estado.sel + '"]');
+      const doTalhao = () => document.querySelectorAll('#tab-talhoes tr[data-i="' + estado.sel + '"]');
+      let trs = doTalhao();
       // a linha pode estar escondida pela busca: a busca é limpa para ela aparecer
-      if (!tr && estado.busca) { estado.busca = ''; $('busca').value = ''; desenharTabela(); tr = document.querySelector('#tab-talhoes tr[data-i="' + estado.sel + '"]'); }
-      if (tr) {
-        tr.classList.add('sel');
-        rolarAte(tr); // o detalhe abre em cima da lista e pode esconder a linha
+      if (!trs.length && estado.busca) { estado.busca = ''; $('busca').value = ''; desenharTabela(); trs = doTalhao(); }
+      if (trs.length) {
+        trs.forEach((tr) => tr.classList.add('sel')); // na tabela "Por dia", todas as linhas do talhão
+        rolarAte(trs[0]); // o detalhe abre em cima da lista e pode esconder a linha
       }
       aproximarTalhao(estado.sel);
     } else irPara(vistaDaFazenda(), true);
@@ -726,6 +795,24 @@
     ws.autoFilter = { from: { row: linhaCab, column: 1 }, to: { row: linhaCab + linhas.length, column: colunas.length } };
   }
 
+  function abaTalhoesPorDia(wb) {
+    const ws = wb.addWorksheet('Talhões por dia');
+    const colunas = [
+      { titulo: 'Talhão', largura: 10 }, { titulo: 'Área (ha)', largura: 10, formato: '#,##0.00' },
+      { titulo: 'Data', largura: 12, formato: 'dd/mm/yyyy' }, { titulo: 'Chuva no dia (mm)', largura: 12, formato: '0.0' }, { titulo: 'Observação', largura: 46 },
+    ];
+    const linhaCab = cabecalhoDaAba(ws, 'Chuva por talhão, por dia', colunas);
+    const linhas = linhasPorDia(atual.linhas.filter((l) => !l.foraDoCiclo), estado.ordemDia);
+    linhas.forEach((x) => {
+      ws.addRow([
+        x.l.nome, x.l.area || null, x.d === null ? null : dataExcel(L.somarDias(atual.faz.inicio, x.d)),
+        x.mm === null ? null : Math.round(x.mm * 100) / 100,
+        x.l.semDado ? 'sem dado: o talhão não está na tabela de chuva por talhão da ZEUS' : (x.mm === null ? 'sem dado neste dia' : textoChuvaDe(x.l, true)),
+      ]);
+    });
+    ws.autoFilter = { from: { row: linhaCab, column: 1 }, to: { row: linhaCab + linhas.length, column: colunas.length } };
+  }
+
   function abaDiario(wb) {
     const ws = wb.addWorksheet('Dia a dia');
     const per = atual.per, faz = atual.faz;
@@ -793,13 +880,13 @@
       const ExcelJS = await carregarExcelJs();
       const wb = new ExcelJS.Workbook();
       wb.creator = 'COA WEB';
-      abaTalhoes(wb);
+      if (estado.porDia) abaTalhoesPorDia(wb); else abaTalhoes(wb);
       abaDiario(wb);
       abaPics(wb);
       const buffer = await wb.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const nome = 'chuva-por-talhao_' + L.semAcento(atual.f.nome).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') +
-        '_' + atual.per.de + '_a_' + atual.per.ate + '.xlsx';
+        (estado.porDia ? '_por-dia' : '') + '_' + atual.per.de + '_a_' + atual.per.ate + '.xlsx';
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
       link.download = nome;
