@@ -104,6 +104,17 @@ describe('converterSerieTrimble', () => {
     expect(() => converterSerieTrimble({})).toThrow(ErroGnss)
     expect(() => converterSerieTrimble({})).toThrow(expect.objectContaining({ tipo: 'indisponivel', status: 200 }))
   })
+
+  it('pula item vazio (null) ou sem horário no meio da lista em vez de derrubar o cálculo', () => {
+    const serie = converterSerieTrimble([
+      null,
+      { value: 3, timeOfEstimation: '2026-10-29T10:00:00Z', tecValue: 20, scintiValue: 40, predicted: false },
+      { value: 4, tecValue: 21, scintiValue: null, predicted: true },
+      'x',
+      { value: 5, timeOfEstimation: '2026-10-29T10:10:00Z', tecValue: 22, scintiValue: null, predicted: true },
+    ])
+    expect(serie.map((p) => p.indice)).toEqual([3, 5])
+  })
 })
 
 describe('urlOverlay', () => {

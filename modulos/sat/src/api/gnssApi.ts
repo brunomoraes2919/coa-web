@@ -104,12 +104,19 @@ async function buscarJson(caminho: string): Promise<unknown> {
   }
 }
 
-/** A lista da Trimble já em `PontoIono`; resposta fora do formato vira erro. */
+/**
+ * A lista da Trimble já em `PontoIono`; resposta fora do formato vira erro. Item vazio (`null`) ou sem
+ * `timeOfEstimation` é pulado: em 29/10/2026 a Trimble passou a mandar `null` no meio da lista, e ler o campo
+ * dele derrubava o cálculo inteiro (nenhum alerta saía).
+ */
 export function converterSerieTrimble(dados: unknown): PontoIono[] {
   if (!Array.isArray(dados)) {
     throw new ErroGnss('indisponivel', 200, 'Resposta da Trimble fora do formato esperado.')
   }
-  return (dados as ItemTrimble[]).map(converterItem).filter((p) => Number.isFinite(p.instante))
+  return (dados as unknown[])
+    .filter((item): item is ItemTrimble => item !== null && typeof item === 'object' && typeof (item as ItemTrimble).timeOfEstimation === 'string')
+    .map(converterItem)
+    .filter((p) => Number.isFinite(p.instante))
 }
 
 /** Série de `horas` horas a partir de `inicio`, no ponto (lat, lon) em graus. */

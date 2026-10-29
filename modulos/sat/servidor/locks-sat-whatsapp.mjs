@@ -747,10 +747,14 @@ function converterItem(item) {
 		previsto: Boolean(item.predicted)
 	};
 }
-/** A lista da Trimble já em `PontoIono`; resposta fora do formato vira erro. */
+/**
+* A lista da Trimble já em `PontoIono`; resposta fora do formato vira erro. Item vazio (`null`) ou sem
+* `timeOfEstimation` é pulado: em 29/10/2026 a Trimble passou a mandar `null` no meio da lista, e ler o campo
+* dele derrubava o cálculo inteiro (nenhum alerta saía).
+*/
 function converterSerieTrimble(dados) {
 	if (!Array.isArray(dados)) throw new ErroGnss("indisponivel", 200, "Resposta da Trimble fora do formato esperado.");
-	return dados.map(converterItem).filter((p) => Number.isFinite(p.instante));
+	return dados.filter((item) => item !== null && typeof item === "object" && typeof item.timeOfEstimation === "string").map(converterItem).filter((p) => Number.isFinite(p.instante));
 }
 //#endregion
 //#region src/servidor/trimble.ts
