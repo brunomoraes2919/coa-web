@@ -141,7 +141,7 @@
 .categoria-cards { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important; gap: 16px !important; }
 /* cartão de módulo: superfície verde da marca, ícone em âmbar, pé "Acessar módulo" com a seta que anda no hover */
 .categoria-card {
-  position: relative; display: flex !important; flex-direction: column; align-items: stretch; gap: 4px;
+  position: relative; display: flex; /* sem !important: o JS esconde os cartões não liberados com style.display */ flex-direction: column; align-items: stretch; gap: 4px;
   min-height: 196px !important; padding: 18px 18px 16px !important;
   background: var(--locks-verde) !important; border: 0 !important; border-radius: var(--raio-g) !important;
   color: var(--locks-sobre-verde) !important; backdrop-filter: none !important;
