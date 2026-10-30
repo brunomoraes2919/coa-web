@@ -323,6 +323,24 @@ test('estoque x necessidade: o que falta para as ordens abertas e o que está pa
   assert.deepEqual(L.necessidadePorCoordenador(linhas, vinculos, { equipe: 'COORD A', de: '2026-10-03' })[0].itens.map((i) => [i.c, i.nec]), [['I1', 50]]);
 });
 
+test('estoque x necessidade: a falta segue o estado atual da ordem (a área que falta)', () => {
+  const nec = (os, c, pl, co) => ({ os, eq: 'COORD A', ab: '2026-10-07', opn: 'PLANTIO', c, nm: c, pl, co });
+  const linhas = [{
+    unidade: 'FAZENDA X',
+    ordens: [{ os: 1, pl: 46.4, ex: 46.4, s: 'A' }, { os: 2, pl: 100, ex: 50, s: 'A' }, { os: 3, pl: 100, ex: 20, s: 'A', sa: 1 }, { os: 4, pl: 0, ex: 0, s: 'A' }],
+    extras: { nec: [
+      nec(1, 'SEM1', 6064.48, 209.2), // área toda apontada: nada a consumir, mesmo com a ordem aberta (PLANTIO DB)
+      nec(2, 'P1', 100, 50), // metade da área e metade do produto: falta a outra metade
+      nec(2, 'P2', 100, 90), // quase tudo lançado: não passa do que resta
+      nec(3, 'P3', 100, 30), // operação sem área: planejado menos lançado
+      nec(4, 'P4', 100, 30), // ordem sem área planejada: idem
+      nec(9, 'P5', 100, 30), // ordem fora do retrato: idem
+    ] },
+  }];
+  const r = L.necessidadePorCoordenador(linhas, [], {});
+  assert.deepEqual(r[0].itens.map((i) => [i.c, i.nec]).sort(), [['P1', 50], ['P2', 10], ['P3', 70], ['P4', 70], ['P5', 70]]);
+});
+
 test('dose real x programada: desvio e ordem do maior para o menor', () => {
   const linhas = [{ unidade: 'FAZENDA X', extras: { dose: [
     { b: 1, d: '2026-10-05', os: 10, eq: 'COORD A', tl: 'T01', c: 'I1', nm: 'A', pg: 1.2, re: 0.4, ha: 100, q: 40 },
@@ -388,7 +406,7 @@ test('pendências: os números de cada página e a ordem pronta para fechar', ()
       ap: [{ os: null, s: null, ab: null, enc: null, eq: 'COORD A', opn: 'X', t: 'P', b: 9, d: '2026-10-05', tl: 'T1', ha: 1, la: '2026-10-05 10:00', por: 'u', pt: null, xt: 1 }],
       dose: [{ b: 1, d: '2026-10-05', os: 1, eq: 'COORD A', tl: 'T01', c: 'I1', nm: 'A', pg: 1, re: 2, ha: 1, q: 2 }],
       col: [{ t: 'A', b: 5, d: '2026-10-01', os: '1', eq: 'COORD A', opn: 'X', st: 'I', m: 'erro', la: null, por: null, oss: 'A' }, { t: 'A', b: 6, d: '2026-10-05', os: '1', eq: 'COORD A', opn: 'X', st: null, m: '', la: null, por: null, oss: 'A' }],
-      nec: [{ os: 2, eq: 'COORD A', ab: '2026-10-05', opn: 'X', c: 'I1', nm: 'A', pl: 10, co: 0 }],
+      nec: [{ os: 9, eq: 'COORD A', ab: '2026-10-05', opn: 'X', c: 'I1', nm: 'A', pl: 10, co: 0 }], // ordem fora do retrato: vale planejado - lançado
     },
     depositos: [], estoque: { 1001: [] },
   }];

@@ -406,8 +406,23 @@
   }
 
   /**
+   * Quanto do produto a ordem ainda vai consumir, pelo estado atual dela: o planejado proporcional à área que falta,
+   * sem passar do planejado menos o já lançado. Ordem com a área toda apontada não precisa de mais nada, mesmo
+   * aberta e mesmo com sobra na receita (ex.: PLANTIO DB, com várias sementes na dose cheia sobre a mesma área, cada
+   * uma plantada só numa parte). Sem área planejada, ou em operação sem área, vale planejado − lançado.
+   */
+  function faltaConsumir(n, ordem) {
+    const planejado = Number(n.pl) || 0;
+    const pelaReceita = Math.max(0, planejado - (Number(n.co) || 0));
+    const area = ordem ? Number(ordem.pl) || 0 : 0;
+    if (!ordem || area <= 0 || ordem.sa) return pelaReceita;
+    const pelaArea = planejado * Math.max(0, area - (Number(ordem.ex) || 0)) / area;
+    return Math.min(pelaReceita, pelaArea);
+  }
+
+  /**
    * Estoque x necessidade, por coordenador: o que as ordens ABERTAS ainda vão consumir de cada produto
-   * (planejado − já consumido) contra o saldo do depósito vinculado a ele e o saldo na origem.
+   * (ver faltaConsumir) contra o saldo do depósito vinculado a ele e o saldo na origem.
    *   itens   = [{ c, nm, u, nec, saldo, falta, origem, origemNome, origemSaldo, ordens [nº] }], em falta primeiro;
    *   parados = produtos com saldo no depósito sem necessidade nas ordens abertas (candidatos a devolver).
    * Coordenador sem depósito vinculado vem com `deposito: null` (necessidade sem comparação de saldo).
@@ -419,10 +434,11 @@
     (linhas || []).forEach(function (l) {
       if (f.unidade && l.unidade !== f.unidade) return;
       const porEq = new Map();
+      const ordens = new Map((l.ordens || []).map(function (o) { return [o.os, o]; }));
       extrasDa(l, 'nec').forEach(function (n) {
         if (!n.eq || (f.equipe && n.eq !== f.equipe)) return;
         if (!noPeriodo(n.ab, f)) return;
-        const resta = Math.max(0, (Number(n.pl) || 0) - (Number(n.co) || 0));
+        const resta = faltaConsumir(n, ordens.get(n.os));
         if (!porEq.has(n.eq)) porEq.set(n.eq, new Map());
         const itens = porEq.get(n.eq);
         if (!itens.has(n.c)) itens.set(n.c, { c: n.c, nm: n.nm || '', nec: 0, ordens: [] });

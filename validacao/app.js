@@ -477,7 +477,7 @@
   /* ------------------------------ estoque x necessidade ------------------------------ */
   function desenharEstoque() {
     const grupos = L.necessidadePorCoordenador(linhas, vinculos, filtro());
-    $('explica-estoque').innerHTML = 'O que as <b>ordens abertas</b> no período ainda vão consumir de cada produto (planejado menos o que já foi lançado), contra o saldo do depósito do coordenador no SAP. ' +
+    $('explica-estoque').innerHTML = 'O que as <b>ordens abertas</b> no período ainda vão consumir de cada produto (pelo estado atual da ordem: o planejado proporcional à área que falta, sem passar do que ainda não foi lançado), contra o saldo do depósito do coordenador no SAP. ' +
       'O que falta precisa de transferência antes da aplicação; o que está parado pode voltar para a origem.';
     if (!grupos.length) { $('necessidade').innerHTML = '<p class="vazio">Nenhuma ordem aberta com produto a consumir neste período.</p>'; return; }
     $('necessidade').innerHTML = grupos.map((g) => {
