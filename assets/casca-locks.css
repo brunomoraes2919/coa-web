@@ -330,3 +330,24 @@ tbody tr:hover { background: #fbfaf8 !important; }
   .barra-lista { width: min(248px, calc(100vw - 24px)); }
   #barra-modulo .barra-lista { right: auto; left: 0; }
 }
+
+/* ------------------------------------------------------------------
+   "‹ Central de módulos" no topo do menu (como no Locks AgTech): volta à tela inicial; recolhido, só a seta
+   ------------------------------------------------------------------ */
+.rail-voltar {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; margin: 0 0 2px -2px; padding: 2px 4px; border: 0; border-radius: var(--raio-p);
+  background: none; color: var(--locks-sobre-verde-2); font-size: 12px; font-weight: 500; white-space: nowrap; cursor: pointer;
+  transition: color var(--mov-rapida) var(--mov-padrao);
+}
+.rail-voltar svg { width: 14px; height: 14px; flex: none; transition: transform var(--mov-rapida) var(--mov-padrao); }
+.rail-voltar:hover { color: #fff; }
+.rail-voltar:hover svg { transform: translateX(-2px); }
+.rail-voltar:focus-visible { outline: 2px solid var(--locks-ambar); outline-offset: 2px; }
+@media (min-width: 901px) {
+  .app.recolhida .rail-voltar { align-self: center; margin: 0; padding: 4px; }
+  .app.recolhida .rail-voltar span { display: none; }
+  .app.recolhida .rail-voltar svg { width: 18px; height: 18px; }
+}
+@media (max-width: 900px) {
+  .rail-voltar { align-self: center; margin: 0; padding: 8px 4px; color: var(--locks-sobre-verde); font-size: 13px; min-height: 36px; }
+}

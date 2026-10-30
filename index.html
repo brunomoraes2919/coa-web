@@ -708,7 +708,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   .categoria-rodape{gap:10px;}
 }
 
-/* Barra do topo no celular e no tablet: em cima, a fazenda e as ações (Trocar categoria e Sair, só os
+/* Barra do topo no celular e no tablet: em cima, a volta à central de módulos e a ação de Sair (só os
    ícones); embaixo, o menu da categoria, que rola de lado se não couber. Fica presa no topo. */
 @media (max-width:900px){
   .sidebar{
@@ -932,7 +932,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .sat-aviso-fechar{all:unset;cursor:pointer;padding:0 4px;font-size:18px;line-height:1;color:var(--texto-suave);}
 </style>
 <link rel="stylesheet" href="assets/tema-locks.css?v=202610300100">
-<link rel="stylesheet" href="assets/casca-locks.css?v=202610301200">
+<link rel="stylesheet" href="assets/casca-locks.css?v=202610301500">
 </head>
 <body>
 
@@ -1146,6 +1146,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 
   <aside class="sidebar">
     <div class="brand">
+      <button type="button" class="rail-voltar" id="btn-trocar-categoria" title="Voltar à central de módulos" aria-label="Voltar à central de módulos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg><span>Central de módulos</span></button>
       <img class="brand-logo" src="assets/logo-coa-web.png" alt="COA Web">
       <select id="sb-fazenda" class="sb-fazenda-select"></select>
     </div>
@@ -1280,7 +1281,6 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
     <div class="sidebar-foot">
       <div class="usuario-logado" id="usuario-logado"></div>
       <div class="sidebar-acoes">
-        <button class="btn-sair" id="btn-trocar-categoria" title="Trocar categoria"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Trocar categoria</button>
         <button class="btn-sair" id="btn-sair" title="Sair"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>Sair</button>
       </div>
     </div>
