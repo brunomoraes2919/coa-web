@@ -6,7 +6,7 @@
    desde o começo do rastreio.
    O período escolhido é lido de novo do banco a cada troca e a cada clique em Atualizar; perfil, unidade e busca
    só redesenham. Junto vem o período anterior (do mesmo tamanho, até 200 dias), para comparar os números do topo.
-   A unidade não tem campo no cabeçalho (a fazenda do COA WEB é a do menu lateral): escolhe-se na tabela Unidades.
+   A unidade não tem campo no cabeçalho (a fazenda do COA WEB é a da barra do rodapé): escolhe-se na tabela Unidades.
    Em localhost, com ?teste no endereço, lê dados fictícios (modulos/aderencia/dados-ficticios.json).
 ===================================================================== */
 (function () {
@@ -438,8 +438,8 @@
       th('Usaram', 'Quantos dos liberados usaram a plataforma no período, e a porcentagem (adesão da unidade).', true) +
       th('Acessos', 'Acessos dos usuários liberados na unidade (quem tem mais de uma unidade conta em cada uma).', true) +
       th('Horas de uso', 'Horas de uso dos usuários liberados na unidade.', true) +
-      th('Ações na unidade', 'Módulos, telas e relatórios abertos com esta unidade escolhida no menu lateral, de qualquer usuário' + desdeRastreio() + '.', true) +
-      th('Relatórios', 'Arquivos baixados com esta unidade escolhida no menu lateral' + desdeRastreio() + '.', true) +
+      th('Ações na unidade', 'Módulos, telas e relatórios abertos com esta unidade escolhida na barra do rodapé, de qualquer usuário' + desdeRastreio() + '.', true) +
+      th('Relatórios', 'Arquivos baixados com esta unidade escolhida na barra do rodapé' + desdeRastreio() + '.', true) +
       th('Mapas salvos', 'Mapas de chuva e de variedade salvos desta unidade.', true) +
       '</tr></thead><tbody>';
     for (const u of r.unidades) {
@@ -450,7 +450,7 @@
         num(u.horas, fmtH(u.horas)) + num(u.acoes) + num(u.relatorios) + num(u.mapas) + '</tr>';
     }
     h += '</tbody></table><p class="explica nota">Liberados: usuários com a unidade no cadastro (os administradores que veem todas não entram). Acessos e horas: dos usuários liberados (quem tem mais de uma unidade conta em cada uma). ' +
-      'Ações e relatórios: módulos, telas e arquivos com a unidade escolhida no menu lateral, de qualquer usuário' + (rd ? ', registrados desde ' + esc(fmtData(rd)) : '') + '.</p>';
+      'Ações e relatórios: módulos, telas e arquivos com a unidade escolhida na barra do rodapé, de qualquer usuário' + (rd ? ', registrados desde ' + esc(fmtData(rd)) : '') + '.</p>';
     $('tab-unidades').innerHTML = h;
   }
 

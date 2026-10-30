@@ -70,6 +70,15 @@ button, input, select { font: inherit; color: inherit; }
 .campo-select select { min-width: 170px; font-weight: 600; color: var(--verde-escuro); cursor: pointer; }
 .campo-select select:hover, .campo select:hover { border-color: #BFCBC1; }
 .topo-acoes { display: flex; align-items: center; gap: 10px; }
+/* cabeçalho numa linha só a partir de ~1580 px de tela (o menu lateral ocupa 236 px); abaixo disso, as ações descem
+   para uma 2ª linha alinhadas à direita, em vez de ficarem soltas à esquerda */
+@media (min-width: 641px) {
+  .topo-linha { gap: 12px; }
+  .topo-acoes { margin-left: auto; gap: 8px; }
+  .campo-select select { min-width: 0; }
+  #sel-safra { width: 170px; } /* cabe "Algodao 2º Safra 26/27", o nome mais longo */
+  #sel-op { width: 110px; }
+}
 .atualizado { font-size: 12px; color: var(--texto-suave); white-space: nowrap; }
 .atualizado b { color: var(--texto); font-weight: 600; }
 .botao-icone {

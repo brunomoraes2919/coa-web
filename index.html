@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>COA WEB · Centro de Operações Agrícolas</title>
 <link rel="icon" type="image/png" href="mapas/favicon.png">
-<link rel="stylesheet" href="assets/coa-loader.css?v=202610062300">
+<link rel="stylesheet" href="assets/coa-loader.css?v=202610300100">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap">
@@ -932,7 +932,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .sat-aviso-fechar{all:unset;cursor:pointer;padding:0 4px;font-size:18px;line-height:1;color:var(--texto-suave);}
 </style>
 <link rel="stylesheet" href="assets/tema-locks.css?v=202610300100">
-<link rel="stylesheet" href="assets/casca-locks.css?v=202610300100">
+<link rel="stylesheet" href="assets/casca-locks.css?v=202610301200">
 </head>
 <body>
 
@@ -1008,7 +1008,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   </header>
   <div class="categoria-conteudo">
     <div class="categoria-secao-cab"><span class="categoria-eyebrow">Módulos</span>
-      <h2 class="categoria-secao">Por onde você quer começar?<small>Cada módulo abre com a fazenda escolhida no menu lateral.</small></h2></div>
+      <h2 class="categoria-secao">Por onde você quer começar?<small>Cada módulo abre com a unidade escolhida na barra do rodapé.</small></h2></div>
     <div class="categoria-cards">
       <button class="categoria-card" id="card-algodao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.3 12.6A3.3 3.3 0 0 1 5.6 6.9 3.4 3.4 0 0 1 12 4.6a3.4 3.4 0 0 1 6.4 2.3 3.3 3.3 0 0 1-1.7 5.7"/><path d="M12 14.6c-1.5-2.2-4.6-3-8-1.6 1.1 3.3 4.2 4.7 8 3.6 3.8 1.1 6.9-.3 8-3.6-3.4-1.4-6.5-.6-8 1.6Z"/><path d="M12 16.6v4.9"/></svg>
@@ -6207,5 +6207,19 @@ sb.auth.onAuthStateChange((event)=>{
 });
 
 </script>
+<!-- barra fina do rodapé: Módulo e Unidade, como no Locks AgTech (assets/barra-rodape.js) -->
+<div class="barra-rodape" id="barra-rodape" hidden>
+  <div class="barra-grupo" id="barra-modulo" hidden>
+    <span class="barra-rotulo" id="barra-modulo-rotulo">Módulo</span>
+    <button type="button" class="barra-botao" id="barra-modulo-btn" aria-haspopup="menu" aria-expanded="false" aria-labelledby="barra-modulo-rotulo barra-modulo-nome"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span id="barra-modulo-nome"></span><svg class="barra-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="barra-lista" id="barra-modulo-lista" role="menu" aria-label="Trocar de módulo" hidden></div>
+  </div>
+  <div class="barra-grupo" id="barra-unidade" hidden>
+    <span class="barra-rotulo" id="barra-unidade-rotulo">Unidade</span>
+    <button type="button" class="barra-botao" id="barra-unidade-btn" aria-haspopup="menu" aria-expanded="false" aria-labelledby="barra-unidade-rotulo barra-unidade-nome"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span id="barra-unidade-nome"></span><svg class="barra-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="barra-lista" id="barra-unidade-lista" role="menu" aria-label="Trocar de unidade" hidden></div>
+  </div>
+</div>
+<script src="assets/barra-rodape.js?v=202610301200"></script>
 </body>
 </html>

@@ -265,3 +265,68 @@ tbody tr:hover { background: #fbfaf8 !important; }
 
 /* a página da casca entra subindo, como a troca de tela do Locks AgTech */
 #app-shell main > * { animation: plat-entrar-tela var(--mov-media) var(--mov-saida); }
+
+/* ------------------------------------------------------------------
+   Barra fina do rodapé (Módulo e Unidade), como a do Locks AgTech (assets/barra-rodape.js).
+   Vidro claro por cima do conteúdo; começa na borda direita do menu lateral. A fazenda se escolhe aqui: o seletor
+   do menu fica escondido (#sb-fazenda continua sendo a fonte da fazenda para todo o site).
+   ------------------------------------------------------------------ */
+:root { --barra-altura: 34px; }
+@media (max-width: 700px) { :root { --barra-altura: 40px; } }
+.sb-fazenda-select { display: none !important; }
+
+.barra-rodape {
+  position: fixed; left: 236px; right: 0; bottom: 0; z-index: 150; height: var(--barra-altura);
+  display: flex; align-items: center; justify-content: flex-end; gap: 18px; padding: 0 clamp(12px, 2vw, 24px);
+  background: rgba(255, 255, 255, .78); -webkit-backdrop-filter: blur(12px) saturate(180%); backdrop-filter: blur(12px) saturate(180%);
+  border-top: 1px solid var(--locks-linha);
+  transition: left var(--mov-media) var(--mov-padrao);
+}
+.barra-rodape[hidden], .barra-grupo[hidden], .barra-lista[hidden] { display: none; }
+.barra-rodape.recolhida { left: 68px; }
+.barra-rodape.na-inicial { left: 0; }
+.barra-grupo { position: relative; display: flex; align-items: center; gap: 6px; min-width: 0; }
+.barra-rotulo { font-size: 13px; color: var(--locks-tinta-2); }
+.barra-botao {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 4px 8px; border: 0; border-radius: var(--raio-p);
+  background: transparent; color: var(--locks-tinta); font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: background-color var(--mov-rapida) var(--mov-padrao);
+}
+.barra-botao span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barra-botao svg { flex: none; width: 15px; height: 15px; color: var(--locks-tinta-2); }
+.barra-botao .barra-seta { width: 13px; height: 13px; color: var(--locks-tinta-3); transition: transform var(--mov-rapida) var(--mov-padrao); }
+.barra-botao[aria-expanded="true"] .barra-seta { transform: rotate(180deg); }
+.barra-botao:hover, .barra-botao[aria-expanded="true"] { background: var(--locks-afundado); }
+/* a lista abre para cima: a barra está no pé da tela */
+.barra-lista {
+  position: absolute; right: 0; bottom: calc(100% + 8px); width: 248px; max-height: min(60vh, 420px); overflow-y: auto; padding: 4px;
+  background: #fff; border: 1px solid var(--locks-linha); border-radius: var(--raio); box-shadow: var(--sombra-alta);
+  animation: plat-surgir-subindo var(--mov-rapida) var(--mov-saida);
+}
+.barra-lista button {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--raio-p); background: none;
+  color: var(--locks-tinta); font-size: 13px; text-align: left; cursor: pointer;
+  transition: background-color var(--mov-rapida) var(--mov-padrao);
+}
+.barra-lista button svg { flex: none; width: 16px; height: 16px; color: var(--locks-verde); }
+.barra-lista button:hover, .barra-lista button:focus-visible { background: var(--locks-afundado); outline: none; }
+.barra-lista button[aria-checked="true"] { background: #e5f1ec; color: var(--locks-verde); font-weight: 600; }
+
+/* reserva a altura da barra: telas com módulo em iframe (altura da janela) e páginas que rolam */
+@media (min-width: 901px) {
+  .app[class*="modo-"] main { height: calc(100vh - var(--barra-altura)) !important; height: calc(100dvh - var(--barra-altura)) !important; }
+}
+@media (max-width: 900px) {
+  .barra-rodape, .barra-rodape.recolhida { left: 0; }
+  .app[class*="modo-"] { height: calc(100vh - var(--barra-altura)) !important; height: calc(100dvh - var(--barra-altura)) !important; }
+}
+.app:not([class*="modo-"]) main { padding-bottom: calc(60px + var(--barra-altura)); }
+.categoria-conteudo { padding-bottom: calc(28px + var(--barra-altura)) !important; }
+#sat-avisos { bottom: calc(18px + var(--barra-altura)) !important; }
+@media (max-width: 480px) {
+  .barra-rodape { gap: 8px; justify-content: space-between; }
+  .barra-rotulo { display: none; }
+  .barra-botao { max-width: 46vw; }
+  .barra-lista { width: min(248px, calc(100vw - 24px)); }
+  #barra-modulo .barra-lista { right: auto; left: 0; }
+}
