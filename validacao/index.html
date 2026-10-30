@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="../assets/coa-loader.css?v=202610062300">
-<link rel="stylesheet" href="estilo.css?v=202610281400">
+<link rel="stylesheet" href="estilo.css?v=202610291600">
 <script src="../assets/uso.js?v=202610231500"></script>
 <script src="../assets/lembrete-atualizar.js?v=202610232000"></script>
 <script src="config.js?v=202610071400"></script>
@@ -143,8 +143,12 @@
       <button class="botao-acao" id="btn-comparar" type="button" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16M7 4 4 7M7 4l3 3M17 20V4M17 20l-3-3M17 20l3-3"/></svg><span>Comparar depósitos</span>
       </button>
+      <button class="botao-acao" id="btn-relatorio-dep" type="button" aria-expanded="false" hidden title="Gerar um relatório em PDF com o saldo dos depósitos que você marcar">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg><span>Relatório PDF</span>
+      </button>
     </div>
     <section class="cartao comparar" id="comparar" hidden aria-label="Comparar depósitos"></section>
+    <section class="cartao comparar relatorio-dep" id="relatorio-dep" hidden aria-label="Relatório em PDF dos depósitos"></section>
     <div id="saldos" class="saldos"></div>
   </main>
 
@@ -157,6 +161,7 @@
 </div>
 
 <div class="coa-loader claro pequeno carregando" id="carregando" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="carregando-texto">Carregando as ordens</span><i>.</i><i>.</i><i>.</i></p></div></div>
-<script src="app.js?v=202610281400"></script>
+<script src="relatorio-depositos.js?v=202610291600"></script>
+<script src="app.js?v=202610291600"></script>
 </body>
 </html>

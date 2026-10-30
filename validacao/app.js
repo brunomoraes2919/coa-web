@@ -548,6 +548,8 @@
   /* ------------------------------ consultar depósitos ------------------------------ */
   const depAbertos = new Set();                 // depósitos abertos na lista: sobrevivem ao redesenho
   const comparacao = { aberta: false, a: '', b: '', soDiferentes: false };
+  // relatório em PDF: os depósitos marcados de cada unidade (sem marcação ainda: os que têm saldo) e as opções
+  const relatorioDep = { aberto: false, marcados: new Map(), soBusca: true, umPorPagina: false, gerando: false };
   const linhaDaFazenda = () => (estado.unidade && estado.unidade !== SEM_UNIDADE ? linhaDa(estado.unidade) : null);
   const fmtLido = (iso) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   const qtdCom = (q, u) => '<b>' + fmtQtd(q) + '</b> ' + esc(u);
@@ -599,13 +601,79 @@
       '</div>' + tabela;
   }
 
+  /** Os depósitos marcados para o relatório nesta unidade; na primeira vez, os que têm saldo (ou todos, se nenhum tem). */
+  function marcadosDoRelatorio(unidade, todos) {
+    if (!relatorioDep.marcados.has(unidade)) {
+      const comSaldo = todos.filter((d) => d.total).map((d) => d.c);
+      relatorioDep.marcados.set(unidade, new Set(comSaldo.length ? comSaldo : todos.map((d) => d.c)));
+    }
+    const s = relatorioDep.marcados.get(unidade);
+    // depósito que saiu da lista deixa de contar
+    Array.from(s).forEach((c) => { if (!todos.some((d) => d.c === c)) s.delete(c); });
+    return s;
+  }
+  function textoContaRelatorio(n) { return n ? n + (n === 1 ? ' depósito marcado' : ' depósitos marcados') : 'Nenhum depósito marcado'; }
+
+  /** Quadro "Relatório em PDF": marcar os depósitos que vão no relatório e gerar. */
+  function desenharRelatorioDep(linha, todos, busca) {
+    const painel = $('relatorio-dep');
+    if (!relatorioDep.aberto || !linha || !todos.length) { painel.hidden = true; painel.innerHTML = ''; return; }
+    const marcados = marcadosDoRelatorio(linha.unidade, todos);
+    const b = busca.trim();
+    painel.hidden = false;
+    painel.innerHTML = '<header class="cartao-cab"><div><h2>Relatório em PDF</h2><p>Marque os depósitos que vão no relatório. Cada um sai com todos os produtos e o saldo de cada um, ' +
+        'lido no SAP em ' + (linha.gerado_em ? fmtLido(linha.gerado_em) : '—') + '; saldo negativo em vermelho.</p></div>' +
+        '<button type="button" class="link" data-acao="fechar">Fechar</button></header>' +
+      '<div class="rel-atalhos"><span>Marcar:</span>' +
+        '<button type="button" class="link" data-acao="todos">todos</button>' +
+        '<button type="button" class="link" data-acao="com-saldo">só os com saldo</button>' +
+        '<button type="button" class="link" data-acao="nenhum">nenhum</button></div>' +
+      '<div class="rel-lista">' + todos.map((d) => '<label class="rel-dep' + (d.total ? '' : ' vazio') + '"><input type="checkbox" data-dep="' + esc(d.c) + '"' + (marcados.has(d.c) ? ' checked' : '') + '>' +
+        '<span class="rel-dep-nome"><b>' + esc(d.c) + '</b> ' + esc(L.titulo(d.n)) + (d.inativo ? ' <em>(inativo)</em>' : '') + '</span>' +
+        '<small>' + (d.total ? d.total + (d.total === 1 ? ' produto' : ' produtos') + (d.negativos ? ' · <span class="neg">' + d.negativos + ' negativo' + (d.negativos === 1 ? '' : 's') + '</span>' : '') : 'sem saldo') + '</small></label>').join('') + '</div>' +
+      '<div class="rel-rodape">' +
+        (b ? '<label class="chave"><input type="checkbox" data-acao="so-busca"' + (relatorioDep.soBusca ? ' checked' : '') + '><span>Só os produtos da busca “' + esc(b) + '”</span></label>' : '') +
+        '<label class="chave"><input type="checkbox" data-acao="um-por-pagina"' + (relatorioDep.umPorPagina ? ' checked' : '') + '><span>Cada depósito em uma página</span></label>' +
+        '<span class="rel-conta" id="rel-conta">' + textoContaRelatorio(marcados.size) + '</span>' +
+        '<button type="button" class="botao-acao principal" data-acao="gerar"' + (marcados.size && !relatorioDep.gerando ? '' : ' disabled') + '>' +
+          '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 17v3h16v-3"/></svg><span>' + (relatorioDep.gerando ? 'Gerando…' : 'Gerar PDF') + '</span></button>' +
+      '</div>';
+  }
+  async function gerarRelatorioDep() {
+    const linha = linhaDaFazenda();
+    if (!linha || relatorioDep.gerando || !window.RelatorioDepositos) return;
+    const busca = $('busca-saldos').value.trim();
+    const comBusca = !!busca && relatorioDep.soBusca;
+    const todos = L.saldosDosDepositos(linha, '').depositos;
+    const marcados = marcadosDoRelatorio(linha.unidade, todos);
+    // com a busca, o depósito marcado que não tem produto dela sai com o aviso "nenhum produto da busca"
+    const filtrados = new Map(L.saldosDosDepositos(linha, comBusca ? busca : '').depositos.map((d) => [d.c, d]));
+    const depositos = todos.filter((d) => marcados.has(d.c)).map((d) => {
+      const f = filtrados.get(d.c);
+      const itens = f ? f.itens : (comBusca ? [] : d.itens);
+      return { c: d.c, n: d.n, inativo: d.inativo, itens: itens, negativos: itens.filter((i) => i.q < 0).length };
+    });
+    relatorioDep.gerando = true;
+    desenharSaldos();
+    try {
+      await window.RelatorioDepositos.gerar({ fazenda: linha.unidade, lidoEm: linha.gerado_em, busca: comBusca ? busca : '', umPorPagina: relatorioDep.umPorPagina, depositos: depositos });
+    } catch (e) {
+      avisar('Não foi possível gerar o PDF: ' + (e && e.message ? e.message : 'erro desconhecido') + '.');
+    } finally {
+      relatorioDep.gerando = false;
+      desenharSaldos();
+    }
+  }
+
   function desenharSaldos() {
     const linha = linhaDaFazenda();
     const busca = $('busca-saldos').value;
     $('btn-comparar').hidden = true;
+    $('btn-relatorio-dep').hidden = true;
     if (!linha) {
       $('explica-saldos').innerHTML = 'Saldo de cada depósito da fazenda no SAP.';
       desenharComparacao(null, [], '');
+      desenharRelatorioDep(null, [], '');
       $('saldos').innerHTML = '<p class="vazio">Escolha uma fazenda para ver os depósitos dela.</p>';
       return;
     }
@@ -614,6 +682,7 @@
     const r = L.saldosDosDepositos(linha, busca);
     if (r.pendente) {
       desenharComparacao(null, [], '');
+      desenharRelatorioDep(null, [], '');
       $('saldos').innerHTML = '<p class="vazio">O saldo de todos os depósitos chega no próximo Atualizar. Clique em <b>Atualizar</b> para buscar agora.</p>';
       return;
     }
@@ -621,6 +690,9 @@
     $('btn-comparar').hidden = todos.length < 2;
     $('btn-comparar').setAttribute('aria-expanded', String(comparacao.aberta));
     desenharComparacao(linha, todos, busca);
+    $('btn-relatorio-dep').hidden = !todos.length;
+    $('btn-relatorio-dep').setAttribute('aria-expanded', String(relatorioDep.aberto));
+    desenharRelatorioDep(linha, todos, busca);
     $('saldos').innerHTML = r.depositos.length
       ? r.depositos.map((d) => cartaoDeposito(d, !!busca.trim())).join('')
       : '<p class="vazio">' + (busca.trim() ? 'Nenhum depósito desta fazenda tem produto com “' + esc(busca.trim()) + '”.' : 'Esta fazenda não tem depósito com código do SAP no PIMS.') + '</p>';
@@ -895,6 +967,36 @@
   // Consultar depósitos: a busca filtra a lista e o quadro de comparação; o "Comparar" abre e fecha o quadro
   $('busca-saldos').addEventListener('input', desenharSaldos);
   $('btn-comparar').addEventListener('click', () => { comparacao.aberta = !comparacao.aberta; desenharSaldos(); });
+  // Relatório em PDF: abre e fecha o quadro; marcar um depósito só atualiza a contagem (a lista não se redesenha)
+  $('btn-relatorio-dep').addEventListener('click', () => {
+    relatorioDep.aberto = !relatorioDep.aberto;
+    desenharSaldos();
+    if (relatorioDep.aberto) $('relatorio-dep').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  $('relatorio-dep').addEventListener('change', (e) => {
+    const linha = linhaDaFazenda();
+    if (!linha) return;
+    if (e.target.matches('input[data-dep]')) {
+      const s = marcadosDoRelatorio(linha.unidade, L.saldosDosDepositos(linha, '').depositos);
+      if (e.target.checked) s.add(e.target.dataset.dep); else s.delete(e.target.dataset.dep);
+      $('rel-conta').textContent = textoContaRelatorio(s.size);
+      const gerar = $('relatorio-dep').querySelector('[data-acao="gerar"]');
+      if (gerar) gerar.disabled = !s.size || relatorioDep.gerando;
+    } else if (e.target.matches('[data-acao="so-busca"]')) relatorioDep.soBusca = e.target.checked;
+    else if (e.target.matches('[data-acao="um-por-pagina"]')) relatorioDep.umPorPagina = e.target.checked;
+  });
+  $('relatorio-dep').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-acao]');
+    const linha = linhaDaFazenda();
+    if (!b || !linha) return;
+    const todos = L.saldosDosDepositos(linha, '').depositos;
+    if (b.dataset.acao === 'fechar') relatorioDep.aberto = false;
+    else if (b.dataset.acao === 'todos') relatorioDep.marcados.set(linha.unidade, new Set(todos.map((d) => d.c)));
+    else if (b.dataset.acao === 'com-saldo') relatorioDep.marcados.set(linha.unidade, new Set(todos.filter((d) => d.total).map((d) => d.c)));
+    else if (b.dataset.acao === 'nenhum') relatorioDep.marcados.set(linha.unidade, new Set());
+    else if (b.dataset.acao === 'gerar') { gerarRelatorioDep(); return; }
+    desenharSaldos();
+  });
   $('saldos').addEventListener('toggle', (e) => {
     const d = e.target.closest && e.target.closest('details[data-dep]');
     if (!d || $('busca-saldos').value.trim()) return; // com busca, todos abrem: não muda o que o usuário deixou aberto

@@ -334,6 +334,28 @@ section.deposito > .saldo-cab { padding-left: 42px; }
 .comparar-escolha { display: flex; align-items: flex-end; gap: 10px 12px; flex-wrap: wrap; padding: 0 18px 14px; }
 .comparar-escolha .campo-select select { min-width: 240px; }
 .comparar-escolha .chave { margin-left: 4px; height: 36px; }
+/* relatório em PDF dos depósitos: a lista para marcar e o rodapé com as opções e o botão */
+.botao-acao.principal { background: var(--verde-teal); border-color: var(--verde-teal); color: #fff; }
+.botao-acao.principal:hover { background: var(--verde-escuro); }
+.botao-acao.principal:disabled { background: var(--verde-teal); }
+.botao-acao.principal:disabled svg { animation: none; }
+.rel-atalhos { display: flex; align-items: center; gap: 4px 14px; flex-wrap: wrap; padding: 0 18px 10px; font-size: 12.5px; color: var(--texto-suave); }
+.rel-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; padding: 0 18px 14px; max-height: 340px; overflow-y: auto; }
+.rel-dep {
+  display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 1px 10px; padding: 8px 10px; cursor: pointer;
+  border: 1px solid var(--linha); border-radius: var(--raio-p); background: #fff;
+}
+.rel-dep:hover { border-color: #AAB8AE; }
+.rel-dep:has(input:checked) { border-color: #9FC7B6; background: #F3F9F5; }
+.rel-dep input { grid-row: span 2; width: 16px; height: 16px; margin: 0; accent-color: var(--verde-teal); }
+.rel-dep-nome { font-size: 13px; color: var(--texto); line-height: 1.3; }
+.rel-dep-nome b { color: var(--verde-teal); margin-right: 3px; }
+.rel-dep-nome em { font-style: normal; color: var(--texto-fraco); }
+.rel-dep small { font-size: 11.5px; color: var(--texto-suave); }
+.rel-dep small .neg { color: var(--ruim); font-weight: 600; }
+.rel-dep.vazio .rel-dep-nome { color: var(--texto-suave); }
+.rel-rodape { display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; padding: 12px 18px 14px; border-top: 1px solid var(--linha-suave); }
+.rel-conta { margin-left: auto; font-size: 12.5px; color: var(--texto-suave); }
 .botao-acao.trocar { padding: 0 10px; }
 .tabela-comparar th.n { white-space: nowrap; }
 .dif-dep { font-weight: 600; }
