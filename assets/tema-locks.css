@@ -1,0 +1,188 @@
+/* ==================================================================
+   COA WEB — tema Locks AgTech (reformulação visual de 30/10/2026)
+   Carregado DEPOIS do CSS de cada tela (casca e módulos em iframe): troca os valores das variáveis que todos já
+   usam (--verde-escuro, --fundo, --linha, --texto…) pelos do sistema de design do Locks AgTech Lab (cores do
+   "Manual de Aplicação e Uso da Marca 2026", neutros quentes, Figtree, raios contidos, sombra só onde precisa) e
+   acrescenta a mesma escala de movimento (três durações, três curvas) e as entradas suaves das telas.
+   Nada de função muda: só aparência. Para voltar ao visual anterior, basta tirar este <link>.
+   ================================================================== */
+
+:root {
+  /* --- marca (manual, pág. 11 e 13) --- */
+  --locks-verde: #00594f;        /* Pantone 3292 C — cor primária */
+  --locks-verde-claro: #007564;  /* verde Locks de pintura */
+  --locks-verde-fundo: #0e463e;  /* verde mais fundo (cartões "em breve", faixas) */
+  --locks-ambar: #db8a06;        /* Pantone 7564 C — cor de apoio */
+  --locks-trigo: #edc472;
+  --locks-salvia: #86a96f;
+
+  /* --- neutros quentes: nunca cinza neutro (é o que mantém a temperatura agrícola) --- */
+  --locks-canvas: #faf9f7;
+  --locks-superficie: #ffffff;
+  --locks-afundado: #f4f2ee;
+  --locks-linha: #e6e2db;
+  --locks-linha-forte: #d4cec4;
+  --locks-tinta: #1b201e;
+  --locks-tinta-2: #5c625d;
+  --locks-tinta-3: #8b908a;
+  --locks-sobre-verde: #eef2f0;
+  --locks-sobre-verde-2: #a8c2bc;
+
+  /* --- as variáveis que o COA WEB já usa, com os valores novos --- */
+  --verde-escuro: var(--locks-verde);
+  --verde-teal: var(--locks-verde-claro);
+  --verde-medio: #2f8a74;
+  --dourado: var(--locks-ambar);
+  --dourado-claro: #e9a43b;
+  --fundo: var(--locks-canvas);
+  --fundo-card: var(--locks-superficie);
+  --cartao: var(--locks-superficie);
+  --linha: var(--locks-linha);
+  --linha-suave: #efece7;
+  --campo: var(--locks-linha-forte);
+  --texto: var(--locks-tinta);
+  --texto-suave: var(--locks-tinta-2);
+  --texto-fraco: var(--locks-tinta-3);
+  --bom: var(--locks-verde-claro);
+  --bom-fundo: #e5f1ec;
+  --ruim: #a8321f;
+  --ruim-fundo: #fbeeeb;
+  --vermelho-abaixo: #a8321f;
+  --raio: 10px;
+  --raio-p: 6px;
+  --raio-g: 14px;
+  --sombra: 0 1px 2px rgba(27, 32, 30, .04), 0 8px 24px -12px rgba(27, 32, 30, .14);
+  --sombra-alta: 0 12px 40px -12px rgba(27, 32, 30, .22);
+  --fonte: 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  /* --- movimento: a escala inteira da plataforma (a mesma do Locks AgTech) --- */
+  --mov-rapida: 120ms;  /* hover, foco, pressão, menus */
+  --mov-media: 200ms;   /* expandir, recolher, troca de tela, modal */
+  --mov-lenta: 320ms;   /* painéis, escalonamento de cartões */
+  --mov-saida: cubic-bezier(.2, .8, .3, 1);
+  --mov-padrao: cubic-bezier(.4, 0, .2, 1);
+  --mov-entrada: cubic-bezier(.4, 0, 1, 1);
+}
+
+html, body { background: var(--fundo); }
+body {
+  font-family: var(--fonte);
+  color: var(--texto);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+button, input, select, textarea { font-family: inherit; }
+h1, h2, h3, h4 { letter-spacing: -.021em; }
+table, .num, .tabular { font-variant-numeric: tabular-nums; }
+::selection { background: rgba(0, 89, 79, .14); }
+:focus-visible { outline: 2px solid var(--locks-verde-claro); outline-offset: 2px; }
+
+/* ------------------------------------------------------------------
+   Movimento — keyframes compartilhados (mesmos nomes do Locks AgTech)
+   ------------------------------------------------------------------ */
+@keyframes plat-surgir { from { opacity: 0; } }
+@keyframes plat-surgir-subindo { from { opacity: 0; transform: translateY(6px); } }
+@keyframes plat-entrar-tela { from { opacity: 0; transform: translateY(8px); } }
+@keyframes plat-desdobrar { from { opacity: 0; transform: translateY(-4px); } }
+@keyframes plat-crescer { from { opacity: 0; transform: scale(.97); } }
+@keyframes plat-brilho { to { background-position: -200% 0; } }
+
+/* diálogos entram crescendo */
+dialog[open] { animation: plat-crescer var(--mov-media) var(--mov-saida); }
+dialog::backdrop { background: rgba(14, 36, 32, .42); backdrop-filter: blur(2px); }
+
+/* ------------------------------------------------------------------
+   Componentes comuns aos módulos (mesmos nomes de classe em vários)
+   ------------------------------------------------------------------ */
+
+/* botões de ação: borda quente, verde da marca, pressão com leve encolhida */
+.botao-acao {
+  border-color: var(--locks-linha-forte) !important;
+  border-radius: var(--raio-p);
+  color: var(--locks-verde) !important;
+  transition: background-color var(--mov-rapida) var(--mov-padrao), border-color var(--mov-rapida) var(--mov-padrao),
+    color var(--mov-rapida) var(--mov-padrao), transform var(--mov-rapida) var(--mov-padrao) !important;
+}
+.botao-acao:hover:not(:disabled) { background: var(--locks-afundado) !important; border-color: #c4bdb2 !important; }
+.botao-acao:active:not(:disabled) { transform: scale(.98); }
+.botao-acao.principal {
+  background: var(--locks-verde) !important; border-color: var(--locks-verde) !important; color: #fff !important;
+}
+.botao-acao.principal:hover:not(:disabled) { background: var(--locks-verde-claro) !important; border-color: var(--locks-verde-claro) !important; }
+
+/* campos (selects, datas, busca) */
+.campo-select select, .campo-data input, .campo-select input, .busca input, .busca-produto input,
+select.campo, input.campo {
+  border-color: var(--locks-linha-forte) !important;
+  border-radius: var(--raio-p) !important;
+  background-color: #fff;
+  transition: border-color var(--mov-rapida) var(--mov-padrao), box-shadow var(--mov-rapida) var(--mov-padrao);
+}
+.campo-select select:hover, .campo-data input:hover, .campo-select input:hover { border-color: #c4bdb2 !important; }
+.campo-select select:focus, .campo-data input:focus, .campo-select input:focus, .busca input:focus, .busca-produto input:focus {
+  border-color: var(--locks-verde-claro) !important; box-shadow: 0 0 0 3px rgba(0, 117, 100, .12); outline: none;
+}
+.campo-select > span:first-child, .campo-chave > span:first-child {
+  font-size: 11px !important; letter-spacing: .1em !important; color: var(--locks-tinta-2) !important;
+}
+
+/* cartões: hairline quente e raio 10 (sem animação própria: são redesenhados a cada filtro e piscariam) */
+.cartao {
+  border-color: var(--locks-linha) !important;
+  border-radius: var(--raio) !important;
+}
+
+/* abas: sublinhado âmbar que desliza; rótulo em tinta */
+.abas button {
+  transition: color var(--mov-rapida) var(--mov-padrao), border-color var(--mov-media) var(--mov-padrao), background-color var(--mov-rapida) var(--mov-padrao) !important;
+}
+.abas button[aria-selected="true"] { color: var(--locks-tinta) !important; border-bottom-color: var(--locks-ambar) !important; }
+.abas button:hover { color: var(--locks-verde) !important; }
+
+/* tabelas: cabeçalho em tom afundado, linhas com hover quente */
+.tabela thead th, table.tabela th {
+  background: var(--locks-afundado) !important;
+  color: var(--locks-tinta-2) !important;
+  letter-spacing: .08em;
+  border-bottom-color: var(--locks-linha) !important;
+}
+.tabela tbody tr { transition: background-color var(--mov-rapida) var(--mov-padrao); }
+.tabela tbody tr:hover > td { background-color: #fbfaf8; }
+.tabela td { border-bottom-color: #efece7 !important; }
+
+/* cada tela (vista) entra subindo um pouco, como a troca de tela do Locks AgTech */
+.vista:not([hidden]) { animation: plat-entrar-tela var(--mov-media) var(--mov-saida); }
+
+/* contadores e etiquetas em pílula */
+.conta { background: var(--locks-afundado) !important; color: var(--locks-tinta-2) !important; }
+.abas button[aria-selected="true"] .conta { background: #e5f1ec !important; color: var(--locks-verde) !important; }
+
+/* avisos */
+.aviso { border-radius: var(--raio) !important; animation: plat-surgir-subindo var(--mov-media) var(--mov-saida); }
+
+/* barras de rolagem finas e quentes */
+* { scrollbar-color: #d4cec4 transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #d4cec4; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #bdb5a9; background-clip: padding-box; border: 2px solid transparent; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* ------------------------------------------------------------------
+   Cabeçalho dos módulos (.barra/.marca): título como as páginas do Locks AgTech — tinta, mais firme, com o
+   traço âmbar antes do subtítulo; a barra fica branca com a hairline quente embaixo
+   ------------------------------------------------------------------ */
+.barra { background: var(--locks-superficie) !important; border-bottom-color: var(--locks-linha) !important; }
+.marca-titulo { color: var(--locks-tinta) !important; font-size: 22px !important; font-weight: 600 !important; letter-spacing: -.028em !important; }
+.marca-sub { color: var(--locks-tinta-2) !important; }
+.marca-sub::before {
+  content: ''; display: inline-block; width: 16px; height: 2px; margin: 0 8px 3px 0; border-radius: 2px;
+  background: var(--locks-ambar); vertical-align: middle;
+}
+html.embed .marca-sub::before, .tv .marca-sub::before { display: none; }
+/* no Operacional o título fica ao lado do logo: um pouco menor */
+.topo .marca-titulo { font-size: 17px !important; }
+.topo { background: rgba(255, 255, 255, .97) !important; border-bottom-color: var(--locks-linha) !important; }

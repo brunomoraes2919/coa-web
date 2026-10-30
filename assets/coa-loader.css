@@ -14,11 +14,11 @@
 .coa-loader{
   --tinta:#fff; --coa-dur:1.9s;
   position:fixed; inset:0; z-index:1000; display:grid; place-items:center;
-  background:#103632; color:#C9DAD3; transition:opacity .25s ease;
+  background:#00594F; color:#C9DAD3; transition:opacity .25s ease;
 }
 .coa-loader[hidden]{display:none;}
 .coa-loader.saindo{opacity:0; pointer-events:none;}
-.coa-loader.claro{--tinta:#103632; background:#EEF2EE; color:#5B6B62;}
+.coa-loader.claro{--tinta:#00594F; background:#FAF9F7; color:#5C625D;}
 .coa-loader.embutido{position:absolute;}
 .coa-loader-caixa{display:flex; flex-direction:column; align-items:center; gap:22px; width:min(56vw,340px);}
 .coa-loader.pequeno .coa-loader-caixa{width:min(44vw,200px); gap:14px;}
@@ -38,13 +38,13 @@
   background:linear-gradient(105deg, transparent 38%, rgba(255,255,255,.95) 50%, transparent 62%); background-size:300% 100%;
   animation-name:coaBrilho; animation-timing-function:linear;
 }
-.coa-loader.claro .coa-loader-brilho{background:linear-gradient(105deg, transparent 38%, rgba(240,178,74,.9) 50%, transparent 62%); background-size:300% 100%;}
+.coa-loader.claro .coa-loader-brilho{background:linear-gradient(105deg, transparent 38%, rgba(219,138,6,.9) 50%, transparent 62%); background-size:300% 100%;}
 .coa-loader-brilho-fundo{
   position:absolute; left:50%; top:58%; width:120%; height:140%; border-radius:50%; pointer-events:none;
   background:radial-gradient(closest-side, rgba(255,255,255,.10), rgba(255,255,255,0));
   animation:coaHalo var(--coa-dur) cubic-bezier(.22,.8,.3,1) infinite both;
 }
-.coa-loader.claro .coa-loader-brilho-fundo{background:radial-gradient(closest-side, rgba(16,54,50,.08), rgba(16,54,50,0));}
+.coa-loader.claro .coa-loader-brilho-fundo{background:radial-gradient(closest-side, rgba(0,89,79,.08), rgba(0,89,79,0));}
 .coa-loader-texto{margin:0; font-size:12px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; display:flex; align-items:baseline; gap:1px;}
 .coa-loader-texto i{font-style:normal; animation:coaPonto 1.2s infinite;}
 .coa-loader-texto i:nth-child(3){animation-delay:.2s;}

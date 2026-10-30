@@ -1,0 +1,267 @@
+/* ==================================================================
+   COA WEB — casca no padrão Locks AgTech (30/10/2026)
+   Entrada (login), tela inicial (central de módulos), menu lateral (rail verde), cabeçalho das páginas, cartões,
+   botões, tabelas e diálogos. Vem depois do <style> da casca e de assets/tema-locks.css: só aparência, os ids e
+   o JS são os mesmos.
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   Entrada (login): painel da marca em duotone verde + acesso em tela clara
+   ------------------------------------------------------------------ */
+.login-screen { background: var(--locks-canvas); grid-template-columns: minmax(0, 1.08fr) minmax(440px, .92fr); }
+.login-painel { background: var(--locks-verde); isolation: isolate; }
+/* a fotografia entra só como luminância sobre o verde da marca (o mesmo tratamento do Locks AgTech) */
+.login-foto {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 46% 38%;
+  filter: grayscale(1) contrast(1.12) brightness(1.04); mix-blend-mode: luminosity; opacity: .42; z-index: -2;
+  pointer-events: none;
+}
+.login-painel::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 44, 39, .78), rgba(0, 44, 39, 0) 62%);
+}
+.login-painel > .login-logo, .login-painel > .login-painel-texto, .login-painel > .login-rodape { position: relative; z-index: 1; }
+.login-contornos { z-index: 0; opacity: .7; }
+.login-contornos path { stroke: rgba(255, 255, 255, .09); }
+.login-contornos path.forte { stroke: rgba(219, 138, 6, .45); }
+.login-kicker {
+  display: inline-flex; align-items: center; gap: 12px; color: var(--locks-sobre-verde-2) !important;
+  letter-spacing: .14em !important;
+}
+.login-kicker::before { content: ''; width: 28px; height: 2px; border-radius: 2px; background: var(--locks-ambar); }
+.login-painel h1 { letter-spacing: -.032em !important; line-height: 1.06 !important; text-wrap: balance; }
+.login-painel h1 em { font-style: normal; color: var(--locks-ambar); }
+.login-painel-sub { color: var(--locks-sobre-verde-2) !important; }
+.login-rodape { color: rgba(255, 255, 255, .55) !important; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, .16); }
+
+.login-form { background: var(--locks-canvas); animation: plat-surgir-subindo var(--mov-media) var(--mov-saida); }
+.login-card { background: transparent !important; border: 0 !important; box-shadow: none !important; width: 400px; }
+.login-eyebrow {
+  margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--locks-verde-claro);
+}
+.login-card h2 { color: var(--locks-tinta) !important; font-size: 30px !important; letter-spacing: -.03em !important; margin-bottom: 8px !important; }
+.login-sub { color: var(--locks-tinta-2) !important; margin-bottom: 26px !important; }
+.login-card label { color: var(--locks-tinta-2) !important; letter-spacing: .08em !important; }
+.login-card .campo input {
+  height: 46px !important; border-color: var(--locks-linha-forte) !important; border-radius: 8px !important; background: #fff !important;
+  transition: border-color var(--mov-rapida) var(--mov-padrao), box-shadow var(--mov-rapida) var(--mov-padrao);
+}
+.login-card .campo input:hover { border-color: #c4bdb2 !important; }
+.login-card .campo input:focus { border-color: var(--locks-verde-claro) !important; box-shadow: 0 0 0 3px rgba(0, 117, 100, .14) !important; }
+.login-olho { bottom: 7px !important; }
+.login-card .btn { height: 48px !important; border-radius: 8px !important; font-size: 14.5px !important; gap: 10px !important; margin-top: 8px !important; }
+.login-seta { width: 16px !important; height: 16px !important; transition: transform var(--mov-rapida) var(--mov-padrao); }
+.login-card .btn:hover .login-seta { transform: translateX(3px); }
+.login-dica { color: var(--locks-tinta-3) !important; padding-top: 18px; border-top: 1px solid var(--locks-linha); margin-top: 26px !important; }
+@media (min-width: 1500px) { .login-card { width: 460px !important; } .login-card h2 { font-size: 36px !important; } }
+@media (max-width: 900px) {
+  /* o painel da marca vira o topo: a altura dele é a do conteúdo (sem max-content a grade o espremia) */
+  .login-screen { grid-template-columns: 1fr; grid-template-rows: max-content 1fr !important; }
+  .login-card { width: 100% !important; max-width: 440px; }
+  .login-card h2 { font-size: 26px !important; }
+}
+
+/* ------------------------------------------------------------------
+   Tela inicial: faixa verde (marca, usuário, saudação, "Você sabia?") e a central de módulos em tela clara
+   ------------------------------------------------------------------ */
+.categoria-screen {
+  /* o JS mostra a tela com display:flex: em coluna, a faixa em cima e o corpo embaixo */
+  flex-direction: column; align-items: stretch !important; justify-content: flex-start !important;
+  overflow-y: auto; overflow-x: hidden; background: var(--locks-canvas) !important; color: var(--locks-tinta); padding: 0 !important;
+  animation: plat-entrar-tela var(--mov-media) var(--mov-saida);
+}
+.categoria-screen > * { flex: none; } /* a faixa e o corpo mantêm a altura deles: quem rola é a tela */
+.categoria-topo { position: relative; overflow: hidden; background: var(--locks-verde); color: var(--locks-sobre-verde); isolation: isolate; }
+.categoria-topo-foto {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; z-index: -2;
+  filter: grayscale(1) contrast(1.1); mix-blend-mode: luminosity; opacity: .3; pointer-events: none;
+}
+.categoria-topo::after {
+  content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 44, 39, .62), rgba(0, 44, 39, 0) 72%);
+}
+/* a animação da fazenda (curvas, talhões e a cena sorteada) fica só dentro da faixa */
+.categoria-topo .categoria-fundo { position: absolute !important; inset: 0; z-index: -1; opacity: .9; }
+.categoria-largura { position: relative; z-index: 1; width: min(100% - 48px, 1400px); margin-inline: auto; padding-top: 14px; }
+.categoria-barra { height: 64px; display: flex; align-items: center; gap: 24px; border-bottom: 1px solid rgba(255, 255, 255, .14); }
+.categoria-logo { width: 98px !important; }
+.categoria-rodape { margin-left: auto; color: var(--locks-sobre-verde) !important; font-size: 13px !important; font-weight: 600; }
+.categoria-sair {
+  border-color: rgba(255, 255, 255, .22) !important; color: var(--locks-sobre-verde) !important; font-weight: 600; font-size: 12px !important;
+  transition: background-color var(--mov-rapida) var(--mov-padrao), border-color var(--mov-rapida) var(--mov-padrao);
+}
+.categoria-sair:hover { background: rgba(255, 255, 255, .1) !important; border-color: rgba(255, 255, 255, .36) !important; }
+.categoria-ajuda { transition: background-color var(--mov-rapida) var(--mov-padrao), border-color var(--mov-rapida) var(--mov-padrao); }
+
+.categoria-hero {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 32px 48px; flex-wrap: wrap;
+  padding: clamp(26px, 2.6vw, 40px) 0 clamp(40px, 3.4vw, 56px);
+}
+.categoria-hero-texto { min-width: 0; flex: 1 1 420px; }
+.categoria-eyebrow {
+  display: inline-flex; align-items: center; gap: 12px; font-size: 11px; font-weight: 600; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--locks-sobre-verde-2);
+}
+.categoria-topo .categoria-eyebrow::before { content: ''; width: 28px; height: 2px; border-radius: 2px; background: var(--locks-ambar); }
+.categoria-titulo {
+  margin: 14px 0 0 !important; color: #fff !important; font-size: clamp(32px, 3.6vw, 52px) !important;
+  font-weight: 600 !important; letter-spacing: -.032em !important; line-height: 1.06;
+}
+.categoria-titulo em { font-style: normal; color: var(--locks-ambar); }
+.categoria-titulo small {
+  margin-top: 14px !important; max-width: 560px; font-size: clamp(14px, 1.05vw, 17px) !important; line-height: 1.6;
+  letter-spacing: 0 !important; color: var(--locks-sobre-verde-2) !important;
+}
+/* "Você sabia?" vira o cartão de vidro da faixa (como o "Safra atual" do Locks AgTech) */
+.categoria-curiosidade {
+  flex: 0 1 460px; margin: 0 !important; max-width: 460px !important; padding: 16px 18px 17px 20px !important;
+  border: 1px solid rgba(255, 255, 255, .2) !important; border-radius: var(--raio) !important;
+  background: rgba(0, 44, 39, .34) !important; backdrop-filter: blur(3px);
+  animation: plat-surgir-subindo var(--mov-lenta) var(--mov-saida) both; animation-delay: 80ms;
+}
+.categoria-curiosidade-rotulo { color: var(--locks-ambar) !important; letter-spacing: .12em !important; }
+.categoria-curiosidade-rotulo span { color: var(--locks-sobre-verde-2) !important; }
+.categoria-curiosidade p { color: #fff !important; font-size: 14px !important; line-height: 1.55 !important; }
+.categoria-curiosidade button { border-color: rgba(255, 255, 255, .24) !important; color: var(--locks-sobre-verde) !important; font-weight: 600; }
+
+/* corpo: título da seção e a grade de módulos */
+.categoria-conteudo {
+  display: block !important; width: min(100% - 48px, 1400px) !important; margin: 0 auto; padding: 30px 0 28px;
+}
+.categoria-secao-cab { margin-bottom: 16px; }
+.categoria-conteudo .categoria-eyebrow { color: var(--locks-verde); }
+.categoria-secao {
+  margin: 8px 0 0 !important; color: var(--locks-tinta) !important; font-size: 26px !important; font-weight: 600 !important;
+  letter-spacing: -.025em !important;
+}
+.categoria-secao small {
+  display: block; margin: 6px 0 0 !important; font-size: 13.5px !important; font-weight: 400 !important; letter-spacing: 0;
+  color: var(--locks-tinta-2) !important;
+}
+.categoria-cards { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important; gap: 16px !important; }
+/* cartão de módulo: superfície verde da marca, ícone em âmbar, pé "Acessar módulo" com a seta que anda no hover */
+.categoria-card {
+  position: relative; display: flex !important; flex-direction: column; align-items: stretch; gap: 4px;
+  min-height: 196px !important; padding: 18px 18px 16px !important;
+  background: var(--locks-verde) !important; border: 0 !important; border-radius: var(--raio-g) !important;
+  color: var(--locks-sobre-verde) !important; backdrop-filter: none !important;
+  transition: transform var(--mov-rapida) var(--mov-padrao), box-shadow var(--mov-rapida) var(--mov-padrao), background-color var(--mov-rapida) var(--mov-padrao) !important;
+  animation: plat-surgir-subindo var(--mov-media) var(--mov-saida) both;
+}
+.categoria-card svg {
+  flex: none; align-self: flex-start; width: 42px !important; height: 42px !important; padding: 10px !important; margin-bottom: 12px;
+  border-radius: 10px !important; background: rgba(255, 255, 255, .1) !important; color: var(--locks-ambar) !important;
+}
+.categoria-card span { grid-column: 1 !important; font-size: 17px !important; font-weight: 600 !important; letter-spacing: -.015em !important; color: #fff; }
+.categoria-card small.categoria-card-desc { grid-column: 1 !important; font-size: 13px !important; line-height: 1.55 !important; color: var(--locks-sobre-verde-2) !important; }
+.categoria-card .categoria-card-nota { grid-column: 1 !important; color: var(--locks-trigo) !important; }
+.categoria-card small.categoria-card-desc { margin-bottom: 14px; }
+.categoria-card::after {
+  content: 'Acessar módulo'; margin-top: auto; padding-bottom: 0; padding-top: 12px; border-top: 1px solid rgba(255, 255, 255, .14);
+  font-size: 12px; font-weight: 500; color: var(--locks-sobre-verde-2);
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23db8a06' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") no-repeat right 2px bottom 1px / 16px;
+  transition: background-position var(--mov-rapida) var(--mov-padrao);
+}
+.categoria-card:hover { transform: translateY(-2px); box-shadow: var(--sombra-alta); background: #00655a !important; border: 0 !important; }
+.categoria-card:hover::after { background-position: right -2px bottom 1px; }
+.categoria-card:active { transform: translateY(0) scale(.99); }
+.categoria-card:focus-visible { outline: 2px solid var(--locks-ambar); outline-offset: 3px; }
+/* os cartões entram um depois do outro (30 ms de intervalo, como no Locks AgTech) */
+.categoria-card:nth-child(2) { animation-delay: 30ms; }
+.categoria-card:nth-child(3) { animation-delay: 60ms; }
+.categoria-card:nth-child(4) { animation-delay: 90ms; }
+.categoria-card:nth-child(5) { animation-delay: 120ms; }
+.categoria-card:nth-child(n+6) { animation-delay: 150ms; }
+/* o de administração (só administrador) num verde mais fundo, para se distinguir dos módulos de operação */
+.categoria-card.admin-only { background: var(--locks-verde-fundo) !important; }
+.categoria-card.admin-only:hover { background: #135148 !important; }
+.categoria-vazia { color: var(--locks-tinta-2) !important; }
+
+/* assinatura no pé da página, discreta, sobre o fundo claro (logo escurecida) */
+.categoria-assinatura {
+  position: static !important; margin-top: 34px; padding: 18px 0 6px !important; border-top: 1px solid var(--locks-linha);
+  opacity: .55 !important;
+}
+.categoria-assinatura span { color: var(--locks-tinta-2) !important; }
+.categoria-assinatura img { filter: brightness(0) saturate(100%) invert(22%) sepia(36%) saturate(1500%) hue-rotate(140deg) brightness(.85); }
+.categoria-assinatura-breve { border-color: var(--locks-linha-forte) !important; }
+@media (max-width: 760px) {
+  .categoria-largura, .categoria-conteudo { width: min(100% - 32px, 1400px) !important; }
+  .categoria-rodape span#categoria-usuario-logado { display: none; }
+  .categoria-hero { display: block; }
+  .categoria-curiosidade { margin-top: 22px !important; }
+}
+
+/* ------------------------------------------------------------------
+   Menu lateral (rail): verde da marca, item ativo em vidro claro com ícone âmbar
+   ------------------------------------------------------------------ */
+.sidebar { background: var(--locks-verde) !important; color: var(--locks-sobre-verde) !important; border-right: 0 !important; }
+.brand { border-bottom-color: rgba(255, 255, 255, .14) !important; }
+.sb-fazenda-select {
+  background-color: rgba(255, 255, 255, .08) !important; border-color: rgba(255, 255, 255, .2) !important; border-radius: 8px !important;
+  transition: background-color var(--mov-rapida) var(--mov-padrao), border-color var(--mov-rapida) var(--mov-padrao);
+}
+.sb-fazenda-select:hover { background-color: rgba(255, 255, 255, .14) !important; border-color: rgba(255, 255, 255, .34) !important; }
+.nav-eyebrow { color: var(--locks-sobre-verde-2) !important; letter-spacing: .14em !important; margin-top: 18px !important; }
+.nav-btn {
+  color: var(--locks-sobre-verde-2) !important; height: 40px; padding: 0 10px !important; border-radius: var(--raio-p) !important;
+  transition: background-color var(--mov-rapida) var(--mov-padrao), color var(--mov-rapida) var(--mov-padrao) !important;
+}
+.nav-btn svg { opacity: 1 !important; color: rgba(255, 255, 255, .55); transition: color var(--mov-rapida) var(--mov-padrao); }
+.nav-btn:hover { background: rgba(255, 255, 255, .06) !important; color: #fff !important; }
+.nav-btn:hover svg { color: rgba(255, 255, 255, .85); }
+.nav-btn.active { background: rgba(255, 255, 255, .12) !important; color: #fff !important; box-shadow: none !important; font-weight: 600; }
+.nav-btn.active svg { color: var(--locks-ambar) !important; }
+.sidebar-foot { border-top-color: rgba(255, 255, 255, .14) !important; color: var(--locks-sobre-verde-2) !important; }
+.usuario-logado { color: var(--locks-sobre-verde) !important; }
+.usuario-logado .perfil-badge { background: rgba(219, 138, 6, .2) !important; color: var(--locks-ambar) !important; }
+.btn-sair {
+  border-color: rgba(255, 255, 255, .2) !important; color: var(--locks-sobre-verde) !important; border-radius: var(--raio-p) !important;
+  font-weight: 600; transition: background-color var(--mov-rapida) var(--mov-padrao), border-color var(--mov-rapida) var(--mov-padrao);
+}
+.btn-sair:hover { background: rgba(255, 255, 255, .1) !important; border-color: rgba(255, 255, 255, .34) !important; }
+.btn-recolher { border-top-color: rgba(255, 255, 255, .14) !important; color: var(--locks-ambar) !important; }
+.btn-recolher:hover { background: rgba(255, 255, 255, .05) !important; }
+.sidebar { transition: width var(--mov-media) var(--mov-padrao), padding var(--mov-media) var(--mov-padrao) !important; }
+main { transition: margin-left var(--mov-media) var(--mov-padrao) !important; background: var(--locks-canvas); }
+
+/* ------------------------------------------------------------------
+   Cabeçalho das páginas da casca, cartões, botões, métricas, tabelas
+   ------------------------------------------------------------------ */
+.topbar { border-bottom-color: var(--locks-linha) !important; padding-bottom: 18px !important; margin-bottom: 24px !important; }
+.topbar h1 { color: var(--locks-tinta) !important; font-size: 26px !important; letter-spacing: -.03em !important; }
+.topbar p { color: var(--locks-tinta-2) !important; }
+.hoje { color: var(--locks-tinta-2) !important; }
+
+.card { border-color: var(--locks-linha) !important; border-radius: var(--raio) !important; box-shadow: none !important; }
+.section-head h2 { color: var(--locks-tinta) !important; letter-spacing: -.02em; }
+.metrica .rotulo { letter-spacing: .1em !important; color: var(--locks-tinta-2) !important; }
+.metrica .valor { color: var(--locks-tinta) !important; letter-spacing: -.03em !important; }
+.info-tooltip { background: var(--locks-verde) !important; }
+.info-tooltip-texto { background: var(--locks-tinta) !important; border-radius: var(--raio) !important; }
+
+.btn {
+  background: var(--locks-verde) !important; border-radius: var(--raio-p) !important;
+  transition: background-color var(--mov-rapida) var(--mov-padrao), transform var(--mov-rapida) var(--mov-padrao), border-color var(--mov-rapida) var(--mov-padrao);
+}
+.btn:hover { background: var(--locks-verde-claro) !important; }
+.btn:active { transform: scale(.98); }
+.btn.ouro { background: var(--locks-ambar) !important; color: #2b1b00 !important; }
+.btn.ouro:hover { background: #c77c06 !important; }
+.btn.fantasma { background: #fff !important; color: var(--locks-verde) !important; border: 1px solid var(--locks-linha-forte) !important; }
+.btn.fantasma:hover { background: var(--locks-afundado) !important; }
+
+.filtro-grupo label { letter-spacing: .1em !important; color: var(--locks-tinta-2) !important; }
+.filtro-grupo select, .filtro-grupo input[type=text] { border-color: var(--locks-linha-forte) !important; }
+thead th { background: var(--locks-afundado) !important; color: var(--locks-tinta-2) !important; letter-spacing: .08em !important; border-bottom-color: var(--locks-linha) !important; }
+tbody td { border-bottom-color: #efece7 !important; }
+tbody tr:hover { background: #fbfaf8 !important; }
+
+/* diálogos: raio 14, cabeçalho em tinta, entrada crescendo (tema-locks.css) */
+.dlg-mec { border-radius: var(--raio-g) !important; box-shadow: var(--sombra-alta), 0 2px 6px rgba(27, 32, 30, .08) !important; }
+.dlg-mec::backdrop { background: rgba(14, 36, 32, .45) !important; }
+.dlg-mec-cab { border-bottom-color: var(--locks-linha) !important; }
+.dlg-mec-cab h3 { color: var(--locks-tinta) !important; letter-spacing: -.02em; }
+
+/* a página da casca entra subindo, como a troca de tela do Locks AgTech */
+#app-shell main > * { animation: plat-entrar-tela var(--mov-media) var(--mov-saida); }

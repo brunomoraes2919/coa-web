@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="assets/coa-loader.css?v=202610062300">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
 <link rel="preconnect" href="https://pkaxbitsqxjxjlwnhjhd.supabase.co">
 <!-- planilhas, imagem e PDF só são usados em exportar/importar: carregam sem segurar a tela (defer); aguardarBiblioteca() espera se for cedo demais -->
@@ -931,16 +931,19 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 .sat-aviso-corpo span{color:var(--texto-suave);}
 .sat-aviso-fechar{all:unset;cursor:pointer;padding:0 4px;font-size:18px;line-height:1;color:var(--texto-suave);}
 </style>
+<link rel="stylesheet" href="assets/tema-locks.css?v=202610300100">
+<link rel="stylesheet" href="assets/casca-locks.css?v=202610300100">
 </head>
 <body>
 
 <div class="coa-loader " id="coa-loader" role="status" aria-live="polite"><div class="coa-loader-caixa"><div class="coa-loader-logo"><i class="coa-loader-brilho-fundo"></i><i class="coa-loader-parte risco"></i><i class="coa-loader-parte c"></i><i class="coa-loader-parte o"></i><i class="coa-loader-parte a"></i><i class="coa-loader-brilho"></i></div><p class="coa-loader-texto"><span id="coa-loader-texto">Carregando</span><i>.</i><i>.</i><i>.</i></p></div></div>
 <div class="login-screen" id="login-screen">
   <aside class="login-painel">
+    <img class="login-foto" src="assets/campo-login.webp" alt="" aria-hidden="true">
     <img class="login-logo" src="assets/logo-coa-web.png" alt="COA Web">
     <div class="login-painel-texto">
       <p class="login-kicker">Centro de Operações Agrícolas</p>
-      <h1>Da chuva de ontem ao plantio de hoje, talhão por talhão.</h1>
+      <h1>Da chuva de ontem ao plantio de hoje, <em>talhão por talhão.</em></h1>
       <p class="login-painel-sub">Plantio e colheita direto do PIMS, mapa de chuva, boletins das máquinas, sinal do RTK e previsão do tempo sobre os limites de cada fazenda.</p>
     </div>
     <div class="login-rodape"><span>Acesso restrito a usuários cadastrados pelo administrador.</span><div class="login-assinatura"><span>By:</span><img src="assets/locks-agtech-lab-branca.png" alt="Locks AgTech Lab"><span class="login-assinatura-breve">Em breve</span></div></div>
@@ -957,8 +960,9 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
   </aside>
   <section class="login-form">
     <div class="login-card">
-      <h2>Entrar</h2>
-      <p class="login-sub">Use o e-mail e a senha do seu cadastro no COA WEB.</p>
+      <p class="login-eyebrow">Acesso ao COA WEB</p>
+      <h2>Bem-vindo de volta</h2>
+      <p class="login-sub">Entre com o e-mail e a senha do seu cadastro no COA WEB.</p>
       <div class="campo">
         <label for="login-usuario">E-mail</label>
         <input type="email" id="login-usuario" placeholder="seu.email@grupolocks.com.br" autocomplete="email">
@@ -969,7 +973,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
         <button type="button" class="login-olho" id="login-olho" aria-label="Mostrar senha" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button>
       </div>
       <div class="login-erro" id="login-erro"></div>
-      <button class="btn" id="btn-entrar" style="width:100%;justify-content:center;margin-top:2px">Entrar</button>
+      <button class="btn" id="btn-entrar" style="width:100%;justify-content:center;margin-top:2px">Entrar na plataforma<svg class="login-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       <p class="login-dica">Esqueceu a senha ou ainda não tem acesso? Fale com o administrador do COA WEB.</p>
     </div>
     <div class="login-assinatura no-claro"><span>By:</span><img src="assets/locks-agtech-lab-branca.png" alt="Locks AgTech Lab"><span class="login-assinatura-breve">Em breve</span></div>
@@ -977,17 +981,34 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
 </div>
 
 <div class="categoria-screen" id="categoria-screen" style="display:none">
-  <svg class="categoria-fundo" id="categoria-fundo" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
-  <div class="categoria-assinatura"><span>By:</span><img src="assets/locks-agtech-lab.png" alt="Locks AgTech Lab"><span class="categoria-assinatura-breve">Em breve</span></div>
-  <div class="categoria-conteudo">
-    <img class="categoria-logo" src="assets/logo-coa-web.png" alt="COA Web">
-    <h1 class="categoria-titulo"><span id="categoria-saudacao">Olá</span><small id="categoria-saudacao-msg"></small></h1>
-    <aside class="categoria-curiosidade" id="categoria-curiosidade" style="display:none" aria-live="polite">
+  <header class="categoria-topo">
+    <img class="categoria-topo-foto" src="assets/campo-topo.webp" alt="" aria-hidden="true">
+    <svg class="categoria-fundo" id="categoria-fundo" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+    <div class="categoria-largura">
+      <div class="categoria-barra">
+        <img class="categoria-logo" src="assets/logo-coa-web.png" alt="COA Web">
+        <div class="categoria-rodape">
+      <button type="button" class="categoria-ajuda" id="btn-seguranca" title="Como o COA WEB protege os dados" aria-label="Como o COA WEB protege os dados" aria-haspopup="dialog">?</button>
+      <span id="categoria-usuario-logado"></span>
+      <button class="categoria-sair" id="btn-sair-categoria">Sair</button>
+    </div>
+      </div>
+      <div class="categoria-hero">
+        <div class="categoria-hero-texto">
+          <span class="categoria-eyebrow">Centro de Operações Agrícolas</span>
+          <h1 class="categoria-titulo"><span id="categoria-saudacao">Olá</span><small id="categoria-saudacao-msg"></small></h1>
+        </div>
+        <aside class="categoria-curiosidade" id="categoria-curiosidade" style="display:none" aria-live="polite">
       <div class="categoria-curiosidade-rotulo">Você sabia?<span id="categoria-curiosidade-tema"></span></div>
       <p id="categoria-curiosidade-texto"></p>
       <button type="button" id="btn-outra-curiosidade">Outra curiosidade</button>
     </aside>
-    <h2 class="categoria-secao">Por onde você quer começar?<small>Cada módulo abre com a fazenda escolhida no menu lateral.</small></h2>
+      </div>
+    </div>
+  </header>
+  <div class="categoria-conteudo">
+    <div class="categoria-secao-cab"><span class="categoria-eyebrow">Módulos</span>
+      <h2 class="categoria-secao">Por onde você quer começar?<small>Cada módulo abre com a fazenda escolhida no menu lateral.</small></h2></div>
     <div class="categoria-cards">
       <button class="categoria-card" id="card-algodao">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7.3 12.6A3.3 3.3 0 0 1 5.6 6.9 3.4 3.4 0 0 1 12 4.6a3.4 3.4 0 0 1 6.4 2.3 3.3 3.3 0 0 1-1.7 5.7"/><path d="M12 14.6c-1.5-2.2-4.6-3-8-1.6 1.1 3.3 4.2 4.7 8 3.6 3.8 1.1 6.9-.3 8-3.6-3.4-1.4-6.5-.6-8 1.6Z"/><path d="M12 16.6v4.9"/></svg>
@@ -1040,11 +1061,7 @@ td.td-edit input[type=number]:focus, td.td-edit select:focus{border-color:var(--
       </button>
     </div>
     <p class="categoria-vazia" id="categoria-vazia" style="display:none">Nenhuma categoria liberada para o seu usuário. Fale com o administrador.</p>
-    <div class="categoria-rodape">
-      <button type="button" class="categoria-ajuda" id="btn-seguranca" title="Como o COA WEB protege os dados" aria-label="Como o COA WEB protege os dados" aria-haspopup="dialog">?</button>
-      <span id="categoria-usuario-logado"></span>
-      <button class="categoria-sair" id="btn-sair-categoria">Sair</button>
-    </div>
+    <div class="categoria-assinatura"><span>By:</span><img src="assets/locks-agtech-lab.png" alt="Locks AgTech Lab"><span class="categoria-assinatura-breve">Em breve</span></div>
   </div>
 </div>
 
@@ -5929,7 +5946,10 @@ function mostrarCuriosidade(){
 function mostrarBoasVindas(){
   const s = SAUDACOES[periodoDoDia(new Date())];
   const nome = sessao ? primeiroNome(sessao.nome) : '';
-  document.getElementById('categoria-saudacao').textContent = nome ? `${s.cumprimento}, ${nome}` : s.cumprimento;
+  // o nome em destaque (âmbar), como o "Olá, Bruno." do Locks AgTech; texto montado sem innerHTML
+  const saudacao = document.getElementById('categoria-saudacao');
+  saudacao.textContent = nome ? `${s.cumprimento}, ` : s.cumprimento;
+  if(nome){ const em = document.createElement('em'); em.textContent = nome + '.'; saudacao.appendChild(em); }
   document.getElementById('categoria-saudacao-msg').textContent = s.mensagens[Math.floor(Math.random() * s.mensagens.length)];
   mostrarCuriosidade();
 }

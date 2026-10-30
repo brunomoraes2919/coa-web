@@ -1,20 +1,20 @@
-/* Cores e medidas do COA WEB (index.html) com os nomes que o módulo usa. */
+/* Cores e medidas do COA WEB (tema Locks AgTech, 30/10/2026) com os nomes que o módulo usa. */
 :root {
-  --verde: #0c5a50;
-  --verde-claro: #2f7d6b;
-  --ambar: #db8a08;
-  --tinta: #17251f;
-  --tinta-2: #5b6b62;
-  --tinta-3: #8a968f;
+  --verde: #00594f;
+  --verde-claro: #007564;
+  --ambar: #db8a06;
+  --tinta: #1b201e;
+  --tinta-2: #5c625d;
+  --tinta-3: #8b908a;
   --sobre-verde: #eef2f0;
-  --canvas: #eef2ee;
+  --canvas: #faf9f7;
   --superficie: #ffffff;
-  --afundado: #f4f6f4;
-  --linha: #dce3dc;
-  --linha-forte: #c5d0c7;
-  --erro: #b3261e;
-  --erro-fundo: #fbe9e7;
-  --fonte: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --afundado: #f4f2ee;
+  --linha: #e6e2db;
+  --linha-forte: #d4cec4;
+  --erro: #a8321f;
+  --erro-fundo: #fbeeeb;
+  --fonte: 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --t-micro: 11px;
   --t-mini: 12px;
   --t-peq: 13px;
@@ -23,10 +23,10 @@
   --t-lg: 20px;
   --r-pq: 6px;
   --r-md: 10px;
-  --sombra: 0 1px 2px rgba(16, 54, 50, 0.08), 0 2px 8px rgba(16, 54, 50, 0.06);
-  --sombra-alta: 0 6px 24px rgba(16, 54, 50, 0.18);
+  --sombra: 0 1px 2px rgba(27, 32, 30, 0.04), 0 8px 24px -12px rgba(27, 32, 30, 0.14);
+  --sombra-alta: 0 12px 40px -12px rgba(27, 32, 30, 0.22);
   --mov-rapida: 120ms;
-  --mov-padrao: 180ms;
-  --mov-media: 240ms;
-  --mov-saida: ease-out;
+  --mov-padrao: 200ms;
+  --mov-media: 200ms;
+  --mov-saida: cubic-bezier(0.2, 0.8, 0.3, 1);
 }

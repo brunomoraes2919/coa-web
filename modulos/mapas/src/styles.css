@@ -1,23 +1,23 @@
 /* Mapa de Chuva COA — estilos globais */
 :root {
-  --verde: #0c5a50;
-  --verde-escuro: #08453d;
-  --verde-claro: #e3efed;
-  --laranja: #db8a08;
+  --verde: #00594f; /* tema Locks AgTech (30/10/2026) */
+  --verde-escuro: #0e463e;
+  --verde-claro: #e5f1ec;
+  --laranja: #db8a06;
   --laranja-escuro: #b97406;
   --laranja-claro: #fdf3e2;
-  --fundo: #f4f6f5;
+  --fundo: #faf9f7;
   --branco: #fff;
-  --texto: #1d2a27;
-  --texto-suave: #5d6d69;
-  --borda: #dbe2e0;
-  --erro: #b3261e;
-  --sucesso: #1f7a4c;
+  --texto: #1b201e;
+  --texto-suave: #5c625d;
+  --borda: #e6e2db;
+  --erro: #a8321f;
+  --sucesso: #007564;
   --alerta: #8a5d00;
   --info: #1d5f8a;
-  --raio: 8px;
-  --sombra: 0 1px 2px rgba(16, 40, 36, 0.06), 0 2px 8px rgba(16, 40, 36, 0.06);
-  font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --raio: 10px;
+  --sombra: 0 1px 2px rgba(27, 32, 30, 0.04), 0 8px 24px -12px rgba(27, 32, 30, 0.14);
+  font-family: 'Figtree', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: var(--texto);
   background: var(--fundo);
   font-size: 14px;
@@ -113,7 +113,7 @@ p { margin: 0 0 0.6rem; }
 }
 
 /* ---------- Modo embutido (?embed=1): só o conteúdo, com as cores e o respiro do COA WEB ---------- */
-:root.embed, .app-embed { --fundo: #eef2ee; --texto: #17251f; --borda: #dce3dc; --raio: 10px; }
+:root.embed, .app-embed { --fundo: #faf9f7; --texto: #1b201e; --borda: #e6e2db; --raio: 10px; }
 :root.embed .login-fundo { background: var(--fundo); }
 .app-embed { display: block; background: var(--fundo); color: var(--texto); }
 .app-embed .conteudo { padding: 26px 34px 60px; }

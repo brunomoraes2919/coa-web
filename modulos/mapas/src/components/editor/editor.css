@@ -34,12 +34,12 @@
 .previa-ferramentas { display: flex; gap: 6px; flex: none; }
 .botao-icone-previa {
   display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
-  border: 1px solid #DCE3DC; border-radius: 8px; background: #fff; color: #0C5A50; cursor: pointer;
+  border: 1px solid #E6E2DB; border-radius: 8px; background: #fff; color: #00594F; cursor: pointer;
 }
-.botao-icone-previa:hover:not(:disabled) { background: var(--verde-claro); border-color: #0C5A50; }
+.botao-icone-previa:hover:not(:disabled) { background: var(--verde-claro); border-color: #00594F; }
 .botao-icone-previa:focus-visible { outline: 2px solid var(--laranja); outline-offset: 1px; }
 .botao-icone-previa:disabled { opacity: 0.45; cursor: not-allowed; }
-.botao-icone-previa.destravado, .botao-icone-previa.destravado:hover { background: #0C5A50; border-color: #0C5A50; color: #fff; }
+.botao-icone-previa.destravado, .botao-icone-previa.destravado:hover { background: #00594F; border-color: #00594F; color: #fff; }
 .desatualizado { opacity: 0.55; transition: opacity 0.2s; }
 
 .lista-pics { max-height: 320px; }
@@ -84,10 +84,10 @@
 /* edição da chuva de um PIC (nova interpolação) */
 .lista-pics .pic-valor { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .lista-pics td.num .pic-valor { justify-content: flex-end; }
-.botao-icone-pic { background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; cursor: pointer; color: var(--verde-teal, #0c5a50); line-height: 0; }
+.botao-icone-pic { background: none; border: 1px solid transparent; border-radius: 6px; padding: 3px 4px; cursor: pointer; color: var(--verde-teal, #00594f); line-height: 0; }
 .botao-icone-pic:hover { background: #eef4f1; border-color: #d6e2db; }
 .botao-icone-pic svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.lista-pics .pic-mm { width: 64px; text-align: right; padding: 3px 6px; font: inherit; border: 1.5px solid var(--verde-teal, #0c5a50); border-radius: 6px; }
+.lista-pics .pic-mm { width: 64px; text-align: right; padding: 3px 6px; font: inherit; border: 1.5px solid var(--verde-teal, #00594f); border-radius: 6px; }
 .lista-pics .pic-mm[aria-invalid="true"] { border-color: #b3261e; }
 .pic-editado { font-weight: 700; color: #b45309; border-bottom: 1px dotted currentColor; cursor: help; }
 .erro-pic { margin: 0; color: #b3261e; font-size: 0.85rem; }
