@@ -2388,6 +2388,84 @@ GROUP BY unidade
 ORDER BY unidade`;
 }
 
+// ---------- chuva por talhão de um período (Mapa de dias sem chuva, módulo Mapas) ----------
+// Só a fazenda e as datas pedidas, e só quando alguém clica em Atualizar na tela (pedido em mapas_chuva_pedidos
+// com tipo 'talhoes'). A conta dos dias sem chuva fica no navegador (src/lib/seca.ts).
+
+/** Unidade como está na stg_field_data ('TRES FLECHAS'): sem acento, maiúsculas, só letras, números e espaços. */
+export function unidadeChuvaTalhao(nome) {
+  return chaveNome(nome).replace(/[^A-Z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Chuva diária de cada talhão de uma unidade entre `de` e `ate` (inclusive), uma linha por talhão: `dias` = só os
+ * dias com chuva, como 'n:mm' (n = dias corridos desde `de`), no formato de montarSqlChuvaTalhoes.
+ */
+export function montarSqlSecaTalhoes(unidade, de, ate, pular = null, tamanho = PAGINA_CONSULTA) {
+  const u = unidadeChuvaTalhao(unidade);
+  const d = dataSql(de);
+  const a = dataSql(ate);
+  return `SELECT fieldname,
+  string_agg((data::date - DATE '${d}')::text || ':' || trim(trailing '.' from trim(trailing '0' from round(pluviometry::numeric, 2)::text)), ',' ORDER BY data)
+    FILTER (WHERE round(pluviometry::numeric, 2) > 0) AS dias
+FROM "DATABASE".stg_field_data
+WHERE unidade = '${u}' AND data BETWEEN DATE '${d}' AND DATE '${a}' AND coalesce(fieldname, '') <> ''
+GROUP BY fieldname${fimDaConsulta(pular, tamanho, 'fieldname', 'fieldname', paginaSqlZeus)}`;
+}
+
+/** Os dias do período que a stg_field_data tem na unidade (n desde `de`) e o último dia dela na tabela. Uma linha. */
+export function montarSqlDiasSecaTalhoes(unidade, de, ate) {
+  const u = unidadeChuvaTalhao(unidade);
+  const d = dataSql(de);
+  const a = dataSql(ate);
+  return `SELECT string_agg(n::text, ',' ORDER BY n) AS dias,
+  (SELECT to_char(max(data), 'YYYY-MM-DD') FROM "DATABASE".stg_field_data WHERE unidade = '${u}') AS ultimo
+FROM (SELECT DISTINCT (data::date - DATE '${d}') AS n FROM "DATABASE".stg_field_data
+  WHERE unidade = '${u}' AND data BETWEEN DATE '${d}' AND DATE '${a}') x`;
+}
+
+/**
+ * Resposta do pedido a partir das duas consultas: { tipo: 'talhoes', fazenda, unidade, de, ate, lidos (faixas dos
+ * dias com dado: '0-12,15'), ultimoDia (último dia da unidade na tabela, ou null), talhoes: { código: 'n:mm,…' } }.
+ * O código do talhão sai normalizado (normalizarCodigo); talhão sem chuva no período fica com ''.
+ */
+export function montarSecaTalhoes({ linhas, dias }, { fazenda, unidade, de, ate }) {
+  const talhoes = {};
+  for (const r of objetosDe(linhas)) {
+    const codigo = normalizarCodigo(r.fieldname);
+    if (!codigo) continue;
+    const d = txt(r.dias) ?? '';
+    // dois nomes com o mesmo código ('19' e '019'): fica o que tem chuva
+    if (talhoes[codigo] && !d) continue;
+    talhoes[codigo] = /^[0-9:.,]*$/.test(d) ? d : '';
+  }
+  const linha = objetosDe(dias)[0] ?? {};
+  const ultimo = txt(linha.ultimo);
+  return {
+    tipo: 'talhoes', fazenda, unidade: unidadeChuvaTalhao(unidade), de, ate,
+    lidos: faixasDeDias(linha.dias), ultimoDia: ultimo && /^\d{4}-\d{2}-\d{2}$/.test(ultimo) ? ultimo : null, talhoes,
+  };
+}
+
+/**
+ * Consulta a ZEUS pelo Agrovex: a chuva diária de cada talhão da unidade no período (stg_field_data, a tabela da
+ * Chuva por talhão). `unidade` = unidade do PIMS da fazenda de mapa. Não grava nada.
+ */
+export async function chuvaTalhoesPeriodoZeus({ url, token, fazenda, unidade, de, ate, fetchImpl = fetch }) {
+  validarPeriodoChuva(de, ate);
+  const u = unidadeChuvaTalhao(unidade);
+  if (!u) throw erroDoTipo('invalido', 'A fazenda deste mapa não tem a unidade do PIMS no cadastro (Fazendas e shapes → Editar). Sem ela não dá para achar os talhões na ZEUS.');
+  if (UNIDADES_FORA_DO_COA.includes(u)) throw erroDoTipo('invalido', `A unidade ${u} não faz mais parte do COA.`);
+  const cliente = await abrirSessao(url, token, fetchImpl);
+  try {
+    const linhas = await consultarPaginas(cliente, (pular, tamanho) => montarSqlSecaTalhoes(u, de, ate, pular, tamanho), 'chuva diária por talhão no período (mapa de dias sem chuva)', 'chuva por talhão do período', { fonte: FONTES.zeus, reserva: true });
+    const dias = await cliente.consultar(montarSqlDiasSecaTalhoes(u, de, ate), 'dias com dado de chuva por talhão no período (mapa de dias sem chuva)', 'dias da chuva por talhão do período', FONTES.zeus);
+    return montarSecaTalhoes({ linhas, dias }, { fazenda, unidade: u, de, ate });
+  } finally {
+    await cliente.fechar();
+  }
+}
+
 /** linhas por página da consulta dos ciclos (o Agrovex corta o resultado em 5.000 linhas) */
 export const CHUVA_CICLOS_PAGINA = 4000;
 

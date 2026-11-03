@@ -229,6 +229,20 @@ export function diasDaJanelaChuva(desde: string, agora?: Date): number;
 export function safrasDaJanelaChuva(desde: string, agora?: Date): string[];
 export function montarSqlChuvaTalhoes(desde: string, pular?: number | null, tamanho?: number): string;
 export function montarSqlDiasChuvaTalhoes(desde: string): string;
+export function unidadeChuvaTalhao(nome: string | null | undefined): string;
+export function montarSqlSecaTalhoes(unidade: string, de: string, ate: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlDiasSecaTalhoes(unidade: string, de: string, ate: string): string;
+export interface SecaTalhoesScript {
+  tipo: 'talhoes'; fazenda: string; unidade: string; de: string; ate: string;
+  lidos: string; ultimoDia: string | null; talhoes: Record<string, string>;
+}
+export function montarSecaTalhoes(
+  consultas: { linhas: ResultadoConsulta; dias: ResultadoConsulta },
+  pedido: { fazenda: string; unidade: string; de: string; ate: string },
+): SecaTalhoesScript;
+export function chuvaTalhoesPeriodoZeus(opcoes: {
+  url: string; token: string; fazenda: string; unidade: string | null; de: string; ate: string; fetchImpl?: FetchLike;
+}): Promise<SecaTalhoesScript>;
 export const CHUVA_CICLOS_PAGINA: number;
 export function montarSqlCiclosChuva(safras: string[], pular?: number, tamanho?: number): string;
 export interface CicloPims { unidade: string; safra: string; periodo: string; inicio: string; fim: string; talhoes: string[] }

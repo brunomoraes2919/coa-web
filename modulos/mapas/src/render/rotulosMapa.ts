@@ -112,7 +112,8 @@ export function desenharRotulosEPics(
   if (inp.config.mostrarRotulosTalhoes) {
     ctx.font = fonte(400, pxTal);
     const itens = geoms
-      .map((g) => ({ txt: (g.t.nome ?? '').trim(), a: ancora(g.xy, 0.5 * s) }))
+      // dias sem chuva: o nome do talhão com os dias ('019 · 12 d')
+      .map((g) => ({ txt: [(g.t.nome ?? '').trim(), inp.seca?.rotulos.get(g.t.id) ?? ''].filter(Boolean).join(' · '), a: ancora(g.xy, 0.5 * s) }))
       .filter((i): i is { txt: string; a: { x: number; y: number; area: number } } => !!i.txt && !!i.a)
       .sort((a, b) => b.a.area - a.a.area);
     const passo = capTal + 2 * haloTal;

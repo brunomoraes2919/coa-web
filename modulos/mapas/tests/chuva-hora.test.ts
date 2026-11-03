@@ -97,11 +97,12 @@ describe('servidor: pedidos de chuva com hora', () => {
   it('lê as horas do pedido; num banco sem as colunas (0004 não aplicado) volta a ler só as datas', async () => {
     const a = servidores([{ id: 3, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-06', de_hora: '06:00:00', ate_hora: '07:00:00' }], []);
     expect(await pedidosChuvaPendentes({ url: URL_SB, chave: CHAVE, fetch: a.impl })).toEqual([{ id: 3, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-06', de_hora: '06:00:00', ate_hora: '07:00:00' }]);
-    expect(a.chamadas[0].url).toBe(`${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate,de_hora,ate_hora&atendido_em=is.null&order=id.asc&limit=200`);
+    expect(a.chamadas[0].url).toBe(`${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate,de_hora,ate_hora,tipo&atendido_em=is.null&order=id.asc&limit=200`);
 
     const b = servidores([{ id: 4, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-05' }], [], true);
     expect(await pedidosChuvaPendentes({ url: URL_SB, chave: CHAVE, fetch: b.impl })).toEqual([{ id: 4, fazenda: 'SM3', de: '2026-10-05', ate: '2026-10-05' }]);
     expect(b.chamadas.map((c) => c.url)).toEqual([
+      `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate,de_hora,ate_hora,tipo&atendido_em=is.null&order=id.asc&limit=200`,
       `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate,de_hora,ate_hora&atendido_em=is.null&order=id.asc&limit=200`,
       `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate&atendido_em=is.null&order=id.asc&limit=200`,
     ]);

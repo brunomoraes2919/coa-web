@@ -19,6 +19,7 @@ const MapaCar = lazy(() => import('./pages/MapaCar'));
 const Mapas = lazy(() => import('./pages/Mapas'));
 const NovoMapa = lazy(() => import('./pages/NovoMapa'));
 const NovoMapaVariedade = lazy(() => import('./pages/NovoMapaVariedade'));
+const NovoMapaSeca = lazy(() => import('./pages/NovoMapaSeca'));
 const CoresVariedades = lazy(() => import('./pages/CoresVariedades'));
 const VariedadesPims = lazy(() => import('./pages/VariedadesPims'));
 const Fazendas = lazy(() => import('./pages/Fazendas'));
@@ -243,6 +244,9 @@ export default function App() {
               <Route path="/variedades" element={<Tela><Mapas key="variedade" tipo="variedade" /></Tela>} />
               <Route path="/variedades/novo" element={<Tela><NovoMapaVariedade key="novo" /></Tela>} />
               <Route path="/variedades/:id" element={<Tela><NovoMapaVariedade key="salvo" /></Tela>} />
+              <Route path="/secas" element={<Tela><Mapas key="seca" tipo="seca" /></Tela>} />
+              <Route path="/secas/novo" element={<Tela><NovoMapaSeca key="novo" /></Tela>} />
+              <Route path="/secas/:id" element={<Tela><NovoMapaSeca key="salvo" /></Tela>} />
               <Route element={<SomenteSuper />}>
                 <Route path="/car" element={<Tela><MapaCar /></Tela>} />
               </Route>

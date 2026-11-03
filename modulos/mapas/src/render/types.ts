@@ -1,6 +1,7 @@
 /** Tipos e constantes da renderização do layout (a mesma função gera a prévia e o PNG). */
 import type { AreaCultura, Grid, LayoutConfig, MapaBase, MapExtent, Palette, Pic, ResumoChuva, ResumoVariedades, StatusPlantio, Talhao } from '../lib/types';
 import type { EntradaCar } from './car';
+import type { ResumoSeca } from '../lib/seca';
 
 export interface TileSource {
   url(z: number, x: number, y: number): string;
@@ -37,6 +38,11 @@ export interface RenderInput {
    * legenda. Ausente/null = mapa de chuva (desenho de sempre).
    */
   variedades?: { cores: Map<string, string>; resumo: ResumoVariedades } | null;
+  /**
+   * Mapa de dias sem chuva: cor de cada talhão (id → cor da classe), o texto dos dias no rótulo do talhão e o resumo
+   * da legenda e do painel. Ausente/null = os outros mapas.
+   */
+  seca?: { cores: Map<string, string>; rotulos: Map<string, string>; resumo: ResumoSeca } | null;
   /** Mapa de CAR e Matrícula: camadas, quadro de áreas e uso de cada talhão. Ausente/null = os outros mapas. */
   car?: EntradaCar | null;
 }

@@ -119,6 +119,8 @@ export function desenharVariedades(ctx: CanvasRenderingContext2D, v: Vista, geom
 export function desenharTalhoes(ctx: CanvasRenderingContext2D, v: Vista, geoms: TalhaoPx[], inp: RenderInput, areas: FeicaoPx[] = []): void {
   if (inp.car) return desenharCar(ctx, v, geoms, inp.car);
   if (inp.variedades) return desenharVariedades(ctx, v, geoms, areas, inp.variedades.cores);
+  // dias sem chuva: o talhão inteiro na cor da classe (a chuva da ZEUS é por talhão, não por área da cultura)
+  if (inp.seca) return desenharVariedades(ctx, v, geoms, [], inp.seca.cores);
   const s = v.s;
   const comAreas = areas.length > 0;
   const pintados: { xy: MultiPolyXY; status: StatusPlantio }[] = comAreas

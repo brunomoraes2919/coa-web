@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { repo } from '../data';
 import { usePerfil, useSuper } from '../components/usePerfil';
 import { resumoHistorico, textoHistorico, textoVariedades } from '../lib/inicio';
-import type { MapaSalvo, VariedadePims } from '../lib/types';
+import type { MapaSalvo, TipoMapa, VariedadePims } from '../lib/types';
 
 /** Ícones de traço, os mesmos do menu do COA WEB. */
 const icone = (conteudo: ReactNode) => (
@@ -121,7 +121,7 @@ export default function Inicio() {
     };
   }, [admin]);
 
-  const historico = (tipo: 'chuva' | 'variedade') => (mapas ? textoHistorico(resumoHistorico(mapas, tipo)) : undefined);
+  const historico = (tipo: TipoMapa) => (mapas ? textoHistorico(resumoHistorico(mapas, tipo)) : undefined);
 
   const chuva: Card[] = [
     {
@@ -137,6 +137,22 @@ export default function Inicio() {
       texto: 'Abrir, atualizar, baixar a imagem ou salvar uma cópia dos mapas de chuva já gerados.',
       icone: ICONES.salvos,
       rodape: historico('chuva'),
+    },
+  ];
+  const seca: Card[] = [
+    {
+      para: '/secas/novo',
+      titulo: 'Novo mapa de dias sem chuva',
+      texto: 'Quantos dias cada talhão está sem chuva, pela chuva diária por talhão da ZEUS nas datas que você escolher.',
+      icone: ICONES.novo,
+      rodape: null,
+    },
+    {
+      para: '/secas',
+      titulo: 'Mapas de dias sem chuva salvos',
+      texto: 'Abrir, baixar a imagem ou salvar uma cópia dos mapas de dias sem chuva já gerados.',
+      icone: ICONES.salvos,
+      rodape: historico('seca'),
     },
   ];
   const variedade: Card[] = [
@@ -204,6 +220,7 @@ export default function Inicio() {
         </div>
       </div>
       <Grupo titulo="Mapa de chuva" cards={chuva} />
+      <Grupo titulo="Mapa de dias sem chuva" cards={seca} />
       <Grupo titulo="Mapa de variedade" cards={variedade} />
       {ehSuper ? <Grupo titulo="CAR e matrícula" cards={car} /> : null}
       {admin ? <Grupo titulo="Cadastros" cards={cadastros} /> : null}

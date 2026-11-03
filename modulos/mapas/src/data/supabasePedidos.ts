@@ -170,12 +170,12 @@ export function pedidosChuvaSupabase(
       }
     },
 
-    async pedirChuvaZeus({ fazenda, de, ate, deHora, ateHora }: PedidoChuva) {
+    async pedirChuvaZeus({ fazenda, de, ate, deHora, ateHora, tipo }: PedidoChuva) {
       // as horas só vão quando informadas: o pedido por data não depende das colunas novas (script 0004)
       const horas = deHora && ateHora ? { de_hora: deHora, ate_hora: ateHora } : {};
       const { data, error } = await client
         .from(TABELAS.pedidosChuva)
-        .insert({ fazenda: fazenda.trim().slice(0, 80), de, ate, ...horas })
+        .insert({ fazenda: fazenda.trim().slice(0, 80), de, ate, ...horas, ...(tipo ? { tipo } : {}) })
         .select('id')
         .abortSignal(AbortSignal.timeout(TEMPO_LIMITE_MS))
         .single();

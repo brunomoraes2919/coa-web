@@ -47,7 +47,9 @@ export function atenderPedidos(opcoes: {
   fetch?: FetchLike;
   agora?: () => Date;
 }): Promise<boolean>;
-export interface PedidoChuvaPendente { id: number; /** quem pediu (auth.uid() de quem gravou o pedido) */ pedido_por?: string | null; fazenda: string; de: string; ate: string; /** 'hh:mm:ss' ou null (dias inteiros) */ de_hora?: string | null; ate_hora?: string | null }
+export interface PedidoChuvaPendente { id: number; /** quem pediu (auth.uid() de quem gravou o pedido) */ pedido_por?: string | null; fazenda: string; de: string; ate: string; /** 'hh:mm:ss' ou null (dias inteiros) */ de_hora?: string | null; ate_hora?: string | null; /** 'talhoes' = Mapa de dias sem chuva (0036); ausente/'pics' = chuva por PIC */ tipo?: string | null }
+/** Unidade do PIMS da fazenda de mapa com esse nome (mapas_fazendas.unidade_pims); null = nenhuma tem. */
+export function unidadeDaFazendaDeMapa(ctx: Ctx, fazenda: string, memo?: Map<string, unknown>): Promise<string | null>;
 export function pedidosChuvaPendentes(ctx: Ctx): Promise<PedidoChuvaPendente[]>;
 export function responderPedidoChuva(ctx: Ctx, id: number, resultado: string, dados: unknown, agora?: Date): Promise<void>;
 export function atenderPedidosChuva(opcoes: {

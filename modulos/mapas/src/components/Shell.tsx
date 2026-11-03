@@ -71,6 +71,29 @@ const ITENS: ItemNav[] = [
     ativo: (c) => c === '/mapas/novo',
   },
   {
+    para: '/secas',
+    texto: 'Mapas de dias sem chuva',
+    icone: svg(
+      <>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+      </>,
+    ),
+    ativo: (c) => c === '/secas' || (c.startsWith('/secas/') && c !== '/secas/novo'),
+  },
+  {
+    para: '/secas/novo',
+    texto: 'Novo mapa de dias sem chuva',
+    icone: svg(
+      <>
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="8" x2="12" y2="16" />
+        <line x1="8" y1="12" x2="16" y2="12" />
+      </>,
+    ),
+    ativo: (c) => c === '/secas/novo',
+  },
+  {
     para: '/variedades',
     texto: 'Mapas de variedade',
     icone: svg(

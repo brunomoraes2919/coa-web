@@ -9,6 +9,7 @@ import { fmtChuva, fmtData } from '../lib/format';
 import { fmtDataHora } from '../lib/situacaoPlantio';
 import { fmtAreaHa } from '../lib/variedades';
 import { fmtHa } from '../lib/car';
+import { paresPainelSeca } from '../lib/seca';
 import type { Composicao } from './composicao';
 import { ALTURA_MAIUSC, comReticencias, fonte, limitarLinhas, quebrarTexto, type Rect } from './labels';
 import { planejarLegenda } from './legend';
@@ -33,6 +34,7 @@ export function itensInformacao(inp: RenderInput): ParInfo[] {
   const media = (v: number | null | undefined) => (v !== null && v !== undefined && Number.isFinite(v) ? fmtMm(v) : '');
   const pims = fmtDataHora(inp.plantioGeradoEm, true); // dd/MM HH:mm
   const r = inp.variedades?.resumo;
+  if (inp.seca) return paresPainelSeca(inp.seca.resumo, t).map((p) => ({ ...p, valor: (p.valor ?? '').trim() })).filter((p) => p.valor);
   const car = inp.car;
   if (car) {
     const q = car.quadro;
@@ -339,6 +341,7 @@ function blocoInfo(ctx: CanvasRenderingContext2D, itens: ParInfo[], r: Rect, s: 
 const ASSINATURA = 'Mapa de Chuva COA · Locks';
 const ASSINATURA_VARIEDADE = 'Mapa de Variedade COA · Locks';
 const ASSINATURA_CAR = 'Mapa de CAR COA · Locks';
+const ASSINATURA_SECA = 'Dias sem Chuva COA · Locks';
 
 /** Altura do rodapé (mm): uma linha na faixa inferior; no painel lateral, duas com a atribuição. */
 function alturaRodape(lateral: boolean, atribuicao: string | null): number {
@@ -438,6 +441,6 @@ export function desenharPainel(ctx: CanvasRenderingContext2D, comp: Composicao, 
       leg.desenhar(sec.legenda.x * s, sec.legenda.y * s);
     }
   }
-  rodape(ctx, sec.rodape, s, lateral, atribuicao, inp.car ? ASSINATURA_CAR : inp.variedades ? ASSINATURA_VARIEDADE : ASSINATURA);
+  rodape(ctx, sec.rodape, s, lateral, atribuicao, inp.car ? ASSINATURA_CAR : inp.variedades ? ASSINATURA_VARIEDADE : inp.seca ? ASSINATURA_SECA : ASSINATURA);
   ctx.restore();
 }

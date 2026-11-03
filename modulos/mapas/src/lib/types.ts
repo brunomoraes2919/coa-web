@@ -1,3 +1,4 @@
+import type { ResumoSeca } from './seca';
 import type { FeatureCollection, MultiPolygon, Polygon } from 'geojson';
 
 /** Contratos compartilhados por todo o app. Não redefina estes tipos em outros arquivos. */
@@ -306,6 +307,8 @@ export interface ResumoChuva {
   mediaPicsComChuva?: number | null;
   /** só nos mapas de variedade salvos (tipo 'variedade'): o resumo das variedades; os campos de chuva ficam zerados */
   variedades?: ResumoVariedades;
+  /** só nos mapas de dias sem chuva salvos (tipo 'seca'): o resumo e a resposta do servidor */
+  seca?: ResumoSeca;
 }
 
 /**
@@ -330,8 +333,8 @@ export type DestaquePics = 'escuro' | 'vermelho' | 'verde' | 'etiqueta';
 /** 'topoCompleto' (topográfico da Esri sem o véu branco) só é oferecido no Mapa de CAR e Matrícula. */
 export type MapaBase = 'topo' | 'topoCompleto' | 'satelite' | 'nenhum';
 
-/** Tipo do mapa salvo: 'chuva' (padrão; mapas antigos não têm o campo) ou 'variedade'. */
-export type TipoMapa = 'chuva' | 'variedade';
+/** Tipo do mapa salvo: 'chuva' (padrão; mapas antigos não têm o campo), 'variedade' ou 'seca' (dias sem chuva). */
+export type TipoMapa = 'chuva' | 'variedade' | 'seca';
 
 /** Uma variedade no mapa de variedade (legenda, tabela e mapa salvo). */
 export interface ItemVariedade {

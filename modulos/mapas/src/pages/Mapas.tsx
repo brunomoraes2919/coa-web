@@ -26,9 +26,10 @@ const dataCurta = (iso: string) => {
 const TEXTOS: Record<TipoMapa, { titulo: string; base: string; vazio: string; prefixo: string }> = {
   chuva: { titulo: 'Mapas de chuva', base: '/mapas', vazio: 'com o CSV da ZEUS', prefixo: 'MAPA_CHUVA' },
   variedade: { titulo: 'Mapas de variedade', base: '/variedades', vazio: 'de uma fazenda e safra', prefixo: 'MAPA_VARIEDADE' },
+  seca: { titulo: 'Mapas de dias sem chuva', base: '/secas', vazio: 'de uma fazenda e período', prefixo: 'MAPA_DIAS_SEM_CHUVA' },
 };
 
-/** Histórico de mapas gerados (de chuva ou de variedade). */
+/** Histórico de mapas gerados (de chuva, de variedade ou de dias sem chuva). */
 export default function Mapas({ tipo = 'chuva' }: { tipo?: TipoMapa }) {
   const tx = TEXTOS[tipo];
   const location = useLocation();
@@ -179,7 +180,9 @@ export default function Mapas({ tipo = 'chuva' }: { tipo?: TipoMapa }) {
                   <span className="suave">
                     {tipo === 'variedade'
                       ? `${mapa.resumo.variedades?.itens.filter((i) => i.chave).length ?? 0} variedades · ${fmtAreaHa(mapa.resumo.variedades?.totalHa ?? 0)} ha`
-                      : `Média ${mm(mapa.resumo.geral.media)} mm${mapa.resumo.plantado ? ` · plantado ${mm(mapa.resumo.plantado.media)} mm` : ''}`}
+                      : tipo === 'seca'
+                        ? `Média ${mm(mapa.resumo.seca?.media ?? NaN)} dias sem chuva${mapa.resumo.seca?.maior !== null && mapa.resumo.seca?.maior !== undefined ? ` · maior ${mapa.resumo.seca.maior}` : ''}`
+                        : `Média ${mm(mapa.resumo.geral.media)} mm${mapa.resumo.plantado ? ` · plantado ${mm(mapa.resumo.plantado.media)} mm` : ''}`}
                     {` · criado em ${dataCurta(mapa.criadoEm)}`}
                   </span>
                   <div className="linha">

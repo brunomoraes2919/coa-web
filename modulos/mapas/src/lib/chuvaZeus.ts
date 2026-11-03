@@ -24,6 +24,8 @@ export interface PedidoChuva {
   /** 'hh:mm': só com a opção de informar a hora (as duas ou nenhuma); sem elas, dias inteiros */
   deHora?: string;
   ateHora?: string;
+  /** 'talhoes' = chuva diária de cada talhão no período (Mapa de dias sem chuva); ausente = chuva por PIC */
+  tipo?: 'talhoes';
 }
 
 export interface PicIntegracao {

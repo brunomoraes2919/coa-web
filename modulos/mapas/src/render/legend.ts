@@ -4,6 +4,7 @@
  * Em paisagem fica numa coluna do painel lateral; em retrato, em 2–4 colunas na faixa inferior.
  */
 import type { StatusPlantio } from '../lib/types';
+import { itensLegendaSeca, TITULO_SECA } from '../lib/seca';
 import { textoItemVariedade, TITULO_VARIEDADES } from '../lib/variedades';
 import { ALTURA_MAIUSC, fonte, type Rect } from './labels';
 import { planejarTabelaVariedades } from './legendaVariedades';
@@ -53,6 +54,10 @@ export function itensLegenda(inp: RenderInput, presentes: boolean[] | null): Ite
       { tipo: 'titulo', texto: TITULO_VARIEDADES },
       ...inp.variedades.resumo.itens.map((i): ItemLegenda => ({ tipo: 'classe', texto: textoItemVariedade(i), cor: i.cor })),
     ];
+  }
+  if (inp.seca) {
+    // mapa de dias sem chuva: só a escala (com quantos talhões em cada classe)
+    return [{ tipo: 'titulo', texto: TITULO_SECA }, ...itensLegendaSeca(inp.seca.resumo).map((i): ItemLegenda => ({ tipo: 'classe', ...i }))];
   }
   const itens: ItemLegenda[] = [];
   // a gota azul é o PIC com chuva; a cinza riscada só entra na legenda quando há PIC sem chuva no mapa

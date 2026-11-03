@@ -37,7 +37,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { boletinsMecanizadas, buscarCarMatricula, cabecalhosSupabase, chamarSupabase, chuvaPorPicZeus, conferirUrlAgrovex, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, sincronizarLimitesZeus, ultimoDiaZeus, validarPedidoMec, validarPeriodoChuva } from './sincronizar-plantio.mjs';
+import { boletinsMecanizadas, buscarCarMatricula, cabecalhosSupabase, chamarSupabase, chuvaPorPicZeus, chuvaTalhoesPeriodoZeus, conferirUrlAgrovex, gravarSupabase, rodarAcompanhamento, rodarValidacao, semChave, sincronizar, sincronizarChuvaTalhao, sincronizarLimitesZeus, ultimoDiaZeus, validarPedidoMec, validarPeriodoChuva } from './sincronizar-plantio.mjs';
 
 const TABELA = 'mapas_plantio_pedidos';
 /** pedidos atendidos há mais que isto são apagados (a tabela não cresce sem fim) */
@@ -453,7 +453,7 @@ const GUARDAR_CHUVA_DIAS = 7;
 /** pedidos atendidos por verificação (os demais ficam para a próxima, ~30 s depois) */
 const MAX_CHUVA_POR_RODADA = 5;
 
-/** O banco ainda não tem as colunas de hora do pedido (script 0004_situacao_zeus.sql não aplicado)? */
+/** O banco ainda não tem uma coluna do pedido (horas: 0004_situacao_zeus.sql; tipo: 0036_mapa_dias_sem_chuva.sql)? */
 async function semColunaDeHora(resp) {
   if (resp.status !== 400) return false;
   const corpo = await resp.clone().json().catch(() => null);
@@ -461,7 +461,7 @@ async function semColunaDeHora(resp) {
 }
 
 /**
- * Pedidos de chuva pendentes ({ id, pedido_por, fazenda, de, ate, de_hora, ate_hora }), do mais antigo para
+ * Pedidos de chuva pendentes ({ id, pedido_por, fazenda, de, ate, de_hora, ate_hora, tipo }), do mais antigo para
  * o mais novo, no máximo FILA_LIDA; sem a tabela → []. Num banco sem as colunas de hora, lê só as datas (os
  * pedidos por data seguem funcionando). Quem decide quais são atendidos nesta verificação é planejarFila.
  */
@@ -469,14 +469,33 @@ export async function pedidosChuvaPendentes({ url, chave, fetch: fetchImpl = glo
   const ler = (colunas) => chamarSupabase(fetchImpl, `${url}/rest/v1/${TABELA_CHUVA}?select=${colunas}&atendido_em=is.null&order=id.asc&limit=${FILA_LIDA}`, {
     headers: cabecalhosSupabase(chave),
   }, 'a leitura dos pedidos de chuva');
-  let resp = await ler('id,pedido_por,fazenda,de,ate,de_hora,ate_hora');
-  if (!resp.ok && (await semColunaDeHora(resp))) resp = await ler('id,pedido_por,fazenda,de,ate');
+  // do banco mais novo ao mais antigo: tipo (0036), horas (0004), só as datas
+  const colunas = ['id,pedido_por,fazenda,de,ate,de_hora,ate_hora,tipo', 'id,pedido_por,fazenda,de,ate,de_hora,ate_hora', 'id,pedido_por,fazenda,de,ate'];
+  let resp = await ler(colunas[0]);
+  for (let i = 1; i < colunas.length && !resp.ok && (await semColunaDeHora(resp)); i++) resp = await ler(colunas[i]);
   if (!resp.ok) {
     if (await semTabela(resp)) return [];
     await erroRest(resp, chave, 'a leitura dos pedidos de chuva');
   }
   const linhas = await resp.json();
   return Array.isArray(linhas) ? linhas.filter((l) => Number.isFinite(Number(l?.id))) : [];
+}
+
+/**
+ * Unidade do PIMS da fazenda de mapa com o nome do pedido (mapas_fazendas.unidade_pims; a primeira que tiver). null =
+ * nenhuma tem (chuvaTalhoesPeriodoZeus responde com o que fazer). `memo` = o da verificação.
+ */
+export async function unidadeDaFazendaDeMapa({ url, chave, fetch: fetchImpl = globalThis.fetch }, fazenda, memo = new Map()) {
+  const caminho = 'mapas_fazendas?select=nome,unidade_pims&order=id.asc&limit=1000';
+  if (!memo.has(caminho)) {
+    const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/${caminho}`, { headers: cabecalhosSupabase(chave) }, 'a leitura da unidade da fazenda de mapa');
+    if (!resp.ok) await erroRest(resp, chave, 'a leitura da unidade da fazenda de mapa');
+    const linhas = await resp.json();
+    memo.set(caminho, Array.isArray(linhas) ? linhas : []);
+  }
+  const alvo = nomeNoPedido(fazenda);
+  const achada = memo.get(caminho).find((f) => typeof f?.nome === 'string' && nomeNoPedido(f.nome) === alvo && String(f.unidade_pims ?? '').trim());
+  return achada ? String(achada.unidade_pims).trim() : null;
 }
 
 /** Grava a resposta de um pedido de chuva: 'ok' com os dados, ou 'erro: ...' sem dados. */
@@ -509,6 +528,14 @@ export async function atenderPedidosChuva({ supabase, agrovex, fetch: fetchImpl 
       const recusa = await recusaPorPermissao(ctx, 'chuva', p, p.fazenda, memo, 'Pedido de chuva');
       if (recusa) {
         await responderPedidoChuva(ctx, p.id, recusa, null, agora());
+        continue;
+      }
+      if (p.tipo === 'talhoes') {
+        // Mapa de dias sem chuva: chuva diária de cada talhão no período (a unidade vem do cadastro da fazenda de mapa)
+        const unidade = await unidadeDaFazendaDeMapa(ctx, p.fazenda, memo);
+        const dados = await chuvaTalhoesPeriodoZeus({ url: agrovex.url, token: agrovex.token, fazenda: p.fazenda, unidade, de: p.de, ate: p.ate, fetchImpl });
+        await responderPedidoChuva(ctx, p.id, 'ok', dados, agora());
+        console.log(`== ${agora().toISOString()} chuva por talhão do período: ${dados.unidade} ${dados.de} a ${dados.ate}, ${Object.keys(dados.talhoes).length} talhões.`);
         continue;
       }
       const dados = await chuvaPorPicZeus({ url: agrovex.url, token: agrovex.token, fazenda: p.fazenda, de: p.de, ate: p.ate, deHora: p.de_hora ?? null, ateHora: p.ate_hora ?? null, fetchImpl });

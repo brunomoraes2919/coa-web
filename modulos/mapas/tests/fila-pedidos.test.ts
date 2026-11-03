@@ -64,7 +64,7 @@ describe('toda leitura de pedidos pendentes tem ordem e limite', () => {
     await pedidosChuvaPendentes(ctx(s.impl));
     await pedidosMecPendentes(ctx(s.impl));
     expect(s.chamadas.map((c) => c.url)).toEqual([
-      `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate,de_hora,ate_hora&atendido_em=is.null&order=id.asc&limit=200`,
+      `${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate,de_hora,ate_hora,tipo&atendido_em=is.null&order=id.asc&limit=200`,
       `${URL_SB}/rest/v1/mec_pims_pedidos?select=id,pedido_por,unidade,de,ate&atendido_em=is.null&order=id.asc&limit=200`,
     ]);
   });
@@ -78,7 +78,7 @@ describe('toda leitura de pedidos pendentes tem ordem e limite', () => {
         : new Response(JSON.stringify([{ id: 4, pedido_por: A, fazenda: 'Globo', de: '2026-10-05', ate: '2026-10-05' }]), { status: 200 });
     };
     expect(await pedidosChuvaPendentes(ctx(impl))).toEqual([{ id: 4, pedido_por: A, fazenda: 'Globo', de: '2026-10-05', ate: '2026-10-05' }]);
-    expect(chamadas[1]).toBe(`${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate&atendido_em=is.null&order=id.asc&limit=200`);
+    expect(chamadas[2]).toBe(`${URL_SB}/rest/v1/mapas_chuva_pedidos?select=id,pedido_por,fazenda,de,ate&atendido_em=is.null&order=id.asc&limit=200`);
   });
 
   it('sem a tabela (script SQL não aplicado) não é erro: nada a atender', async () => {

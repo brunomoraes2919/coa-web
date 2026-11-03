@@ -296,7 +296,7 @@ export interface MapaRow {
   png_path: string | null;
   thumb_path: string | null;
   criado_em: string;
-  /** 'chuva' | 'variedade' (supabase/0026); ausente em linhas antigas */
+  /** 'chuva' | 'variedade' (supabase/0026) | 'seca' (0036); ausente em linhas antigas */
   tipo?: string;
 }
 
@@ -332,7 +332,7 @@ export function rowParaMapa(r: MapaRow): MapaSalvo {
     pngPath: r.png_path,
     thumbPath: r.thumb_path,
     criadoEm: r.criado_em,
-    ...(r.tipo === 'variedade' ? { tipo: 'variedade' as const } : {}),
+    ...(r.tipo === 'variedade' || r.tipo === 'seca' ? { tipo: r.tipo } : {}),
   };
 }
 
