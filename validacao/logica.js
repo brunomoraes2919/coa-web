@@ -512,6 +512,7 @@
    * conferência prevê para a importação (`previstos` = [{ c, texto }]): ordem que não existe ou já foi encerrada, data
    * anterior à abertura, talhão fora da ordem, área acima do planejado no talhão (contando os outros boletins em
    * validação) e número de boletim já usado. `comProblema` = tem erro registrado ou previsto. Esses primeiro.
+   * `filtro`: { unidade, equipe, de, ate } — de/ate = data do boletim (a conta da área usa todos, até os fora do período).
    */
   function coletorTravados(linhas, hoje, filtro) {
     const f = filtro || {};
@@ -548,6 +549,9 @@
         }
         if (c.dup === 1) add('ja-importado', 'Já existe apontamento com o número de boletim ' + c.b + ' no PIMS: pode ser duplicidade.');
         if (f.equipe && semAcento(c.eq) !== semAcento(f.equipe)) return;
+        // só os boletins com data no período da tela, como a tela de validação do PIMS (o recusado antigo continua
+        // gravado no PIMS, mas sai da lista quando a data dele fica fora do período escolhido)
+        if (!noPeriodo(c.d, f)) return;
         const motivos = String(c.m || '').split(/\r?\n/).map(function (t) { return t.trim(); }).filter(Boolean);
         const recusado = c.st === 'I';
         saida.push(Object.assign({}, c, {
@@ -583,7 +587,7 @@
       apontamentos: apont.length,
       emFalta: nec.reduce(function (s, g) { return s + g.emFalta; }, 0),
       doses: dosesFora(linhas, f).filter(function (d) { return !d.justificada; }).length,
-      coletor: coletorTravados(linhas, hoje, { unidade: f.unidade, equipe: f.equipe }).filter(function (c) { return c.comProblema; }).length,
+      coletor: coletorTravados(linhas, hoje, f).filter(function (c) { return c.comProblema; }).length,
     };
   }
 

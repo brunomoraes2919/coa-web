@@ -387,6 +387,11 @@ test('boletins em validação no PIMS: erros registrados e possíveis erros da i
   assert.deepEqual(r.slice(-3).map((c) => c.comProblema), [false, false, false]);
   assert.equal(r.filter((c) => c.comProblema).length, 8);
   assert.deepEqual(L.coletorTravados(linhas, HOJE, { equipe: 'coord b' }).map((c) => c.b), [77, 300]); // compara o nome sem acento nem caixa
+  // o período da tela vale pela data do boletim: o que fica fora dele sai da lista (como na tela do PIMS)
+  const todos = L.coletorTravados(linhas, HOJE, {}).map((c) => c.d).sort();
+  const maisNovo = todos[todos.length - 1];
+  assert.ok(L.coletorTravados(linhas, HOJE, { de: maisNovo }).every((c) => c.d >= maisNovo));
+  assert.ok(L.coletorTravados(linhas, HOJE, { de: maisNovo }).length < todos.length);
   assert.equal(de(2).dias, 7);
   // retrato gravado antes de o servidor conferir a ordem (sem a chave oss): nenhuma previsão, em vez de "ordem não existe"
   const antigo = L.coletorTravados([{ unidade: 'X', extras: { col: [{ t: 'A', b: 1, d: '2026-10-05', os: '10', eq: 'A', opn: 'X', st: null, m: '', la: null, por: null }] } }], HOJE, {});

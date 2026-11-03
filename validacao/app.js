@@ -526,8 +526,8 @@
 
   /* ------------------------------ boletins em validação no PIMS ------------------------------ */
   function desenharColetor() {
-    const lista = L.coletorTravados(linhas, L.hojeIso(), { unidade: estado.unidade, equipe: estado.equipe });
-    $('explica-coletor').innerHTML = 'Boletins que <b>já estão no PIMS, na tela de validação</b>, aguardando a importação (lançados desde ' + fmtData(L.inicioSafra(L.hojeIso())) + '). ' +
+    const lista = L.coletorTravados(linhas, L.hojeIso(), filtro());
+    $('explica-coletor').innerHTML = 'Boletins que <b>já estão no PIMS, na tela de validação</b>, aguardando a importação, com data dentro do período escolhido. ' +
       'Enquanto não são importados, não contam como apontamento. A lista mostra o erro que o PIMS registrou, quando houve, e os <b>possíveis erros</b> que a conferência prevê para a importação.';
     if (!lista.length) { $('tab-coletor').innerHTML = '<p class="vazio">Nenhum boletim na tela de validação do PIMS.</p>'; return; }
     $('tab-coletor').innerHTML = '<table class="tabela tabela-cartoes tabela-coletor"><thead><tr><th>Boletim</th><th>Data</th><th>Ordem e coordenador</th><th>Talhão</th><th>Situação e possíveis erros</th><th>Parado</th><th>Última alteração</th></tr></thead><tbody>' +
@@ -778,7 +778,7 @@
     $('conta-apontamentos').textContent = L.conferirApontamentos(linhas, { unidade: estado.unidade, equipe: estado.equipe, soAlertas: true }).length;
     $('conta-estoque').textContent = L.necessidadePorCoordenador(linhas, vinculos, filtro()).reduce((s, g) => s + g.emFalta, 0);
     $('conta-doses').textContent = L.dosesFora(linhas, filtro()).filter((d) => !d.justificada).length;
-    $('conta-coletor').textContent = L.coletorTravados(linhas, hoje, { unidade: estado.unidade, equipe: estado.equipe }).filter((c) => c.comProblema).length;
+    $('conta-coletor').textContent = L.coletorTravados(linhas, hoje, filtro()).filter((c) => c.comProblema).length;
     if (estado.vista === 'pendencias') desenharPendencias();
     else if (estado.vista === 'abertas') desenharAbertas();
     else if (estado.vista === 'fechadas') desenharFechadas();
