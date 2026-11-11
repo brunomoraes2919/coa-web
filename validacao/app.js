@@ -3,7 +3,7 @@
    Lê o retrato do PIMS/SAP que o servidor grava em valid_pims (ordens de serviço abertas e fechadas com
    diferença de área, coordenadores, depósitos e o saldo dos depósitos vinculados, os boletins com falha de
    integração e os extras: apontamentos recentes, necessidade de produto, doses e boletins em validação) e os
-   vínculos coordenador ↔ depósito (valid_vinculos), que os administradores cadastram aqui.
+   vínculos coordenador ↔ depósito (valid_vinculos), que quem tem a Validação PIMS cadastra aqui.
    Com ?modo=controle é o Controle Técnico: a mesma tela, só com a equipe do coordenador (sem os vínculos).
    Os dados só mudam quando alguém clica em Atualizar (desde 23/10/2026 o servidor não relê sozinho de hora em hora),
    e o Atualizar pede só a unidade da tela (no Controle Técnico, a da equipe).
@@ -51,6 +51,8 @@
   let vinculos = [];      // valid_vinculos
   let fazendasCoa = [];   // [{ unidade, coaId }] — de que fazenda do COA WEB é cada unidade
   let admin = false;
+  /** quem tem a Validação PIMS (administrador ou colaborador) vincula o depósito de cada coordenador; no Controle Técnico, ninguém */
+  const podeVincular = () => !MODO_CONTROLE;
   let coaFazenda;         // fazenda escolhida no COA WEB, quando o módulo está no iframe
   let coaFazendaNome = '';
   let semColunaBoletins = false; // o banco ainda não tem a coluna dos boletins (script 0008)
@@ -284,7 +286,7 @@
     const retratoNovo = ((linhaDa(g.unidade) || {}).ordens || []).some((o) => Array.isArray(o.ap));
     if (!s) {
       return '<div class="saldo sem-vinculo"><b>Depósito no SAP</b><span>Sem depósito vinculado a este coordenador.' +
-        (admin ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '') + '</span></div>';
+        (podeVincular() ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '') + '</span></div>';
     }
     const cab = '<b>Depósito no SAP</b><span class="saldo-dep">' + esc(s.deposito) + ' · ' + esc(L.titulo(s.depositoNome)) + '</span>' +
       (s.origens.length ? '<span class="saldo-origem">recebe de ' + s.origens.map((o) => esc(o.c) + ' · ' + esc(L.titulo(o.n))).join(', ') + '</span>' : '');
@@ -482,7 +484,7 @@
     if (!grupos.length) { $('necessidade').innerHTML = '<p class="vazio">Nenhuma ordem aberta com produto a consumir neste período.</p>'; return; }
     $('necessidade').innerHTML = grupos.map((g) => {
       const cab = '<header class="cartao-cab"><div><h2>' + esc(L.titulo(g.eq)) + '</h2><p>' + esc(L.titulo(g.unidade)) + ' · ' +
-        (g.deposito ? 'depósito ' + esc(g.deposito) + ' · ' + esc(L.titulo(g.depositoNome)) : 'sem depósito vinculado' + (admin ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '')) + '</p></div>' +
+        (g.deposito ? 'depósito ' + esc(g.deposito) + ' · ' + esc(L.titulo(g.depositoNome)) : 'sem depósito vinculado' + (podeVincular() ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '')) + '</p></div>' +
         '<div class="selos">' + (g.emFalta ? '<span class="selo atraso">' + g.emFalta + (g.emFalta === 1 ? ' produto em falta' : ' produtos em falta') + '</span>' : (g.deposito && g.itens.length ? '<span class="selo ok">saldo cobre as ordens</span>' : '')) + '</div></header>';
       const nota = g.pendente ? '<p class="saldo-nota">O saldo deste depósito ainda não foi lido: entra na próxima atualização.</p>' : '';
       const itens = g.itens.length
@@ -707,10 +709,10 @@
       lista.map((d) => '<option value="' + esc(d.c) + '"' + (d.c === escolhido ? ' selected' : '') + '>' + esc(d.c) + ' · ' + esc(L.titulo(d.n)) + (d.i ? ' (inativo no SAP)' : '') + '</option>').join('');
   }
   function desenharDepositos() {
-    $('explica-depositos').innerHTML = admin
+    $('explica-depositos').innerHTML = podeVincular()
       ? 'Escolha o <b>depósito de cada coordenador no SAP</b>. O saldo aparece no painel do coordenador depois da próxima atualização, e a origem de cada produto vem sozinha das transferências de estoque do SAP. ' +
         'O acesso do coordenador ao Controle Técnico é dado na página <b>Usuários</b>: perfil Coordenador e a equipe dele no PIMS.'
-      : 'Depósito do SAP de cada coordenador. A origem de cada produto vem das transferências de estoque do SAP. Só administradores alteram estes vínculos.';
+      : 'Depósito do SAP de cada coordenador. A origem de cada produto vem das transferências de estoque do SAP. Só quem tem a Validação PIMS altera estes vínculos.';
     const lista = L.coordenadoresComVinculo(linhas, vinculos, { unidade: estado.unidade }).filter((c) => !estado.equipe || c.eq === estado.equipe);
     if (!lista.length) { $('vinculos').innerHTML = '<p class="vazio">Nenhum coordenador com ordem de serviço' + (estado.unidade ? ' nesta fazenda' : '') + '.</p>'; return; }
     const porUnidade = new Map();
@@ -721,7 +723,7 @@
         ' · ' + (linha.depositos || []).filter((d) => !d.i).length + ' depósitos no SAP</p></div></header>' +
         '<div class="tabela-rolagem"><table class="tabela tabela-vinculos"><thead><tr><th>Coordenador</th><th class="n">Ordens abertas</th><th>Depósito do coordenador</th><th></th></tr></thead><tbody>' +
         coords.map((c) => '<tr data-unidade="' + esc(c.unidade) + '" data-equipe="' + esc(c.eq) + '"><td><b>' + esc(L.titulo(c.eq)) + '</b></td><td class="n">' + c.abertas + '</td>' +
-          '<td><select data-campo="deposito" aria-label="Depósito de ' + esc(L.titulo(c.eq)) + '"' + (admin ? '' : ' disabled') + '>' + opcoesDeposito(linha, c.deposito) + '</select></td>' +
+          '<td><select data-campo="deposito" aria-label="Depósito de ' + esc(L.titulo(c.eq)) + '"' + (podeVincular() ? '' : ' disabled') + '>' + opcoesDeposito(linha, c.deposito) + '</select></td>' +
           '<td class="situacao" aria-live="polite"></td></tr>').join('') +
         '</tbody></table></div></section>';
     }).join('');
