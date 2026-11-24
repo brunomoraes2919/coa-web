@@ -1776,9 +1776,14 @@ export function linhasExtras({ apontamentos = [], necessidade = [], dose = [], c
   return Object.fromEntries(porUnidade);
 }
 
-/** Vínculos coordenador ↔ depósito cadastrados na tela (valid_vinculos); sem a tabela → []. */
+/**
+ * Vínculos coordenador ↔ depósito cadastrados na tela (valid_vinculos): { unidade, deposito, depositos } (depositos = a
+ * lista de até 4, script 0038; num banco sem ela, só o depósito de sempre). Sem a tabela → [].
+ */
 export async function lerVinculosValidacao({ url, chave, fetch: fetchImpl = globalThis.fetch }) {
-  const resp = await chamarSupabase(fetchImpl, `${url}/rest/v1/valid_vinculos?select=unidade,deposito`, { headers: cabecalhosSupabase(chave) }, 'a leitura de valid_vinculos');
+  const ler = (colunas) => chamarSupabase(fetchImpl, `${url}/rest/v1/valid_vinculos?select=${colunas}`, { headers: cabecalhosSupabase(chave) }, 'a leitura de valid_vinculos');
+  let resp = await ler('unidade,deposito,depositos');
+  if (!resp.ok && resp.status === 400 && /42703|depositos/.test(await resp.clone().text().catch(() => ''))) resp = await ler('unidade,deposito');
   if (!resp.ok) {
     const texto = await resp.clone().text().catch(() => '');
     if (resp.status === 404 || /PGRST205|42P01/.test(texto)) return [];
@@ -1789,8 +1794,9 @@ export async function lerVinculosValidacao({ url, chave, fetch: fetchImpl = glob
 }
 
 /**
- * Depósitos a consultar no SAP: { empresa: { unidade: [códigos] } } a partir dos vínculos. Só o depósito
- * de cada coordenador: a origem de cada produto vem das transferências de estoque (montarSqlEstoqueSap).
+ * Depósitos a consultar no SAP: { empresa: { unidade: [códigos] } } a partir dos vínculos. Só os depósitos
+ * de cada coordenador (o principal e os outros da lista, até 4): a origem de cada produto vem das transferências
+ * de estoque (montarSqlEstoqueSap).
  */
 export function depositosVinculados(vinculos) {
   // objetos sem protótipo: a unidade e o depósito vêm de uma tabela que a tela grava, e nenhum valor dela
@@ -1799,10 +1805,13 @@ export function depositosVinculados(vinculos) {
   for (const v of vinculos) {
     const unidade = txt(v?.unidade) ?? '';
     const empresa = empresaDa(unidade);
-    if (!empresa || !ehCodigoSap(v.deposito)) continue;
+    if (!empresa) continue;
+    // o principal e os outros da lista: até 4 códigos válidos, sem repetir (a mesma regra da tela)
+    const codigos = [...new Set([v?.deposito, ...(Array.isArray(v?.depositos) ? v.depositos : [])].filter(ehCodigoSap).map(String))].slice(0, 4);
+    if (!codigos.length) continue;
     const porUnidade = (porEmpresa[empresa] ??= Object.create(null));
     const lista = (porUnidade[unidade] ??= []);
-    if (!lista.includes(String(v.deposito))) lista.push(String(v.deposito));
+    for (const c of codigos) if (!lista.includes(c)) lista.push(c);
   }
   return porEmpresa;
 }

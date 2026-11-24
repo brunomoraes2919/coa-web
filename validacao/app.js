@@ -78,6 +78,11 @@
         if (!s.data || !s.data.session) throw new Error(EMBED ? 'Sua sessão expirou. Entre de novo no COA WEB.' : 'Entre no COA WEB para ver a Validação PIMS.');
       },
       ler: async function () {
+        const lerVinculos = async () => {
+          const v = await sb.from('valid_vinculos').select('unidade,equipe,deposito,depositos');
+          if (v.error && (v.error.code === '42703' || /depositos/.test(v.error.message || ''))) return sb.from('valid_vinculos').select('unidade,equipe,deposito');
+          return v;
+        };
         // a coluna dos boletins entra com o script 0008: sem ela, o resto da tela continua funcionando
         if (MODO_CONTROLE) {
           const eqs = conferir(await sb.rpc('controle_minhas_equipes'), 'ler a sua equipe') || [];
@@ -85,7 +90,7 @@
           const atual = eqs.find((x) => x.unidade + '|' + x.equipe === equipeControle) || eqs[0];
           const linha = conferir(await sb.rpc('controle_dados_equipe', { p_unidade: atual.unidade, p_equipe: atual.equipe }), 'ler os dados da equipe') || {};
           return {
-            linhas: [linha], vinculos: atual.deposito ? [{ unidade: atual.unidade, equipe: atual.equipe, deposito: atual.deposito }] : [],
+            linhas: [linha], vinculos: atual.deposito ? [{ unidade: atual.unidade, equipe: atual.equipe, deposito: atual.deposito, depositos: atual.depositos || [atual.deposito] }] : [],
             fazendas: [], admin: false, semBoletins: false, equipesControle: eqs, equipeControle: atual.unidade + '|' + atual.equipe,
           };
         }
@@ -95,7 +100,7 @@
         if (semBoletins) pims = await sb.from('valid_pims').select(COLUNAS).order('unidade');
         const r = await Promise.all([
           pims,
-          sb.from('valid_vinculos').select('unidade,equipe,deposito'),
+          lerVinculos(),
           sb.from('mapas_fazendas').select('unidade_pims,coa_fazenda_id'),
           sb.rpc('mapas_eh_admin'),
         ]);
@@ -108,11 +113,19 @@
         };
       },
       salvarVinculo: async function (v) {
-        if (!v.deposito) {
+        const lista = L.depositosDoVinculo(v);
+        if (!lista.length) {
           conferir(await sb.from('valid_vinculos').delete().eq('unidade', v.unidade).eq('equipe', v.equipe), 'remover o vínculo');
           return;
         }
-        conferir(await sb.from('valid_vinculos').upsert({ unidade: v.unidade, equipe: v.equipe, deposito: v.deposito, deposito_origem: null }, { onConflict: 'unidade,equipe' }), 'salvar o vínculo');
+        const linha = { unidade: v.unidade, equipe: v.equipe, deposito: lista[0], deposito_origem: null };
+        let r = await sb.from('valid_vinculos').upsert(Object.assign({ depositos: lista }, linha), { onConflict: 'unidade,equipe' });
+        // banco sem a coluna da lista (script 0038 não aplicado): um depósito só continua funcionando
+        if (r.error && (r.error.code === 'PGRST204' || r.error.code === '42703' || /depositos/.test(r.error.message || ''))) {
+          if (lista.length > 1) throw new Error('O banco ainda não aceita mais de um depósito por coordenador. Peça ao administrador para rodar o script 0038.');
+          r = await sb.from('valid_vinculos').upsert(linha, { onConflict: 'unidade,equipe' });
+        }
+        conferir(r, 'salvar o vínculo');
       },
       pedirAtualizacao: async function (unidade) {
         let r = await sb.from('valid_pedidos').insert(unidade ? { unidade: unidade } : {}).select('id').single();
@@ -132,7 +145,8 @@
     const eqs = [];
     (d.linhas || []).forEach((l) => (l.coordenadores || []).forEach((c) => {
       const v = (d.vinculos || []).find((x) => x.unidade === l.unidade && x.equipe === c.eq) || {};
-      eqs.push({ unidade: l.unidade, equipe: c.eq, deposito: v.deposito || null, deposito_nome: ((l.depositos || []).find((y) => y.c === v.deposito) || {}).n || null });
+      const deps = L.depositosDoVinculo(v);
+      eqs.push({ unidade: l.unidade, equipe: c.eq, deposito: deps[0] || null, depositos: deps, deposito_nome: ((l.depositos || []).find((y) => y.c === deps[0]) || {}).n || null });
     }));
     if (!eqs.length) throw new Error('Nenhuma equipe do PIMS foi vinculada ao seu usuário. Fale com o administrador do COA.');
     const atual = eqs.find((x) => x.unidade + '|' + x.equipe === equipeControle) || eqs.find((x) => x.deposito) || eqs[0];
@@ -141,10 +155,11 @@
     const ex = l.extras || {};
     const linha = {
       unidade: l.unidade, gerado_em: l.gerado_em || null, equipes: [atual.equipe], deposito: atual.deposito, ordens: dele(l.ordens), coordenadores: dele(l.coordenadores),
-      depositos: (l.depositos || []).filter((x) => x.c === atual.deposito), estoque: atual.deposito && (l.estoque || {})[atual.deposito] ? { [atual.deposito]: l.estoque[atual.deposito] } : {},
+      depositos: (l.depositos || []).filter((x) => atual.depositos.indexOf(x.c) >= 0),
+      estoque: Object.fromEntries(atual.depositos.filter((c) => (l.estoque || {})[c]).map((c) => [c, l.estoque[c]])),
       boletins: dele(l.boletins), extras: { ap: dele(ex.ap), nec: dele(ex.nec), dose: dele(ex.dose), col: dele(ex.col) }, avisos: l.avisos || [],
     };
-    return { linhas: [linha], vinculos: atual.deposito ? [{ unidade: atual.unidade, equipe: atual.equipe, deposito: atual.deposito }] : [], fazendas: [], admin: false, equipesControle: eqs, equipeControle: atual.unidade + '|' + atual.equipe };
+    return { linhas: [linha], vinculos: atual.deposito ? [{ unidade: atual.unidade, equipe: atual.equipe, deposito: atual.deposito, depositos: atual.depositos }] : [], fazendas: [], admin: false, equipesControle: eqs, equipeControle: atual.unidade + '|' + atual.equipe };
   }
   function fonteLocal() {
     const api = async (caminho, opcoes) => {
@@ -280,6 +295,17 @@
       '</tr>' + (abertos.has(chaveOrdem(o)) ? detalheHtml(chaveOrdem(o)) : '');
   }
 
+  /** "1836 · Aplicacao Terrestre" (o nome só quando a lista do SAP tem). */
+  const nomeDeposito = (d) => esc(d.c) + (d.n ? ' · ' + esc(L.titulo(d.n)) : '');
+  /** quanto do item há em cada depósito do coordenador (só com mais de um) */
+  const porDepositoHtml = (i) => '<small class="por-dep">' + (i.porDeposito || []).map((d) => esc(d.c) + ': ' + fmtQtd(d.q)).join(' · ') + '</small>';
+  /** Aviso dos depósitos vinculados depois da última atualização (o saldo deles ainda não entrou na soma). */
+  function notaDepositosPendentes(pendentes) {
+    if (!pendentes || !pendentes.length) return '';
+    return '<p class="saldo-nota">O saldo ' + (pendentes.length === 1 ? 'do depósito ' : 'dos depósitos ') + pendentes.map(esc).join(', ') +
+      ' ainda não foi lido e não entra na soma: entra na próxima atualização.</p>';
+  }
+
   function blocoSaldo(g) {
     const s = L.saldoDoCoordenador(linhaDa(g.unidade), vinculoDe(g.unidade, g.eq));
     // retrato gravado antes de o servidor mandar a origem de cada produto (as ordens ainda vêm sem o detalhe)
@@ -288,14 +314,16 @@
       return '<div class="saldo sem-vinculo"><b>Depósito no SAP</b><span>Sem depósito vinculado a este coordenador.' +
         (podeVincular() ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '') + '</span></div>';
     }
-    const cab = '<b>Depósito no SAP</b><span class="saldo-dep">' + esc(s.deposito) + ' · ' + esc(L.titulo(s.depositoNome)) + '</span>' +
+    const varios = s.depositos.length > 1;
+    const cab = '<b>' + (varios ? 'Depósitos no SAP' : 'Depósito no SAP') + '</b><span class="saldo-dep">' + s.depositos.map(nomeDeposito).join(' + ') + '</span>' +
       (s.origens.length ? '<span class="saldo-origem">recebe de ' + s.origens.map((o) => esc(o.c) + ' · ' + esc(L.titulo(o.n))).join(', ') + '</span>' : '');
-    if (s.pendente) return '<div class="saldo"><div class="saldo-cab">' + cab + '</div><p class="saldo-nota">O saldo deste depósito ainda não foi lido. Clique em Atualizar ou aguarde a próxima atualização.</p></div>';
-    if (!s.itens.length) return '<div class="saldo"><div class="saldo-cab">' + cab + '</div><p class="saldo-nota">Depósito sem saldo no SAP.</p></div>';
-    return '<details class="saldo"' + (s.itens.length <= 20 ? ' open' : '') + '><summary class="saldo-cab">' + cab + '<span class="saldo-qtd">' + s.itens.length + (s.itens.length === 1 ? ' produto com saldo' : ' produtos com saldo') + '</span></summary>' +
-      '<div class="tabela-rolagem"><table class="tabela tabela-saldo"><thead><tr><th>Produto</th><th class="n">Saldo no depósito</th>' +
+    if (s.pendente) return '<div class="saldo"><div class="saldo-cab">' + cab + '</div><p class="saldo-nota">O saldo ' + (varios ? 'destes depósitos' : 'deste depósito') + ' ainda não foi lido. Clique em Atualizar ou aguarde a próxima atualização.</p></div>';
+    const faltaLer = notaDepositosPendentes(s.pendentes);
+    if (!s.itens.length) return '<div class="saldo"><div class="saldo-cab">' + cab + '</div><p class="saldo-nota">' + (varios ? 'Depósitos sem saldo no SAP.' : 'Depósito sem saldo no SAP.') + '</p>' + faltaLer + '</div>';
+    return '<details class="saldo"' + (s.itens.length <= 20 ? ' open' : '') + '><summary class="saldo-cab">' + cab + '<span class="saldo-qtd">' + s.itens.length + (s.itens.length === 1 ? ' produto com saldo' : ' produtos com saldo') + '</span></summary>' + faltaLer +
+      '<div class="tabela-rolagem"><table class="tabela tabela-saldo"><thead><tr><th>Produto</th><th class="n">' + (varios ? 'Saldo nos depósitos' : 'Saldo no depósito') + '</th>' +
         '<th title="Depósito de onde o produto veio na última transferência de estoque do SAP">Origem</th><th class="n">Saldo na origem</th></tr></thead><tbody>' +
-      s.itens.map((i) => '<tr><td><span class="cod">' + esc(i.c) + '</span>' + esc(L.titulo(i.n)) + '</td><td class="n"><b>' + fmtQtd(i.q) + '</b> ' + esc(i.u) + '</td>' +
+      s.itens.map((i) => '<tr><td><span class="cod">' + esc(i.c) + '</span>' + esc(L.titulo(i.n)) + '</td><td class="n"><b>' + fmtQtd(i.q) + '</b> ' + esc(i.u) + (varios ? porDepositoHtml(i) : '') + '</td>' +
         (i.origem
           ? '<td class="origem"' + (i.transferidoEm ? ' title="Última transferência em ' + fmtData(i.transferidoEm) + '"' : '') + '>' + esc(i.origem) + '<span class="origem-nome"> · ' + esc(L.titulo(i.origemNome)) + '</span></td>' +
             '<td class="n">' + fmtQtd(i.origemSaldo) + ' ' + esc(i.u) + '</td>'
@@ -479,14 +507,14 @@
   /* ------------------------------ estoque x necessidade ------------------------------ */
   function desenharEstoque() {
     const grupos = L.necessidadePorCoordenador(linhas, vinculos, filtro());
-    $('explica-estoque').innerHTML = 'O que as <b>ordens abertas</b> no período ainda vão consumir de cada produto (pelo estado atual da ordem: o planejado proporcional à área que falta, sem passar do que ainda não foi lançado), contra o saldo do depósito do coordenador no SAP. ' +
+    $('explica-estoque').innerHTML = 'O que as <b>ordens abertas</b> no período ainda vão consumir de cada produto (pelo estado atual da ordem: o planejado proporcional à área que falta, sem passar do que ainda não foi lançado), contra o saldo do depósito do coordenador no SAP (com mais de um depósito vinculado, a soma deles). ' +
       'O que falta precisa de transferência antes da aplicação; o que está parado pode voltar para a origem.';
     if (!grupos.length) { $('necessidade').innerHTML = '<p class="vazio">Nenhuma ordem aberta com produto a consumir neste período.</p>'; return; }
     $('necessidade').innerHTML = grupos.map((g) => {
       const cab = '<header class="cartao-cab"><div><h2>' + esc(L.titulo(g.eq)) + '</h2><p>' + esc(L.titulo(g.unidade)) + ' · ' +
-        (g.deposito ? 'depósito ' + esc(g.deposito) + ' · ' + esc(L.titulo(g.depositoNome)) : 'sem depósito vinculado' + (podeVincular() ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '')) + '</p></div>' +
+        (g.deposito ? ((g.depositos || []).length > 1 ? 'depósitos ' + g.depositos.map(nomeDeposito).join(' + ') : 'depósito ' + esc(g.deposito) + ' · ' + esc(L.titulo(g.depositoNome))) : 'sem depósito vinculado' + (podeVincular() ? ' <button type="button" class="link" data-ir="depositos" data-unidade="' + esc(g.unidade) + '">Vincular</button>' : '')) + '</p></div>' +
         '<div class="selos">' + (g.emFalta ? '<span class="selo atraso">' + g.emFalta + (g.emFalta === 1 ? ' produto em falta' : ' produtos em falta') + '</span>' : (g.deposito && g.itens.length ? '<span class="selo ok">saldo cobre as ordens</span>' : '')) + '</div></header>';
-      const nota = g.pendente ? '<p class="saldo-nota">O saldo deste depósito ainda não foi lido: entra na próxima atualização.</p>' : '';
+      const nota = g.pendente ? '<p class="saldo-nota">O saldo ' + ((g.depositos || []).length > 1 ? 'destes depósitos' : 'deste depósito') + ' ainda não foi lido: entra na próxima atualização.</p>' : notaDepositosPendentes(g.pendentes);
       const itens = g.itens.length
         ? '<div class="tabela-rolagem"><table class="tabela tabela-cartoes tabela-nec"><thead><tr><th>Produto</th><th class="n">Falta consumir</th><th class="n">Saldo no depósito</th><th class="n">Falta transferir</th><th>Origem</th><th>Ordens</th></tr></thead><tbody>' +
           g.itens.map((i) => '<tr class="' + (i.falta > 0 ? 'com-alerta' : '') + '"><td class="principal"><small>' + esc(i.c) + '</small> ' + esc(L.titulo(i.nm)) + '</td>' +
@@ -701,16 +729,34 @@
   }
 
   /* ------------------------------ depósitos dos coordenadores ------------------------------ */
-  function opcoesDeposito(linha, escolhido) {
-    const lista = (linha.depositos || []).filter((d) => !d.i || d.c === escolhido);
+  function opcoesDeposito(linha, escolhido, excluir, vazio) {
+    const fora = excluir || [];
+    const lista = (linha.depositos || []).filter((d) => (!d.i || d.c === escolhido) && (d.c === escolhido || fora.indexOf(d.c) < 0));
     const tem = !escolhido || lista.some((d) => d.c === escolhido);
-    return '<option value="">— sem depósito —</option>' +
+    return '<option value="">' + esc(vazio || '— sem depósito —') + '</option>' +
       (tem ? '' : '<option value="' + esc(escolhido) + '" selected>' + esc(escolhido) + ' · (não está na lista do PIMS)</option>') +
       lista.map((d) => '<option value="' + esc(d.c) + '"' + (d.c === escolhido ? ' selected' : '') + '>' + esc(d.c) + ' · ' + esc(L.titulo(d.n)) + (d.i ? ' (inativo no SAP)' : '') + '</option>').join('');
   }
+  /**
+   * Os seletores de depósito de um coordenador: um por depósito vinculado (o primeiro é o principal) e, enquanto houver
+   * lugar (até L.MAX_DEPOSITOS), mais um vazio para adicionar outro. Sem permissão, só os vinculados, desligados.
+   */
+  function seletoresDeposito(linha, c) {
+    const escolhidos = L.depositosDoVinculo(c);
+    const pode = podeVincular();
+    const n = Math.max(1, Math.min(L.MAX_DEPOSITOS, escolhidos.length + (pode && escolhidos.length && escolhidos.length < L.MAX_DEPOSITOS ? 1 : 0)));
+    let html = '';
+    for (let i = 0; i < n; i++) {
+      const atual = escolhidos[i] || '';
+      const vazio = i === 0 ? '— sem depósito —' : atual ? '— tirar este depósito —' : '+ adicionar outro depósito';
+      html += '<select data-campo="deposito" data-i="' + i + '" aria-label="' + (i ? 'Outro depósito' : 'Depósito') + ' de ' + esc(L.titulo(c.eq)) + '"' + (pode ? '' : ' disabled') + '>' +
+        opcoesDeposito(linha, atual, escolhidos.filter((x, k) => k !== i), vazio) + '</select>';
+    }
+    return '<div class="deps-coord">' + html + '</div>';
+  }
   function desenharDepositos() {
     $('explica-depositos').innerHTML = podeVincular()
-      ? 'Escolha o <b>depósito de cada coordenador no SAP</b>. O saldo aparece no painel do coordenador depois da próxima atualização, e a origem de cada produto vem sozinha das transferências de estoque do SAP. ' +
+      ? 'Escolha o <b>depósito de cada coordenador no SAP</b> (até ' + L.MAX_DEPOSITOS + ' por coordenador: o primeiro é o principal, e o saldo e o Estoque x necessidade somam todos). O saldo aparece no painel do coordenador depois da próxima atualização, e a origem de cada produto vem sozinha das transferências de estoque do SAP. ' +
         'O acesso do coordenador ao Controle Técnico é dado na página <b>Usuários</b>: perfil Coordenador e a equipe dele no PIMS.'
       : 'Depósito do SAP de cada coordenador. A origem de cada produto vem das transferências de estoque do SAP. Só quem tem a Validação PIMS altera estes vínculos.';
     const lista = L.coordenadoresComVinculo(linhas, vinculos, { unidade: estado.unidade }).filter((c) => !estado.equipe || c.eq === estado.equipe);
@@ -721,19 +767,18 @@
       const linha = linhaDa(unidade) || { depositos: [] };
       return '<section class="cartao"><header class="cartao-cab"><div><h2>' + esc(L.titulo(unidade)) + '</h2><p>' + (coords.length === 1 ? '1 coordenador' : coords.length + ' coordenadores') +
         ' · ' + (linha.depositos || []).filter((d) => !d.i).length + ' depósitos no SAP</p></div></header>' +
-        '<div class="tabela-rolagem"><table class="tabela tabela-vinculos"><thead><tr><th>Coordenador</th><th class="n">Ordens abertas</th><th>Depósito do coordenador</th><th></th></tr></thead><tbody>' +
+        '<div class="tabela-rolagem"><table class="tabela tabela-vinculos"><thead><tr><th>Coordenador</th><th class="n">Ordens abertas</th><th>Depósitos do coordenador</th><th></th></tr></thead><tbody>' +
         coords.map((c) => '<tr data-unidade="' + esc(c.unidade) + '" data-equipe="' + esc(c.eq) + '"><td><b>' + esc(L.titulo(c.eq)) + '</b></td><td class="n">' + c.abertas + '</td>' +
-          '<td><select data-campo="deposito" aria-label="Depósito de ' + esc(L.titulo(c.eq)) + '"' + (podeVincular() ? '' : ' disabled') + '>' + opcoesDeposito(linha, c.deposito) + '</select></td>' +
+          '<td>' + seletoresDeposito(linha, c) + '</td>' +
           '<td class="situacao" aria-live="polite"></td></tr>').join('') +
         '</tbody></table></div></section>';
     }).join('');
   }
 
   async function salvarVinculo(tr) {
-    const v = {
-      unidade: tr.dataset.unidade, equipe: tr.dataset.equipe,
-      deposito: tr.querySelector('[data-campo="deposito"]').value || null,
-    };
+    const lista = L.depositosDoVinculo({ depositos: Array.from(tr.querySelectorAll('[data-campo="deposito"]')).map((s) => s.value) });
+    const v = { unidade: tr.dataset.unidade, equipe: tr.dataset.equipe, deposito: lista[0] || null, depositos: lista };
+    tr.querySelectorAll('[data-campo="deposito"]').forEach((s) => { s.disabled = true; });
     const sit = tr.querySelector('.situacao');
     sit.className = 'situacao'; sit.textContent = 'Salvando…';
     try {
@@ -741,11 +786,15 @@
       vinculos = vinculos.filter((x) => !(x.unidade === v.unidade && x.equipe === v.equipe));
       if (v.deposito) vinculos.push(v);
       sit.className = 'situacao ok';
-      sit.textContent = v.deposito ? 'Salvo. O saldo entra na próxima atualização.' : 'Vínculo removido.';
+      sit.textContent = !lista.length ? 'Vínculo removido.' : (lista.length > 1 ? 'Salvo (' + lista.length + ' depósitos).' : 'Salvo.') + ' O saldo entra na próxima atualização.';
     } catch (e) {
       sit.className = 'situacao erro';
       sit.textContent = e && e.message ? e.message : 'Não foi possível salvar.';
     }
+    // redesenha os seletores com o que ficou gravado (o vazio para adicionar outro aparece ou some)
+    const salvo = vinculos.find((x) => x.unidade === v.unidade && x.equipe === v.equipe) || { equipe: v.equipe };
+    const caixa = tr.querySelector('.deps-coord');
+    if (caixa) caixa.outerHTML = seletoresDeposito(linhaDa(v.unidade) || { depositos: [] }, Object.assign({ eq: v.equipe }, salvo));
   }
 
   /* ------------------------------ tela ------------------------------ */
@@ -833,7 +882,7 @@
       sel.closest('label').hidden = equipesControle.length < 2; // só o administrador tem mais de uma para escolher
       const atual = equipesControle.find((x) => x.unidade + '|' + x.equipe === equipeControle);
       $('marca-sub').textContent = atual
-        ? L.titulo(atual.equipe) + ' · ' + L.titulo(atual.unidade) + ' · ' + (atual.deposito ? 'depósito ' + atual.deposito + (atual.deposito_nome ? ' · ' + L.titulo(atual.deposito_nome) : '') : 'sem depósito vinculado')
+        ? L.titulo(atual.equipe) + ' · ' + L.titulo(atual.unidade) + ' · ' + ((atual.depositos || []).length > 1 ? 'depósitos ' + atual.depositos.join(', ') : atual.deposito ? 'depósito ' + atual.deposito + (atual.deposito_nome ? ' · ' + L.titulo(atual.deposito_nome) : '') : 'sem depósito vinculado')
         : 'Suas ordens, apontamentos e estoque';
     }
     vinculos = d.vinculos || [];

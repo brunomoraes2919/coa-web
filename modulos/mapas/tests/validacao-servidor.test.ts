@@ -70,6 +70,13 @@ describe('validação de apontamentos do PIMS (servidor)', () => {
     expect(() => montarSqlEstoqueSap(["'; --"])).toThrow('Nenhum depósito válido para consultar o saldo.');
   });
 
+  it('lê todos os depósitos da lista do coordenador (até 4), sem repetir e sem código inválido', () => {
+    expect(depositosVinculados([
+      { unidade: 'DOURADO', deposito: '1001', depositos: ['1001', '1002', "x'; --", '1003', '1004', '1005'] },
+      { unidade: 'DOURADO', deposito: '1002', depositos: null },
+    ])).toEqual({ SBOAGROPECUARIALOCKS: { DOURADO: ['1001', '1002', '1003', '1004'] } });
+  });
+
   it('agrupa os depósitos dos coordenadores por empresa do SAP e por unidade', () => {
     expect(depositosVinculados([
       { unidade: 'DOURADO', deposito: '1001' },

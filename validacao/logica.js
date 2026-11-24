@@ -178,6 +178,24 @@
     return { faltando: faltando, sobrando: sobrando };
   }
 
+  /** quantos depósitos do SAP um coordenador pode ter vinculados */
+  const MAX_DEPOSITOS = 4;
+
+  /**
+   * Depósitos de um vínculo, na ordem (o primeiro é o principal), sem repetir e no máximo MAX_DEPOSITOS. Aceita o
+   * vínculo antigo, só com `deposito` (antes do script 0038), e o novo, com a lista em `depositos`.
+   */
+  function depositosDoVinculo(v) {
+    if (!v) return [];
+    const lista = Array.isArray(v.depositos) && v.depositos.length ? v.depositos : [v.deposito];
+    const saida = [];
+    lista.forEach(function (c) {
+      const t = String(c === null || c === undefined ? '' : c).trim();
+      if (t && saida.indexOf(t) < 0 && saida.length < MAX_DEPOSITOS) saida.push(t);
+    });
+    return saida;
+  }
+
   /**
    * Coordenadores de cada unidade para a aba de vínculos: os que o servidor listou (ordens na safra) mais
    * os que só têm ordem aberta antiga, com o vínculo de cada um (`vinculos` = linhas de valid_vinculos).
@@ -187,7 +205,7 @@
     const porChave = new Map();
     const pegar = function (unidade, eq) {
       const chave = unidade + '|' + eq;
-      if (!porChave.has(chave)) porChave.set(chave, { unidade: unidade, eq: eq, abertas: 0, ordens: 0, deposito: null });
+      if (!porChave.has(chave)) porChave.set(chave, { unidade: unidade, eq: eq, abertas: 0, ordens: 0, deposito: null, depositos: [] });
       return porChave.get(chave);
     };
     (linhas || []).forEach(function (l) {
@@ -198,7 +216,8 @@
     (vinculos || []).forEach(function (v) {
       if (f.unidade && v.unidade !== f.unidade) return;
       const x = pegar(v.unidade, v.equipe);
-      x.deposito = v.deposito || null;
+      x.depositos = depositosDoVinculo(v);
+      x.deposito = x.depositos[0] || null;
     });
     return Array.from(porChave.values()).sort(function (a, b) {
       return (a.unidade < b.unidade ? -1 : a.unidade > b.unidade ? 1 : 0) || (a.eq < b.eq ? -1 : a.eq > b.eq ? 1 : 0);
@@ -206,29 +225,59 @@
   }
 
   /**
-   * Saldo do depósito de um coordenador: os itens do depósito dele e, em cada um, o depósito de ORIGEM
-   * (de onde o item veio na última transferência do SAP) com o saldo do item lá. `origens` = os depósitos
-   * de origem distintos, do que abastece mais itens para o que abastece menos. `linha` = a linha de
-   * valid_pims da unidade. Sem vínculo → null; vínculo salvo mas saldo ainda não lido → { pendente: true }.
+   * Saldo dos depósitos de um coordenador (até MAX_DEPOSITOS): os itens somados entre os depósitos dele (`porDeposito`
+   * = quanto há em cada um) e, em cada item, o depósito de ORIGEM (de onde veio na última transferência do SAP) com o
+   * saldo do item lá; transferência entre dois depósitos do próprio coordenador só vale se não houver outra. `origens` =
+   * os depósitos de origem distintos, do que abastece mais itens para o que abastece menos. `linha` = a linha de
+   * valid_pims da unidade. Sem vínculo → null. `pendente` = nenhum depósito com saldo lido ainda; `pendentes` = os
+   * códigos dos que ainda não foram lidos (vínculo salvo depois da última atualização).
    */
   function saldoDoCoordenador(linha, vinculo) {
-    if (!linha || !vinculo || !vinculo.deposito) return null;
+    const codigos = depositosDoVinculo(vinculo);
+    if (!linha || !codigos.length) return null;
     const nomes = new Map((linha.depositos || []).map(function (d) { return [d.c, d.n]; }));
     const estoque = linha.estoque || {};
+    const deps = codigos.map(function (c) { return { c: c, n: nomes.get(c) || '', pendente: !Object.prototype.hasOwnProperty.call(estoque, c) }; });
     const saida = {
-      deposito: vinculo.deposito, depositoNome: nomes.get(vinculo.deposito) || '',
-      pendente: !Object.prototype.hasOwnProperty.call(estoque, vinculo.deposito), itens: [], origens: [],
+      deposito: codigos[0], depositoNome: deps[0].n, depositos: deps,
+      pendente: deps.every(function (d) { return d.pendente; }), pendentes: deps.filter(function (d) { return d.pendente; }).map(function (d) { return d.c; }),
+      itens: [], origens: [],
     };
     if (saida.pendente) return saida;
+    const porItem = new Map();
+    deps.forEach(function (d) {
+      if (d.pendente) return;
+      (estoque[d.c] || []).forEach(function (i) {
+        const q = Number(i.q) || 0;
+        if (!porItem.has(i.c)) porItem.set(i.c, { c: i.c, n: i.n, q: 0, u: i.u, origem: null, origemNome: '', origemSaldo: null, transferidoEm: null, porDeposito: [], interna: true });
+        const x = porItem.get(i.c);
+        x.q += q;
+        x.porDeposito.push({ c: d.c, q: q });
+        if (!x.n && i.n) x.n = i.n;
+        if (!x.u && i.u) x.u = i.u;
+        const origem = i.o || null;
+        if (!origem) return;
+        // vale a origem de fora dos depósitos do coordenador; entre as de fora (ou entre as de dentro), a mais recente
+        const interna = codigos.indexOf(origem) >= 0;
+        const melhor = !x.origem || (x.interna && !interna) || (x.interna === interna && String(i.od || '') > String(x.transferidoEm || ''));
+        if (!melhor) return;
+        x.origem = origem;
+        x.origemNome = i.on || nomes.get(origem) || '';
+        x.origemSaldo = Number(i.oq) || 0;
+        x.transferidoEm = i.od || null;
+        x.interna = interna;
+      });
+    });
     const porOrigem = new Map();
-    saida.itens = (estoque[vinculo.deposito] || []).map(function (i) {
-      const origem = i.o || null;
-      const nome = origem ? (i.on || nomes.get(origem) || '') : '';
-      if (origem) {
-        if (!porOrigem.has(origem)) porOrigem.set(origem, { c: origem, n: nome, itens: 0 });
-        porOrigem.get(origem).itens += 1;
+    saida.itens = Array.from(porItem.values()).map(function (x) {
+      if (x.origem) {
+        if (!porOrigem.has(x.origem)) porOrigem.set(x.origem, { c: x.origem, n: x.origemNome, itens: 0 });
+        porOrigem.get(x.origem).itens += 1;
       }
-      return { c: i.c, n: i.n, q: i.q, u: i.u, origem: origem, origemNome: nome, origemSaldo: origem ? (Number(i.oq) || 0) : null, transferidoEm: i.od || null };
+      return {
+        c: x.c, n: x.n, q: Math.round(x.q * 1000) / 1000, u: x.u, origem: x.origem, origemNome: x.origemNome, origemSaldo: x.origemSaldo,
+        transferidoEm: x.transferidoEm, porDeposito: x.porDeposito,
+      };
     });
     saida.origens = Array.from(porOrigem.values()).sort(function (a, b) { return b.itens - a.itens || (a.c < b.c ? -1 : a.c > b.c ? 1 : 0); });
     return saida;
@@ -422,7 +471,7 @@
 
   /**
    * Estoque x necessidade, por coordenador: o que as ordens ABERTAS ainda vão consumir de cada produto
-   * (ver faltaConsumir) contra o saldo do depósito vinculado a ele e o saldo na origem.
+   * (ver faltaConsumir) contra o saldo somado dos depósitos vinculados a ele (até MAX_DEPOSITOS) e o saldo na origem.
    *   itens   = [{ c, nm, u, nec, saldo, falta, origem, origemNome, origemSaldo, ordens [nº] }], em falta primeiro;
    *   parados = produtos com saldo no depósito sem necessidade nas ordens abertas (candidatos a devolver).
    * Coordenador sem depósito vinculado vem com `deposito: null` (necessidade sem comparação de saldo).
@@ -448,7 +497,7 @@
       });
       // coordenador com depósito vinculado aparece mesmo sem necessidade (para mostrar o que está parado)
       (vinculos || []).forEach(function (v) {
-        if (v.unidade !== l.unidade || !v.deposito || (f.equipe && v.equipe !== f.equipe)) return;
+        if (v.unidade !== l.unidade || !depositosDoVinculo(v).length || (f.equipe && v.equipe !== f.equipe)) return;
         if (!porEq.has(v.equipe)) porEq.set(v.equipe, new Map());
       });
       porEq.forEach(function (itens, eq) {
@@ -476,6 +525,7 @@
         if (!lista.length && !parados.length) return;
         grupos.push({
           unidade: l.unidade, eq: eq, deposito: saldo ? saldo.deposito : null, depositoNome: saldo ? saldo.depositoNome : '', pendente: !!(saldo && saldo.pendente),
+          depositos: saldo ? saldo.depositos : [], pendentes: saldo ? saldo.pendentes : [],
           itens: lista, parados: parados, emFalta: lista.filter(function (i) { return i.falta > 0; }).length,
         });
       });
@@ -690,6 +740,6 @@
     detalheDaOrdem: detalheDaOrdem, explicarFalha: explicarFalha, boletinsComProblema: boletinsComProblema, PROBLEMAS_ITEM: PROBLEMAS_ITEM,
     ALERTAS_APONT: ALERTAS_APONT, conferirApontamentos: conferirApontamentos, necessidadePorCoordenador: necessidadePorCoordenador, dosesFora: dosesFora,
     coletorTravados: coletorTravados, pendencias: pendencias, saldosDosDepositos: saldosDosDepositos, compararDepositos: compararDepositos,
-    unidadeDaFazenda: unidadeDaFazenda, titulo: titulo,
+    unidadeDaFazenda: unidadeDaFazenda, titulo: titulo, MAX_DEPOSITOS: MAX_DEPOSITOS, depositosDoVinculo: depositosDoVinculo,
   };
 });

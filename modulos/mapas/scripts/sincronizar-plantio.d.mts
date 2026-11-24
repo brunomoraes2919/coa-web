@@ -392,8 +392,8 @@ export function linhasValidacao(
   },
   geradoEm: string,
 ): LinhaValidScript[];
-export function depositosVinculados(vinculos: { unidade: string; deposito: string | null }[]): Record<string, Record<string, string[]>>;
-export function lerVinculosValidacao(opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<{ unidade: string; deposito: string | null }[]>;
+export function depositosVinculados(vinculos: { unidade: string; deposito: string | null; depositos?: string[] | null }[]): Record<string, Record<string, string[]>>;
+export function lerVinculosValidacao(opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<{ unidade: string; deposito: string | null; depositos?: string[] | null }[]>;
 export function sincronizarValidacao(opcoes: { url: string; token: string; vinculos?: { unidade: string; deposito: string | null }[]; unidades?: string[] | null; fetchImpl?: FetchLike; agora?: Date }): Promise<{ geradoEm: string; linhas: LinhaValidScript[]; avisos: string[]; unidades: string[] | null }>;
 export function gravarValidacaoSupabase(dados: { geradoEm: string; linhas: LinhaValidScript[]; unidades?: string[] | null }, opcoes: { url: string; chave: string; fetch?: FetchLike }): Promise<'ok' | 'vazio' | 'sem-tabela'>;
 export function rodarValidacao(opcoes: { agrovex: { url: string; token: string }; supabase: { url: string; chave: string }; unidades?: string[] | null; fetchImpl?: FetchLike; /** recebe o erro inteiro (para quem responde a um pedido escolher a mensagem pelo tipo) */ aoErro?: (e: unknown) => void }): Promise<string | null>;

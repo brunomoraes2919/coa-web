@@ -480,3 +480,52 @@ test('comparar depósitos: produto a produto, com 0 onde não tem saldo e a dife
   // depósito sem saldo: tudo do outro lado
   assert.deepEqual(L.compararDepositos(linhaSaldos, '1003', '1002', '').itens.map((i) => [i.c, i.a, i.b]), [['075908', 0, 12], ['000040', 0, -3]]);
 });
+
+test('vínculo com vários depósitos: até 4, sem repetir, o primeiro é o principal (aceita o vínculo antigo)', () => {
+  assert.deepEqual(L.depositosDoVinculo({ deposito: '1001' }), ['1001']);
+  assert.deepEqual(L.depositosDoVinculo({ deposito: '1001', depositos: ['1001', '1002', ' 1002 ', '', null, '1003', '1004', '1005'] }), ['1001', '1002', '1003', '1004']);
+  assert.deepEqual(L.depositosDoVinculo({ deposito: null, depositos: [] }), []);
+  assert.deepEqual(L.depositosDoVinculo(null), []);
+  const r = L.coordenadoresComVinculo([{ unidade: 'X', coordenadores: [{ eq: 'A', n: 1 }], ordens: [] }], [{ unidade: 'X', equipe: 'A', deposito: '1001', depositos: ['1001', '1002'] }], {});
+  assert.deepEqual([r[0].deposito, r[0].depositos], ['1001', ['1001', '1002']]);
+});
+
+test('saldo com vários depósitos: soma o item entre eles e mostra quanto há em cada um', () => {
+  const linha = {
+    unidade: 'X',
+    depositos: [{ c: '1001', n: 'DEP A' }, { c: '1002', n: 'DEP B' }, { c: '1000', n: 'CENTRAL' }],
+    estoque: {
+      1001: [{ c: 'I1', n: 'ADUBO', q: 10, u: 'KG', o: '1000', on: 'CENTRAL', oq: 300, od: '2026-10-01' }, { c: 'I2', n: 'SEMENTE', q: 2, u: 'SC' }],
+      // I1 também veio do 1001 (transferência entre os depósitos do próprio coordenador): a origem de fora vale mais
+      1002: [{ c: 'I1', n: 'ADUBO', q: 5.5, u: 'KG', o: '1001', on: 'DEP A', oq: 10, od: '2026-10-05' }, { c: 'I3', n: 'HERBICIDA', q: 1, u: 'L', o: '1000', oq: 20, od: '2026-10-02' }],
+    },
+  };
+  const s = L.saldoDoCoordenador(linha, { deposito: '1001', depositos: ['1001', '1002', '2222'] });
+  assert.equal(s.deposito, '1001');
+  assert.deepEqual(s.depositos.map((d) => [d.c, d.n, d.pendente]), [['1001', 'DEP A', false], ['1002', 'DEP B', false], ['2222', '', true]]);
+  assert.equal(s.pendente, false);
+  assert.deepEqual(s.pendentes, ['2222']);
+  assert.deepEqual(s.itens.map((i) => [i.c, i.q, i.origem, i.porDeposito.map((d) => d.c + ':' + d.q).join(' ')]), [
+    ['I1', 15.5, '1000', '1001:10 1002:5.5'],
+    ['I2', 2, null, '1001:2'],
+    ['I3', 1, '1000', '1002:1'],
+  ]);
+  assert.deepEqual(s.origens, [{ c: '1000', n: 'CENTRAL', itens: 2 }]);
+  // nenhum lido ainda: pendente
+  assert.equal(L.saldoDoCoordenador(linha, { depositos: ['3333', '4444'] }).pendente, true);
+});
+
+test('estoque x necessidade com vários depósitos: o saldo é a soma deles', () => {
+  const linhas = [{
+    unidade: 'X',
+    depositos: [{ c: '1001', n: 'DEP A' }, { c: '1002', n: 'DEP B' }],
+    estoque: { 1001: [{ c: 'I1', n: 'ADUBO', q: 10, u: 'KG' }], 1002: [{ c: 'I1', n: 'ADUBO', q: 30, u: 'KG' }] },
+    ordens: [ordem({ os: 1, eq: 'A', pl: 100, ex: 0 })],
+    extras: { nec: [{ os: 1, eq: 'A', c: 'I1', nm: 'ADUBO', pl: 50, lc: 0, ab: HOJE }] },
+  }];
+  const so1 = L.necessidadePorCoordenador(linhas, [{ unidade: 'X', equipe: 'A', deposito: '1001' }], {});
+  const os2 = L.necessidadePorCoordenador(linhas, [{ unidade: 'X', equipe: 'A', deposito: '1001', depositos: ['1001', '1002'] }], {});
+  assert.deepEqual([so1[0].itens[0].saldo, so1[0].itens[0].falta], [10, 40]);
+  assert.deepEqual([os2[0].itens[0].saldo, os2[0].itens[0].falta], [40, 10]);
+  assert.deepEqual(os2[0].depositos.map((d) => d.c), ['1001', '1002']);
+});

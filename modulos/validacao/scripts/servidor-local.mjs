@@ -209,7 +209,7 @@ createServer((req, res) => {
       .then((v) => {
         DADOS.vinculos = DADOS.vinculos.filter((x) => !(x.unidade === v.unidade && x.equipe === v.equipe));
         if (v.deposito) {
-          DADOS.vinculos.push({ unidade: String(v.unidade), equipe: String(v.equipe), deposito: v.deposito });
+          DADOS.vinculos.push({ unidade: String(v.unidade), equipe: String(v.equipe), deposito: v.deposito, depositos: Array.isArray(v.depositos) ? v.depositos.map(String).slice(0, 4) : [v.deposito] });
         }
         responder(res, 200, TIPOS['.json'], '{"ok":true}');
       })
