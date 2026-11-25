@@ -102,6 +102,7 @@
       dados: function () { return api('GET', '/api/dados'); },
       planos: async function () { return (await api('GET', '/api/metas')).planos || []; },
       assinatura: async function () { var r = await Promise.all([api('GET', '/api/dados'), api('GET', '/api/metas')]); return (r[0].geradoEm || '') + '|' + JSON.stringify(r[1].planos || []); },
+      marcaMapas: async function () { return 'local'; },
       mapas: function () {
         if (window.MAPAS) return Promise.resolve(window.MAPAS);
         return new Promise(function (ok) {
@@ -121,6 +122,13 @@
       unidadeDaFazendaCoa: function () { return null; },
       fazendaCoaDaUnidade: function () { return null; }
     };
+  }
+
+  /** Resumo curto (hash de 32 bits em base 36) de um texto: compara listas grandes sem guardá-las. */
+  function resumoTexto(t) {
+    var h = 0;
+    for (var i = 0; i < t.length; i++) { h = (h * 31 + t.charCodeAt(i)) | 0; }
+    return (h >>> 0).toString(36);
   }
 
   function FonteSupabase(cfg) {
@@ -184,6 +192,17 @@
         return (r.data || []).map(function (p) {
           return { unidade: p.unidade, safra: p.safra, operacao: p.operacao, dataTermino: p.data_termino, periodos: p.periodos || [], observacao: p.observacao, autor: p.autor, atualizadoEm: p.atualizado_em };
         });
+      },
+      /**
+       * Marca leve dos limites cadastrados no Mapas: os ids dos talhões e das áreas da cultura (cada importação grava
+       * polígonos com ids novos). Só ela é conferida de tempos em tempos; as geometrias, só quando ela muda.
+       */
+      marcaMapas: async function () {
+        var r = await Promise.all([
+          tudo(function () { return sb.from('mapas_talhoes').select('id').order('id'); }),
+          tudo(function () { return sb.from('mapas_areas_cultura').select('id').order('id'); })
+        ]);
+        return r[0].length + '|' + r[1].length + '|' + resumoTexto(r[0].concat(r[1]).map(function (x) { return x.id; }).join(','));
       },
       mapas: async function () {
         var res = await Promise.all([
@@ -756,7 +775,7 @@
     comp.quadros.forEach(function (q, i) {
       var fh = comp.quadros.length > 1 ? alturaUtil * q.fr : H, topo = q.titulo ? Math.round((opcoes.fonteTitulo || 12) * 1.8) : 0;
       var a = (q.bbox[2] - q.bbox[0]) / Math.max(1, q.bbox[3] - q.bbox[1]);
-      var nome = registrar(u + '|' + mp.rotulo + '|' + (comp.quadros.length > 1 ? 'q' + i : 'todo'), q.fs);
+      var nome = registrar('g' + geracaoMapas + '|' + u + '|' + mp.rotulo + '|' + (comp.quadros.length > 1 ? 'q' + i : 'todo'), q.fs);
       var lat = (Math.atan(Math.exp(((q.bbox[1] + q.bbox[3]) / 2) / 6378137)) * 2 - Math.PI / 2);
       quadros.push({ i: i, fy: y / Math.max(1, H), fh: fh / Math.max(1, H) });
       if (q.titulo) graphic.push({ id: 'titulo' + i, type: 'text', z: 100, left: 4, top: y + 2, style: { text: q.titulo, fontSize: opcoes.fonteTitulo || 12, fontWeight: 600, fill: COR.texto, stroke: '#FFFFFF', lineWidth: 3 } });
@@ -2343,6 +2362,7 @@
    */
   async function conferirDados() {
     if (conf.ocupado || !DADOS || (!tv.ativo && (estado.vista !== 'painel' || document.hidden))) return;
+    conferirMapas(false);
     conf.ocupado = true;
     try {
       var marca = await fonte.assinatura(), dia = paraIso(hoje()), mudou = marca !== marcaCarregada;
@@ -2382,16 +2402,40 @@
   }
 
   var mapasPromessa = null;
-  /** Lê os limites dos talhões uma vez (a Revista espera por eles: devolve sempre a mesma promessa). */
+  /** geração dos limites carregados: entra no nome do desenho registrado, para o limite novo não reaproveitar o velho */
+  var geracaoMapas = 0;
+  /** marca dos limites que estão na tela (fonte.marcaMapas) e quando ela foi conferida */
+  var marcaMapas = null, mapasConferidosEm = 0;
+  var MAPAS_CONFERIR_MIN = 30;
+  /** Lê os limites dos talhões (a Revista espera por eles: devolve a mesma promessa até a próxima releitura). */
   function carregarMapas() {
     if (!mapasPromessa) mapasPromessa = (async function () {
       mapasCarregando = true;
-      try { MAPAS = await fonte.mapas(); } catch (e) { MAPAS = {}; console.warn('Acompanhamento: mapas', e); }
-      mapasCarregando = false;
+      // a marca é lida antes das geometrias: se o Mapas mudar no meio da carga, a próxima conferência percebe
+      var marca = await fonte.marcaMapas().catch(function () { return null; });
+      try {
+        var novos = await fonte.mapas();
+        MAPAS = novos; geracaoMapas++; marcaMapas = marca;
+      } catch (e) { if (!MAPAS) MAPAS = {}; console.warn('Acompanhamento: mapas', e); }
+      mapasCarregando = false; mapasConferidosEm = Date.now();
       if (estado.vista === 'painel' && mUltimo) { renderMapa(mUltimo); }
       if (tv.ativo) tvDesenhar();
     })();
     return mapasPromessa;
+  }
+  /**
+   * Os limites mudaram no Mapas desde que a página leu? Confere só a marca leve e, se mudou, relê as geometrias e
+   * redesenha. `forcar` = conferir agora (botão Atualizar, página que volta a ficar visível); sem ele, no máximo a
+   * cada MAPAS_CONFERIR_MIN minutos.
+   */
+  async function conferirMapas(forcar) {
+    if (!MAPAS || mapasCarregando) return;
+    if (!forcar && Date.now() - mapasConferidosEm < MAPAS_CONFERIR_MIN * 60000) return;
+    mapasConferidosEm = Date.now();
+    var marca = await fonte.marcaMapas().catch(function () { return null; });
+    if (marca === null || marca === marcaMapas) return;
+    mapasPromessa = null;
+    await carregarMapas();
   }
 
   /** O botão Atualizar (e o "Atualizar agora" do lembrete): true se buscou e carregou os dados novos. */
@@ -2406,6 +2450,7 @@
       render();
       mostrarAviso('');
       if (lembrete) lembrete.esconder();
+      conferirMapas(true); // limite trocado no Mapas entra junto com o PIMS novo
       return true;
     } catch (e) { mostrarAviso(e.message, true); return false; }
     finally { b.disabled = false; b.classList.remove('girando'); }
@@ -2469,7 +2514,10 @@
   $('tv-paginas').addEventListener('click', function (e) { var b = e.target.closest('button'); if (!b) return; tv.i = +b.dataset.i; tvMostrar(); });
   $('tv').addEventListener('mousemove', tvMostrarControles);
   document.addEventListener('fullscreenchange', function () { $('tv-cheia').hidden = !!document.fullscreenElement; if (tv.ativo) setTimeout(tvDesenhar, 200); });
-  document.addEventListener('visibilitychange', function () { if (tv.ativo && !document.hidden) manterTelaLigada(); });
+  document.addEventListener('visibilitychange', function () {
+    if (tv.ativo && !document.hidden) manterTelaLigada();
+    if (!document.hidden) conferirMapas(true); // quem volta para a aba vê o limite que estiver cadastrado agora
+  });
 
   ['m-unidade', 'm-safra', 'm-op'].forEach(function (id) {
     $(id).addEventListener('change', function () { var f = formAtual(); estado.u = f.u; estado.s = f.s; estado.o = f.o; desenharTopo(); carregarForm(f.u, f.s, f.o); });
