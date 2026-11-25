@@ -238,6 +238,7 @@ describe('sincronizar', () => {
           row_count: 5, truncated: false,
         };
       }
+      if (sql.includes('AS variedade, SUM(a.QT_AREA) AS area')) return { status: 'success', columns: ['unidade', 'setor', 'codigo', 'variedade', 'area'], rows: [], row_count: 0, truncated: false };
       const nome = /DE_PER_SAFRA = '([^']+)'/.exec(sql)![1];
       pedidas.push(nome);
       return { status: 'success', columns: COLUNAS, rows: nome === 'SOJA 26/27' ? LINHAS : [], row_count: 0, truncated: false };

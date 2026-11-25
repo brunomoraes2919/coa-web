@@ -8,6 +8,9 @@ import { fmtData } from './format';
 import type { AreaCultura, Fazenda, ItemVariedade, LayoutTextos, Plantio, PlantioPimsTalhao, PopulacaoVariedade, ResumoChuva, ResumoVariedades, Safra, Talhao, VariedadePims } from './types';
 
 export const SEM_VARIEDADE = 'Sem variedade';
+export const NAO_PLANTADO = 'Não plantado';
+/** chave da linha "Não plantado" (não é variedade: nunca coincide com um nome limpo) */
+const CHAVE_NAO_PLANTADO = '\u0000nao-plantado';
 export const COR_SEM_VARIEDADE = '#B5B5B5';
 export const TITULO_VARIEDADES = 'Variedades';
 export const TITULO_MAPA_VARIEDADE = 'MAPA DE VARIEDADES';
@@ -49,8 +52,50 @@ export interface FeicaoVariedade {
   nome: string;
   setor: string | null;
   areaHa: number;
-  /** variedade limpa; null = sem variedade */
+  /** variedade limpa; null = sem variedade (com o plantio do PIMS: a que tem mais área plantada no talhão) */
   variedade: string | null;
+  /**
+   * Plantio do PIMS do talhão (pelo código): a área plantada de cada variedade e o que ainda falta plantar. Com ele, o
+   * resumo soma essas áreas (as do PIMS) no lugar da área do polígono. Ausente = talhão sem plantio no PIMS.
+   */
+  plantio?: PlantioDaFeicao;
+}
+
+/** Plantio do PIMS de um talhão no mapa de variedade. */
+export interface PlantioDaFeicao {
+  /** código normalizado do talhão (dois polígonos com o mesmo código contam uma vez só) */
+  codigo: string;
+  /** área plantada por variedade limpa (null = plantado sem variedade), da maior para a menor */
+  partes: { variedade: string | null; ha: number }[];
+  /** área do talhão no PIMS ainda não plantada */
+  resta: number;
+}
+
+/**
+ * Área plantada de cada variedade no talhão, pela regra do Operacional: o apontado (sem replantio) até a área do
+ * talhão, repartido pela variedade apontada no boletim (apontado sem variedade fica com a do cadastro). Retrato sem
+ * `pv`: a área plantada inteira na variedade do cadastro.
+ */
+export function plantioDoTalhao(codigo: string, t: PlantioPimsTalhao): PlantioDaFeicao {
+  const cadastro = limparVariedade(t.variedade);
+  const apontado = new Map<string | null, number>();
+  if (t.pv) {
+    for (const [v, ha] of t.pv) {
+      if (!(ha > 0)) continue;
+      const alvo = limparVariedade(v) ?? cadastro;
+      apontado.set(alvo, (apontado.get(alvo) ?? 0) + ha);
+    }
+  } else if (t.areaPlantada > 0) {
+    apontado.set(cadastro, t.areaPlantada);
+  }
+  const total = [...apontado.values()].reduce((a, b) => a + b, 0);
+  const base = t.areaPrevista > 0 ? t.areaPrevista : total;
+  const efetivo = Math.min(total, base);
+  const partes = total > 0
+    ? [...apontado].map(([variedade, ha]) => ({ variedade, ha: (efetivo * ha) / total }))
+        .sort((a, b) => b.ha - a.ha || String(a.variedade).localeCompare(String(b.variedade), 'pt-BR'))
+    : [];
+  return { codigo, partes, resta: Math.max(0, base - efetivo) };
 }
 
 /**
@@ -69,7 +114,9 @@ export function feicoesDoMapa(
     return talhoes.map((t) => {
       const codigo = normalizarCodigo(t.codigo);
       const bruta = doEfetivo.get(t.id) ?? (codigo ? pims?.get(codigo)?.variedade : null) ?? null;
-      return { id: t.id, nome: t.nome, setor: t.setor, areaHa: t.areaHa, variedade: limparVariedade(bruta) };
+      const f = { id: t.id, nome: t.nome, setor: t.setor, areaHa: t.areaHa, variedade: limparVariedade(bruta) };
+      // plantio manual do talhão (sem PIMS) continua valendo como antes
+      return doEfetivo.has(t.id) ? f : comPlantio(f, codigo, pims);
     });
   }
   const basePorCodigo = new Map<string, Talhao>();
@@ -81,8 +128,19 @@ export function feicoesDoMapa(
     const codigo = normalizarCodigo(a.codigo);
     const base = codigo ? basePorCodigo.get(codigo) : undefined;
     const bruta = (codigo ? pims?.get(codigo)?.variedade : null) ?? (base ? doEfetivo.get(base.id) : null) ?? null;
-    return { id: a.id, nome: base?.nome ?? a.codigo, setor: base?.setor ?? null, areaHa: a.areaHa, variedade: limparVariedade(bruta) };
+    return comPlantio({ id: a.id, nome: base?.nome ?? a.codigo, setor: base?.setor ?? null, areaHa: a.areaHa, variedade: limparVariedade(bruta) }, codigo, pims);
   });
+}
+
+/**
+ * Com o plantio do PIMS no talhão: a feição ganha `plantio` e a cor da variedade com mais área plantada; talhão do PIMS
+ * ainda sem plantio fica sem variedade (cinza, na linha "Não plantado"). Sem o talhão no PIMS, como estava.
+ */
+function comPlantio(f: FeicaoVariedade, codigo: string, pims: Map<string, PlantioPimsTalhao> | null): FeicaoVariedade {
+  const t = codigo ? pims?.get(codigo) : undefined;
+  if (!t) return f;
+  const plantio = plantioDoTalhao(codigo, t);
+  return { ...f, variedade: plantio.partes.length ? plantio.partes[0].variedade : null, plantio };
 }
 
 /** Cores do cadastro com as de um mapa salvo por cima (o mapa reaberto mostra as cores do dia em que foi salvo). */
@@ -95,10 +153,15 @@ export function juntarCores(cadastro: ReadonlyMap<string, string>, fixas: Record
 /** Chaves das variedades das feições sem cor, da maior área para a menor ("Sem variedade" fica de fora). */
 export function variedadesSemCor(feicoes: FeicaoVariedade[], cores: ReadonlyMap<string, string>): string[] {
   const area = new Map<string, number>();
+  const somar = (v: string | null, ha: number) => {
+    if (!v) return;
+    const k = chaveVariedade(v);
+    if (!cores.has(k)) area.set(k, (area.get(k) ?? 0) + ha);
+  };
   for (const f of feicoes) {
-    if (!f.variedade) continue;
-    const k = chaveVariedade(f.variedade);
-    if (!cores.has(k)) area.set(k, (area.get(k) ?? 0) + f.areaHa);
+    // com o plantio do PIMS, toda variedade plantada no talhão entra na legenda (e precisa de cor)
+    if (f.plantio) f.plantio.partes.forEach((p) => somar(p.variedade, p.ha));
+    else somar(f.variedade, f.areaHa);
   }
   return [...area].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'pt-BR')).map(([k]) => k);
 }
@@ -179,14 +242,14 @@ export function resumoVariedades(
 ): ResumoVariedades {
   const grupos = new Map<string, ItemVariedade>();
   let totalHa = 0;
-  for (const f of feicoes) {
-    totalHa += f.areaHa;
-    const chave = f.variedade ? chaveVariedade(f.variedade) : '';
+  const somar = (variedade: string | null, ha: number) => {
+    totalHa += ha;
+    const chave = variedade ? chaveVariedade(variedade) : '';
     const g = grupos.get(chave) ?? {
       chave,
-      nome: f.variedade ? nomeExibido(f.variedade, comerciais?.get(chave)) : SEM_VARIEDADE,
-      nomePims: f.variedade || SEM_VARIEDADE,
-      comercial: (f.variedade && comerciais?.get(chave)) || '',
+      nome: variedade ? nomeExibido(variedade, comerciais?.get(chave)) : SEM_VARIEDADE,
+      nomePims: variedade || SEM_VARIEDADE,
+      comercial: (variedade && comerciais?.get(chave)) || '',
       sementesMetro: (chave ? populacao?.get(chave)?.sementesMetro : null) ?? null,
       populacao: (chave ? populacao?.get(chave)?.populacao : null) ?? null,
       cor: chave ? (cores.get(chave) ?? COR_SEM_VARIEDADE) : COR_SEM_VARIEDADE,
@@ -194,19 +257,50 @@ export function resumoVariedades(
       pct: 0,
       talhoes: 0,
     };
-    g.areaHa += f.areaHa;
+    g.areaHa += ha;
     g.talhoes += 1;
     grupos.set(chave, g);
+  };
+  // com o plantio do PIMS: a área plantada de cada variedade (cada talhão do PIMS conta uma vez, mesmo dividido em
+  // vários polígonos) e o que falta plantar numa linha à parte, fora do total
+  const contados = new Set<string>();
+  let naoPlantado = 0;
+  let talhoesNaoPlantados = 0;
+  let comPims = false;
+  for (const f of feicoes) {
+    if (!f.plantio) {
+      somar(f.variedade, f.areaHa);
+      continue;
+    }
+    comPims = true;
+    if (contados.has(f.plantio.codigo)) continue;
+    contados.add(f.plantio.codigo);
+    f.plantio.partes.forEach((p) => somar(p.variedade, p.ha));
+    if (f.plantio.resta > 0.005) {
+      naoPlantado += f.plantio.resta;
+      if (!f.plantio.partes.length) talhoesNaoPlantados += 1;
+    }
   }
   const itens = [...grupos.values()]
     .map((g) => ({ ...g, pct: totalHa > 0 ? (100 * g.areaHa) / totalHa : 0 }))
     .sort((a, b) => Number(a.chave === '') - Number(b.chave === '') || b.areaHa - a.areaHa || a.nome.localeCompare(b.nome, 'pt-BR'));
-  return { totalHa, itens };
+  if (comPims && naoPlantado > 0.005) {
+    itens.push({
+      chave: CHAVE_NAO_PLANTADO, nome: NAO_PLANTADO, nomePims: NAO_PLANTADO, comercial: '', sementesMetro: null, populacao: null,
+      cor: COR_SEM_VARIEDADE, areaHa: naoPlantado, pct: 0, talhoes: talhoesNaoPlantados, naoPlantado: true,
+    });
+  }
+  return comPims ? { totalHa, itens, fonte: 'pims' } : { totalHa, itens };
+}
+
+/** "32,4" ou "—" na linha "Não plantado" (que fica fora do total). */
+export function pctDaLinha(i: Pick<ItemVariedade, 'pct' | 'naoPlantado'>): string {
+  return i.naoPlantado ? '—' : fmtPctVariedade(i.pct);
 }
 
 /** Cor de cada feição (id → cor), para o desenho. */
 export function coresDasFeicoes(feicoes: FeicaoVariedade[], resumo: ResumoVariedades): Map<string, string> {
-  const porChave = new Map(resumo.itens.map((i) => [i.chave, i.cor]));
+  const porChave = new Map(resumo.itens.filter((i) => !i.naoPlantado).map((i) => [i.chave, i.cor]));
   return new Map(feicoes.map((f) => [f.id, porChave.get(f.variedade ? chaveVariedade(f.variedade) : '') ?? COR_SEM_VARIEDADE]));
 }
 

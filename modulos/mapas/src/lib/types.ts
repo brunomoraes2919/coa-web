@@ -222,6 +222,11 @@ export interface PlantioPimsTalhao {
   /** ISO yyyy-mm-dd */
   fim: string | null;
   variedade: string | null;
+  /**
+   * Área plantada por variedade apontada no boletim de plantio ([variedade do PIMS ou null, ha]), sem replantio —
+   * a regra do Acompanhamento Operacional. Ausente em retratos gravados antes dela (o mapa usa `variedade`).
+   */
+  pv?: [string | null, number][];
 }
 
 /** Uma linha de mapas_plantio_pims (Supabase): o plantio do PIMS de uma safra × unidade. */
@@ -356,12 +361,17 @@ export interface ItemVariedade {
   pct: number;
   /** nº de feições (talhões ou áreas da cultura) */
   talhoes: number;
+  /** a linha "Não plantado": a área do PIMS ainda sem plantio (fica fora do total e do %) */
+  naoPlantado?: boolean;
 }
 
 /** Resumo do mapa de variedade: da maior área para a menor, com "Sem variedade" por último. */
 export interface ResumoVariedades {
+  /** área somada das variedades (com o plantio do PIMS: a área plantada, sem a linha "Não plantado") */
   totalHa: number;
   itens: ItemVariedade[];
+  /** 'pims' = as áreas são as plantadas no PIMS por variedade; ausente = área dos polígonos (mapas antigos e manual) */
+  fonte?: 'pims';
 }
 
 /**

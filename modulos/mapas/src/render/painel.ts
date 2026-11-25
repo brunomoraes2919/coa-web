@@ -56,7 +56,7 @@ export function itensInformacao(inp: RenderInput): ParInfo[] {
     ? [
         { rotulo: 'Safra', valor: t.safra },
         { rotulo: 'Fonte', valor: t.fonte },
-        { rotulo: 'Área total', valor: `${fmtAreaHa(r.totalHa)} ha` },
+        { rotulo: r.fonte === 'pims' ? 'Área plantada' : 'Área total', valor: `${fmtAreaHa(r.totalHa)} ha` },
         { rotulo: 'Variedades', valor: String(r.itens.filter((i) => i.chave).length) },
         { rotulo: 'Talhões', valor: t.talhoes },
         { rotulo: 'Setor', valor: t.setor },

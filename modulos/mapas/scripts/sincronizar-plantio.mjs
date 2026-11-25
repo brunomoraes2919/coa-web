@@ -166,6 +166,45 @@ LEFT JOIN (SELECT ID_UPNIVEL3, ID_PERIODOSAFRA, SUM(QT_AREA) AS area_plantada, M
 WHERE ps.DE_PER_SAFRA = ${safra}${foraDoCoa('u.DE_UNI_ADM')}${fimDaConsulta(pular, tamanho, 'unidade, codigo', 'unidade, codigo, up.ID_UPNIVEL3, up.ID_PERIODOSAFRA')}`;
 }
 
+/**
+ * Área plantada de cada variedade em cada talhão da safra: os boletins de plantio (APPLANTIO) com a variedade
+ * apontada no boletim, pela mesma regra do Acompanhamento Operacional (ordem aberta ou fechada, sem replantio). É o
+ * que o mapa de variedade soma por variedade (`pv` de cada talhão em montarUnidades).
+ */
+export function montarSqlPlantioVariedades(nomeSafra, pular = null, tamanho = PAGINA_CONSULTA) {
+  const safra = `'${String(nomeSafra).replace(/'/g, "''")}'`;
+  return `SELECT u.DE_UNI_ADM AS unidade, u2.DE_UPNIVEL2 AS setor, up.CD_UPNIVEL3 AS codigo, va.DE_VARIEDADE AS variedade, SUM(a.QT_AREA) AS area
+FROM PIMSMCPRD.dbo.APPLANTIO a
+JOIN PIMSMCPRD.dbo.APORDSERVICO os ON os.ID_APORDSERVICO = a.ID_APORDSERVICO AND os.ID_UNIDADEADM = a.ID_UNIDADEADM
+JOIN PIMSMCPRD.dbo.UPNIVEL3 up ON up.ID_UPNIVEL3 = a.ID_UPNIVEL3
+JOIN PIMSMCPRD.dbo.PERIODOSAFRA ps ON ps.ID_PERIODOSAFRA = up.ID_PERIODOSAFRA
+JOIN PIMSMCPRD.dbo.UPNIVEL2 u2 ON up.ID_UPNIVEL2 = u2.ID_UPNIVEL2
+JOIN PIMSMCPRD.dbo.UNIDADEADM u ON u.ID_UNIDADEADM = os.ID_UNIDADEADM
+LEFT JOIN PIMSMCPRD.dbo.OPERACAO o ON o.ID_OPERACAO = os.ID_OPERACAO
+LEFT JOIN PIMSMCPRD.dbo.VARIEDADE va ON va.ID_VARIEDADE = a.ID_VARIEDADE
+WHERE os.FG_SITUACAO IN ('A','F') AND ps.DE_PER_SAFRA = ${safra} AND ISNULL(a.FG_REPLANTIO, 'N') <> 'S' AND ISNULL(o.CD_OPERACAO, 0) <> 18${foraDoCoa('u.DE_UNI_ADM')}
+GROUP BY u.DE_UNI_ADM, u2.DE_UPNIVEL2, up.CD_UPNIVEL3, va.DE_VARIEDADE${fimDaConsulta(pular, tamanho, 'unidade, setor, codigo, variedade', 'unidade, setor, codigo, variedade')}`;
+}
+
+/** Linhas de montarSqlPlantioVariedades → Map('unidade|setor|código do PIMS' → [[variedade ou null, ha]]). */
+export function plantioPorVariedade({ columns, rows }) {
+  const cols = columns.map((c) => String(c).toLowerCase());
+  const i = (c) => cols.indexOf(c);
+  for (const c of ['unidade', 'setor', 'codigo', 'variedade', 'area']) {
+    if (i(c) < 0) throw erroDoTipo('fonte', `Consulta da área por variedade: coluna "${c}" ausente no resultado.`);
+  }
+  const out = new Map();
+  for (const r of rows) {
+    const ha = num(r[i('area')]);
+    if (!(ha > 0)) continue;
+    const chave = [txt(r[i('unidade')]) ?? '', txt(r[i('setor')]) ?? '', txt(r[i('codigo')]) ?? ''].join('|');
+    if (!out.has(chave)) out.set(chave, []);
+    out.get(chave).push([txt(r[i('variedade')]), ha]);
+  }
+  for (const l of out.values()) l.sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])));
+  return out;
+}
+
 /** plantado = plantio encerrado ou apontado >= 99% da área prevista; plantando = 0 < apontado < 99%; a_plantar = sem apontamento. */
 export function classificar({ areaPrevista, areaPlantada, plantioEncerrado }) {
   if (plantioEncerrado) return 'plantado';
@@ -323,7 +362,7 @@ const num = (x) => {
 };
 const txt = (x) => (x === null || x === undefined ? null : String(x).trim() || null);
 
-function montarUnidades({ columns, rows }, rotulo) {
+function montarUnidades({ columns, rows }, rotulo, porVariedade = null) {
   const idx = new Map(columns.map((c, i) => [String(c).toLowerCase(), i]));
   for (const c of ['unidade', 'setor', 'codigo', 'area_prevista', 'area_plantada', 'plantio_inicio', 'plantio_fim', 'plantio_encerrado', 'variedade']) {
     if (!idx.has(c)) throw erroDoTipo('fonte', `Consulta ao PIMS falhou (${rotulo}): coluna "${c}" ausente no resultado.`);
@@ -346,6 +385,8 @@ function montarUnidades({ columns, rows }, rotulo) {
       fim: txt(v(r, 'plantio_fim')),
       variedade: txt(v(r, 'variedade')),
     };
+    // área plantada por variedade apontada (só quando a consulta das variedades veio; [] = nada plantado)
+    if (porVariedade) talhao.pv = porVariedade.get([unidade, talhao.setor ?? '', codigoPims].join('|')) ?? [];
     if (!porUnidade.has(unidade)) porUnidade.set(unidade, []);
     porUnidade.get(unidade).push(talhao);
   }
@@ -371,7 +412,15 @@ export async function sincronizar({ url, token, safras, excluirPrefixos = [], fe
     const resultado = [];
     for (const nome of nomes) {
       const r = await consultarPaginas(cliente, (pular, tamanho) => montarSql(nome, pular, tamanho), `status de plantio por talhão ${nome}`, nome, { reserva: true });
-      resultado.push({ nome, unidades: montarUnidades(r, nome) });
+      // área plantada por variedade (mapa de variedade): se a consulta falhar, o plantio segue sem ela (o mapa usa a
+      // variedade do cadastro do talhão, como antes)
+      let porVariedade = null;
+      try {
+        porVariedade = plantioPorVariedade(await consultarPaginas(cliente, (pular, tamanho) => montarSqlPlantioVariedades(nome, pular, tamanho), `área plantada por variedade ${nome}`, `variedades ${nome}`, { reserva: true }));
+      } catch (e) {
+        console.warn(`Plantio ${nome}: sem a área por variedade (${cliente.semToken ? cliente.semToken(String(e?.message ?? e)).slice(0, 200) : 'erro'}).`);
+      }
+      resultado.push({ nome, unidades: montarUnidades(r, nome, porVariedade) });
     }
     resultado.sort((a, b) => comparar(a.nome, b.nome));
     return { versao: 1, geradoEm: agora.toISOString(), fonte: 'PIMS', safras: resultado };

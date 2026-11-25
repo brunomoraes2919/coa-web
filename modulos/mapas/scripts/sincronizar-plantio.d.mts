@@ -42,6 +42,8 @@ export const PAGINA_CONSULTA: number;
 export const PAGINAS_MAX: number;
 /** sem `pular`, a consulta inteira (sem paginar); com `pular`, a página que começa nessa linha */
 export function montarSql(nomeSafra: string, pular?: number | null, tamanho?: number): string;
+export function montarSqlPlantioVariedades(nomeSafra: string, pular?: number | null, tamanho?: number): string;
+export function plantioPorVariedade(r: ResultadoConsulta): Map<string, [string | null, number][]>;
 export function classificar(t: {
   areaPrevista: number | null;
   areaPlantada: number | null;

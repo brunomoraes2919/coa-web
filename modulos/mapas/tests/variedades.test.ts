@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   chaveVariedade, COR_SEM_VARIEDADE, corAutomatica, coresDasFeicoes, coresNovas, csvVariedadePorTalhao, feicoesDoMapa, juntarCores,
   limparVariedade, PALETA_VARIEDADES, resumoDoMapaVariedade, resumoVariedades, SEM_VARIEDADE, textoItemVariedade, textosAutomaticosVariedade,
-  variedadesSemCor, type FeicaoVariedade,
+  variedadesSemCor, type FeicaoVariedade, plantioDoTalhao, pctDaLinha,
   comerciaisDe, emUsoSemNome, nomeExibido, novasSemNome, semNomeNoMapa,
 } from '../src/lib/variedades';
 import type { AreaCultura, Plantio, PlantioPimsTalhao, Talhao, VariedadePims } from '../src/lib/types';
@@ -44,10 +44,49 @@ describe('feicoesDoMapa', () => {
     const talhoes = [talhao('t1', '01PIVO', 100, 'NORTE')];
     const areas = [area('a1', '01PIVO', 40), area('a2', '099', 3)];
     const f = feicoesDoMapa(talhoes, areas, [], new Map([['01PIVO', pims('01PIVO', 'A DEFINIR SOJA')], ['099', pims('099', 'NEO 790')]]));
-    expect(f).toEqual([
+    expect(f.map(({ plantio: _p, ...x }) => x)).toEqual([
       { id: 'a1', nome: '01PIVO', setor: 'NORTE', areaHa: 40, variedade: null },
       { id: 'a2', nome: '099', setor: null, areaHa: 3, variedade: 'NEO 790' },
     ]);
+  });
+});
+
+describe('área por variedade do PIMS (a área plantada, como no Operacional)', () => {
+  const doPims = (codigo: string, prevista: number, pv: [string | null, number][] | undefined, cadastro: string | null = null, plantada = 0): PlantioPimsTalhao =>
+    ({ codigo, codigoPims: codigo, setor: null, status: 'plantando', areaPrevista: prevista, areaPlantada: plantada, inicio: null, fim: null, variedade: cadastro, pv });
+  it('reparte o apontado (até a área do talhão) pela variedade do boletim; sem variedade, a do cadastro', () => {
+    const t = doPims('001', 100, [['SEMENTE SOJA 74K76 RSF', 70], [null, 20], ['NEO 761 I2X', 30]], 'SEMENTE SOJA 67I68 IPRO');
+    const p = plantioDoTalhao('001', t);
+    // 120 apontados num talhão de 100: conta 100, na proporção de cada variedade
+    expect(p.partes.map((x) => [x.variedade, Math.round(x.ha * 10) / 10])).toEqual([['74K76 RSF', 58.3], ['NEO 761 I2X', 25], ['67I68 IPRO', 16.7]]);
+    expect(p.resta).toBe(0);
+    expect(plantioDoTalhao('002', doPims('002', 50, [['NEO 761 I2X', 20]])).resta).toBe(30);
+    // retrato antigo, sem pv: a área plantada inteira na variedade do cadastro
+    expect(plantioDoTalhao('003', doPims('003', 50, undefined, 'NEO 790', 10)).partes).toEqual([{ variedade: 'NEO 790', ha: 10 }]);
+  });
+  it('o resumo soma a área plantada do PIMS (cada talhão uma vez) e põe o que falta numa linha fora do total', () => {
+    const talhoes = [talhao('t1', '001', 120), talhao('t2', '002', 60), talhao('t3', '003', 40)];
+    const areas = [area('a1', '001', 60), area('a1b', '001', 60), area('a2', '002', 61), area('a3', '003', 39)];
+    const porCodigo = new Map([
+      ['001', doPims('001', 100, [['74K76 RSF', 100]])],
+      ['002', doPims('002', 50, [['74K76 RSF', 10], ['NEO 761 I2X', 30]])],
+      ['003', doPims('003', 40, [])],
+    ]);
+    const f = feicoesDoMapa(talhoes, areas, [], porCodigo);
+    expect(f.map((x) => x.variedade)).toEqual(['74K76 RSF', '74K76 RSF', 'NEO 761 I2X', null]);
+    const cores = new Map([['74K76 RSF', '#111111'], ['NEO 761 I2X', '#222222']]);
+    const r = resumoVariedades(f, cores);
+    expect(r.fonte).toBe('pims');
+    expect(r.totalHa).toBe(140); // 100 + 40 plantados (o polígono não conta)
+    expect(r.itens.map((i) => [i.nome, i.areaHa, Math.round(i.pct), i.talhoes, !!i.naoPlantado])).toEqual([
+      ['74K76 RSF', 110, 79, 2, false],
+      ['NEO 761 I2X', 30, 21, 1, false],
+      ['Não plantado', 50, 0, 1, true],
+    ]);
+    expect(pctDaLinha(r.itens[2])).toBe('—');
+    expect(coresDasFeicoes(f, r).get('a3')).toBe(COR_SEM_VARIEDADE);
+    // variedade só secundária num talhão também pede cor
+    expect(variedadesSemCor(f, new Map())).toEqual(['74K76 RSF', 'NEO 761 I2X']);
   });
 });
 

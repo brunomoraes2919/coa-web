@@ -6,7 +6,7 @@
  * lado (cada bloco com o seu cabeçalho). Medidas em mm do A3 (k = 1); `s` = px por mm.
  */
 import type { ResumoVariedades } from '../lib/types';
-import { colunasNomeVariedade, fmtAreaHa, fmtPctVariedade, fmtPopulacao, fmtSementes, temPopulacao, TITULO_VARIEDADES } from '../lib/variedades';
+import { colunasNomeVariedade, fmtAreaHa, fmtPopulacao, fmtSementes, pctDaLinha, temPopulacao, TITULO_VARIEDADES } from '../lib/variedades';
 import { ALTURA_MAIUSC, fonte, limitarLinhas, quebrarTexto } from './labels';
 import type { PlanoLegenda } from './legend';
 import { COR_BORDA_AMOSTRA, COR_CINZA, COR_SEPARADOR, COR_TEXTO, COR_VERDE } from './types';
@@ -68,7 +68,7 @@ export function planejarTabelaVariedades(
   const cabNums: string[] = comPop ? [...CABECALHO_POPULACAO, CABECALHO_VARIEDADES[2], CABECALHO_VARIEDADES[3]] : [CABECALHO_VARIEDADES[2], CABECALHO_VARIEDADES[3]];
   const dados = resumo.itens.map((i) => {
     const n = colunasNomeVariedade(i);
-    const nums = [fmtAreaHa(i.areaHa), fmtPctVariedade(i.pct)];
+    const nums = [fmtAreaHa(i.areaHa), pctDaLinha(i)];
     if (comPop) nums.unshift(fmtSementes(i.sementesMetro) || SEM_NOME, fmtPopulacao(i.populacao) || SEM_NOME);
     return { cor: i.cor, comercial: n.comercial || SEM_NOME, pims: n.pims, nums };
   });

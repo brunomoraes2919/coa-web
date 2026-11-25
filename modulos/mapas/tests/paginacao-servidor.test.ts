@@ -48,6 +48,9 @@ const resposta = (id: number, dados: unknown) =>
  * Agrovex falso. `tabelaDe` devolve o resultado INTEIRO da consulta (já na ordem do ORDER BY); o falso corta
  * em 5.000 linhas quando a consulta não pagina, e devolve a página quando pagina.
  */
+/** só as consultas do plantio (sem a da área por variedade do mapa de variedade, montarSqlPlantioVariedades) */
+const doPlantio = (fs: Feita[]) => fs.filter((f) => !f.sql.includes('AS variedade, SUM(a.QT_AREA) AS area'));
+
 function agrovexQuePagina(tabelaDe: (sql: string, source: string) => Tabela, recusa: (feita: Feita) => string | null = () => null) {
   const feitas: Feita[] = [];
   const impl: FetchLike = async (_url, init) => {
@@ -215,7 +218,7 @@ describe('paginação: plantio por safra (sincronizar)', () => {
     const talhoes = dados.safras[0].unidades[0].talhoes;
     expect(talhoes).toHaveLength(9001);
     expect(new Set(talhoes.map((t) => t.codigoPims))).toEqual(new Set(serie(9001, (i) => `T${i}`)));
-    expect(feitas.map((f) => f.pular)).toEqual([0, 4000, 8000]);
+    expect(doPlantio(feitas).map((f) => f.pular)).toEqual([0, 4000, 8000]);
     expect(feitas.every((f) => f.tamanho === PAGINA_CONSULTA && f.source === 'sqlserver')).toBe(true);
   });
 
@@ -223,14 +226,14 @@ describe('paginação: plantio por safra (sincronizar)', () => {
     const { impl, feitas } = agrovexQuePagina(() => plantioCom(8000));
     const dados = await sincronizar(opcoesPlantio(impl));
     expect(dados.safras[0].unidades[0].talhoes).toHaveLength(8000);
-    expect(feitas.map((f) => f.pular)).toEqual([0, 4000, 8000]);
+    expect(doPlantio(feitas).map((f) => f.pular)).toEqual([0, 4000, 8000]);
   });
 
   it('menos de uma página: uma consulta só, com o mesmo resultado de antes', async () => {
     const { impl, feitas } = agrovexQuePagina(() => plantioCom(3));
     const dados = await sincronizar(opcoesPlantio(impl));
     expect(dados.safras[0].unidades[0].talhoes.map((t) => t.codigoPims)).toEqual(['T0', 'T1', 'T2']);
-    expect(feitas.map((f) => f.pular)).toEqual([0]);
+    expect(doPlantio(feitas).map((f) => f.pular)).toEqual([0]);
   });
 
   it('teto de páginas: uma fonte que nunca termina não prende a rotina', async () => {
@@ -266,8 +269,8 @@ describe('paginação: reserva quando a fonte recusa a consulta em páginas', ()
     const { impl, feitas } = agrovexQuePagina(() => plantioCom(3), (f) => (f.pular !== null ? `Invalid column name 'ID_PERIODOSAFRA' (${TOKEN})` : null));
     const dados = await sincronizar(opcoes(impl));
     expect(dados.safras[0].unidades[0].talhoes.map((t) => t.codigoPims)).toEqual(['T0', 'T1', 'T2']);
-    expect(feitas.map((f) => f.pular)).toEqual([0, null]);
-    expect(feitas[1].sql).toBe(montarSql('SOJA 26/27'));
+    expect(doPlantio(feitas).map((f) => f.pular)).toEqual([0, null]);
+    expect(doPlantio(feitas)[1].sql).toBe(montarSql('SOJA 26/27'));
     const texto = aviso.mock.calls.flat().join(' ');
     aviso.mockRestore();
     expect(texto).toContain('Consulta ao PIMS em páginas foi recusada (SOJA 26/27); usando a consulta inteira, sem paginação.');
@@ -280,7 +283,7 @@ describe('paginação: reserva quando a fonte recusa a consulta em páginas', ()
     const { impl, feitas } = agrovexQuePagina(() => plantioCom(6000), (f) => (f.pular !== null ? 'sintaxe recusada' : null));
     await expect(sincronizar(opcoes(impl))).rejects.toThrow(/Consulta ao PIMS falhou \(SOJA 26\/27\): resultado truncado \(5000 linhas\)/);
     aviso.mockRestore();
-    expect(feitas.map((f) => f.pular)).toEqual([0, null]);
+    expect(doPlantio(feitas).map((f) => f.pular)).toEqual([0, null]);
   });
 
   it('recusa numa página seguinte não tem reserva: metade do resultado não serve', async () => {
@@ -289,7 +292,7 @@ describe('paginação: reserva quando a fonte recusa a consulta em páginas', ()
     await expect(sincronizar(opcoes(impl))).rejects.toThrow(/Consulta ao PIMS falhou \(SOJA 26\/27\): falhou no meio/);
     expect(aviso).not.toHaveBeenCalled();
     aviso.mockRestore();
-    expect(feitas.map((f) => f.pular)).toEqual([0, 4000]);
+    expect(doPlantio(feitas).map((f) => f.pular)).toEqual([0, 4000]);
   });
 
   it('prazo estourado ou rede fora do ar não é recusa: nada de consultar duas vezes', async () => {
@@ -546,9 +549,9 @@ describe('paginação: as consultas da Validação (sincronizarValidacao)', () =
     expect(aviso).toHaveBeenCalledTimes(1);
     expect(String(aviso.mock.calls[0][0])).toMatch(/consulta nova foi recusada \(ordens de serviço\)/);
     aviso.mockRestore();
-    expect(feitas.map((f) => f.pular)).toEqual([0, 0]);
+    expect(doPlantio(feitas).map((f) => f.pular)).toEqual([0, 0]);
     expect(feitas[0].sql).toContain('WHERE ID_APORDSERVICO IN (SELECT ID_APORDSERVICO FROM');
-    expect(feitas[1].sql).not.toContain('WHERE ID_APORDSERVICO IN (SELECT ID_APORDSERVICO FROM');
+    expect(doPlantio(feitas)[1].sql).not.toContain('WHERE ID_APORDSERVICO IN (SELECT ID_APORDSERVICO FROM');
   });
 
   it('teto de páginas também vale para as consultas da validação que já paginavam', async () => {

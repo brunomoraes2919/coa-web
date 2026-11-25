@@ -1,4 +1,4 @@
-import { colunasNomeVariedade, csvVariedadePorTalhao, fmtAreaHa, fmtPctVariedade, type FeicaoVariedade } from '../../lib/variedades';
+import { colunasNomeVariedade, csvVariedadePorTalhao, fmtAreaHa, pctDaLinha, type FeicaoVariedade } from '../../lib/variedades';
 import { baixarArquivo } from '../../lib/exportar';
 import { fmtDataHora } from '../../lib/situacaoPlantio';
 import type { ResumoVariedades } from '../../lib/types';
@@ -52,7 +52,7 @@ export default function TabelaVariedades({ resumo, feicoes, nomeArquivo, geradoE
                 <td className={n.comercial ? 'nome' : 'nome suave'}>{n.comercial || '—'}</td>
                 <td className="nome">{n.pims}</td>
                 <td className="num">{fmtAreaHa(i.areaHa)}</td>
-                <td className="num">{fmtPctVariedade(i.pct)}</td>
+                <td className="num">{pctDaLinha(i)}</td>
                 <td className="num">{i.talhoes}</td>
               </tr>
             );
@@ -61,7 +61,7 @@ export default function TabelaVariedades({ resumo, feicoes, nomeArquivo, geradoE
         <tfoot>
           <tr>
             <td />
-            <th colSpan={2}>Total</th>
+            <th colSpan={2}>{resumo.fonte === 'pims' ? 'Total plantado' : 'Total'}</th>
             <th className="num">{fmtAreaHa(resumo.totalHa)}</th>
             <th className="num">100</th>
             <th className="num">{feicoes.length}</th>
